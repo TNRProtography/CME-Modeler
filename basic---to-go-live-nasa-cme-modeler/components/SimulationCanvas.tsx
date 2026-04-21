@@ -421,6 +421,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   // ── Spacecraft markers (SolO, STEREO-A, ACE, DSCOVR, IMAP, SWFO-L1) ──────
   const spacecraftGroupRef = useRef<any>(null);
   const spacecraftPositionsRef = useRef<Record<string, {x:number;y:number;z:number;name:string;color:string}>>({});
+  // For each spacecraft we also store (a) its offset from Earth in the scene frame
+  // at snapshot time, and (b) Earth's ecliptic longitude at that same snapshot
+  // time. Each frame we rotate the stored offset by (Earth_lon_now - Earth_lon_snap)
+  // around the Y axis and add it to the current Earth position. This keeps L1
+  // spacecraft (ACE, DSCOVR, SWFO-L1, IMAP) locked to the Sun–Earth line as the
+  // user scrubs the timeline, instead of leaving them frozen in world space.
+  // For heliocentric spacecraft (SolO, STEREO-A) this is an approximation that
+  // degrades slowly — far better than keeping them stationary.
+  const spacecraftOffsetsRef = useRef<Record<string, { dx:number; dy:number; dz:number; snapEarthLon:number; meshName:string }>>({});
 
   // ── CME–CME collision tracking ───────────────────────────────────────────
   // Stores each CME's world position and propagation data from the previous frame.
@@ -1031,6 +1040,27 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       .then(data => {
         if (!data?.ok || !data.positions) return;
         const { positions } = data;
+        // Snapshot time — when the worker computed these positions. If the
+        // worker returns a `time` field (ISO string or ms), use it; otherwise
+        // fall back to now, which is what the worker normally computes for.
+        const snapTimeMs = (() => {
+          const t = data.time ?? data.timestamp ?? data.epoch;
+          if (typeof t === 'number' && Number.isFinite(t)) {
+            return t > 1e12 ? t : t * 1000; // seconds -> ms if needed
+          }
+          if (typeof t === 'string') {
+            const parsed = Date.parse(t);
+            if (!Number.isNaN(parsed)) return parsed;
+          }
+          return Date.now();
+        })();
+        // Earth's scene-frame position at the snapshot time. We need this to
+        // convert each spacecraft's absolute scene-frame position into an
+        // Earth-relative offset, so we can re-attach it to Earth each frame.
+        const snapEarthLon = computeEclipticLongitude('EARTH', snapTimeMs);
+        const snapEarthRadius = PLANET_DATA_MAP.EARTH.radius;
+        const snapEarthX = snapEarthRadius * Math.sin(snapEarthLon);
+        const snapEarthZ = snapEarthRadius * Math.cos(snapEarthLon);
         const SPACECRAFT_DEF: Array<{key:string;name:string;color:number;size:number}> = [
           { key:'solo',    name:'SolO',     color:0xf97316, size:0.018 * SCENE_SCALE },
           { key:'stereoA', name:'STEREO-A', color:0xa78bfa, size:0.014 * SCENE_SCALE },
@@ -1041,6 +1071,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         ];
         // Clear any previously-placed markers
         while (scGroup.children.length > 0) scGroup.remove(scGroup.children[0]);
+        spacecraftOffsetsRef.current = {};
         planetLabelInfos.filter(l => l.id.startsWith('sc-')).length; // noop — labels added below
         const scLabelInfos: PlanetLabelInfo[] = [];
         SPACECRAFT_DEF.forEach(({ key, name, color, size }) => {
@@ -1048,11 +1079,22 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           // Horizons frame → scene frame: scene_x=hY, scene_y=hZ, scene_z=hX
           const [sx, sy, sz] = [pos.y * SCENE_SCALE, pos.z * SCENE_SCALE, pos.x * SCENE_SCALE];
           spacecraftPositionsRef.current[key] = { x: sx, y: sy, z: sz, name, color: '#' + color.toString(16).padStart(6,'0') };
+          // Store the offset from Earth at snapshot time — the animation loop
+          // will rotate this by (current Earth lon - snap Earth lon) each frame
+          // so the spacecraft follows Earth around the Sun.
+          const meshName = `sc-${key}`;
+          spacecraftOffsetsRef.current[key] = {
+            dx: sx - snapEarthX,
+            dy: sy,            // ecliptic plane is y=0, so Earth's y is 0; dy is just sy
+            dz: sz - snapEarthZ,
+            snapEarthLon,
+            meshName,
+          };
           // Tetrahedron marker
           const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 });
           const mesh = new THREE.Mesh(new THREE.TetrahedronGeometry(size, 0), mat);
           mesh.position.set(sx, sy, sz);
-          mesh.name = `sc-${key}`;
+          mesh.name = meshName;
           // Point light for glow
           const light = new THREE.PointLight(color, 0.4, size * 80);
           mesh.add(light);
@@ -1209,6 +1251,47 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           );
           // Tidally locked: Moon's rotation.y = moonAngle so same face always toward Earth
           moon.mesh.rotation.y = moonAngle + Math.PI;
+        }
+      }
+
+      // ── Spacecraft position update ────────────────────────────────────────
+      // The solo-worker gives us absolute heliocentric positions at a single
+      // snapshot time. Leaving those positions frozen in world space causes
+      // L1 spacecraft (ACE, DSCOVR, SWFO-L1, IMAP) to appear detached from
+      // Earth whenever the user scrubs the timeline. To fix that, at snapshot
+      // time we recorded each spacecraft's offset from Earth and Earth's
+      // ecliptic longitude. Each frame we rotate that offset by the change in
+      // Earth's longitude between snapshot time and simulation time, then
+      // re-anchor it to Earth's current scene position.
+      //
+      // For L1 spacecraft this is essentially exact — L1 is on the Sun–Earth
+      // line by construction, so rotating the offset with Earth's orbit keeps
+      // them locked in place relative to Earth. For heliocentric spacecraft
+      // (SolO, STEREO-A) it's an approximation, but far better than leaving
+      // them stationary while Earth orbits around them.
+      const scGroupLocal = spacecraftGroupRef.current;
+      const earthForSc = celestialBodiesRef.current.EARTH?.mesh;
+      const scOffsets = spacecraftOffsetsRef.current;
+      if (scGroupLocal && earthForSc && scOffsets) {
+        const earthLonNow = computeEclipticLongitude('EARTH', simulationTimeMs);
+        const earthPosNow = new THREE.Vector3();
+        earthForSc.getWorldPosition(earthPosNow);
+        for (const key in scOffsets) {
+          const off = scOffsets[key];
+          const mesh = scGroupLocal.children.find((m: any) => m.name === off.meshName);
+          if (!mesh) continue;
+          // Rotate (dx, dz) in the XZ plane by Δlon around the Y axis. Earth is
+          // placed via (sin(lon), 0, cos(lon)) so increasing longitude rotates
+          // +X toward -Z. The rotation matrix for a vector (x, z) about the Y
+          // axis by angle θ (using the same sin/cos convention) is:
+          //     x' = x·cos(θ) + z·sin(θ)
+          //     z' = -x·sin(θ) + z·cos(θ)
+          const dLon = earthLonNow - off.snapEarthLon;
+          const cosD = Math.cos(dLon);
+          const sinD = Math.sin(dLon);
+          const rx = off.dx * cosD + off.dz * sinD;
+          const rz = -off.dx * sinD + off.dz * cosD;
+          mesh.position.set(earthPosNow.x + rx, earthPosNow.y + off.dy, earthPosNow.z + rz);
         }
       }
 
