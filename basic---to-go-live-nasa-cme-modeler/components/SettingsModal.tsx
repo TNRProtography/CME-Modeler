@@ -474,10 +474,26 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         setNotificationStatus(Notification.permission);
       }
       const loadedNotificationSettings: Record<string, boolean> = {};
+      let shockPrefChanged = false;
       ALL_NOTIFICATION_IDS.forEach(id => {
-        loadedNotificationSettings[id] = getNotificationPreference(id);
+        if (SHOCK_NOTIFICATION_IDS.has(id)) {
+          // Shock notifications are "coming soon" — always force off in the UI,
+          // and persist false locally so any previously-enabled subscribers get
+          // cleared out. We also sync with the server below.
+          loadedNotificationSettings[id] = false;
+          if (getNotificationPreference(id) !== false) {
+            setNotificationPreference(id, false);
+            shockPrefChanged = true;
+          }
+        } else {
+          loadedNotificationSettings[id] = getNotificationPreference(id);
+        }
       });
       setNotificationSettings(loadedNotificationSettings);
+      if (shockPrefChanged) {
+        // Sync the forced-off shock prefs with the push worker.
+        updatePushSubscriptionPreferences();
+      }
       const storedGpsPref = localStorage.getItem(LOCATION_PREF_KEY);
       setUseGpsAutoDetect(storedGpsPref === null ? true : JSON.parse(storedGpsPref));
       checkAppInstallationStatus();
@@ -522,8 +538,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       if (!hasAnyPref) {
         const defaultOn: Record<string, boolean> = {};
         ALL_NOTIFICATION_IDS.forEach(id => {
-          setNotificationPreference(id, true);
-          defaultOn[id] = true;
+          // Shock notifications are "coming soon" — always default them OFF,
+          // even on first-time subscribe, because the user can't turn them off.
+          const enabled = !SHOCK_NOTIFICATION_IDS.has(id);
+          setNotificationPreference(id, enabled);
+          defaultOn[id] = enabled;
         });
         setNotificationSettings(defaultOn);
       }
@@ -868,19 +887,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                       <h4 className="text-sm font-semibold text-neutral-300 mb-1">{group.group}</h4>
                       <p className="text-xs text-neutral-500 mb-3">{group.description}</p>
                       <div className="space-y-3">
-                        {group.items.map(item => (
+                        {group.items.map(item => {
+                          const isShock = SHOCK_NOTIFICATION_IDS.has(item.id);
+                          return (
                           <div key={item.id}>
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex items-center gap-1.5 flex-1 min-w-0">
                                 <ToggleSwitch
                                   label={item.label}
-                                  checked={notificationSettings[item.id] ?? false}
+                                  checked={isShock ? false : (notificationSettings[item.id] ?? false)}
                                   onChange={(checked) => handleNotificationToggle(item.id, checked)}
+                                  disabled={isShock}
                                 />
-                                {SHOCK_NOTIFICATION_IDS.has(item.id) && (
-                                  <span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide bg-amber-500/15 text-amber-400 border border-amber-500/30">
-                                    <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                                    BETA
+                                {isShock && (
+                                  <span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide bg-sky-500/15 text-sky-300 border border-sky-500/30">
+                                    <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                    COMING SOON
                                   </span>
                                 )}
                                 {'tooltip' in item && (
@@ -891,14 +913,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                   >?</button>
                                 )}
                               </div>
-                              <button
-                                onClick={() => handleTestCategory(item.id)}
-                                className={chipActionClass}
-                              >
-                                Test
-                              </button>
+                              {!isShock && (
+                                <button
+                                  onClick={() => handleTestCategory(item.id)}
+                                  className={chipActionClass}
+                                >
+                                  Test
+                                </button>
+                              )}
                             </div>
-                            <p className="text-xs text-neutral-600 mt-1 ml-1">{item.description}</p>
+                            <p className={`text-xs mt-1 ml-1 ${isShock ? 'text-neutral-700' : 'text-neutral-600'}`}>{item.description}</p>
                             {/* Mode selector — only for overnight-watch */}
                             {item.id === 'overnight-watch' && notificationSettings[item.id] && (
                               <div className="mt-3 ml-1 p-3 bg-neutral-800/60 border border-neutral-700/50 rounded-lg">
@@ -929,7 +953,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                               </div>
                             )}
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   ))}

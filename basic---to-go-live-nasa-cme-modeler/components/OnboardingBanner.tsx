@@ -7,6 +7,73 @@ import CloseIcon from './icons/CloseIcon';
 // --- Storage keys ---
 const BANNER_DISMISSED_KEY = 'onboarding_banner_dismissed_v1';
 
+// Shock notifications are "coming soon" — always excluded from presets and
+// defaults so the user never gets them enabled during onboarding.
+const SHOCK_IDS = new Set(['shock-ff', 'shock-sf', 'shock-fr', 'shock-sr', 'shock-imf']);
+
+// --- Presets ---
+// Each preset answers the question "how do you want to experience aurora?"
+// The `prefs` list is the set of notification IDs to enable. All other IDs
+// (except shocks, which are always off) are disabled. `overnightMode` sets
+// the threshold for the nightly "worth watching" summary.
+type PresetId = 'naked' | 'phone' | 'dslr' | 'everything' | 'custom';
+interface Preset {
+  id: PresetId;
+  emoji: string;
+  title: string;
+  tagline: string;
+  description: string;
+  prefs: string[];               // notification IDs to enable
+  overnightMode: OvernightMode;
+}
+const PRESETS: Preset[] = [
+  {
+    id: 'naked',
+    emoji: '👁️',
+    title: 'Naked-eye only',
+    tagline: 'The big ones',
+    description: 'Minimal alerts — only when aurora should be visible to the naked eye from your location, plus very strong flares and announcements.',
+    prefs: ['visibility-naked', 'overnight-watch', 'flare-X1', 'flare-X5', 'flare-X10', 'admin-broadcast'],
+    overnightMode: 'eye',
+  },
+  {
+    id: 'phone',
+    emoji: '📱',
+    title: 'Phone camera',
+    tagline: 'A practical middle ground',
+    description: 'Alerts when aurora is bright enough for a phone camera or better, plus meaningful flare activity (M5+) and nightly watch.',
+    prefs: ['visibility-phone', 'visibility-naked', 'overnight-watch', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'admin-broadcast'],
+    overnightMode: 'phone',
+  },
+  {
+    id: 'dslr',
+    emoji: '📷',
+    title: 'DSLR / early warning',
+    tagline: 'Maximum lead time',
+    description: 'Catch aurora as soon as it becomes camera-detectable, with broader flare coverage (M1+). Best if you want time to drive somewhere dark.',
+    prefs: ['visibility-dslr', 'visibility-phone', 'visibility-naked', 'overnight-watch', 'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'admin-broadcast'],
+    overnightMode: 'camera',
+  },
+  {
+    id: 'everything',
+    emoji: '🔔',
+    title: 'Everything',
+    tagline: 'Full firehose',
+    description: 'Every alert we currently send — all visibility thresholds, all flare classes, and announcements. Best for enthusiasts who want nothing missed.',
+    prefs: ['visibility-dslr', 'visibility-phone', 'visibility-naked', 'overnight-watch', 'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'admin-broadcast'],
+    overnightMode: 'camera',
+  },
+  {
+    id: 'custom',
+    emoji: '⚙️',
+    title: 'Custom',
+    tagline: 'Pick individually',
+    description: 'Skip the preset and choose each alert yourself.',
+    prefs: [],
+    overnightMode: 'phone',
+  },
+];
+
 // --- Notification groups (mirrors SettingsModal, but with plain-English tooltips for newcomers) ---
 const NOTIFICATION_GROUPS = [
   {
@@ -181,9 +248,20 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
   const [prefs, setPrefs] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
     NOTIFICATION_GROUPS.forEach(g => g.items.forEach(item => {
-      initial[item.id] = getNotificationPreference(item.id);
+      // Shocks are "coming soon" — always initialized off, ignoring any
+      // legacy stored value so the user never sees them pre-enabled.
+      initial[item.id] = SHOCK_IDS.has(item.id) ? false : getNotificationPreference(item.id);
     }));
     return initial;
+  });
+  const [selectedPreset, setSelectedPreset] = useState<PresetId | null>(() => {
+    // If the user already has notifications granted, they're returning to edit
+    // existing preferences — skip the forced preset picker and show their
+    // current settings under "Custom" so they can tweak directly.
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      return 'custom';
+    }
+    return null;
   });
   const [isEnabling, setIsEnabling] = useState(false);
   const [permissionStatus, setPermissionStatus] = useState<string>(() =>
@@ -203,7 +281,32 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
   `;
 
   const togglePref = useCallback((id: string) => {
+    if (SHOCK_IDS.has(id)) return; // shocks are locked off — coming soon
     setPrefs(prev => ({ ...prev, [id]: !prev[id] }));
+    // If the user manually tweaks a toggle, mark them as on the "custom" preset
+    // so the detailed list stays visible and the "Enable" button stays active.
+    setSelectedPreset('custom');
+  }, []);
+
+  const applyPreset = useCallback((preset: Preset) => {
+    setSelectedPreset(preset.id);
+    if (preset.id === 'custom') {
+      // Custom = leave the user's current selections alone, just reveal the list.
+      return;
+    }
+    // Build the full prefs object: everything off, then turn on the preset's
+    // list. Shocks stay off regardless.
+    setPrefs(prev => {
+      const next: Record<string, boolean> = {};
+      Object.keys(prev).forEach(id => {
+        if (SHOCK_IDS.has(id)) { next[id] = false; return; }
+        next[id] = preset.prefs.includes(id);
+      });
+      return next;
+    });
+    // Also update overnight-watch mode to match the preset.
+    setOvernightModeState(preset.overnightMode);
+    setOvernightMode(preset.overnightMode);
   }, []);
 
   const handleEnable = useCallback(async () => {
@@ -244,10 +347,14 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
     await updatePushSubscriptionPreferences();
   }, []);
 
-  const allSelected = Object.values(prefs).every(Boolean);
+  // Compute allSelected ignoring shocks, since they're locked off (coming soon).
+  const allSelected = Object.entries(prefs).every(([id, v]) => SHOCK_IDS.has(id) || v);
   const toggleAll = () => {
     const next = !allSelected;
-    setPrefs(prev => Object.fromEntries(Object.keys(prev).map(k => [k, next])));
+    setPrefs(prev => Object.fromEntries(
+      Object.keys(prev).map(k => [k, SHOCK_IDS.has(k) ? false : next])
+    ));
+    setSelectedPreset('custom');
   };
 
   const alreadyGranted = permissionStatus === 'granted';
@@ -274,76 +381,144 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
         {/* Body */}
         <div className="overflow-y-auto flex-1 p-4 space-y-5 styled-scrollbar">
 
-          {/* Toggle all */}
-          <button
-            onClick={toggleAll}
-            className="w-full text-xs text-sky-400 hover:text-sky-300 text-left transition-colors"
-          >
-            {allSelected ? 'Deselect all' : 'Select all'}
-          </button>
-
-          {NOTIFICATION_GROUPS.map(group => (
-            <div key={group.group}>
-              <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mb-1">{group.group}</p>
-              <p className="text-xs text-neutral-500 mb-2">{group.description}</p>
-              <div className="space-y-2">
-                {group.items.map(item => (
-                  <React.Fragment key={item.id}>
-                  <div className="flex items-start gap-3 p-3 bg-neutral-900 rounded-xl border border-neutral-800">
-                    <button
-                      onClick={() => togglePref(item.id)}
-                      className={`relative flex-shrink-0 w-10 h-6 rounded-full transition-colors duration-200 mt-0.5 focus:outline-none ${prefs[item.id] ? 'bg-sky-500' : 'bg-neutral-700'}`}
-                      aria-pressed={prefs[item.id]}
-                    >
-                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${prefs[item.id] ? 'translate-x-4' : 'translate-x-0'}`} />
-                    </button>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-sm">{item.emoji}</span>
-                        <span className="text-sm font-medium text-neutral-200">{item.label}</span>
-                        <button
-                          onClick={() => setInfoModalData({ title: `About: ${item.label}`, content: buildStatTooltip(item.label, item.plain, item.auroraEffect ?? item.plain, item.advanced ?? '') })}
-                          className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
-                          title={`About ${item.label}`}
-                        >?</button>
+          {/* --- Preset picker --- */}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">How do you want to experience aurora?</p>
+            <p className="text-xs text-neutral-500 mb-3">Pick the option that matches how you watch. You can fine-tune below, or change this anytime in Settings.</p>
+            <div className="grid grid-cols-1 gap-2">
+              {PRESETS.map(preset => {
+                const active = selectedPreset === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    onClick={() => applyPreset(preset)}
+                    className={`text-left p-3 rounded-xl border transition-colors ${
+                      active
+                        ? 'bg-sky-500/15 border-sky-500/60 ring-1 ring-sky-500/40'
+                        : 'bg-neutral-900 border-neutral-800 hover:bg-neutral-800/60 hover:border-neutral-700'
+                    }`}
+                    aria-pressed={active}
+                  >
+                    <div className="flex items-start gap-3">
+                      <span className="text-xl flex-shrink-0 mt-0.5" aria-hidden="true">{preset.emoji}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`text-sm font-semibold ${active ? 'text-sky-200' : 'text-neutral-200'}`}>{preset.title}</span>
+                          <span className="text-[11px] text-neutral-500">{preset.tagline}</span>
+                        </div>
+                        <p className="text-xs text-neutral-500 mt-1 leading-relaxed">{preset.description}</p>
                       </div>
-                      <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">{item.plain.split('.')[0]}.</p>
+                      {active && (
+                        <span className="flex-shrink-0 text-sky-400 text-sm" aria-hidden="true">✓</span>
+                      )}
                     </div>
-                  </div>
-                  {/* Overnight mode selector -- shown inline when overnight-watch is toggled on */}
-                  {item.id === 'overnight-watch' && prefs[item.id] && (
-                    <div className="mt-2 p-3 bg-neutral-800/60 border border-neutral-700/50 rounded-xl">
-                      <p className="text-xs font-semibold text-neutral-300 mb-2">Send when...</p>
-                      <div className="space-y-1.5">
-                        {([
-                          { value: 'every-night', label: 'Every night', desc: 'Always send a nightly summary, even on quiet nights.' },
-                          { value: 'camera',      label: 'Camera may detect aurora', desc: 'Only when conditions could show aurora on a DSLR.' },
-                          { value: 'phone',       label: 'Phone camera may show aurora', desc: 'Only when aurora should appear on a smartphone camera.' },
-                          { value: 'eye',         label: 'Naked eye aurora likely', desc: 'Only on significant nights -- naked eye visibility possible.' },
-                        ] as { value: OvernightMode; label: string; desc: string }[]).map(opt => (
-                          <label key={opt.value} className={`flex items-start gap-2 cursor-pointer p-2 rounded-lg transition-colors ${overnightMode === opt.value ? 'bg-sky-500/15 border border-sky-500/30' : 'hover:bg-neutral-700/40'}`}>
-                            <input
-                              type="radio"
-                              name="overnight-mode-onboarding"
-                              value={opt.value}
-                              checked={overnightMode === opt.value}
-                              onChange={() => handleOvernightModeChange(opt.value)}
-                              className="mt-0.5 accent-sky-500 flex-shrink-0"
-                            />
-                            <div>
-                              <p className="text-xs font-medium text-neutral-200">{opt.label}</p>
-                              <p className="text-[11px] text-neutral-500 leading-relaxed mt-0.5">{opt.desc}</p>
-                            </div>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  </React.Fragment>
-                ))}
-              </div>
+                  </button>
+                );
+              })}
             </div>
-          ))}
+          </div>
+
+          {/* --- Detailed toggle list (shown once a preset is picked, so new users aren't overwhelmed) --- */}
+          {selectedPreset !== null && (
+            <>
+              <div className="border-t border-neutral-800 pt-4">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                    {selectedPreset === 'custom' ? 'Choose your alerts' : 'Fine-tune your alerts'}
+                  </p>
+                  <button
+                    onClick={toggleAll}
+                    className="text-xs text-sky-400 hover:text-sky-300 transition-colors"
+                  >
+                    {allSelected ? 'Deselect all' : 'Select all'}
+                  </button>
+                </div>
+                <p className="text-xs text-neutral-500 mb-3">
+                  {selectedPreset === 'custom'
+                    ? 'Pick each alert individually below.'
+                    : 'Your preset is applied. Tweak anything below if you want.'}
+                </p>
+              </div>
+
+              {NOTIFICATION_GROUPS.map(group => (
+                <div key={group.group}>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mb-1">{group.group}</p>
+                  <p className="text-xs text-neutral-500 mb-2">{group.description}</p>
+                  <div className="space-y-2">
+                    {group.items.map(item => {
+                      const isShock = SHOCK_IDS.has(item.id);
+                      return (
+                      <React.Fragment key={item.id}>
+                      <div className={`flex items-start gap-3 p-3 rounded-xl border ${isShock ? 'bg-neutral-900/40 border-neutral-800/60 opacity-70' : 'bg-neutral-900 border-neutral-800'}`}>
+                        <button
+                          onClick={() => togglePref(item.id)}
+                          disabled={isShock}
+                          className={`relative flex-shrink-0 w-10 h-6 rounded-full transition-colors duration-200 mt-0.5 focus:outline-none ${
+                            isShock
+                              ? 'bg-neutral-800 cursor-not-allowed'
+                              : prefs[item.id] ? 'bg-sky-500' : 'bg-neutral-700'
+                          }`}
+                          aria-pressed={prefs[item.id]}
+                          aria-disabled={isShock}
+                        >
+                          <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full shadow transition-transform duration-200 ${isShock ? 'bg-neutral-500' : 'bg-white'} ${prefs[item.id] ? 'translate-x-4' : 'translate-x-0'}`} />
+                        </button>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-sm">{item.emoji}</span>
+                            <span className={`text-sm font-medium ${isShock ? 'text-neutral-400' : 'text-neutral-200'}`}>{item.label}</span>
+                            {isShock && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide bg-sky-500/15 text-sky-300 border border-sky-500/30">
+                                <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                COMING SOON
+                              </span>
+                            )}
+                            <button
+                              onClick={() => setInfoModalData({ title: `About: ${item.label}`, content: buildStatTooltip(item.label, item.plain, item.auroraEffect ?? item.plain, item.advanced ?? '') })}
+                              className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
+                              title={`About ${item.label}`}
+                            >?</button>
+                          </div>
+                          <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">{item.plain.split('.')[0]}.</p>
+                        </div>
+                      </div>
+                      {/* Overnight mode selector -- shown inline when overnight-watch is toggled on */}
+                      {item.id === 'overnight-watch' && prefs[item.id] && (
+                        <div className="mt-2 p-3 bg-neutral-800/60 border border-neutral-700/50 rounded-xl">
+                          <p className="text-xs font-semibold text-neutral-300 mb-2">Send when...</p>
+                          <div className="space-y-1.5">
+                            {([
+                              { value: 'every-night', label: 'Every night', desc: 'Always send a nightly summary, even on quiet nights.' },
+                              { value: 'camera',      label: 'Camera may detect aurora', desc: 'Only when conditions could show aurora on a DSLR.' },
+                              { value: 'phone',       label: 'Phone camera may show aurora', desc: 'Only when aurora should appear on a smartphone camera.' },
+                              { value: 'eye',         label: 'Naked eye aurora likely', desc: 'Only on significant nights -- naked eye visibility possible.' },
+                            ] as { value: OvernightMode; label: string; desc: string }[]).map(opt => (
+                              <label key={opt.value} className={`flex items-start gap-2 cursor-pointer p-2 rounded-lg transition-colors ${overnightMode === opt.value ? 'bg-sky-500/15 border border-sky-500/30' : 'hover:bg-neutral-700/40'}`}>
+                                <input
+                                  type="radio"
+                                  name="overnight-mode-onboarding"
+                                  value={opt.value}
+                                  checked={overnightMode === opt.value}
+                                  onChange={() => handleOvernightModeChange(opt.value)}
+                                  className="mt-0.5 accent-sky-500 flex-shrink-0"
+                                />
+                                <div>
+                                  <p className="text-xs font-medium text-neutral-200">{opt.label}</p>
+                                  <p className="text-[11px] text-neutral-500 leading-relaxed mt-0.5">{opt.desc}</p>
+                                </div>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      </React.Fragment>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
 
           {error && (
             <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-xs text-red-300">
@@ -357,14 +532,15 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
           {alreadyGranted ? (
             <button
               onClick={handleSavePrefs}
-              className="w-full py-3 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold text-sm transition-colors"
+              disabled={selectedPreset === null}
+              className="w-full py-3 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:bg-neutral-700 disabled:cursor-not-allowed text-white font-semibold text-sm transition-colors"
             >
-              Save preferences
+              {selectedPreset === null ? 'Pick an option above' : 'Save preferences'}
             </button>
           ) : (
             <button
               onClick={handleEnable}
-              disabled={isEnabling}
+              disabled={isEnabling || selectedPreset === null}
               className="w-full py-3 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:bg-neutral-700 disabled:cursor-not-allowed text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2"
             >
               {isEnabling ? (
@@ -372,6 +548,8 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
                   <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   Enabling...
                 </>
+              ) : selectedPreset === null ? (
+                'Pick an option above'
               ) : (
                 '🔔 Enable notifications'
               )}
