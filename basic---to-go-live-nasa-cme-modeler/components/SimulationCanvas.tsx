@@ -429,7 +429,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   // user scrubs the timeline, instead of leaving them frozen in world space.
   // For heliocentric spacecraft (SolO, STEREO-A) this is an approximation that
   // degrades slowly — far better than keeping them stationary.
-  const spacecraftOffsetsRef = useRef<Record<string, { dx:number; dy:number; dz:number; snapEarthLon:number; meshName:string }>>({});
+  const spacecraftOffsetsRef = useRef<Record<string, { dx:number; dy:number; dz:number; snapEarthLon:number; meshName:string; isL1?:boolean; l1Lateral?:number; l1Vertical?:number }>>({});
 
   // ── CME–CME collision tracking ───────────────────────────────────────────
   // Stores each CME's world position and propagation data from the previous frame.
@@ -1061,45 +1061,101 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const snapEarthRadius = PLANET_DATA_MAP.EARTH.radius;
         const snapEarthX = snapEarthRadius * Math.sin(snapEarthLon);
         const snapEarthZ = snapEarthRadius * Math.cos(snapEarthLon);
-        const SPACECRAFT_DEF: Array<{key:string;name:string;color:number;size:number}> = [
+        // Spacecraft definitions. `isL1` tags those that live at the Sun–Earth
+        // L1 point; for those, we ignore the worker's absolute heliocentric
+        // position and instead place them on the visual Earth-to-Sun line at
+        // the same exaggerated distance used by the L1 POI marker (~15M km,
+        // about 10× true L1 — chosen by the app for visibility). Each L1
+        // spacecraft also gets a tiny lateral + vertical offset so their
+        // markers and labels don't all stack on top of each other.
+        // `l1Lateral` is in scene units, perpendicular to the Earth-Sun line
+        // in the ecliptic plane. `l1Vertical` is in scene units, above/below
+        // the ecliptic plane.
+        const VISUAL_L1_DIST = (15e6 / AU_IN_KM) * SCENE_SCALE; // matches POI_DATA_MAP.L1
+        const SPACECRAFT_DEF: Array<{key:string;name:string;color:number;size:number;isL1?:boolean;l1Lateral?:number;l1Vertical?:number}> = [
           { key:'solo',    name:'SolO',     color:0xf97316, size:0.018 * SCENE_SCALE },
           { key:'stereoA', name:'STEREO-A', color:0xa78bfa, size:0.014 * SCENE_SCALE },
-          { key:'ace',     name:'ACE',      color:0x34d399, size:0.012 * SCENE_SCALE },
-          { key:'dscovr',  name:'DSCOVR',   color:0x67e8f9, size:0.012 * SCENE_SCALE },
-          { key:'imap',    name:'IMAP',     color:0xf0abfc, size:0.012 * SCENE_SCALE },
-          { key:'swfoL1',  name:'SWFO-L1',  color:0xfbbf24, size:0.012 * SCENE_SCALE },
+          // L1 cluster — spread them slightly so labels are readable.
+          { key:'ace',     name:'ACE',      color:0x34d399, size:0.012 * SCENE_SCALE, isL1:true, l1Lateral: -0.018 * SCENE_SCALE, l1Vertical:  0.010 * SCENE_SCALE },
+          { key:'dscovr',  name:'DSCOVR',   color:0x67e8f9, size:0.012 * SCENE_SCALE, isL1:true, l1Lateral:  0.018 * SCENE_SCALE, l1Vertical:  0.010 * SCENE_SCALE },
+          { key:'imap',    name:'IMAP',     color:0xf0abfc, size:0.012 * SCENE_SCALE, isL1:true, l1Lateral: -0.018 * SCENE_SCALE, l1Vertical: -0.010 * SCENE_SCALE },
+          { key:'swfoL1',  name:'SWFO-L1',  color:0xfbbf24, size:0.012 * SCENE_SCALE, isL1:true, l1Lateral:  0.018 * SCENE_SCALE, l1Vertical: -0.010 * SCENE_SCALE },
         ];
         // Clear any previously-placed markers
         while (scGroup.children.length > 0) scGroup.remove(scGroup.children[0]);
         spacecraftOffsetsRef.current = {};
         planetLabelInfos.filter(l => l.id.startsWith('sc-')).length; // noop — labels added below
         const scLabelInfos: PlanetLabelInfo[] = [];
-        SPACECRAFT_DEF.forEach(({ key, name, color, size }) => {
+        SPACECRAFT_DEF.forEach(({ key, name, color, size, isL1, l1Lateral, l1Vertical }) => {
+          const meshName = `sc-${key}`;
+
+          if (isL1) {
+            // L1 spacecraft — ignore worker absolute position. Place at the
+            // visual L1 distance sunward of Earth with small lateral/vertical
+            // offsets so the cluster doesn't collapse into one pixel. The
+            // animation loop will re-anchor to Earth each frame.
+            // Earth-relative offset at snapshot time, in the Earth→Sun frame:
+            //   "sunward" unit vector = -Earth_position_hat
+            //   "lateral" unit vector = perpendicular to sunward in the ecliptic (XZ) plane
+            const earthDirX = Math.sin(snapEarthLon);
+            const earthDirZ = Math.cos(snapEarthLon);
+            const sunwardX = -earthDirX;
+            const sunwardZ = -earthDirZ;
+            // Perpendicular in the ecliptic plane (rotate sunward 90° about Y axis)
+            const latX =  sunwardZ;
+            const latZ = -sunwardX;
+            const lat = l1Lateral ?? 0;
+            const vert = l1Vertical ?? 0;
+            const offX = sunwardX * VISUAL_L1_DIST + latX * lat;
+            const offZ = sunwardZ * VISUAL_L1_DIST + latZ * lat;
+            spacecraftOffsetsRef.current[key] = {
+              dx: offX,
+              dy: vert,
+              dz: offZ,
+              snapEarthLon,
+              meshName,
+              isL1: true,
+              l1Lateral: lat,
+              l1Vertical: vert,
+            };
+            // Initial absolute position (animation loop will correct per frame)
+            const initX = snapEarthX + offX;
+            const initZ = snapEarthZ + offZ;
+            spacecraftPositionsRef.current[key] = { x: initX, y: vert, z: initZ, name, color: '#' + color.toString(16).padStart(6,'0') };
+            const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 });
+            const mesh = new THREE.Mesh(new THREE.TetrahedronGeometry(size, 0), mat);
+            mesh.position.set(initX, vert, initZ);
+            mesh.name = meshName;
+            const light = new THREE.PointLight(color, 0.4, size * 80);
+            mesh.add(light);
+            scGroup.add(mesh);
+            const labelId = `sc-${key}-label`;
+            scLabelInfos.push({ id: labelId, name, mesh });
+            celestialBodiesRef.current[`SC_${key.toUpperCase()}`] = { mesh, name, labelId };
+            return;
+          }
+
+          // Non-L1 spacecraft (SolO, STEREO-A) — use the worker's heliocentric
+          // position and rotate its Earth-relative offset with Earth's orbit
+          // each frame.
           const pos = positions[key]; if (!pos?.x && pos?.x !== 0) return;
           // Horizons frame → scene frame: scene_x=hY, scene_y=hZ, scene_z=hX
           const [sx, sy, sz] = [pos.y * SCENE_SCALE, pos.z * SCENE_SCALE, pos.x * SCENE_SCALE];
           spacecraftPositionsRef.current[key] = { x: sx, y: sy, z: sz, name, color: '#' + color.toString(16).padStart(6,'0') };
-          // Store the offset from Earth at snapshot time — the animation loop
-          // will rotate this by (current Earth lon - snap Earth lon) each frame
-          // so the spacecraft follows Earth around the Sun.
-          const meshName = `sc-${key}`;
           spacecraftOffsetsRef.current[key] = {
             dx: sx - snapEarthX,
-            dy: sy,            // ecliptic plane is y=0, so Earth's y is 0; dy is just sy
+            dy: sy,
             dz: sz - snapEarthZ,
             snapEarthLon,
             meshName,
           };
-          // Tetrahedron marker
           const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 });
           const mesh = new THREE.Mesh(new THREE.TetrahedronGeometry(size, 0), mat);
           mesh.position.set(sx, sy, sz);
           mesh.name = meshName;
-          // Point light for glow
           const light = new THREE.PointLight(color, 0.4, size * 80);
           mesh.add(light);
           scGroup.add(mesh);
-          // Register for labels
           const labelId = `sc-${key}-label`;
           scLabelInfos.push({ id: labelId, name, mesh });
           celestialBodiesRef.current[`SC_${key.toUpperCase()}`] = { mesh, name, labelId };
