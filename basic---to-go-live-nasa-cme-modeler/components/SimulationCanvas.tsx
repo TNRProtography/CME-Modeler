@@ -831,7 +831,27 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(75, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.001 * SCENE_SCALE, 120 * SCENE_SCALE);
-    camera.position.set(SCENE_SCALE * -2.2, SCENE_SCALE * 1.8, SCENE_SCALE * 5.5); // Start at angled side view showing full inner solar system
+    // Initial camera — place directly behind Earth (Sun → Earth → Camera)
+    // using today's Earth longitude. This matches the SIDE+EARTH view that
+    // moveCamera animates to, avoiding a first-frame flash from the old
+    // hard-coded position which could put the camera on the opposite side
+    // of the Sun depending on the date.
+    {
+      const initLon = computeEclipticLongitude('EARTH', Date.now());
+      const r = PLANET_DATA_MAP.EARTH.radius;
+      const earthX = r * Math.sin(initLon);
+      const earthZ = r * Math.cos(initLon);
+      const behindLen = Math.hypot(earthX, earthZ) || 1;
+      const behindX = earthX / behindLen; // unit vector pointing from Sun to Earth
+      const behindZ = earthZ / behindLen;
+      const backDistance = SCENE_SCALE * 0.22;
+      camera.position.set(
+        earthX + behindX * backDistance,
+        SCENE_SCALE * 0.02,
+        earthZ + behindZ * backDistance
+      );
+      camera.lookAt(0, 0, 0);
+    }
     cameraRef.current = camera; onCameraReady(camera);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
@@ -1712,14 +1732,28 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const target = new THREE.Vector3(0, 0, 0);
     const earth = celestialBodiesRef.current.EARTH?.mesh;
     const sun = celestialBodiesRef.current.SUN?.mesh;
-    if (focus === FocusTarget.EARTH && earth) {
+    // On first mount this effect may fire before the THREE scene has had a
+    // chance to add Earth and the Sun. In that case we synthesize Earth's
+    // world position from today's ecliptic longitude so the initial camera
+    // still lands correctly behind Earth looking toward the Sun, rather than
+    // falling through to the generic side view (which would end up on the
+    // far side of the Sun whenever Earth happens to be near -Z today).
+    const getEarthPosFallback = (): any => {
+      if (earth) { const p = new THREE.Vector3(); earth.getWorldPosition(p); return p; }
+      const lon = computeEclipticLongitude('EARTH', Date.now());
+      const r = PLANET_DATA_MAP.EARTH.radius;
+      return new THREE.Vector3(r * Math.sin(lon), 0, r * Math.cos(lon));
+    };
+    const getSunPosFallback = (): any => {
+      if (sun) { const p = new THREE.Vector3(); sun.getWorldPosition(p); return p; }
+      return new THREE.Vector3(0, 0, 0);
+    };
+    if (focus === FocusTarget.EARTH) {
       // For side view, place camera behind Earth, looking toward Sun
       // (Sun -> Earth -> Camera) so CH/HSS positioning is easier to interpret.
-      if (view === ViewMode.SIDE && sun) {
-        const earthPos = new THREE.Vector3();
-        const sunPos = new THREE.Vector3();
-        earth.getWorldPosition(earthPos);
-        sun.getWorldPosition(sunPos);
+      if (view === ViewMode.SIDE) {
+        const earthPos = getEarthPosFallback();
+        const sunPos = getSunPosFallback();
         target.copy(sunPos);
 
         const behindDir = earthPos.clone().sub(sunPos).normalize();
@@ -1732,7 +1766,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         gsap.to(controlsRef.current.target, { duration: 1.2, x: target.x, y: target.y, z: target.z, ease: "power2.inOut", onUpdate: () => controlsRef.current.update() });
         return;
       }
-      earth.getWorldPosition(target);
+      target.copy(getEarthPosFallback());
     }
     const pos = view === ViewMode.TOP
       ? new THREE.Vector3(target.x, target.y + SCENE_SCALE * 4.2, target.z + 0.01)
