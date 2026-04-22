@@ -23,7 +23,6 @@ const MAX_FRAMES_TO_CHECK = 400;
 const HUXT_ANIMATION_URL = 'https://swxforecastlab.s3.eu-west-2.amazonaws.com/WSA_DONKI_huxt_animation_latest.mp4';
 const HUXT_FORECAST_IMAGE_URL = 'https://swxforecastlab.s3.eu-west-2.amazonaws.com/WSA_DONKI_huxt_forecast_latest.png';
 const ELEVO_ANIMATION_URL = 'https://helioforecast.space/static/sync/elevo/elevo.mp4';
-const EUHFORIA_ANIMATION_URL = 'https://swe.ssa.esa.int/DOCS/portal_images/uk_ral_euhforia_earth.mp4';
 
 // --- HELPERS ---
 const formatNZTimestamp = (isoString: string | null | number) => {
@@ -254,19 +253,6 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
                 </div>
               </ModelCard>
 
-              <ModelCard 
-                title="EUHFORIA (ESA)" 
-                source="ESA Space Weather" 
-                sourceUrl="https://swe.ssa.esa.int/heliospheric-weather"
-                description={<p>A 3D magnetohydrodynamic model from the European Space Agency for operational forecasting.</p>}
-              >
-                <div 
-                  onClick={() => setViewerMedia({ url: EUHFORIA_ANIMATION_URL, type: 'video' })}
-                  className="bg-neutral-800/50 p-2 rounded-lg relative flex items-center justify-center hover:ring-2 ring-sky-400 transition-shadow cursor-pointer"
-                >
-                    <video src={EUHFORIA_ANIMATION_URL} autoPlay loop muted playsInline className="rounded w-full aspect-square object-cover bg-black">Your browser does not support the video tag.</video>
-                </div>
-              </ModelCard>
             </div>
 
         </div>
