@@ -17,6 +17,13 @@ import {
   updatePushSubscriptionPreferences // IMPORT THE NEW FUNCTION
 } from '../utils/notifications.ts';
 import { PageViewStats } from '../utils/pageViews';
+import {
+  NOTIFICATION_PRESETS,
+  NOTIFICATION_TEMPLATE_KEY,
+  detectPresetFromPrefs,
+  getPresetById,
+  type PresetId,
+} from '../utils/notificationPresets';
 
 interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string | React.ReactNode; }
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
@@ -419,6 +426,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [notifHistory, setNotifHistory] = useState<NotificationHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  // Which notification template the user currently has selected. Drives
+  // whether the full per-notification list is shown (only for 'custom').
+  // Persisted across sessions in localStorage (same key written by the
+  // onboarding banner) so the two surfaces stay in sync.
+  const [selectedTemplate, setSelectedTemplate] = useState<PresetId>('custom');
 
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -494,6 +506,24 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         // Sync the forced-off shock prefs with the push worker.
         updatePushSubscriptionPreferences();
       }
+      // Pick an initial template for the selector. Priority order:
+      //   1. Whatever the user explicitly saved (from onboarding or a previous
+      //      settings visit) — this honours their declared intent.
+      //   2. Otherwise, see if their current prefs happen to match one of the
+      //      presets exactly — handy for returning users who onboarded before
+      //      we started persisting the template choice.
+      //   3. Fallback: 'custom' so the full list is visible and nothing's hidden.
+      let initialTemplate: PresetId = 'custom';
+      try {
+        const stored = localStorage.getItem(NOTIFICATION_TEMPLATE_KEY) as PresetId | null;
+        if (stored && NOTIFICATION_PRESETS.some(p => p.id === stored)) {
+          initialTemplate = stored;
+        } else {
+          const detected = detectPresetFromPrefs(loadedNotificationSettings);
+          if (detected) initialTemplate = detected;
+        }
+      } catch { /* localStorage blocked — stick with 'custom' */ }
+      setSelectedTemplate(initialTemplate);
       const storedGpsPref = localStorage.getItem(LOCATION_PREF_KEY);
       setUseGpsAutoDetect(storedGpsPref === null ? true : JSON.parse(storedGpsPref));
       checkAppInstallationStatus();
@@ -545,6 +575,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           defaultOn[id] = enabled;
         });
         setNotificationSettings(defaultOn);
+        // "Everything on (except shocks)" matches the 'everything' preset
+        // exactly — surface that to the user so the picker reflects their
+        // actual state rather than falling back to 'custom'.
+        setSelectedTemplate('everything');
+        try { localStorage.setItem(NOTIFICATION_TEMPLATE_KEY, 'everything'); } catch { /* no-op */ }
       }
       const subscription = await subscribeUserToPush();
       if (subscription) {
@@ -559,6 +594,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleNotificationToggle = useCallback((id: string, checked: boolean) => {
     setNotificationSettings(prev => ({ ...prev, [id]: checked }));
     setNotificationPreference(id, checked);
+    // If the user manually tweaks a toggle, they're no longer following a
+    // preset. Switch to 'custom' so the list stays visible and reflects
+    // their actual preferences rather than a drifted preset label.
+    setSelectedTemplate('custom');
+    try { localStorage.setItem(NOTIFICATION_TEMPLATE_KEY, 'custom'); } catch { /* no-op */ }
     // THIS IS THE FIX: Call the new function to sync changes with the server.
     updatePushSubscriptionPreferences();
   }, []);
@@ -716,6 +756,49 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleOvernightModeChange = useCallback(async (mode: OvernightMode) => {
     setOvernightModeState(mode);
     setOvernightMode(mode);
+    // Overnight mode is part of the preset definition, so a manual override
+    // means the user is no longer strictly on a preset.
+    setSelectedTemplate('custom');
+    try { localStorage.setItem(NOTIFICATION_TEMPLATE_KEY, 'custom'); } catch { /* no-op */ }
+    await updatePushSubscriptionPreferences();
+  }, []);
+
+  /**
+   * User picked a template card. For non-custom presets, rewrite all the
+   * per-notification prefs and the overnight-watch mode in one go so the
+   * full preset takes effect immediately. For 'custom', we just reveal the
+   * list — the user's current selections are left alone so they can start
+   * tweaking without losing what they had.
+   */
+  const handleTemplateSelect = useCallback(async (id: PresetId) => {
+    setSelectedTemplate(id);
+    try { localStorage.setItem(NOTIFICATION_TEMPLATE_KEY, id); } catch { /* no-op */ }
+
+    const preset = getPresetById(id);
+    if (!preset) {
+      // 'custom' or unknown → no bulk rewrite, just reveal the list.
+      return;
+    }
+
+    // Build a new prefs object: every id off, then switch on the preset's
+    // list. Shocks stay force-off regardless (they're "coming soon").
+    const enabledSet = new Set(preset.prefs);
+    const nextPrefs: Record<string, boolean> = {};
+    ALL_NOTIFICATION_IDS.forEach(notifId => {
+      if (SHOCK_NOTIFICATION_IDS.has(notifId)) { nextPrefs[notifId] = false; return; }
+      nextPrefs[notifId] = enabledSet.has(notifId);
+    });
+
+    // Persist locally and update UI state
+    Object.entries(nextPrefs).forEach(([notifId, enabled]) => setNotificationPreference(notifId, enabled));
+    setNotificationSettings(nextPrefs);
+
+    // Apply the preset's overnight mode
+    setOvernightModeState(preset.overnightMode);
+    setOvernightMode(preset.overnightMode);
+
+    // Push the full set of changes to the server in a single sync. Not strictly
+    // required but avoids N tiny requests when a preset touches many toggles.
     await updatePushSubscriptionPreferences();
   }, []);
 
@@ -881,6 +964,51 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="bg-green-900/30 border border-green-700/50 rounded-md p-3 text-sm">
                     <p className="text-green-300">Push notifications are enabled! You can now customize your alerts below.</p>
                 </div>
+
+                {/* Template picker — pick a preset or "Custom" to choose individually. */}
+                <div className="bg-neutral-900/50 border border-neutral-700/60 rounded-lg p-4">
+                  <h4 className="text-sm font-semibold text-neutral-300 mb-1">Alert template</h4>
+                  <p className="text-xs text-neutral-500 mb-3">
+                    Pick a template to apply a sensible bundle of alerts at once. Choose <span className="text-neutral-300">Custom</span> to set every notification individually.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {NOTIFICATION_PRESETS.map(preset => {
+                      const active = selectedTemplate === preset.id;
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => handleTemplateSelect(preset.id)}
+                          className={`text-left p-3 rounded-lg border transition-colors ${
+                            active
+                              ? 'bg-sky-500/15 border-sky-500/50 ring-1 ring-sky-500/40'
+                              : 'bg-neutral-800/40 border-neutral-700/50 hover:bg-neutral-800/70 hover:border-neutral-600/60'
+                          }`}
+                          aria-pressed={active}
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-lg leading-none" aria-hidden="true">{preset.emoji}</span>
+                            <span className={`text-sm font-semibold ${active ? 'text-sky-200' : 'text-neutral-200'}`}>{preset.title}</span>
+                            {active && (
+                              <span className="ml-auto text-[10px] font-bold uppercase tracking-wide text-sky-300 bg-sky-500/20 px-1.5 py-0.5 rounded">Selected</span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-neutral-400 leading-relaxed">{preset.description}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {selectedTemplate !== 'custom' && (
+                    <p className="text-[11px] text-neutral-500 mt-3">
+                      Individual alert toggles are hidden while a template is selected. Pick <span className="text-neutral-300">Custom</span> above to show them.
+                    </p>
+                  )}
+                </div>
+
+                {/* Per-alert list — only shown when the user has chosen to customise.
+                    Any manual toggle automatically flips selectedTemplate to 'custom',
+                    which is also why this stays visible after the first edit. */}
+                {selectedTemplate === 'custom' && (
                 <div className="space-y-4">
                   {NOTIFICATION_GROUPS.map(group => (
                     <div key={group.group} className="bg-neutral-900/50 border border-neutral-700/60 rounded-lg p-4">
@@ -959,6 +1087,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                   ))}
                 </div>
+                )}
                 <div className="mt-4 space-y-4">
                   {/* Diagnostics */}
                   <div className="bg-neutral-900/50 border border-neutral-700/60 rounded-lg p-4">

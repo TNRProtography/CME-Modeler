@@ -2,77 +2,17 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { subscribeUserToPush, getNotificationPreference, setNotificationPreference, updatePushSubscriptionPreferences, getOvernightMode, setOvernightMode } from '../utils/notifications';
 import type { OvernightMode } from '../utils/notifications';
+import {
+  NOTIFICATION_PRESETS as PRESETS,
+  SHOCK_IDS,
+  NOTIFICATION_TEMPLATE_KEY,
+  type NotificationPreset as Preset,
+  type PresetId,
+} from '../utils/notificationPresets';
 import CloseIcon from './icons/CloseIcon';
 
 // --- Storage keys ---
 const BANNER_DISMISSED_KEY = 'onboarding_banner_dismissed_v1';
-
-// Shock notifications are "coming soon" — always excluded from presets and
-// defaults so the user never gets them enabled during onboarding.
-const SHOCK_IDS = new Set(['shock-ff', 'shock-sf', 'shock-fr', 'shock-sr', 'shock-imf']);
-
-// --- Presets ---
-// Each preset answers the question "how do you want to experience aurora?"
-// The `prefs` list is the set of notification IDs to enable. All other IDs
-// (except shocks, which are always off) are disabled. `overnightMode` sets
-// the threshold for the nightly "worth watching" summary.
-type PresetId = 'naked' | 'phone' | 'dslr' | 'everything' | 'custom';
-interface Preset {
-  id: PresetId;
-  emoji: string;
-  title: string;
-  tagline: string;
-  description: string;
-  prefs: string[];               // notification IDs to enable
-  overnightMode: OvernightMode;
-}
-const PRESETS: Preset[] = [
-  {
-    id: 'naked',
-    emoji: '👁️',
-    title: 'Naked-eye only',
-    tagline: 'The big ones',
-    description: 'Minimal alerts — only when aurora should be visible to the naked eye from your location, plus very strong flares and announcements.',
-    prefs: ['visibility-naked', 'overnight-watch', 'flare-X1', 'flare-X5', 'flare-X10', 'admin-broadcast'],
-    overnightMode: 'eye',
-  },
-  {
-    id: 'phone',
-    emoji: '📱',
-    title: 'Phone camera',
-    tagline: 'A practical middle ground',
-    description: 'Alerts when aurora is bright enough for a phone camera or better, plus meaningful flare activity (M5+) and nightly watch.',
-    prefs: ['visibility-phone', 'visibility-naked', 'overnight-watch', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'admin-broadcast'],
-    overnightMode: 'phone',
-  },
-  {
-    id: 'dslr',
-    emoji: '📷',
-    title: 'DSLR / early warning',
-    tagline: 'Maximum lead time',
-    description: 'Catch aurora as soon as it becomes camera-detectable, with broader flare coverage (M1+). Best if you want time to drive somewhere dark.',
-    prefs: ['visibility-dslr', 'visibility-phone', 'visibility-naked', 'overnight-watch', 'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'admin-broadcast'],
-    overnightMode: 'camera',
-  },
-  {
-    id: 'everything',
-    emoji: '🔔',
-    title: 'Everything',
-    tagline: 'Full firehose',
-    description: 'Every alert we currently send — all visibility thresholds, all flare classes, and announcements. Best for enthusiasts who want nothing missed.',
-    prefs: ['visibility-dslr', 'visibility-phone', 'visibility-naked', 'overnight-watch', 'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'admin-broadcast'],
-    overnightMode: 'camera',
-  },
-  {
-    id: 'custom',
-    emoji: '⚙️',
-    title: 'Custom',
-    tagline: 'Pick individually',
-    description: 'Skip the preset and choose each alert yourself.',
-    prefs: [],
-    overnightMode: 'phone',
-  },
-];
 
 // --- Notification groups (mirrors SettingsModal, but with plain-English tooltips for newcomers) ---
 const NOTIFICATION_GROUPS = [
@@ -315,6 +255,13 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
     try {
       // Save preferences first
       Object.entries(prefs).forEach(([id, enabled]) => setNotificationPreference(id, enabled));
+      // Persist the chosen template so Settings → Push Notifications can show
+      // the same preset selected next time the user visits it. `null` means
+      // "no preset chosen" (shouldn't happen at this point — the save button
+      // is disabled until one is picked — but be defensive).
+      if (selectedPreset) {
+        try { localStorage.setItem(NOTIFICATION_TEMPLATE_KEY, selectedPreset); } catch { /* no-op */ }
+      }
 
       const result = await subscribeUserToPush();
       if (result) {
@@ -330,13 +277,16 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
     } finally {
       setIsEnabling(false);
     }
-  }, [prefs, onDone]);
+  }, [prefs, onDone, selectedPreset]);
 
   const handleSavePrefs = useCallback(async () => {
     Object.entries(prefs).forEach(([id, enabled]) => setNotificationPreference(id, enabled));
+    if (selectedPreset) {
+      try { localStorage.setItem(NOTIFICATION_TEMPLATE_KEY, selectedPreset); } catch { /* no-op */ }
+    }
     await updatePushSubscriptionPreferences();
     onClose();
-  }, [prefs, onClose]);
+  }, [prefs, onClose, selectedPreset]);
 
   const handleOvernightModeChange = useCallback(async (mode: OvernightMode) => {
     setOvernightModeState(mode);
