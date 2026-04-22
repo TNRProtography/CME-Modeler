@@ -6,8 +6,10 @@ import {
   NOTIFICATION_PRESETS as PRESETS,
   SHOCK_IDS,
   NOTIFICATION_TEMPLATE_KEY,
-  type NotificationPreset as Preset,
-  type PresetId,
+} from '../utils/notificationPresets';
+import type {
+  NotificationPreset as Preset,
+  PresetId,
 } from '../utils/notificationPresets';
 import CloseIcon from './icons/CloseIcon';
 

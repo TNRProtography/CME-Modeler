@@ -22,8 +22,8 @@ import {
   NOTIFICATION_TEMPLATE_KEY,
   detectPresetFromPrefs,
   getPresetById,
-  type PresetId,
 } from '../utils/notificationPresets';
+import type { PresetId } from '../utils/notificationPresets';
 
 interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string | React.ReactNode; }
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
