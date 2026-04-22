@@ -82,6 +82,20 @@ async function ensureLibrariesLoaded(): Promise<string> {
   return getGifWorkerBlobUrl();
 }
 
+/**
+ * Load the brand watermark image. Returns null if the fetch fails — the
+ * render is allowed to continue without a watermark in that case.
+ */
+const WATERMARK_URL = '/icons/icon-default.png';
+function loadWatermark(): Promise<HTMLImageElement | null> {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = WATERMARK_URL;
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Scene constants — tuned for the dual-view product look
 // ─────────────────────────────────────────────────────────────────────────────
@@ -89,19 +103,28 @@ async function ensureLibrariesLoaded(): Promise<string> {
 const AU_SCENE_UNITS = 5;   // 1 AU == 5 scene units (gives a comfortable framing)
 const AU_KM = 149_597_870.7;
 
-// Planets drawn in the video. We skip outer planets (they'd be off-screen
-// at the AU scale needed to see CMEs propagate).
-const PLANETS = [
-  { key: 'MERCURY', colour: 0xa6a6a6, size: 0.05, auRadius: 0.387 },
-  { key: 'VENUS',   colour: 0xe8c77a, size: 0.06, auRadius: 0.723 },
-  { key: 'EARTH',   colour: 0x4da6ff, size: 0.07, auRadius: 1.000 },
-  { key: 'MARS',    colour: 0xd96544, size: 0.05, auRadius: 1.524 },
-] as const;
+// Video dimensions — 2:1 aspect because we're drawing two square panels side
+// by side. Bumped up from the original 800×400 for a more detailed product.
+// Note: area scales with the square — 1200×600 is ~2.25× the pixels of 800×400,
+// so encoding will be proportionally slower on low-end devices.
+const FRAME_WIDTH  = 1200;
+const FRAME_HEIGHT = 600;
+const PANEL_SIZE   = 600; // each viewport is square
 
-// Video dimensions — 1:2 aspect because we're drawing two square panels side by side
-const FRAME_WIDTH  = 800;
-const FRAME_HEIGHT = 400;
-const PANEL_SIZE   = 400; // each viewport is square
+// Sun / Earth visual sizes — these are deliberately NOT to scale, they're
+// readability-driven so users can see the bodies clearly at this zoom.
+const SUN_VISUAL_RADIUS   = 0.28;
+const SUN_CORONA_RADIUS   = 0.46;
+const EARTH_VISUAL_RADIUS = 0.16;
+const EARTH_ORBIT_AU      = 1.0;
+
+// GCS "croissant" geometry for CMEs. Ratios chosen so the leading edge sits
+// at ~1.0 × scale (so when scale = Earth distance, bulge hits Earth).
+// Full-π arc (180°) so the legs land exactly on the X axis at y=0 — i.e.,
+// anchored near the Sun, which matches the GCS flux-rope topology.
+const GCS_ARC_RADIUS_FRAC = 0.95;   // bulge distance from Sun, relative to scale
+const GCS_ARC_SPAN        = Math.PI; // half-torus, legs at y=0 (at the Sun)
+const GCS_TUBE_RADIUS_FRAC = 0.35;  // tube thickness, relative to arc radius
 
 // Timeline: last 7 days + next 5 days, 3-hour steps = 96 frames
 const HISTORY_DAYS = 7;
@@ -145,7 +168,10 @@ export async function renderCmeForecastGif(opts: RenderOptions): Promise<RenderR
   const report = (p: RenderProgress) => { onProgress?.(p); };
 
   report({ phase: 'init', current: 0, total: FRAME_COUNT, message: 'Loading libraries...' });
-  const workerBlobUrl = await ensureLibrariesLoaded();
+  const [workerBlobUrl, watermarkImg] = await Promise.all([
+    ensureLibrariesLoaded(),
+    loadWatermark(),
+  ]);
   if (cancelRef?.cancelled) throw new Error('cancelled');
 
   const THREE = (window as any).THREE;
@@ -181,74 +207,101 @@ export async function renderCmeForecastGif(opts: RenderOptions): Promise<RenderR
     scene.add(stars);
   }
 
-  // Sun
+  // Sun — bigger and with a softer corona halo
   {
     const sun = new THREE.Mesh(
-      new THREE.SphereGeometry(0.12, 24, 16),
+      new THREE.SphereGeometry(SUN_VISUAL_RADIUS, 32, 20),
       new THREE.MeshBasicMaterial({ color: 0xffcc55 }),
     );
     scene.add(sun);
-    // Soft corona sprite
-    const coronaMat = new THREE.MeshBasicMaterial({ color: 0xffa84a, transparent: true, opacity: 0.18 });
-    const corona = new THREE.Mesh(new THREE.SphereGeometry(0.22, 20, 14), coronaMat);
-    scene.add(corona);
-  }
-
-  // Planet meshes + orbit rings
-  const planetMeshes: Record<string, any> = {};
-  for (const p of PLANETS) {
-    // Orbit ring (thin circle in the ecliptic plane)
-    const ringGeo = new THREE.RingGeometry(p.auRadius * AU_SCENE_UNITS - 0.006, p.auRadius * AU_SCENE_UNITS + 0.006, 128);
-    const ringMat = new THREE.MeshBasicMaterial({ color: 0x2a3a55, side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.rotation.x = -Math.PI / 2;
-    scene.add(ring);
-
-    // Planet body
-    const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(p.size, 16, 12),
-      new THREE.MeshBasicMaterial({ color: p.colour }),
+    // Inner corona
+    const coronaInner = new THREE.Mesh(
+      new THREE.SphereGeometry(SUN_CORONA_RADIUS * 0.7, 24, 16),
+      new THREE.MeshBasicMaterial({ color: 0xffa84a, transparent: true, opacity: 0.25 }),
     );
-    scene.add(mesh);
-    planetMeshes[p.key] = mesh;
+    scene.add(coronaInner);
+    // Outer corona
+    const coronaOuter = new THREE.Mesh(
+      new THREE.SphereGeometry(SUN_CORONA_RADIUS, 24, 16),
+      new THREE.MeshBasicMaterial({ color: 0xff7a33, transparent: true, opacity: 0.12 }),
+    );
+    scene.add(coronaOuter);
   }
 
-  // ── CME meshes (one per CME, kept as cones oriented from DONKI lat/lon) ──
+  // Earth — bigger, with its orbit ring so users can see where it is
+  // relative to the CME propagation.
+  const earthOrbitR = EARTH_ORBIT_AU * AU_SCENE_UNITS;
+  {
+    const ringGeo = new THREE.RingGeometry(earthOrbitR - 0.01, earthOrbitR + 0.01, 192);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0x3a5278, side: THREE.DoubleSide, transparent: true, opacity: 0.55 });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = -Math.PI / 2; // lay flat in ecliptic
+    scene.add(ring);
+  }
+  const earthMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(EARTH_VISUAL_RADIUS, 24, 16),
+    new THREE.MeshBasicMaterial({ color: 0x4da6ff }),
+  );
+  // Soft glow so Earth reads at the low pixel sizes the side-view panel puts
+  // it at. Additive-ish look via extra opaque sphere one layer out.
+  const earthGlow = new THREE.Mesh(
+    new THREE.SphereGeometry(EARTH_VISUAL_RADIUS * 1.8, 20, 14),
+    new THREE.MeshBasicMaterial({ color: 0x4da6ff, transparent: true, opacity: 0.18 }),
+  );
+  scene.add(earthMesh);
+  scene.add(earthGlow);
+
+  // ── CME meshes (one per CME, GCS croissant oriented from DONKI lat/lon) ──
+  //
+  // We use a partial torus (half-donut shape) to approximate the GCS / flux-
+  // rope "croissant" shape that forms the canonical CME visualisation. The
+  // two feet of the arc sit near the Sun and the bulge points outward along
+  // the propagation axis. As the CME propagates, we uniformly scale the whole
+  // group, mirroring GCS self-similar expansion.
+  //
+  // Geometry orientation (in the group's local frame):
+  //   - Local +Y is the propagation direction (set by setFromUnitVectors below).
+  //   - Torus is built in the XY plane with bulge on +Y and feet straddling +X/-X.
+  //   - This places the arc in the plane that contains the propagation axis,
+  //     so the top-down camera sees the characteristic arc shape.
   interface CmeMesh {
     cme: ProcessedCME;
-    group: any; // THREE.Group rooted at the Sun, oriented along the CME axis
-    cone: any;  // cone child — scaled along axis to show current extent
+    group: any;    // THREE.Group rooted at the Sun, oriented along CME axis
+    arc: any;      // the croissant mesh — scaled uniformly each frame
   }
   const cmeMeshes: CmeMesh[] = cmes
     .filter(c => c.speed > 0)
     .map(cme => {
       const group = new THREE.Group();
 
-      // Cone geometry — represents the half-angle cone from DONKI.
-      // THREE's ConeGeometry puts the apex at (+height/2) and base at
-      // (-height/2) in local Y. We want the apex (the point) at the Sun
-      // and the base expanding outward along the propagation direction.
-      // So we flip (rotate 180° about X) and then translate so apex is at y=0.
-      //
-      // Cap half-angle at 60° — beyond that tan() grows steeply and the cone
-      // starts to look absurd on screen. Halo CMEs often have halfAngle ~ 90°
-      // in DONKI, but the visual intent is still "broad cone aimed along the
-      // axis" rather than "nearly flat disc".
-      const cappedHalfAngleDeg = Math.min(60, Math.max(5, cme.halfAngle || 30));
-      const halfAngleRad = (cappedHalfAngleDeg * Math.PI) / 180;
-      const coneGeo = new THREE.ConeGeometry(Math.tan(halfAngleRad), 1, 24, 1, true);
-      coneGeo.rotateX(Math.PI); // apex now at y = -0.5, base at y = +0.5
-      coneGeo.translate(0, 0.5, 0); // apex at y = 0, base at y = +1
-      const coneMat = new THREE.MeshBasicMaterial({
-        color: cme.isEarthDirected ? 0xff6b4a : 0xffaa66,
+      // DONKI's halfAngle drives how "fat" the arc looks (wider angle → thicker
+      // tube). Cap to sensible visual bounds to avoid halo CMEs looking absurd.
+      const cappedHalfAngleDeg = Math.min(55, Math.max(10, cme.halfAngle || 30));
+      const tubeFrac = GCS_TUBE_RADIUS_FRAC * (cappedHalfAngleDeg / 30);
+
+      // Torus: radius = arc radius (distance Sun→bulge), tube radius from above.
+      // Default torus lies in XY plane, arc starting at (+R, 0, 0) going CCW
+      // through (0, +R, 0) to (-R, 0, 0). With span = π, this gives us exactly
+      // the shape we want: legs anchored on the X axis at y=0 (at the Sun),
+      // bulge at +Y (outward along propagation). No rotation needed.
+      const torusGeo = new THREE.TorusGeometry(
+        GCS_ARC_RADIUS_FRAC,
+        GCS_ARC_RADIUS_FRAC * tubeFrac,
+        10,                // radial segments (tube cross-section)
+        36,                // tubular segments (along the arc) — a touch denser for smoothness
+        GCS_ARC_SPAN,      // arc length — half torus (π)
+      );
+
+      const arcMat = new THREE.MeshBasicMaterial({
+        color: cme.isEarthDirected ? 0xff6b4a : 0xffb86b,
         transparent: true,
-        opacity: 0.35,
+        opacity: 0.55,
         side: THREE.DoubleSide,
         depthWrite: false,
       });
-      const cone = new THREE.Mesh(coneGeo, coneMat);
-      cone.visible = false;
-      group.add(cone);
+      const arc = new THREE.Mesh(torusGeo, arcMat);
+      arc.visible = false;
+      group.add(arc);
 
       // Orient group axis to match CME lat/lon.
       // Stonyhurst lon 0° = toward Earth at eruption time — same convention as
@@ -263,7 +316,7 @@ export async function renderCmeForecastGif(opts: RenderOptions): Promise<RenderR
       group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
 
       scene.add(group);
-      return { cme, group, cone };
+      return { cme, group, arc };
     });
 
   // ── Cameras ──
@@ -274,8 +327,10 @@ export async function renderCmeForecastGif(opts: RenderOptions): Promise<RenderR
   topCam.up.set(0, 0, 1);
   topCam.lookAt(0, 0, 0);
 
-  // Side view: looking along +X toward origin, ecliptic pole up
-  const sideCam = new THREE.OrthographicCamera(-AU_SCENE_UNITS * 1.8, AU_SCENE_UNITS * 1.8, AU_SCENE_UNITS * 0.9, -AU_SCENE_UNITS * 0.9, 0.1, 100);
+  // Side view: looking along +X toward origin, ecliptic pole up. The vertical
+  // frustum is narrower than the top-down view because the ecliptic is almost
+  // flat — we only need enough room for moderate-latitude CME bulges.
+  const sideCam = new THREE.OrthographicCamera(-AU_SCENE_UNITS * 1.8, AU_SCENE_UNITS * 1.8, AU_SCENE_UNITS * 1.2, -AU_SCENE_UNITS * 1.2, 0.1, 100);
   sideCam.position.set(20, 0, 0);
   sideCam.up.set(0, 1, 0);
   sideCam.lookAt(0, 0, 0);
@@ -322,41 +377,45 @@ export async function renderCmeForecastGif(opts: RenderOptions): Promise<RenderR
 
       const tMs = startMs + frame * MS_PER_FRAME;
 
-      // Update planet positions for this instant
-      for (const p of PLANETS) {
-        const lon = computeEclipticLongitude(p.key, tMs);
-        const mesh = planetMeshes[p.key];
-        const r = p.auRadius * AU_SCENE_UNITS;
-        mesh.position.set(r * Math.sin(lon), 0, r * Math.cos(lon));
-      }
+      // Update Earth position for this instant. We render only the Sun and
+      // Earth per the spec — other planets would clutter this narrow-zoom view.
+      const earthLon = computeEclipticLongitude('EARTH', tMs);
+      const ex = earthOrbitR * Math.sin(earthLon);
+      const ez = earthOrbitR * Math.cos(earthLon);
+      earthMesh.position.set(ex, 0, ez);
+      earthGlow.position.set(ex, 0, ez);
 
-      // Update CME cones
-      for (const { cme, group, cone } of cmeMeshes) {
+      // Update CME croissants
+      for (const { cme, arc } of cmeMeshes) {
         if (tMs < cme.startTime.getTime()) {
-          cone.visible = false;
+          arc.visible = false;
           continue;
         }
         const result = engine.getCMEState(cme.id, tMs);
         if (!result || result.state.distanceKm <= 0) {
-          cone.visible = false;
+          arc.visible = false;
           continue;
         }
-        // Distance in scene units
+        // Distance in scene units — this is the Sun→leading-edge distance we
+        // get back from the propagation engine. Because the croissant's bulge
+        // sits at GCS_ARC_RADIUS_FRAC in local units, and we scale the whole
+        // group by `scale`, the bulge lands at (scale × GCS_ARC_RADIUS_FRAC).
+        // We want the bulge at `lengthUnits`, so scale = lengthUnits / arcFrac.
         const distAu = result.state.distanceKm / AU_KM;
         const lengthUnits = distAu * AU_SCENE_UNITS;
-        if (lengthUnits < 0.02) {
-          cone.visible = false;
+        if (lengthUnits < 0.05) {
+          arc.visible = false;
           continue;
         }
-        // Cap at ~1.8 AU so the cone doesn't shoot off screen
-        const capped = Math.min(lengthUnits, 1.9 * AU_SCENE_UNITS);
-        cone.scale.set(capped, capped, capped);
-        cone.visible = true;
+        const scale = Math.min(lengthUnits, 1.9 * AU_SCENE_UNITS) / GCS_ARC_RADIUS_FRAC;
+        arc.scale.set(scale, scale, scale);
+        arc.visible = true;
 
-        // Fade colour slightly as the CME ages (visual hint of weakening)
+        // Fade opacity as the CME ages — visual hint that the ejecta is
+        // getting diffuse / dispersed as it moves through the heliosphere.
         const elapsedDays = (tMs - cme.startTime.getTime()) / 86_400_000;
-        const freshness = Math.max(0.15, 1 - elapsedDays / 6);
-        cone.material.opacity = 0.15 + 0.25 * freshness;
+        const freshness = Math.max(0.2, 1 - elapsedDays / 6);
+        arc.material.opacity = 0.2 + 0.4 * freshness;
       }
 
       // ── Render both viewports ──
@@ -382,13 +441,14 @@ export async function renderCmeForecastGif(opts: RenderOptions): Promise<RenderR
 
       // Panel titles
       octx.fillStyle = 'rgba(255,255,255,0.85)';
-      octx.font = 'bold 14px system-ui, sans-serif';
+      octx.font = 'bold 18px system-ui, sans-serif';
       octx.textAlign = 'left';
-      octx.fillText('Top-down (ecliptic)', 10, 20);
-      octx.fillText('Side view', PANEL_SIZE + 10, 20);
+      octx.fillText('Top-down (ecliptic)', 14, 26);
+      octx.fillText('Side view', PANEL_SIZE + 14, 26);
 
       // Panel divider
-      octx.strokeStyle = 'rgba(255,255,255,0.2)';
+      octx.strokeStyle = 'rgba(255,255,255,0.22)';
+      octx.lineWidth = 1;
       octx.beginPath();
       octx.moveTo(PANEL_SIZE, 0);
       octx.lineTo(PANEL_SIZE, FRAME_HEIGHT);
@@ -398,8 +458,8 @@ export async function renderCmeForecastGif(opts: RenderOptions): Promise<RenderR
       const d = new Date(tMs);
       const iso = d.toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
       octx.fillStyle = 'rgba(255,255,255,0.92)';
-      octx.font = 'bold 13px ui-monospace, Menlo, Consolas, monospace';
-      octx.fillText(iso, 10, FRAME_HEIGHT - 26);
+      octx.font = 'bold 17px ui-monospace, Menlo, Consolas, monospace';
+      octx.fillText(iso, 14, FRAME_HEIGHT - 38);
 
       // "Now" indicator if we're at the present moment
       const hoursFromNow = (tMs - nowMs) / 3_600_000;
@@ -412,23 +472,40 @@ export async function renderCmeForecastGif(opts: RenderOptions): Promise<RenderR
       octx.fillStyle = Math.abs(hoursFromNow) < HOURS_PER_FRAME / 2
         ? 'rgba(255, 200, 90, 1)'
         : 'rgba(180,200,255,0.85)';
-      octx.fillText(tag, 10, FRAME_HEIGHT - 10);
+      octx.font = 'bold 15px ui-monospace, Menlo, Consolas, monospace';
+      octx.fillText(tag, 14, FRAME_HEIGHT - 16);
 
-      // Attribution — bottom-right, small
-      octx.fillStyle = 'rgba(255,255,255,0.55)';
-      octx.font = '10px system-ui, sans-serif';
+      // Attribution — bottom-right, small. Watermark image (if loaded) sits
+      // just above it and is the main brand element.
+      octx.fillStyle = 'rgba(255,255,255,0.5)';
+      octx.font = '12px system-ui, sans-serif';
       octx.textAlign = 'right';
       octx.fillText(
-        'Spot The Aurora — NASA DONKI + drag-based propagation',
-        FRAME_WIDTH - 8,
-        FRAME_HEIGHT - 8,
+        'Spot The Aurora · NASA DONKI · drag-based propagation',
+        FRAME_WIDTH - 12,
+        FRAME_HEIGHT - 12,
       );
       octx.textAlign = 'left';
 
       // Earth marker text on side view so you can tell which dot is which
       octx.fillStyle = 'rgba(180,210,255,0.9)';
-      octx.font = '10px system-ui, sans-serif';
-      octx.fillText('Earth 1 AU', PANEL_SIZE + 10, FRAME_HEIGHT - 10);
+      octx.font = '13px system-ui, sans-serif';
+      octx.fillText('Earth 1 AU', PANEL_SIZE + 14, FRAME_HEIGHT - 16);
+
+      // Watermark: bottom-right corner, ~10% of frame width. Follows the same
+      // pattern as the coronagraph-diff watermark in SolarActivityDashboard.
+      if (watermarkImg && watermarkImg.naturalWidth > 0 && watermarkImg.naturalHeight > 0) {
+        const targetW = Math.round(FRAME_WIDTH * 0.075);
+        const ratio = watermarkImg.naturalHeight / watermarkImg.naturalWidth;
+        const targetH = Math.round(targetW * ratio);
+        const pad = 16;
+        const wx = FRAME_WIDTH - targetW - pad;
+        const wy = FRAME_HEIGHT - targetH - pad - 20; // leave room for attribution text
+        octx.save();
+        octx.globalAlpha = 0.85;
+        octx.drawImage(watermarkImg, wx, wy, targetW, targetH);
+        octx.restore();
+      }
 
       // ── Composite ──
       cctx.clearRect(0, 0, FRAME_WIDTH, FRAME_HEIGHT);

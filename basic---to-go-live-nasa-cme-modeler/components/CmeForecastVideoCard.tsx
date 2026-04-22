@@ -110,8 +110,8 @@ const CmeForecastVideoCard: React.FC<Props> = ({ cmes, setViewerMedia }) => {
         <h3 className="text-lg font-bold text-white">Spot The Aurora Forecast</h3>
         <p className="text-xs text-neutral-400 mt-1">
           A 12-day CME propagation visualisation (last 7 days + next 5 days) generated
-          from NASA DONKI cone-model data using drag-based propagation. Top-down and
-          side views, like NOAA WSA-Enlil.
+          from NASA DONKI data using drag-based propagation. GCS croissant shape,
+          top-down and side views, like NOAA WSA-Enlil.
         </p>
       </div>
 
