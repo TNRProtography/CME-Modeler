@@ -918,17 +918,24 @@ const App: React.FC = () => {
       });
   }, [activeTimeRange, initialLoadTasks.modelerCmeData, loadCMEData, markInitialTaskDone]);
 
-  const handleRefreshAppData = useCallback(async () => {
+  const handleRefreshAppData = useCallback(() => {
+    // Full app refresh: reload the page so every hook/component re-initialises
+    // with fresh data, while preserving the current URL (pathname + search +
+    // hash) so the user lands back on exactly the page they were viewing.
+    // activePage is derived from window.location.pathname on mount, so the
+    // reload naturally restores the correct page.
     setIsRefreshing(true);
-    setManualRefreshKey((v) => v + 1);
-    // Force CME data re-fetch regardless of page
-    cmePageLoadedOnce.current = false;
-    await Promise.allSettled([
-      loadCMEData(activeTimeRange, { silent: true }),
-    ]);
-    cmePageLoadedOnce.current = true;
-    setIsRefreshing(false);
-  }, [activeTimeRange, loadCMEData]);
+    try {
+      const currentUrl =
+        window.location.pathname + window.location.search + window.location.hash;
+      // Use replace() rather than reload() so any transient in-memory routing
+      // state is cleared, but the URL (and therefore the active page) is kept.
+      window.location.replace(currentUrl);
+    } catch {
+      // Fallback if replace() is unavailable for some reason.
+      window.location.reload();
+    }
+  }, []);
 
 
   useEffect(() => {
