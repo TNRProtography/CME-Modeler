@@ -1716,7 +1716,6 @@ const App: React.FC = () => {
                 isOpen={isForecastModelsModalOpen}
                 onClose={() => navigateToModelerOverlay(null)}
                 setViewerMedia={setViewerMedia}
-                cmes={cmeData}
             />
           </Suspense>
 
