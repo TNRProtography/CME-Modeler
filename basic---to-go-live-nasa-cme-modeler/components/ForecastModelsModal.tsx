@@ -4,6 +4,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import CloseIcon from './icons/CloseIcon';
 import LoadingSpinner from './icons/LoadingSpinner'; 
 import { fetchWSAEnlilSimulations, WSAEnlilSimulation } from '../services/nasaService';
+import CmeForecastVideoCard from './CmeForecastVideoCard';
+import { ProcessedCME } from '../types';
 
 // Define the media object type to ensure type safety when calling setViewerMedia
 type MediaObject = 
@@ -15,6 +17,8 @@ interface ForecastModelsModalProps {
   isOpen: boolean;
   onClose: () => void;
   setViewerMedia: (media: MediaObject | null) => void;
+  /** Current CME list used to generate the Spot The Aurora forecast video */
+  cmes?: ProcessedCME[];
 }
 
 // --- CONSTANTS for the models ---
@@ -53,7 +57,7 @@ const ModelCard: React.FC<{ title: string; source: string; sourceUrl: string; ch
 );
 
 
-const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClose, setViewerMedia }) => {
+const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClose, setViewerMedia, cmes = [] }) => {
   const [noaaEnlilUrls, setNoaaEnlilUrls] = useState<string[]>([]);
   const [isLoadingNoaaEnlil, setIsLoadingNoaaEnlil] = useState(true);
   const [noaaEnlilError, setNoaaEnlilError] = useState<string | null>(null);
@@ -252,6 +256,8 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
                     <video src={ELEVO_ANIMATION_URL} autoPlay loop muted playsInline className="rounded w-full aspect-square object-cover bg-black">Your browser does not support the video tag.</video>
                 </div>
               </ModelCard>
+
+              <CmeForecastVideoCard cmes={cmes} setViewerMedia={setViewerMedia} />
 
             </div>
 
