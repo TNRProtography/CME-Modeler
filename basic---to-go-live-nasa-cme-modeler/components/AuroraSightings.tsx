@@ -9,6 +9,10 @@ import LoadingSpinner from './icons/LoadingSpinner';
 import GuideIcon from './icons/GuideIcon';
 import CloseIcon from './icons/CloseIcon';
 import { NZ_TOWNS } from './nzSubstormIndexData';
+import {
+  trackSightingSubmitted,
+  trackSightingSubmitFailed,
+} from '../utils/analytics';
 
 // --- Local SVG Icon components for the UI ---
 const GreenCheckIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -521,9 +525,12 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
             const newReportInfo = { timestamp: Date.now(), key: result.key };
             setLastReportInfo(newReportInfo);
             localStorage.setItem(LOCAL_STORAGE_LAST_REPORT_KEY, JSON.stringify(newReportInfo));
+            trackSightingSubmitted(String(selectedStatus));
             await fetchSightings();
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+            const message = err instanceof Error ? err.message : 'An unknown error occurred.';
+            setError(message);
+            trackSightingSubmitFailed(message.slice(0, 100));
         } finally {
             setIsSubmitting(false);
             setPendingReport(null);

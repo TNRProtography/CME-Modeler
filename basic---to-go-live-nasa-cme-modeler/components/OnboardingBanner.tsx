@@ -5,8 +5,12 @@ import type { OvernightMode } from '../utils/notifications';
 import {
   NOTIFICATION_PRESETS as PRESETS,
   SHOCK_IDS,
-  NOTIFICATION_TEMPLATE_KEY,
+  recordPresetSelection,
 } from '../utils/notificationPresets';
+import {
+  trackOnboardingBannerShown,
+  trackOnboardingBannerDismissed,
+} from '../utils/analytics';
 import type {
   NotificationPreset as Preset,
   PresetId,
@@ -262,10 +266,10 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
       // "no preset chosen" (shouldn't happen at this point — the save button
       // is disabled until one is picked — but be defensive).
       if (selectedPreset) {
-        try { localStorage.setItem(NOTIFICATION_TEMPLATE_KEY, selectedPreset); } catch { /* no-op */ }
+        recordPresetSelection(selectedPreset, 'onboarding_banner');
       }
 
-      const result = await subscribeUserToPush();
+      const result = await subscribeUserToPush('onboarding_banner');
       if (result) {
         await updatePushSubscriptionPreferences();
         setPermissionStatus('granted');
@@ -284,7 +288,7 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
   const handleSavePrefs = useCallback(async () => {
     Object.entries(prefs).forEach(([id, enabled]) => setNotificationPreference(id, enabled));
     if (selectedPreset) {
-      try { localStorage.setItem(NOTIFICATION_TEMPLATE_KEY, selectedPreset); } catch { /* no-op */ }
+      recordPresetSelection(selectedPreset, 'onboarding_banner');
     }
     await updatePushSubscriptionPreferences();
     onClose();
@@ -553,6 +557,7 @@ const OnboardingBanner: React.FC<OnboardingBannerProps> = ({ deferredInstallProm
   const handleDismiss = useCallback(() => {
     localStorage.setItem(BANNER_DISMISSED_KEY, 'true');
     setDismissed(true);
+    trackOnboardingBannerDismissed();
   }, []);
 
   const handleNotifDone = useCallback(() => {
@@ -570,7 +575,20 @@ const OnboardingBanner: React.FC<OnboardingBannerProps> = ({ deferredInstallProm
   const showNotif = isInstalled && !notifGranted;
 
   // Hide entirely if: dismissed, or nothing left to show
-  if (dismissed || (!showInstall && !showNotif)) return null;
+  const isVisible = !dismissed && (showInstall || showNotif);
+
+  // Fire analytics exactly once per mount when the banner becomes visible.
+  // Using a ref-like guard via useEffect dependency list ensures we don't
+  // re-fire if the visibility briefly flips (e.g. permission polling).
+  const hasTrackedShownRef = useRef(false);
+  useEffect(() => {
+    if (isVisible && !hasTrackedShownRef.current) {
+      hasTrackedShownRef.current = true;
+      trackOnboardingBannerShown();
+    }
+  }, [isVisible]);
+
+  if (!isVisible) return null;
 
   return (
     <>

@@ -22,6 +22,7 @@ import {
   NOTIFICATION_TEMPLATE_KEY,
   detectPresetFromPrefs,
   getPresetById,
+  recordPresetSelection,
 } from '../utils/notificationPresets';
 import type { PresetId } from '../utils/notificationPresets';
 
@@ -557,7 +558,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   
   const handleEnableNotifications = useCallback(async () => {
     setIsSubscribing(true);
-    const permission = await requestNotificationPermission();
+    const permission = await requestNotificationPermission('settings_modal');
     setNotificationStatus(permission);
 
     if (permission === 'granted') {
@@ -579,9 +580,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         // exactly — surface that to the user so the picker reflects their
         // actual state rather than falling back to 'custom'.
         setSelectedTemplate('everything');
-        try { localStorage.setItem(NOTIFICATION_TEMPLATE_KEY, 'everything'); } catch { /* no-op */ }
+        recordPresetSelection('everything', 'settings_modal');
       }
-      const subscription = await subscribeUserToPush();
+      const subscription = await subscribeUserToPush('settings_modal');
       if (subscription) {
         console.log("Successfully subscribed to push notifications.");
       } else {
@@ -598,7 +599,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     // preset. Switch to 'custom' so the list stays visible and reflects
     // their actual preferences rather than a drifted preset label.
     setSelectedTemplate('custom');
-    try { localStorage.setItem(NOTIFICATION_TEMPLATE_KEY, 'custom'); } catch { /* no-op */ }
+    recordPresetSelection('custom', 'settings_modal');
     // THIS IS THE FIX: Call the new function to sync changes with the server.
     updatePushSubscriptionPreferences();
   }, []);
@@ -759,7 +760,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     // Overnight mode is part of the preset definition, so a manual override
     // means the user is no longer strictly on a preset.
     setSelectedTemplate('custom');
-    try { localStorage.setItem(NOTIFICATION_TEMPLATE_KEY, 'custom'); } catch { /* no-op */ }
+    recordPresetSelection('custom', 'settings_modal');
     await updatePushSubscriptionPreferences();
   }, []);
 
@@ -772,7 +773,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
    */
   const handleTemplateSelect = useCallback(async (id: PresetId) => {
     setSelectedTemplate(id);
-    try { localStorage.setItem(NOTIFICATION_TEMPLATE_KEY, id); } catch { /* no-op */ }
+    recordPresetSelection(id, 'settings_modal');
 
     const preset = getPresetById(id);
     if (!preset) {

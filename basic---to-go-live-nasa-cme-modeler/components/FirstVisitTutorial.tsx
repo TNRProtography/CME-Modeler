@@ -1,4 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  trackFirstVisitTutorialCompleted,
+  trackFirstVisitTutorialSkipped,
+} from '../utils/analytics';
 
 interface TutorialStep {
   targetId: string;
@@ -78,11 +82,16 @@ const FirstVisitTutorial: React.FC<FirstVisitTutorialProps> = ({ isOpen, onClose
     if (currentStep && !currentStep.disableNext && stepIndex < STEPS.length - 1) {
       setStepIndex(stepIndex + 1);
     } else if (currentStep && !currentStep.disableNext) {
+      // Final step "Finish" button — tutorial completed normally
+      trackFirstVisitTutorialCompleted();
       onClose();
     }
   };
-  
+
   const handleClose = () => {
+    // Skip button — tutorial abandoned. Record which step we were on so we
+    // can see whether users drop off early (confusing) or late (impatient).
+    trackFirstVisitTutorialSkipped(stepIndex + 1, STEPS.length);
     onClose();
   };
 

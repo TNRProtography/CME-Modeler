@@ -9,6 +9,7 @@
 // it up automatically.
 
 import type { OvernightMode } from './notifications';
+import { trackPresetSelected, type PromptLocation } from './analytics';
 
 export type PresetId = 'naked' | 'phone' | 'dslr' | 'everything' | 'custom';
 
@@ -124,4 +125,26 @@ export function detectPresetFromPrefs(
     if (matches) return preset.id;
   }
   return null;
+}
+
+/**
+ * Persist the user's chosen preset AND fire an analytics event.
+ *
+ * Call this anywhere you'd otherwise write to NOTIFICATION_TEMPLATE_KEY
+ * directly — it keeps both the banner and settings modal reporting
+ * preset selections consistently. `is_first_setup` is derived from
+ * whether a previous value exists, so the caller doesn't need to know.
+ */
+export function recordPresetSelection(
+  presetId: PresetId,
+  location: PromptLocation,
+): void {
+  let isFirstSetup = false;
+  try {
+    isFirstSetup = !localStorage.getItem(NOTIFICATION_TEMPLATE_KEY);
+    localStorage.setItem(NOTIFICATION_TEMPLATE_KEY, presetId);
+  } catch {
+    /* no-op */
+  }
+  trackPresetSelected(presetId, isFirstSetup, location);
 }

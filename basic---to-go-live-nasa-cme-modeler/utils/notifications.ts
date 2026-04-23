@@ -9,6 +9,18 @@
  * - Returns subscription id (hash of endpoint) for easier single-device testing
  */
 
+import {
+  trackPermissionPromptShown,
+  trackPermissionResult,
+  trackNotificationDisabled,
+  trackSubscriptionCreated,
+  markNotificationsEnabled,
+  getDaysSinceEnabled,
+  clearNotificationsEnabledMarker,
+  type PromptLocation,
+  type PermissionState,
+} from './analytics';
+
 // Icon map — mirrors TOPIC_ICONS in sw.js so local test notifications
 // also show the correct icon. Must be kept in sync with public/sw.js.
 const TOPIC_ICONS: Record<string, string> = {
@@ -73,19 +85,27 @@ const NOTIFICATION_CATEGORIES = [
   'admin-broadcast',
 ];
 
-export const requestNotificationPermission = async (): Promise<NotificationPermission | 'unsupported'> => {
+export const requestNotificationPermission = async (
+  location: PromptLocation = 'unknown',
+): Promise<NotificationPermission | 'unsupported'> => {
   if (!('Notification' in window)) {
     console.warn('Notifications are not supported by this browser.');
+    trackPermissionResult('unsupported', location);
     return 'unsupported';
   }
+  // Already answered previously — don't count as a new prompt
   if (Notification.permission === 'granted' || Notification.permission === 'denied') {
     return Notification.permission;
   }
   try {
+    // About to show a real, user-visible prompt — this is our denominator
+    trackPermissionPromptShown(location);
     const permission = await Notification.requestPermission();
+    trackPermissionResult(permission as PermissionState, location);
     return permission;
   } catch (error) {
     console.error('Error requesting notification permission:', error);
+    trackPermissionResult('denied', location);
     return 'denied';
   }
 };
@@ -233,7 +253,9 @@ async function computeSubscriptionId(endpoint: string): Promise<string> {
   return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-export const subscribeUserToPush = async (): Promise<{ subscription: PushSubscription, id: string } | null> => {
+export const subscribeUserToPush = async (
+  location: PromptLocation = 'unknown',
+): Promise<{ subscription: PushSubscription, id: string } | null> => {
   console.log("DIAGNOSTIC: Attempting to subscribe user to push notifications...");
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
     console.error('DIAGNOSTIC: CRITICAL - Service Worker or Push Manager not supported.');
@@ -243,7 +265,7 @@ export const subscribeUserToPush = async (): Promise<{ subscription: PushSubscri
     console.error('DIAGNOSTIC: CRITICAL - VAPID_PUBLIC_KEY is missing or invalid.');
     return null;
   }
-  const permission = await requestNotificationPermission();
+  const permission = await requestNotificationPermission(location);
   if (permission !== 'granted') {
     console.warn('DIAGNOSTIC: Push subscription failed: Permission not granted.');
     return null;
@@ -296,6 +318,10 @@ export const subscribeUserToPush = async (): Promise<{ subscription: PushSubscri
     const id = await computeSubscriptionId(subscription.endpoint);
     try { localStorage.setItem('push_subscription_id', id); } catch {}
     console.log('DIAGNOSTIC: Your subscription id is:', id);
+
+    // Full flow completed — record enablement timestamp and fire analytics
+    markNotificationsEnabled();
+    trackSubscriptionCreated(location);
 
     return { subscription, id };
   } catch (error) {
@@ -493,7 +519,22 @@ export const getNotificationPreference = (categoryId: string): boolean => {
 };
 export const setNotificationPreference = (categoryId: string, enabled: boolean) => {
   try {
+    const previous = getNotificationPreference(categoryId);
     localStorage.setItem(NOTIFICATION_PREF_PREFIX + categoryId, JSON.stringify(enabled));
+
+    // If this toggle turned something OFF that was previously ON, check whether
+    // the user now has any categories left enabled. "All off" is effectively a
+    // full disable — track it as such and clear the enabled-at marker so the
+    // next re-enable starts a fresh days-since-enabled count.
+    if (previous && !enabled) {
+      const anyStillOn = NOTIFICATION_CATEGORIES.some(id => getNotificationPreference(id));
+      if (!anyStillOn) {
+        trackNotificationDisabled('all_categories_off', getDaysSinceEnabled());
+        clearNotificationsEnabledMarker();
+      } else {
+        trackNotificationDisabled('category_toggled_off', getDaysSinceEnabled());
+      }
+    }
   } catch (e) {
     console.error(`Error saving notification preference for ${categoryId}:`, e);
   }
