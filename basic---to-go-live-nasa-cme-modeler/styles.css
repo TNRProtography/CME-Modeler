@@ -1,3 +1,31 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ── Mobile-first helpers ─────────────────────────────────── */
+/* Prevent double-tap zoom on interactive elements */
+button, a, input[type="range"], select {
+  touch-action: manipulation;
+}
+
+/* Smooth momentum scrolling on iOS */
+.overflow-y-auto, .overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent horizontal bleed on small screens */
+body {
+  overflow-x: hidden;
+}
+
+/* Ensure range inputs are large enough to tap on mobile */
+input[type="range"] {
+  min-height: 20px;
+}
+
+/* Thinner scrollbar on mobile */
+@media (max-width: 640px) {
+  .styled-scrollbar::-webkit-scrollbar {
+    width: 4px;
+  }
+}
