@@ -351,17 +351,86 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
     </div>
   `;
 
-  const openModal = useCallback(() => {
-    setModalState({
+  const slotTooltips: Record<string, { title: string; content: string }> = {
+    'Now': {
+      title: 'Now',
+      content: `<div class='space-y-3 text-left text-sm text-neutral-300'>
+        <p>This is what's happening right now based on real measurements. Solar wind data from the DSCOVR satellite about 1.5 million km upstream of Earth, plus the Eyrewell magnetometer in Canterbury which measures what's actually going on in the sky above New Zealand.</p>
+        <p>Your GPS location is converted to geomagnetic latitude so the forecast matches what you'd see from where you're standing. This is the most reliable slot because it's observation, not prediction.</p>
+      </div>`,
+    },
+    '15 min': {
+      title: '15 minutes',
+      content: `<div class='space-y-3 text-left text-sm text-neutral-300'>
+        <p>A short range projection based on how conditions are trending right now. If energy is building in the magnetosphere and the magnetic field has been pointing south, we expect things to intensify. If conditions are fading, this will reflect that.</p>
+        <p>Still closely tied to real data but it's looking forward rather than measuring directly.</p>
+      </div>`,
+    },
+    '30 min': {
+      title: '30 minutes',
+      content: `<div class='space-y-3 text-left text-sm text-neutral-300'>
+        <p>Same approach as the 15 minute forecast but further out, so a bit less certain. Based on the substorm risk index which tracks energy loading into the magnetosphere using the Newell coupling function and watches for signs that a substorm is about to fire.</p>
+        <p>Good indication of where things are heading but solar wind conditions can shift quickly.</p>
+      </div>`,
+    },
+    '1 hour': {
+      title: '1 hour',
+      content: `<div class='space-y-3 text-left text-sm text-neutral-300'>
+        <p>This is where we shift from trends to probabilities. Based on how much energy has been flowing into the magnetosphere, how long the magnetic field has been pointing south, and the likelihood of a substorm firing within the next hour.</p>
+        <p>Substorm timing is one of the hardest things to predict in space weather. The magnetosphere can be loaded and ready for ages without going off. Treat this as a reasonable guide, not a certainty.</p>
+      </div>`,
+    },
+    '2 hours': {
+      title: '2 hours',
+      content: `<div class='space-y-3 text-left text-sm text-neutral-300'>
+        <p>Rough guide only. This uses the broader Spot The Aurora composite score rather than the substorm model because our substorm predictions don't extend reliably this far out.</p>
+        <p>It's basically saying if current conditions keep up, roughly expect this. A lot can change in two hours. Don't drive somewhere dark based on this slot alone. Wait for it to move into the shorter windows first.</p>
+      </div>`,
+    },
+    'about': {
       title: 'About What to Expect',
-      content: buildStatTooltip(
-        'What to Expect Forecast',
-        'A location-aware aurora visibility forecast combining real-time solar wind data, the physics-based Substorm Risk Index (Newell coupling function), and the aurora oval position relative to your GPS coordinates.',
-        'Directly answers whether aurora will be visible from your specific location right now and in the next 2 hours. More accurate than a global percentage score — someone in Invercargill needs far lower activity to see aurora than someone in Auckland.',
-        'Your coordinates are converted to geomagnetic latitude using the IGRF-13 dipole model and compared against the computed oval boundary. Time slots: Now (high confidence), 15/30 min (substorm trend projection), 1 hr (substorm probability model), 2 hr (Spot The Aurora composite score — rough guide only).'
-      ),
-    });
+      content: `<div class='space-y-3 text-left text-sm text-neutral-300'>
+        <p>This forecast uses your GPS location and real time solar wind data to tell you what you'll actually see from where you are, right now and over the next two hours.</p>
+        <p>The closer to "now", the more you can trust it. The Now forecast is based on what satellites and ground stations are actually measuring. The further out you go, the more we're projecting based on trends and probabilities.</p>
+        <p>That's not a limitation of this app. It's a limitation of space weather. Nobody can reliably predict exactly when a substorm will fire.</p>
+        <p class='text-xs text-neutral-500'>Tap any time label (Now, 15 min, etc.) for details on how that slot works.</p>
+      </div>`,
+    },
+    'substorm': {
+      title: 'Substorm Risk Index',
+      content: `<div class='space-y-3 text-left text-sm text-neutral-300'>
+        <p>A real time measure of how likely a substorm is based on energy flowing into the magnetosphere. It tracks the Newell coupling function, sustained southward magnetic field periods, and watches satellite and NZ ground magnetometers for onset signatures.</p>
+        <p>When the index is high and trending up, conditions are primed for a burst of aurora activity.</p>
+      </div>`,
+    },
+    'visibility': {
+      title: 'Visibility Levels',
+      content: `<div class='space-y-3 text-left text-sm text-neutral-300'>
+        <p>We tell you what you'll actually see rather than giving you a number to figure out.</p>
+        <p><strong class='text-neutral-200'>Eye</strong> means you should see it with your own eyes from somewhere dark.</p>
+        <p><strong class='text-neutral-200'>Phone</strong> means your phone camera will pick it up even if your eyes can't.</p>
+        <p><strong class='text-neutral-200'>Camera</strong> means only a long exposure DSLR will show anything.</p>
+        <p><strong class='text-neutral-200'>None</strong> means it's too quiet from where you are.</p>
+        <p>These are adjusted for your GPS location. The same conditions that produce phone aurora in Christchurch might produce nothing in Auckland.</p>
+      </div>`,
+    },
+    'oval': {
+      title: 'Aurora Oval',
+      content: `<div class='space-y-3 text-left text-sm text-neutral-300'>
+        <p>This isn't a forecast. It's a real time picture of where the auroral zone sits right now, computed from Newell coupling averages and ground magnetometer data.</p>
+        <p>When it pushes north that's real measured energy input, not a guess. The viewline shows where aurora would appear on your southern horizon from your exact location.</p>
+      </div>`,
+    },
+  };
+
+  const openSlotTooltip = useCallback((slotKey: string) => {
+    const tip = slotTooltips[slotKey];
+    if (tip) setModalState(tip);
   }, []);
+
+  const openModal = useCallback(() => {
+    openSlotTooltip('about');
+  }, [openSlotTooltip]);
   const rawWorkerScore = substormRiskData?.current?.score   ?? null;
   const workerScore    = rawWorkerScore != null
     ? locationAdjustedScore(
@@ -512,7 +581,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
       {workerScore != null && (
         <div className="flex items-center gap-3 mb-4 py-2 border-b border-neutral-800/60">
           <div className="flex items-center gap-1.5">
-            <span className="text-xs text-neutral-500">Substorm index</span>
+            <button onClick={() => openSlotTooltip('substorm')} className="text-xs text-neutral-500 hover:underline hover:text-white transition-colors cursor-help" title="Tap for info about the substorm index">Substorm index</button>
             <span className="text-sm font-bold tabular-nums" style={{ color: scoreColour(rawWorkerScore ?? 0) }}>
               {typeof rawWorkerScore === 'number' ? Math.round(rawWorkerScore) : rawWorkerScore}
             </span>
@@ -544,11 +613,15 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
         {slots.map(({ time, vis, conf, substormScore }) => (
           <div key={time} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
 
-            {/* Time label */}
+            {/* Time label — tap for info */}
             <div className="w-14 flex-shrink-0 pt-0.5">
-              <span className={`text-xs font-semibold ${time === 'Now' ? 'text-emerald-400' : 'text-neutral-400'}`}>
+              <button
+                onClick={() => openSlotTooltip(time)}
+                className={`text-xs font-semibold ${time === 'Now' ? 'text-emerald-400' : 'text-neutral-400'} hover:underline hover:text-white transition-colors cursor-help`}
+                title={`Tap for info about the ${time} forecast`}
+              >
                 {time}
-              </span>
+              </button>
             </div>
 
             {/* Icon */}
@@ -589,22 +662,22 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
       {/* Legend */}
       <div className="mt-4 pt-3 border-t border-neutral-800/60">
         <div className="flex flex-wrap gap-x-4 gap-y-1.5 mb-2">
-          <div className="flex items-center gap-1.5">
+          <button onClick={() => openSlotTooltip('visibility')} className="flex items-center gap-1.5 cursor-help hover:opacity-80 transition-opacity" title="Tap for info about visibility levels">
             <span className="text-sm">👁️</span>
-            <span className="text-xs text-neutral-500">Naked eye</span>
-          </div>
-          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-neutral-500 hover:text-white transition-colors">Naked eye</span>
+          </button>
+          <button onClick={() => openSlotTooltip('visibility')} className="flex items-center gap-1.5 cursor-help hover:opacity-80 transition-opacity" title="Tap for info about visibility levels">
             <span className="text-sm">📱</span>
-            <span className="text-xs text-neutral-500">Phone camera</span>
-          </div>
-          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-neutral-500 hover:text-white transition-colors">Phone camera</span>
+          </button>
+          <button onClick={() => openSlotTooltip('visibility')} className="flex items-center gap-1.5 cursor-help hover:opacity-80 transition-opacity" title="Tap for info about visibility levels">
             <span className="text-sm">📷</span>
-            <span className="text-xs text-neutral-500">DSLR only</span>
-          </div>
-          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-neutral-500 hover:text-white transition-colors">DSLR only</span>
+          </button>
+          <button onClick={() => openSlotTooltip('visibility')} className="flex items-center gap-1.5 cursor-help hover:opacity-80 transition-opacity" title="Tap for info about visibility levels">
             <span className="text-sm">😴</span>
-            <span className="text-xs text-neutral-500">Nothing expected</span>
-          </div>
+            <span className="text-xs text-neutral-500 hover:text-white transition-colors">Nothing expected</span>
+          </button>
         </div>
         <div className="flex items-center gap-x-3 gap-y-1 flex-wrap">
           <span className="text-xs text-neutral-600">Confidence:</span>
