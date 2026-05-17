@@ -8,6 +8,8 @@ import type { SubstormRiskData } from '../hooks/useForecastData';
 import LoadingSpinner from './icons/LoadingSpinner';
 import GuideIcon from './icons/GuideIcon';
 import CloseIcon from './icons/CloseIcon';
+import OvalForecastTimeline from './OvalForecastTimeline';
+import type { OvalForecastFrame } from './OvalForecastTimeline';
 import { NZ_TOWNS } from './nzSubstormIndexData';
 import {
   trackSightingSubmitted,
@@ -71,6 +73,12 @@ interface AuroraSightingsProps {
   refreshSignal?: number;
   onSightingsLoaded?: (sightings: SightingReport[]) => void;
   substormRiskData?: SubstormRiskData | null;
+  // Oval forecast timeline props
+  auroraScore?: number | null;
+  rawScore15?: number;
+  rawScore30?: number;
+  rawScore60?: number;
+  rawScore120?: number;
 }
 
 interface SightingMapControllerProps {
@@ -379,7 +387,108 @@ const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ substormRiskData }) => 
   );
 };
 
-const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSignal, onSightingsLoaded, substormRiskData }) => {
+// ── Forecast oval overlay ─────────────────────────────────────────────────────
+// Renders the projected aurora oval for a future time frame.
+// Uses the same physics as AuroraOvalOverlay but with projected Newell values.
+// Visual confidence degrades with time: more dashed lines, lower opacity.
+
+interface ForecastOvalOverlayProps {
+  frame: OvalForecastFrame;
+}
+
+const ForecastOvalOverlay: React.FC<ForecastOvalOverlayProps> = ({ frame }) => {
+  const { newellProjected, scoreProjected, bayOnset, confidence } = frame;
+
+  // Build projected metrics so we can reuse computeOvalParams unchanged
+  const projectedMetrics = {
+    solar_wind: {
+      newell_avg_60m: newellProjected,
+      newell_avg_30m: newellProjected,
+    },
+  } as SubstormRiskData['metrics'];
+
+  const { boundary, halfWidth } = computeOvalParams(projectedMetrics, bayOnset, scoreProjected);
+  const poleward    = boundary - halfWidth;
+  const equatorward = boundary;
+
+  const { line } = ovalColour(scoreProjected);
+
+  const eqRing = buildOvalRing(equatorward, 1.5);
+  const pwRing = buildOvalRing(poleward, 1.5);
+
+  const VISIBILITY_DEG = 9.0 + (Math.max(0, Math.min(scoreProjected, 100)) / 100) * 16.0;
+  const visRing = buildOvalRing(equatorward + VISIBILITY_DEG, 1.5);
+
+  // Confidence-based visual styling: further out = more dashed, more transparent
+  const confOpacity: Record<string, number> = { ground: 1.0, high: 0.85, medium: 0.6, low: 0.4 };
+  const confDash: Record<string, string | undefined> = { ground: undefined, high: '8 4', medium: '6 6', low: '4 8' };
+  const opacity = confOpacity[confidence] ?? 0.5;
+  const dashArray = confDash[confidence];
+
+  // Band layers with reduced opacity for forecast
+  const bandLayers = 10;
+  const globalAlpha = Math.min(scoreProjected / 20, 1) * opacity;
+
+  const lerpHex = (c1: string, c2: string, t: number): string => {
+    const h = (hex: string) => [parseInt(hex.slice(1,3),16), parseInt(hex.slice(3,5),16), parseInt(hex.slice(5,7),16)];
+    const [r1,g1,b1] = h(c1);
+    const [r2,g2,b2] = h(c2);
+    const r = Math.round(r1 + (r2-r1)*t);
+    const g = Math.round(g1 + (g2-g1)*t);
+    const b = Math.round(b1 + (b2-b1)*t);
+    return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+  };
+
+  const coreColour = (): string => {
+    const s = scoreProjected;
+    if (s >= 80) return lerpHex('#fb923c', '#f87171', (s - 80) / 20);
+    if (s >= 65) return lerpHex('#f59e0b', '#fb923c', (s - 65) / 15);
+    if (s >= 50) return lerpHex('#a3e635', '#f59e0b', (s - 50) / 15);
+    if (s >= 30) return lerpHex('#34d399', '#a3e635', (s - 30) / 20);
+    return '#34d399';
+  };
+  const CORE = coreColour();
+  const EDGE = '#34d399';
+
+  const bandPolygons = Array.from({ length: bandLayers }, (_, i) => {
+    const t0 = i / bandLayers;
+    const t1 = (i + 1) / bandLayers;
+    const g0 = poleward + t0 * halfWidth;
+    const g1 = poleward + t1 * halfWidth;
+    const midT = (t0 + t1) / 2;
+    const envelope = Math.exp(-Math.pow((midT - 0.5) / 0.28, 2));
+    const coreInfluence = Math.max(0, (scoreProjected - 20) / 80);
+    const distFromCentre = Math.abs(midT - 0.5) * 2;
+    const colourT = (1 - distFromCentre) * coreInfluence;
+    const bandColour = lerpHex(EDGE, CORE, colourT);
+    return {
+      poly: buildBandPolygon(g0, g1, 3),
+      colour: bandColour,
+      alpha: envelope * 0.55 * globalAlpha,
+    };
+  });
+
+  const visOpacity = (0.3 + (scoreProjected / 100) * 0.45) * opacity;
+  const visWeight  = 1.0 + (scoreProjected / 100) * 1.0;
+
+  return (
+    <>
+      {bandPolygons.map((layer, i) => (
+        <Polygon
+          key={`forecast-band-${i}`}
+          positions={layer.poly}
+          pathOptions={{ color: 'transparent', fillColor: layer.colour, fillOpacity: layer.alpha, weight: 0 }}
+          smoothFactor={2}
+        />
+      ))}
+      <Polyline positions={pwRing} pathOptions={{ color: line, weight: 1, opacity: 0.35 * opacity, dashArray: dashArray ?? '4 6' }} smoothFactor={2} />
+      <Polyline positions={eqRing} pathOptions={{ color: line, weight: 2.5, opacity: 0.9 * opacity, dashArray }} smoothFactor={2} />
+      <Polyline positions={visRing} pathOptions={{ color: '#38bdf8', weight: visWeight, opacity: visOpacity, dashArray: '2 8' }} smoothFactor={2} />
+    </>
+  );
+};
+
+const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSignal, onSightingsLoaded, substormRiskData, auroraScore, rawScore15, rawScore30, rawScore60, rawScore120 }) => {
     const [sightings, setSightings] = useState<SightingReport[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -395,6 +504,8 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
 
     const [selectedSightingIdForMap, setSelectedSightingIdForMap] = useState<string | null>(null);
     const [sunsetWindowStart, setSunsetWindowStart] = useState<number>(() => computeSunsetWindowStart());
+    const [forecastFrame, setForecastFrame] = useState<OvalForecastFrame | null>(null);
+    const isForecastMode = forecastFrame !== null;
 
     const markerRefs = useRef<Map<string, L.Marker>>(new Map());
 
@@ -711,7 +822,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                         />
 
                         <TileLayer attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>' url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"/>
-        <AuroraOvalOverlay substormRiskData={substormRiskData} />
+        {isForecastMode ? <ForecastOvalOverlay frame={forecastFrame} /> : <AuroraOvalOverlay substormRiskData={substormRiskData} />}
                         <LocationFinder onLocationSelect={() => {}} />
                         {userPosition && <Marker position={userPosition} icon={userMarkerIcon} draggable={false}><Popup>Your GPS location.</Popup></Marker>}
                         <>
@@ -723,6 +834,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                                         position={[sighting.lat, sighting.lng]}
                                         icon={createSightingIcon(sighting)}
                                         zIndexOffset={sighting.timestamp}
+                                        opacity={isForecastMode ? 0.5 : 1.0}
                                         ref={(marker: L.Marker) => {
                                             if (marker) {
                                                 markerRefs.current.set(sightingId, marker);
@@ -741,6 +853,16 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                         {pendingReport && <Marker position={[pendingReport.lat, pendingReport.lng]} icon={createSightingIcon(pendingReport)} zIndexOffset={99999999999999} />}
                     </MapContainer>
                     </div>
+                    {/* Oval forecast timeline slider */}
+                    <OvalForecastTimeline
+                        substormRiskData={substormRiskData}
+                        auroraScore={auroraScore ?? null}
+                        score15={rawScore15 ?? 0}
+                        score30={rawScore30 ?? 0}
+                        score60={rawScore60 ?? 0}
+                        score120={rawScore120 ?? 0}
+                        onFrameChange={setForecastFrame}
+                    />
                 </div>
 
                 <div className="lg:col-span-1 space-y-3">

@@ -8,7 +8,7 @@ import FluxRopeAnalyzer from './FluxRopeAnalyzer';
 import KpForecastTimeline from './KpForecastTimeline';
 import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
-import { VisibilityForecastPanel } from './VisibilityForecastPanel';
+import { VisibilityForecastPanel, projectSubstormScores } from './VisibilityForecastPanel';
 import GuideIcon from './icons/GuideIcon';
 import { useForecastData } from '../hooks/useForecastData';
 import ForecastChartPanel from './ForecastChartPanel';
@@ -218,6 +218,23 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const [cameraImageSrc, setCameraImageSrc] = useState<string>('');
     const [recentSightings, setRecentSightings] = useState<import('../types').SightingReport[]>([]);
     const initialLoadCalled = useRef(false);
+
+    // ── Projected scores for oval forecast timeline ──────────────────────────
+    // Compute the same raw projected scores that VisibilityForecastPanel uses,
+    // so we can pass them to AuroraSightings for the oval timeline slider.
+    const ovalProjectedScores = useMemo(() => {
+        const rawWorkerScore = substormRiskData?.current?.score ?? null;
+        const base = rawWorkerScore ?? auroraScore ?? 0;
+        const workerTrend = substormRiskData?.current?.risk_trend;
+        const newellNow = substormRiskData?.metrics?.solar_wind?.newell_coupling_now;
+        const newellAvg30 = substormRiskData?.metrics?.solar_wind?.newell_avg_30m;
+        const workerConf = substormRiskData?.current?.confidence;
+        const { score15, score30, score60 } = projectSubstormScores(
+            base, substormForecast, workerTrend, newellNow, newellAvg30, workerConf
+        );
+        const score120 = auroraScore ?? 0;
+        return { score15, score30, score60, score120 };
+    }, [substormRiskData, auroraScore, substormForecast]);
 
     // ... [Original UseEffects & Handlers] ...
     useEffect(() => {
@@ -568,10 +585,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
               </div>
             )}
             <div className="absolute inset-0 bg-black/50 z-0"></div>
-            <div className="w-full h-full overflow-y-auto p-2 sm:p-5 relative z-10 styled-scrollbar">
+            <div className="w-full h-full overflow-y-auto p-5 relative z-10 styled-scrollbar">
                  <div className="container mx-auto">
                     <header className="text-center mb-4">
-                        <h1 className="text-2xl sm:text-3xl font-bold text-neutral-100">Spot The Aurora</h1>
+                        <h1 className="text-3xl font-bold text-neutral-100">Spot The Aurora</h1>
                         <p className="text-sm text-neutral-400 mt-1">New Zealand Aurora &amp; Space Weather App</p>
                     </header>
                      <div className="flex justify-center items-center gap-2 mb-6">
@@ -589,7 +606,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                     </div>
 
                     {viewMode === 'simple' ? (
-                        <main className="grid grid-cols-12 gap-2 sm:gap-6">
+                        <main className="grid grid-cols-12 gap-6">
                             {/* GPS banner */}
                             {locationFailed && (
                                 <div className="col-span-12 flex items-center gap-3 px-4 py-3 bg-amber-900/30 border border-amber-700/50 rounded-lg">
@@ -601,7 +618,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 </div>
                             )}
                             {/* What to expect — full width */}
-                            <div className="col-span-12 grid grid-cols-12 gap-2 sm:gap-6 items-stretch">
+                            <div className="col-span-12 grid grid-cols-12 gap-6 items-stretch">
                             <div className="col-span-12 flex flex-col">
                                 <VisibilityForecastPanel
                                     auroraScore={auroraScore}
@@ -617,7 +634,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 />
                             </div>
                             </div>
-                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} />
+                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} auroraScore={auroraScore} rawScore15={ovalProjectedScores.score15} rawScore30={ovalProjectedScores.score30} rawScore60={ovalProjectedScores.score60} rawScore120={ovalProjectedScores.score120} />
                             <KpForecastTimeline
                                 moonIllumination={celestialTimes?.moon?.illumination ?? null}
                                 userLatitude={userLatitude}
@@ -633,7 +650,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><div className="flex justify-center items-center mb-4"><h3 className="text-xl font-semibold text-center text-white">Live Cameras</h3></div><div className="flex justify-center gap-2 my-2 flex-wrap">{CAMERAS.map((camera) => (<button key={camera.name} onClick={() => setSelectedCamera(camera)} className={`px-3 py-1 text-xs rounded transition-colors ${selectedCamera.name === camera.name ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>{camera.name}</button>))}</div><div className="mt-4"><div className="relative w-full bg-black rounded-lg" style={{ paddingBottom: "56.25%" }}>{selectedCamera.type === 'iframe' ? (<iframe title={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg" src={selectedCamera.url} key={selectedCamera.name} />) : (<img src={cameraImageSrc} alt={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg object-contain" key={cameraImageSrc} onError={(e) => { e.currentTarget.src = '/placeholder.png'; e.currentTarget.alt = `Could not load camera from ${selectedCamera.name}.`; }} />)}</div><div className="text-center text-xs text-neutral-500 mt-2">Source: <a href={`http://${selectedCamera.sourceUrl}`} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">{selectedCamera.sourceUrl}</a></div></div></div>
                         </main>
                     ) : (
-                        <main className="grid grid-cols-12 gap-2 sm:gap-6">
+                        <main className="grid grid-cols-12 gap-6">
                             <ActivityAlert isDaylight={isDaylight} celestialTimes={celestialTimes} auroraScoreHistory={auroraScoreHistory} />
                             {/* GPS banner */}
                             {locationFailed && (
@@ -646,7 +663,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 </div>
                             )}
                             {/* What to expect — full width */}
-                            <div className="col-span-12 grid grid-cols-12 gap-2 sm:gap-6 items-stretch">
+                            <div className="col-span-12 grid grid-cols-12 gap-6 items-stretch">
                             <div className="col-span-12 flex flex-col">
                                 <VisibilityForecastPanel
                                     auroraScore={auroraScore}
@@ -696,7 +713,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     />
                                 );
                             })()}
-                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} />
+                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} auroraScore={auroraScore} rawScore15={ovalProjectedScores.score15} rawScore30={ovalProjectedScores.score30} rawScore60={ovalProjectedScores.score60} rawScore120={ovalProjectedScores.score120} />
                             
                             <ForecastChartPanel
                                 title="Interplanetary Magnetic Field"
@@ -784,7 +801,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
                             <DisturbanceIndexPanel />
 
-                            <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-6">
+                            <div className="col-span-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 <TipsSection />
                                 <CameraSettingsSection settings={cameraSettings} />
                             </div>

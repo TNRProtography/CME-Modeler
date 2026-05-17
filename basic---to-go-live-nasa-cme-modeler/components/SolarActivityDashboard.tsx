@@ -15,7 +15,6 @@ import {
 import { stableHash } from '../utils/dataFreshness';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
 import { workerStatePreload } from '../utils/appPreloader';
-import HelioviewerPanel from './HelioviewerPanel';
 
 interface SolarActivityDashboardProps {
   setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | { type: 'image_with_labels'; url: string; labels: { id: string; xPercent: number; yPercent: number; text: string }[] } | null) => void;
@@ -2779,15 +2778,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       style={{ backgroundImage: `url('/background-solar.jpg')`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}
     >
       <div className="absolute inset-0 bg-black/50 z-0"></div>
-      <div className="w-full h-full overflow-y-auto p-2 sm:p-5 relative z-10 styled-scrollbar">
+      <div className="w-full h-full overflow-y-auto p-5 relative z-10 styled-scrollbar">
         <style>{`body { overflow-y: auto !important; } .styled-scrollbar::-webkit-scrollbar { width: 8px; } .styled-scrollbar::-webkit-scrollbar-track { background: #262626; } .styled-scrollbar::-webkit-scrollbar-thumb { background: #525252; } @keyframes sunspotPulse { 0%{transform:scale(1);opacity:.95} 100%{transform:scale(2.25);opacity:0} }`}</style>
         <div className="container mx-auto">
-          <header className="text-center mb-4 sm:mb-8">
-            <h1 className="text-2xl sm:text-3xl font-bold text-neutral-100">Solar Activity Dashboard</h1>
+          <header className="text-center mb-8">
+            <h1 className="text-3xl font-bold text-neutral-100">Solar Activity Dashboard</h1>
           </header>
 
-          <main className="grid grid-cols-12 gap-2 sm:gap-5">
-            <div className="col-span-12 card bg-neutral-950/80 p-3 sm:p-4 mb-2 sm:mb-4 flex flex-col sm:flex-row justify-between items-center text-sm">
+          <main className="grid grid-cols-12 gap-5">
+            <div className="col-span-12 card bg-neutral-950/80 p-4 mb-4 flex flex-col sm:flex-row justify-between items-center text-sm">
               <div className="flex-1 text-center sm:text-left mb-2 sm:mb-0">
                 <div className="flex items-center gap-2 justify-center sm:justify-start mb-1">
                   <h3 className="text-neutral-200 font-semibold">
@@ -2811,9 +2810,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
             <SolarActivitySummaryDisplay summary={activitySummary} onOpenModal={openModal} />
 
-            <div id="goes-xray-flux-section" className="col-span-12 card bg-neutral-950/80 p-3 sm:p-4 h-[300px] sm:h-[500px] flex flex-col">
+            <div id="goes-xray-flux-section" className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
               <div className="flex justify-center items-center gap-2">
-                <h2 className="text-base sm:text-xl font-semibold text-white mb-2">GOES X-ray Flux</h2>
+                <h2 className="text-xl font-semibold text-white mb-2">GOES X-ray Flux</h2>
                 <button onClick={() => openModal('xray-flux')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about X-ray Flux.">?</button>
               </div>
               <TimeRangeButtons onSelect={setXrayTimeRange} selected={xrayTimeRange} />
@@ -2824,9 +2823,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             </div>
 
             {/* --- SOLAR IMAGERY (Full Width) --- */}
-            <div className="col-span-12 card bg-neutral-950/80 p-3 sm:p-4 flex flex-col">
+            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
               <div className="flex justify-center items-center gap-2">
-                <h2 className="text-base sm:text-xl font-semibold text-white mb-2">Solar Imagery</h2>
+                <h2 className="text-xl font-semibold text-white mb-2">Solar Imagery</h2>
                 <button
                   onClick={() => openModal('solar-imagery')}
                   className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700"
@@ -2985,13 +2984,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               <div className="text-right text-xs text-neutral-500 mt-2">Last updated: {lastImagesUpdate || 'N/A'}</div>
             </div>
 
-            {/* ── Helioviewer Multi-Wavelength Imagery ── */}
-            <HelioviewerPanel />
-
-            <div id="active-sunspots-section" className="col-span-12 card bg-neutral-950/80 p-3 sm:p-4 flex flex-col min-h-0 lg:min-h-[680px]">
+            <div id="active-sunspots-section" className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col min-h-0 lg:min-h-[680px]">
               <div className="flex justify-between items-center gap-2 mb-3">
                 <div className="flex items-center gap-2">
-                  <h2 className="text-base sm:text-xl font-semibold text-white">Active Sunspot Tracker</h2>
+                  <h2 className="text-xl font-semibold text-white">Active Sunspot Tracker</h2>
                   <button onClick={() => openModal('active-sunspots')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about active sunspot overlays.">?</button>
                 </div>
                 <div className="text-[11px] text-neutral-500">NOAA + SDO mapped to visible disk</div>
@@ -3293,9 +3289,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             {/* IPS section removed entirely */}
 
 
-            <div id="solar-flares-section" className="col-span-12 card bg-neutral-950/80 p-3 sm:p-4 flex flex-col min-h-[280px] sm:min-h-[400px]">
+            <div id="solar-flares-section" className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col min-h-[400px]">
               <div className="flex justify-center items-center gap-2">
-                <h2 className="text-base sm:text-xl font-semibold text-white text-center mb-4">Latest Solar Flares (Last 7 Days)</h2>
+                <h2 className="text-xl font-semibold text-white text-center mb-4">Latest Solar Flares (Last 7 Days)</h2>
                 <button onClick={() => openModal('solar-flares')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Solar Flares.">?</button>
               </div>
               <div className="flex-grow overflow-y-auto max-h-96 styled-scrollbar pr-2">
@@ -3328,10 +3324,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               <div className="text-right text-xs text-neutral-500 mt-2">Last updated: {lastFlaresUpdate || 'N/A'}</div>
             </div>
 
-            <div className="col-span-12 card bg-neutral-950/80 p-3 sm:p-4 min-h-[360px] sm:min-h-[620px] flex flex-col">
+            <div className="col-span-12 card bg-neutral-950/80 p-4 min-h-[620px] flex flex-col">
               <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                 <div className="flex items-center gap-2">
-                  <h2 className="text-base sm:text-xl font-semibold text-white">Coronagraphy — Multi Source</h2>
+                  <h2 className="text-xl font-semibold text-white">Coronagraphy — Multi Source</h2>
                   <button onClick={() => openModal('coronagraphy')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Coronagraphy.">?</button>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
@@ -3497,9 +3493,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               </div>
             </div>
 
-            <div className="col-span-12 card bg-neutral-950/80 p-3 sm:p-4 h-[300px] sm:h-[500px] flex flex-col">
+            <div className="col-span-12 card bg-neutral-950/80 p-4 h-[500px] flex flex-col">
               <div className="flex justify-center items-center gap-2">
-                <h2 className="text-base sm:text-xl font-semibold text-white mb-2">GOES Proton Flux ({'>'}=10 MeV)</h2>
+                <h2 className="text-xl font-semibold text-white mb-2">GOES Proton Flux ({'>'}=10 MeV)</h2>
                 <button onClick={() => openModal('proton-flux')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Proton Flux.">?</button>
               </div>
               <TimeRangeButtons onSelect={setProtonTimeRange} selected={protonTimeRange} />

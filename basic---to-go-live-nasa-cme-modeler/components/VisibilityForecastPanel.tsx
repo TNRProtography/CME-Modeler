@@ -190,7 +190,7 @@ function getVisibilityPhrase(
 // score and its own physics-based trend signals. The SpotTheAurora composite
 // is NOT used here — it's a visibility estimate, not a substorm measurement.
 
-function projectSubstormScores(
+export function projectSubstormScores(
   workerScore: number,
   forecast: SubstormForecast,
   workerTrend?: string,
