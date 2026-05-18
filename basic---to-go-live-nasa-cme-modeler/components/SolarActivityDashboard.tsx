@@ -15,6 +15,7 @@ import {
 import { stableHash } from '../utils/dataFreshness';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
 import { workerStatePreload } from '../utils/appPreloader';
+import FaqModal from './FaqModal';
 
 interface SolarActivityDashboardProps {
   setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | { type: 'image_with_labels'; url: string; labels: { id: string; xPercent: number; yPercent: number; text: string }[] } | null) => void;
@@ -966,6 +967,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [suviPlaybackSpeed, setSuviPlaybackSpeed] = useState<PlaybackSpeedOption>(1);
   const [suviFrameWindowHours, setSuviFrameWindowHours] = useState<number>(3);
   const [suviFrameLoading, setSuviFrameLoading] = useState<boolean>(false);
+  const [isFaqOpen, setIsFaqOpen] = useState(false);
   const suviCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const diffWatermarkRef = useRef<HTMLImageElement | null>(null);
   const [coronagraphState, setCoronagraphState] = useState<CoronagraphStateResponse | null>(null);
@@ -3511,11 +3513,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             <h3 className="text-lg font-semibold text-neutral-200 mb-4">About This Dashboard</h3>
             <p className="max-w-3xl mx-auto leading-relaxed">This dashboard provides real-time information on solar X-ray flux, proton flux, solar flares, and related space weather phenomena. Data is sourced directly from official NASA and NOAA APIs.</p>
             <p className="max-w-3xl mx-auto leading-relaxed mt-4"><strong>Disclaimer:</strong> Solar activity can be highly unpredictable. While this dashboard provides the latest available data, interpretations are for informational purposes only.</p>
+            <div className="mt-6"><button onClick={() => setIsFaqOpen(true)} className="flex items-center gap-2 mx-auto px-4 py-2 bg-neutral-800/80 border border-neutral-700/60 rounded-lg text-neutral-300 hover:bg-neutral-700/90 transition-colors"><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><span>Frequently Asked Questions</span></button></div>
             <div className="mt-8 text-xs text-neutral-500">
               <p>Data provided by <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NOAA SWPC</a> & <a href="https://api.nasa.gov/" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">NASA</a></p>
               <p className="mt-2">Visualization and Development by <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">TNR Protography</a></p>
             </div>
           </footer>
+          <FaqModal isOpen={isFaqOpen} onClose={() => setIsFaqOpen(false)} />
         </div>
       </div>
 

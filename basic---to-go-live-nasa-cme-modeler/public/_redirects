@@ -5,4 +5,5 @@
 /robots.txt     /robots.txt     200
 /sitemap.xml    /sitemap.xml    200
 /fonts/*        /fonts/:splat   200
+/faq            /faq.html       200
 /*              /index.html     200

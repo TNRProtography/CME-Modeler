@@ -12,6 +12,7 @@ import { VisibilityForecastPanel, projectSubstormScores } from './VisibilityFore
 import GuideIcon from './icons/GuideIcon';
 import { useForecastData } from '../hooks/useForecastData';
 import ForecastChartPanel from './ForecastChartPanel';
+import FaqModal from './FaqModal';
 import DisturbanceIndexPanel from './DisturbanceIndexPanel';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
 
@@ -550,7 +551,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     if (isLoading) return <div className="w-full h-full flex justify-center items-center bg-neutral-900"><LoadingSpinner /></div>;
 
-    const faqContent = `...`; // Keep original FAQ content
+    const faqContent = ''; // FAQ content now handled by FaqModal component
 
     return (
         <div className="w-full h-full bg-neutral-900 text-neutral-300 relative" style={{ backgroundImage: `url('/background-aurora.jpg')`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}>
@@ -840,7 +841,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                  </div>
             </div>
             {modalState && <InfoModal isOpen={modalState.isOpen} onClose={closeModal} title={modalState.title} content={modalState.content} />}
-            <InfoModal isOpen={isFaqOpen} onClose={() => onModalSlugChange?.(null)} title="Frequently Asked Questions" content={faqContent} />
+            <FaqModal isOpen={isFaqOpen} onClose={() => onModalSlugChange?.(null)} />
         </div>
     );
 };

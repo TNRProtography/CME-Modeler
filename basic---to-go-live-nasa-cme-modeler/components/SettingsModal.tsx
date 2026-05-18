@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import CloseIcon from './icons/CloseIcon';
+import FaqModal from './FaqModal';
 import ToggleSwitch from './ToggleSwitch';
 import {
   getNotificationPreference,
@@ -427,6 +428,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [notifHistory, setNotifHistory] = useState<NotificationHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [isFaqOpen, setIsFaqOpen] = useState(false);
   // Which notification template the user currently has selected. Drives
   // whether the full per-notification list is shown (only for 'custom').
   // Persisted across sessions in localStorage (same key written by the
@@ -1264,6 +1266,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 </svg>
                 <span>How It Works</span>
               </button>
+              <button
+                onClick={() => setIsFaqOpen(true)}
+                className={subtleActionClass}
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>FAQs</span>
+              </button>
             </div>
           </section>
         </div>
@@ -1281,6 +1292,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
       </div>
     </div>
+    <FaqModal isOpen={isFaqOpen} onClose={() => setIsFaqOpen(false)} />
     </>
   );
 };
