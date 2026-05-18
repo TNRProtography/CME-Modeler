@@ -1721,6 +1721,10 @@ const App: React.FC = () => {
             <AppTutorial
                 isOpen={isAppTutorialOpen}
                 onClose={handleCloseAppTutorial}
+                onNavigateToPage={navigateToPage}
+                onForecastViewChange={handleForecastViewChange}
+                onOpenSettings={handleOpenSettings}
+                onCloseSettings={handleCloseSettings}
             />
           </Suspense>
 

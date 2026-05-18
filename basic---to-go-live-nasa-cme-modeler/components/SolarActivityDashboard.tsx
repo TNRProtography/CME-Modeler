@@ -2825,7 +2825,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             </div>
 
             {/* --- SOLAR IMAGERY (Full Width) --- */}
-            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
+            <div id="suvi-imagery-section" className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
               <div className="flex justify-center items-center gap-2">
                 <h2 className="text-xl font-semibold text-white mb-2">Solar Imagery</h2>
                 <button
@@ -3326,7 +3326,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               <div className="text-right text-xs text-neutral-500 mt-2">Last updated: {lastFlaresUpdate || 'N/A'}</div>
             </div>
 
-            <div className="col-span-12 card bg-neutral-950/80 p-4 min-h-[620px] flex flex-col">
+            <div id="coronagraph-section" className="col-span-12 card bg-neutral-950/80 p-4 min-h-[620px] flex flex-col">
               <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                 <div className="flex items-center gap-2">
                   <h2 className="text-xl font-semibold text-white">Coronagraphy — Multi Source</h2>

@@ -619,7 +619,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 </div>
                             )}
                             {/* What to expect — full width */}
-                            <div className="col-span-12 grid grid-cols-12 gap-6 items-stretch">
+                            <div id="visibility-forecast-panel" className="col-span-12 grid grid-cols-12 gap-6 items-stretch">
                             <div className="col-span-12 flex flex-col">
                                 <VisibilityForecastPanel
                                     auroraScore={auroraScore}
@@ -635,8 +635,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 />
                             </div>
                             </div>
-                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} auroraScore={auroraScore} rawScore15={ovalProjectedScores.score15} rawScore30={ovalProjectedScores.score30} rawScore60={ovalProjectedScores.score60} rawScore120={ovalProjectedScores.score120} />
-                            <KpForecastTimeline
+                            <div id="aurora-sightings-section" className="col-span-12"><AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} auroraScore={auroraScore} rawScore15={ovalProjectedScores.score15} rawScore30={ovalProjectedScores.score30} rawScore60={ovalProjectedScores.score60} rawScore120={ovalProjectedScores.score120} />
+                            <div id="kp-forecast-section" className="col-span-12"><KpForecastTimeline
                                 moonIllumination={celestialTimes?.moon?.illumination ?? null}
                                 userLatitude={userLatitude}
                                 sunriseMs={celestialTimes?.sun?.rise ?? null}
@@ -644,10 +644,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 moonRiseMs={celestialTimes?.moon?.rise ?? null}
                                 moonSetMs={celestialTimes?.moon?.set ?? null}
                                 moonWaxing={celestialTimes?.moon?.waxing ?? null}
-                            />
+                            /></div>
                             <SimpleTrendChart auroraScoreHistory={auroraScoreHistory} />
                             {/* ... (Cloud & Cameras) ... */}
-                            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3><div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div></div>
+                            <div id="cloud-cover-section" className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3><div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div></div>
                             <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><div className="flex justify-center items-center mb-4"><h3 className="text-xl font-semibold text-center text-white">Live Cameras</h3></div><div className="flex justify-center gap-2 my-2 flex-wrap">{CAMERAS.map((camera) => (<button key={camera.name} onClick={() => setSelectedCamera(camera)} className={`px-3 py-1 text-xs rounded transition-colors ${selectedCamera.name === camera.name ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>{camera.name}</button>))}</div><div className="mt-4"><div className="relative w-full bg-black rounded-lg" style={{ paddingBottom: "56.25%" }}>{selectedCamera.type === 'iframe' ? (<iframe title={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg" src={selectedCamera.url} key={selectedCamera.name} />) : (<img src={cameraImageSrc} alt={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg object-contain" key={cameraImageSrc} onError={(e) => { e.currentTarget.src = '/placeholder.png'; e.currentTarget.alt = `Could not load camera from ${selectedCamera.name}.`; }} />)}</div><div className="text-center text-xs text-neutral-500 mt-2">Source: <a href={`http://${selectedCamera.sourceUrl}`} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">{selectedCamera.sourceUrl}</a></div></div></div>
                         </main>
                     ) : (
@@ -716,7 +716,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             })()}
                             <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} auroraScore={auroraScore} rawScore15={ovalProjectedScores.score15} rawScore30={ovalProjectedScores.score30} rawScore60={ovalProjectedScores.score60} rawScore120={ovalProjectedScores.score120} />
                             
-                            <ForecastChartPanel
+                            <div id="imf-chart-section"><ForecastChartPanel
                                 title="Interplanetary Magnetic Field"
                                 currentValue={`Bt: ${gaugeData.bt.value} / Bz: ${gaugeData.bz.value} <span class='text-base'>nT</span><span class='text-xs block text-neutral-400'>Toggle Bx/By inside chart · Bt source: ${gaugeData.bt.source} · Bz source: ${gaugeData.bz.source}</span>`}
                                 emoji={gaugeData.bz.emoji}
@@ -725,7 +725,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 lastDataReceived={imfLastReceived}
                             >
                                 <MagneticFieldChart data={allMagneticData} />
-                            </ForecastChartPanel>
+                            </ForecastChartPanel></div>
                             <ForecastChartPanel
                                 title="IMF Clock & Status"
                                 currentValue={`${allImfClockData.length ? `${allImfClockData[allImfClockData.length - 1].y.toFixed(0)}°` : 'N/A'} <span class='text-base'>clock</span><span class='text-xs block text-neutral-400'>Advanced IMF orientation aid</span>`}
