@@ -78,6 +78,7 @@ import InitialLoadingScreen from './components/InitialLoadingScreen';
 const SettingsModal = retryLazyLoad(() => import('./components/SettingsModal'));
 const FirstVisitTutorial = retryLazyLoad(() => import('./components/FirstVisitTutorial'));
 const CmeModellerTutorial = retryLazyLoad(() => import('./components/CmeModellerTutorial'));
+const AppTutorial = retryLazyLoad(() => import('./components/AppTutorial'));
 const ForecastModelsModal = retryLazyLoad(() => import('./components/ForecastModelsModal'));
 import { calculateStats, getPageViewStorageMode, loadPageViewStats, PageViewStats, recordPageView } from './utils/pageViews';
 import { registerDatasetTicker } from './utils/pollingScheduler';
@@ -269,6 +270,7 @@ const App: React.FC = () => {
   const [isDebugOpen, setIsDebugOpen] = useState(false);
   const [isFirstVisitTutorialOpen, setIsFirstVisitTutorialOpen] = useState(false);
   const [isCmeTutorialOpen, setIsCmeTutorialOpen] = useState(false);
+  const [isAppTutorialOpen, setIsAppTutorialOpen] = useState(false);
   const [isForecastModelsModalOpen, setIsForecastModelsModalOpen] = useState(false);
   const [forecastModalSlug, setForecastModalSlug] = useState<string | null>(null);
   const [solarModalSlug, setSolarModalSlug] = useState<string | null>(null);
@@ -653,8 +655,8 @@ const App: React.FC = () => {
 
     const hasSeenTutorial = localStorage.getItem(NAVIGATION_TUTORIAL_KEY);
     if (!hasSeenTutorial) {
-      // Delay the tutorial so new users can orient themselves before being interrupted
-      const tutorialTimer = setTimeout(() => navigateToModelerOverlay('first-visit-tutorial'), 30000);
+      // Show the new app tutorial after a short delay to let the app load
+      const tutorialTimer = setTimeout(() => setIsAppTutorialOpen(true), 3000);
       return () => { clearTimeout(minTimer); clearTimeout(preloadTimer); clearTimeout(tutorialTimer); };
     }
     return () => { clearTimeout(minTimer); clearTimeout(preloadTimer); };
@@ -721,7 +723,8 @@ const App: React.FC = () => {
     ) {
       const hasSeenCmeTutorial = localStorage.getItem(CME_TUTORIAL_KEY);
       if (!hasSeenCmeTutorial) {
-        setTimeout(() => navigateToModelerOverlay('cme-modeler-tutorial'), 200);
+        // Tutorials removed — mark as seen so this block never fires
+        localStorage.setItem(CME_TUTORIAL_KEY, 'true');
       }
     }
   }, [activePage, isLoading, isFirstVisitTutorialOpen, isTutorialOpen, navigateToModelerOverlay]);
@@ -953,10 +956,13 @@ const App: React.FC = () => {
   }, [isDashboardMode, activeTimeRange, loadCMEData]);
 
   const handleShowTutorial = useCallback(() => {
-    setIsTutorialOpen(false);
-    navigateToModelerOverlay('first-visit-tutorial');
-    navigateToPath(TUTORIAL_PATH);
-  }, [navigateToModelerOverlay, navigateToPath]);
+    setIsAppTutorialOpen(true);
+  }, []);
+
+  const handleCloseAppTutorial = useCallback(() => {
+    setIsAppTutorialOpen(false);
+    localStorage.setItem(NAVIGATION_TUTORIAL_KEY, 'true');
+  }, []);
 
   useEffect(() => {
     if (activePage !== 'modeler') return;
@@ -1708,6 +1714,13 @@ const App: React.FC = () => {
                 isOpen={isCmeTutorialOpen}
                 onClose={handleCloseCmeTutorial}
                 onStepChange={handleTutorialStepChange}
+            />
+          </Suspense>
+
+          <Suspense fallback={null}>
+            <AppTutorial
+                isOpen={isAppTutorialOpen}
+                onClose={handleCloseAppTutorial}
             />
           </Suspense>
 
