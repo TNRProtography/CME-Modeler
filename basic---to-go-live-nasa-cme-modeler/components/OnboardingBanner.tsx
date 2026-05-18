@@ -523,9 +523,10 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
 interface OnboardingBannerProps {
   deferredInstallPrompt: Event | null;
   onInstallClick: () => void;
+  hideForTutorial?: boolean;
 }
 
-const OnboardingBanner: React.FC<OnboardingBannerProps> = ({ deferredInstallPrompt, onInstallClick }) => {
+const OnboardingBanner: React.FC<OnboardingBannerProps> = ({ deferredInstallPrompt, onInstallClick, hideForTutorial }) => {
   const [dismissed, setDismissed] = useState(() =>
     localStorage.getItem(BANNER_DISMISSED_KEY) === 'true'
   );
@@ -574,8 +575,8 @@ const OnboardingBanner: React.FC<OnboardingBannerProps> = ({ deferredInstallProm
   const showInstall = canInstall;
   const showNotif = isInstalled && !notifGranted;
 
-  // Hide entirely if: dismissed, or nothing left to show
-  const isVisible = !dismissed && (showInstall || showNotif);
+  // Hide entirely if: dismissed, nothing to show, or tutorial is active
+  const isVisible = !dismissed && !hideForTutorial && (showInstall || showNotif);
 
   // Fire analytics exactly once per mount when the banner becomes visible.
   // Using a ref-like guard via useEffect dependency list ensures we don't

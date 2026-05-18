@@ -10,6 +10,9 @@ export interface TutorialAction {
   forecastView?: 'simple' | 'advanced';
   openSettings?: boolean;
   closeSettings?: boolean;
+  openControlsPanel?: boolean;
+  closeControlsPanel?: boolean;
+  toggleHss?: boolean;
   scrollTo?: string;
   highlightId?: string;
 }
@@ -99,8 +102,8 @@ const STEPS: TutorialStep[] = [
   {
     id: 'cme-hss', section: 'CME Visualization', emoji: '💨',
     title: 'Coronal Hole / HSS Visualization',
-    content: 'Another world first. Toggle on to see coronal holes and high-speed streams spiralling through the solar system. HSS interact with CMEs and are a common aurora driver in NZ. Look for the toggle in the controls panel.',
-    action: { page: 'modeler', scrollTo: 'controls-panel-container', highlightId: 'controls-panel-container' },
+    content: 'Another world first. Coronal holes and the high-speed solar wind streams they produce are now visible spiralling through the solar system. HSS interact with CMEs and are a common aurora driver in NZ.',
+    action: { page: 'modeler', openControlsPanel: true, toggleHss: true, scrollTo: 'show-hss-toggle', highlightId: 'show-hss-toggle' },
     placement: 'bottom',
   },
   {
@@ -114,7 +117,7 @@ const STEPS: TutorialStep[] = [
     id: 'finish', section: 'All Done', emoji: '🎉',
     title: 'Go Chase Some Aurora',
     content: 'That\'s everything. Free, ad-free, always will be. Start with <strong>Simple View</strong> for a quick check, <strong>Advanced</strong> for the data, <strong>Solar Dashboard</strong> for the sun, and <strong>CME Visualization</strong> to track storms in 3D. Clear skies! 🌌',
-    action: { closeSettings: true, page: 'forecast', forecastView: 'simple' },
+    action: { closeSettings: true, closeControlsPanel: true, toggleHss: false, page: 'forecast', forecastView: 'simple' },
     placement: 'bottom',
   },
 ];
@@ -193,12 +196,15 @@ export interface AppTutorialProps {
   onForecastViewChange: (mode: 'simple' | 'advanced') => void;
   onOpenSettings: () => void;
   onCloseSettings: () => void;
+  onOpenControlsPanel: () => void;
+  onCloseControlsPanel: () => void;
+  onToggleHss: (show: boolean) => void;
 }
 
 const SECTIONS = ['Welcome', 'Forecast: Simple View', 'Forecast: Advanced View', 'Solar Dashboard', 'CME Visualization', 'Settings', 'All Done'];
 
 const AppTutorial: React.FC<AppTutorialProps> = ({
-  isOpen, onClose, onNavigateToPage, onForecastViewChange, onOpenSettings, onCloseSettings,
+  isOpen, onClose, onNavigateToPage, onForecastViewChange, onOpenSettings, onCloseSettings, onOpenControlsPanel, onCloseControlsPanel, onToggleHss,
 }) => {
   const [stepIndex, setStepIndex] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -229,8 +235,9 @@ const AppTutorial: React.FC<AppTutorialProps> = ({
     setIsTransitioning(true);
     setActiveHighlightId(null);
 
-    // Close settings first if needed
+    // Close settings/controls first if needed
     if (action.closeSettings) onCloseSettings();
+    if (action.closeControlsPanel) onCloseControlsPanel();
 
     // Navigate to page
     if (action.page) onNavigateToPage(action.page);
@@ -238,23 +245,34 @@ const AppTutorial: React.FC<AppTutorialProps> = ({
     // Switch forecast view
     if (action.forecastView) onForecastViewChange(action.forecastView);
 
-    // Open settings
+    // Open settings or controls panel
     if (action.openSettings) onOpenSettings();
 
-    // Determine delay based on whether we're changing pages
+    // Determine delay based on context
     const isPageChange = !!action.page;
     const isSolarDashboard = action.page === 'solar-activity';
     const baseDelay = isSolarDashboard ? 1500 : isPageChange ? 800 : 400;
 
     setTimeout(() => {
-      if (action.scrollTo) scrollToElement(action.scrollTo);
-      // Set highlight after scroll has time to settle
+      // Open controls panel after page has loaded
+      if (action.openControlsPanel) onOpenControlsPanel();
+
+      // Toggle HSS after controls panel opens
+      if (action.toggleHss !== undefined) {
+        setTimeout(() => onToggleHss(action.toggleHss!), 400);
+      }
+
+      // Scroll after everything has settled
+      const scrollDelay = (action.openControlsPanel ? 600 : 0) + (action.toggleHss ? 200 : 0);
       setTimeout(() => {
-        setActiveHighlightId(action.highlightId ?? null);
-        setIsTransitioning(false);
-      }, action.scrollTo ? 600 : 100);
+        if (action.scrollTo) scrollToElement(action.scrollTo);
+        setTimeout(() => {
+          setActiveHighlightId(action.highlightId ?? null);
+          setIsTransitioning(false);
+        }, action.scrollTo ? 600 : 100);
+      }, scrollDelay);
     }, baseDelay);
-  }, [onNavigateToPage, onForecastViewChange, onOpenSettings, onCloseSettings, scrollToElement]);
+  }, [onNavigateToPage, onForecastViewChange, onOpenSettings, onCloseSettings, onOpenControlsPanel, onCloseControlsPanel, onToggleHss, scrollToElement]);
 
   // Execute action when step changes
   useEffect(() => {

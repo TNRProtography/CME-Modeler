@@ -271,6 +271,7 @@ const App: React.FC = () => {
   const [isFirstVisitTutorialOpen, setIsFirstVisitTutorialOpen] = useState(false);
   const [isCmeTutorialOpen, setIsCmeTutorialOpen] = useState(false);
   const [isAppTutorialOpen, setIsAppTutorialOpen] = useState(false);
+  const [showBannerAfterTutorial, setShowBannerAfterTutorial] = useState(false);
   const [isForecastModelsModalOpen, setIsForecastModelsModalOpen] = useState(false);
   const [forecastModalSlug, setForecastModalSlug] = useState<string | null>(null);
   const [solarModalSlug, setSolarModalSlug] = useState<string | null>(null);
@@ -962,7 +963,17 @@ const App: React.FC = () => {
   const handleCloseAppTutorial = useCallback(() => {
     setIsAppTutorialOpen(false);
     localStorage.setItem(NAVIGATION_TUTORIAL_KEY, 'true');
-  }, []);
+    // Take user to simple forecast, what-to-expect section
+    navigateToPage('forecast');
+    handleForecastViewChange('simple');
+    // After a brief delay, scroll to the forecast panel
+    setTimeout(() => {
+      const el = document.getElementById('visibility-forecast-panel');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 500);
+    // Show onboarding banner after 10 seconds
+    setTimeout(() => setShowBannerAfterTutorial(true), 10000);
+  }, [navigateToPage, handleForecastViewChange]);
 
   useEffect(() => {
     if (activePage !== 'modeler') return;
@@ -1375,6 +1386,7 @@ const App: React.FC = () => {
           <OnboardingBanner
               deferredInstallPrompt={deferredInstallPrompt}
               onInstallClick={handleInstallClick}
+              hideForTutorial={isAppTutorialOpen || (!showBannerAfterTutorial && !localStorage.getItem(NAVIGATION_TUTORIAL_KEY))}
           />
 
           <header className="flex-shrink-0 p-1.5 md:p-3 bg-gradient-to-r from-black/80 via-neutral-900/80 to-black/70 backdrop-blur-xl border-b border-white/10 flex items-center gap-2 sm:gap-3 relative z-[2001] shadow-2xl soft-appear">
@@ -1725,6 +1737,9 @@ const App: React.FC = () => {
                 onForecastViewChange={handleForecastViewChange}
                 onOpenSettings={handleOpenSettings}
                 onCloseSettings={handleCloseSettings}
+                onOpenControlsPanel={() => navigateToModelerOverlay('controls-panel')}
+                onCloseControlsPanel={() => navigateToModelerOverlay(null)}
+                onToggleHss={(show: boolean) => handleShowHssChange(show)}
             />
           </Suspense>
 
