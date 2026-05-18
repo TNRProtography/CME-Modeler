@@ -716,7 +716,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             })()}
                             <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} auroraScore={auroraScore} rawScore15={ovalProjectedScores.score15} rawScore30={ovalProjectedScores.score30} rawScore60={ovalProjectedScores.score60} rawScore120={ovalProjectedScores.score120} />
                             
-                            <div id="imf-chart-section"><ForecastChartPanel
+                            <div id="imf-chart-section" className="col-span-12"><ForecastChartPanel
                                 title="Interplanetary Magnetic Field"
                                 currentValue={`Bt: ${gaugeData.bt.value} / Bz: ${gaugeData.bz.value} <span class='text-base'>nT</span><span class='text-xs block text-neutral-400'>Toggle Bx/By inside chart · Bt source: ${gaugeData.bt.source} · Bz source: ${gaugeData.bz.source}</span>`}
                                 emoji={gaugeData.bz.emoji}
