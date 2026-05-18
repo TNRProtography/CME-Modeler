@@ -110,7 +110,7 @@ const STEPS: TutorialStep[] = [
     id: 'notifications', section: 'Settings', emoji: '🔔',
     title: 'Aurora Notifications',
     content: 'Pick a preset based on your gear: naked eye, phone camera, DSLR, or everything. Or go fully custom and toggle each alert individually. Install the app to your home screen first for reliable notifications.',
-    action: { openSettings: true },
+    action: { closeControlsPanel: true, toggleHss: false, openSettings: true },
     placement: 'bottom',
   },
   {
@@ -235,35 +235,37 @@ const AppTutorial: React.FC<AppTutorialProps> = ({
     setIsTransitioning(true);
     setActiveHighlightId(null);
 
-    // Close settings/controls first if needed
+    // Close settings if needed
     if (action.closeSettings) onCloseSettings();
-    if (action.closeControlsPanel) onCloseControlsPanel();
 
-    // Navigate to page
-    if (action.page) onNavigateToPage(action.page);
+    // Close controls panel first if explicitly requested AND we're not about to open it
+    if (action.closeControlsPanel && !action.openControlsPanel) onCloseControlsPanel();
+
+    // Navigate to page (but skip if openControlsPanel is set - that implies modeler page)
+    if (action.page && !action.openControlsPanel) onNavigateToPage(action.page);
 
     // Switch forecast view
     if (action.forecastView) onForecastViewChange(action.forecastView);
 
-    // Open settings or controls panel
+    // Open settings
     if (action.openSettings) onOpenSettings();
 
+    // If opening controls panel, use that as the navigation (it navigates to modeler + overlay)
+    if (action.openControlsPanel) onOpenControlsPanel();
+
     // Determine delay based on context
-    const isPageChange = !!action.page;
+    const isPageChange = !!action.page || !!action.openControlsPanel;
     const isSolarDashboard = action.page === 'solar-activity';
     const baseDelay = isSolarDashboard ? 1500 : isPageChange ? 800 : 400;
 
     setTimeout(() => {
-      // Open controls panel after page has loaded
-      if (action.openControlsPanel) onOpenControlsPanel();
-
-      // Toggle HSS after controls panel opens
+      // Toggle HSS after page/panel has loaded
       if (action.toggleHss !== undefined) {
-        setTimeout(() => onToggleHss(action.toggleHss!), 400);
+        onToggleHss(action.toggleHss);
       }
 
       // Scroll after everything has settled
-      const scrollDelay = (action.openControlsPanel ? 600 : 0) + (action.toggleHss ? 200 : 0);
+      const scrollDelay = action.toggleHss ? 600 : 0;
       setTimeout(() => {
         if (action.scrollTo) scrollToElement(action.scrollTo);
         setTimeout(() => {
