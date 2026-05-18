@@ -3,11 +3,19 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 
+// ── Reusable visual components ───────────────────────────────────────────────
+
+const Screenshot: React.FC<{ src: string; alt: string }> = ({ src, alt }) => (
+  <div className="rounded-lg overflow-hidden border border-neutral-800 my-3">
+    <img src={src} alt={alt} className="w-full h-auto" loading="lazy" />
+  </div>
+);
+
 const MockForecastSlot: React.FC<{ time: string; level: string; emoji: string; color: string; active?: boolean }> = ({ time, level, emoji, color, active }) => (
-  <div className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${active ? 'bg-neutral-800/80 scale-[1.02]' : 'bg-neutral-800/40'}`}>
+  <div className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${active ? 'bg-neutral-800/80' : 'bg-neutral-800/40'}`}>
     <span className={`text-xs font-semibold w-12 ${time === 'Now' ? 'text-emerald-400' : 'text-neutral-500'}`}>{time}</span>
     <div className="flex-1 h-1.5 bg-neutral-700 rounded-full overflow-hidden">
-      <div className="h-full rounded-full transition-all duration-700" style={{ width: `${Math.random() * 40 + 20}%`, backgroundColor: color }} />
+      <div className="h-full rounded-full" style={{ width: `${Math.min(80, Math.max(15, Math.random() * 60 + 15))}%`, backgroundColor: color }} />
     </div>
     <span className="text-lg">{emoji}</span>
     <span className="text-xs text-neutral-400 w-20 text-right">{level}</span>
@@ -22,7 +30,7 @@ const ConfidenceDot: React.FC<{ color: string; label: string }> = ({ color, labe
 );
 
 const MapLegendItem: React.FC<{ icon: React.ReactNode; label: string; desc: string }> = ({ icon, label, desc }) => (
-  <div className="flex items-start gap-3 py-2">
+  <div className="flex items-start gap-3 py-1.5">
     <div className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg bg-neutral-800/80 text-lg">{icon}</div>
     <div>
       <div className="text-xs font-semibold text-neutral-200">{label}</div>
@@ -32,8 +40,8 @@ const MapLegendItem: React.FC<{ icon: React.ReactNode; label: string; desc: stri
 );
 
 const SunspotClass: React.FC<{ cls: string; risk: string; color: string; desc: string }> = ({ cls, risk, color, desc }) => (
-  <div className="flex items-start gap-3 py-2">
-    <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-lg font-bold text-xs" style={{ backgroundColor: color + '20', color, border: `1px solid ${color}40` }}>{cls}</div>
+  <div className="flex items-start gap-3 py-1.5">
+    <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-lg font-bold text-[10px]" style={{ backgroundColor: color + '20', color, border: `1px solid ${color}40` }}>{cls}</div>
     <div className="flex-1">
       <div className="flex items-center gap-2">
         <span className="text-xs font-semibold text-neutral-200">{cls}</span>
@@ -41,13 +49,6 @@ const SunspotClass: React.FC<{ cls: string; risk: string; color: string; desc: s
       </div>
       <div className="text-xs text-neutral-500 mt-0.5">{desc}</div>
     </div>
-  </div>
-);
-
-const SuviCard: React.FC<{ wavelength: string; color: string; bestFor: string }> = ({ wavelength, color, bestFor }) => (
-  <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-neutral-800/50">
-    <div className="w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold" style={{ backgroundColor: color + '25', color, border: `1px solid ${color}50` }}>{wavelength}</div>
-    <div className="text-xs text-neutral-400">{bestFor}</div>
   </div>
 );
 
@@ -61,9 +62,18 @@ const PresetButton: React.FC<{ emoji: string; label: string; desc: string; activ
   </div>
 );
 
+const WorldFirstBadge = () => (
+  <div className="text-center my-2">
+    <span className="inline-block px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/30">World First</span>
+  </div>
+);
+
+// ── Steps ────────────────────────────────────────────────────────────────────
+
 interface StepDef { id: string; section: string; title: string; render: () => React.ReactNode; }
 
 const STEPS: StepDef[] = [
+  // Welcome
   { id: 'welcome', section: 'Welcome', title: 'Welcome to Spot The Aurora', render: () => (
     <div className="space-y-4 text-center">
       <div className="text-6xl">🌌</div>
@@ -80,6 +90,7 @@ const STEPS: StepDef[] = [
     </div>
   )},
 
+  // Simple: What to Expect (no screenshot yet, use mock)
   { id: 'simple-forecast', section: 'Forecast: Simple View', title: 'What to Expect', render: () => (
     <div className="space-y-3">
       <p className="text-xs text-neutral-400 text-center">Your GPS-personalised aurora forecast for the next 2 hours.</p>
@@ -99,18 +110,19 @@ const STEPS: StepDef[] = [
     </div>
   )},
 
+  // Simple: Sightings map (no screenshot yet, use SVG mock)
   { id: 'simple-map', section: 'Forecast: Simple View', title: 'Sightings Map and Aurora Oval', render: () => (
     <div className="space-y-3">
       <p className="text-xs text-neutral-400 text-center">Real-time reports and the live aurora oval.</p>
-      <div className="relative bg-neutral-900 rounded-lg border border-neutral-800 overflow-hidden h-32">
-        <svg viewBox="0 0 300 130" className="w-full h-full">
-          <ellipse cx="150" cy="170" rx="200" ry="80" fill="none" stroke="#34d399" strokeWidth="2" opacity="0.6" />
-          <ellipse cx="150" cy="170" rx="200" ry="80" fill="#34d399" opacity="0.08" />
-          <line x1="20" y1="105" x2="280" y2="90" stroke="#38bdf8" strokeWidth="1.5" strokeDasharray="4 6" opacity="0.6" />
-          <text x="150" y="65" textAnchor="middle" fill="#525252" fontSize="10">NEW ZEALAND</text>
-          <text x="120" y="95" fontSize="14">📱</text>
-          <text x="180" y="80" fontSize="14">👁️</text>
-          <text x="85" y="85" fontSize="12">❌📷</text>
+      <div className="relative bg-neutral-900 rounded-lg border border-neutral-800 overflow-hidden h-28">
+        <svg viewBox="0 0 300 120" className="w-full h-full">
+          <ellipse cx="150" cy="160" rx="200" ry="80" fill="none" stroke="#34d399" strokeWidth="2" opacity="0.6" />
+          <ellipse cx="150" cy="160" rx="200" ry="80" fill="#34d399" opacity="0.08" />
+          <line x1="20" y1="95" x2="280" y2="82" stroke="#38bdf8" strokeWidth="1.5" strokeDasharray="4 6" opacity="0.6" />
+          <text x="150" y="55" textAnchor="middle" fill="#525252" fontSize="10">NEW ZEALAND</text>
+          <text x="120" y="85" fontSize="14">📱</text>
+          <text x="180" y="72" fontSize="14">👁️</text>
+          <text x="85" y="78" fontSize="11">❌📷</text>
         </svg>
       </div>
       <div className="space-y-0.5">
@@ -130,115 +142,90 @@ const STEPS: StepDef[] = [
     </div>
   )},
 
-  { id: 'simple-3day', section: 'Forecast: Simple View', title: 'NOAA 3-Day Forecast', render: () => (
+  // Simple: 3-day forecast (REAL SCREENSHOT)
+  { id: 'simple-3day', section: 'Forecast: Simple View', title: '3-Day Aurora Forecast', render: () => (
     <div className="space-y-3">
-      <p className="text-xs text-neutral-400 text-center">Plan ahead with the 3-day outlook.</p>
-      <div className="bg-neutral-800/40 rounded-lg p-3">
-        <div className="flex items-end gap-1 h-14 mb-2">
-          {[20, 35, 60, 45, 30, 15, 40, 55, 70, 50, 25, 10].map((h, i) => (
-            <div key={i} className="flex-1 rounded-sm transition-all" style={{ height: `${h}%`, backgroundColor: h > 50 ? '#f472b6' : '#34d399', opacity: i >= 4 && i <= 7 ? 0.25 : 1 }} />
-          ))}
-        </div>
-        <div className="flex justify-between text-[8px] text-neutral-600">
-          <span>Tonight</span><span className="text-neutral-500">☀️ Daylight</span><span>Tomorrow night</span>
-        </div>
+      <p className="text-xs text-neutral-400 text-center">Plan ahead. Tap any window for details.</p>
+      <Screenshot src="/tutorial-3day-forecast.png" alt="3-day aurora forecast showing activity bars with sunrise, sunset, moonrise and moonset times" />
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="bg-neutral-800/40 rounded-lg px-2 py-1.5"><div className="text-[10px] text-emerald-400 font-semibold">Green</div><div className="text-[9px] text-neutral-500">Aurora base</div></div>
+        <div className="bg-neutral-800/40 rounded-lg px-2 py-1.5"><div className="text-[10px] text-pink-400 font-semibold">Pink</div><div className="text-[9px] text-neutral-500">Active</div></div>
+        <div className="bg-neutral-800/40 rounded-lg px-2 py-1.5"><div className="text-[10px] text-sky-400 font-semibold">Blue</div><div className="text-[9px] text-neutral-500">Intense (G3+)</div></div>
       </div>
-      <div className="grid grid-cols-2 gap-2 text-center">
-        <div className="bg-neutral-800/40 rounded-lg px-3 py-2"><div className="text-lg">🌅</div><div className="text-[10px] text-neutral-500">Sunrise/sunset</div></div>
-        <div className="bg-neutral-800/40 rounded-lg px-3 py-2"><div className="text-lg">🌙</div><div className="text-[10px] text-neutral-500">Moonrise/moonset</div></div>
-      </div>
-      <p className="text-[10px] text-neutral-500 text-center">Faded bars = daylight. Aurora viewing needs the dark sections.</p>
+      <p className="text-[10px] text-neutral-500 text-center">Aurora viewing needs dark skies. Check the moon and sunset times.</p>
     </div>
   )},
 
-  { id: 'simple-cloud', section: 'Forecast: Simple View', title: 'Cloud Cover and Webcams', render: () => (
+  // Simple: Cloud cover (REAL SCREENSHOT)
+  { id: 'simple-cloud', section: 'Forecast: Simple View', title: 'Cloud Cover', render: () => (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3">
-        <div className="bg-neutral-800/40 rounded-lg p-4 text-center"><div className="text-3xl mb-2">☁️</div><div className="text-xs font-semibold text-neutral-300">Cloud Cover</div><div className="text-[10px] text-neutral-500 mt-1">No stars = no aurora. Check the forecast.</div></div>
-        <div className="bg-neutral-800/40 rounded-lg p-4 text-center"><div className="text-3xl mb-2">📹</div><div className="text-xs font-semibold text-neutral-300">Webcams</div><div className="text-[10px] text-neutral-500 mt-1">Live cameras around NZ. Check before heading out.</div></div>
-      </div>
+      <p className="text-xs text-neutral-400 text-center">No stars = no aurora. Check the cloud forecast.</p>
+      <Screenshot src="/tutorial-cloud-cover.png" alt="Windy.com cloud cover forecast for New Zealand" />
+      <p className="text-[10px] text-neutral-500 text-center">Powered by Windy.com. Look for clear patches over the South Island.</p>
     </div>
   )},
 
+  // Advanced view (REAL SCREENSHOT)
   { id: 'advanced-overview', section: 'Forecast: Advanced View', title: 'Advanced View', render: () => (
     <div className="space-y-3">
       <p className="text-xs text-neutral-400 text-center">Toggle to Advanced to see the raw data behind the forecast.</p>
-      <div className="bg-neutral-800/40 rounded-lg p-3">
-        <div className="text-[10px] text-neutral-500 mb-1">IMF Bz (24 hours)</div>
-        <svg viewBox="0 0 200 40" className="w-full h-10">
-          <line x1="0" y1="20" x2="200" y2="20" stroke="#333" strokeWidth="0.5" />
-          <polyline fill="none" stroke="#f87171" strokeWidth="1.5" points="0,22 20,18 40,25 60,30 80,15 100,10 120,28 140,35 160,20 180,12 200,18" />
-        </svg>
-      </div>
-      <div className="grid grid-cols-3 gap-2">
-        {['Speed', 'Density', 'Bz/Bt'].map(label => (
-          <div key={label} className="bg-neutral-800/30 rounded-lg px-2 py-2 text-center">
-            <svg viewBox="0 0 60 20" className="w-full h-4 mb-1"><polyline fill="none" stroke="#38bdf8" strokeWidth="1" points={`0,${12} 15,${8} 30,${15} 45,${6} 60,${11}`} /></svg>
-            <div className="text-[9px] text-neutral-500">{label}</div>
-          </div>
-        ))}
-      </div>
-      <p className="text-[10px] text-neutral-500 text-center">24-hour graphs for all solar wind components plus an EPAM energetic particle monitor at the bottom. If you want to know <em>why</em>, look here.</p>
+      <Screenshot src="/tutorial-advanced-view.png" alt="Advanced forecast view showing IMF Bz chart, IMF clock, and solar wind phase" />
+      <p className="text-[10px] text-neutral-500 text-center">24-hour charts for all solar wind components, the IMF clock, solar wind phase estimate, and EPAM energetic particles. If you want to know <em>why</em> the forecast says what it says, look here.</p>
     </div>
   )},
 
-  { id: 'solar-suvi', section: 'Solar Dashboard', title: 'SUVI Difference Imagery', render: () => (
+  // Solar: SUVI 131 (REAL SCREENSHOT)
+  { id: 'solar-suvi-131', section: 'Solar Dashboard', title: 'SUVI 131 Angstrom', render: () => (
     <div className="space-y-3">
-      <p className="text-xs text-neutral-400 text-center">Highlights anything moving on the sun by subtracting consecutive frames.</p>
-      <div className="flex items-center gap-2">
-        <div className="flex-1 bg-neutral-800/40 rounded-lg p-2 text-center">
-          <div className="w-14 h-14 mx-auto rounded-full bg-yellow-600/30 border border-yellow-500/20" />
-          <div className="text-[9px] text-neutral-500 mt-1">Normal</div>
-        </div>
-        <div className="text-neutral-600 text-lg">→</div>
-        <div className="flex-1 bg-neutral-800/40 rounded-lg p-2 text-center">
-          <div className="relative w-14 h-14 mx-auto rounded-full bg-neutral-900 border border-neutral-700">
-            <div className="absolute top-1 right-1 w-3 h-3 rounded-full bg-emerald-400/80 animate-pulse" />
-            <div className="absolute bottom-2 left-2 w-2 h-4 rounded-full bg-emerald-400/50 rotate-45" />
-          </div>
-          <div className="text-[9px] text-emerald-400 mt-1">Difference</div>
-        </div>
-      </div>
-      <p className="text-[10px] text-neutral-500 text-center">Stationary = invisible. Moving material lights up.</p>
-      <div className="space-y-2 mt-2">
-        <SuviCard wavelength="195" color="#34d399" bestFor="Structures leaving the sun" />
-        <SuviCard wavelength="131" color="#f87171" bestFor="Pinpointing solar flares" />
-        <SuviCard wavelength="304" color="#fb923c" bestFor="Dense eruptions and filaments" />
-      </div>
+      <p className="text-xs text-neutral-400 text-center">Best for pinpointing exactly where solar flares are.</p>
+      <Screenshot src="/tutorial-suvi-131.png" alt="SUVI 131 angstrom raw and difference imagery showing solar flare location" />
+      <p className="text-[10px] text-neutral-500 text-center"><strong className="text-neutral-300">Left:</strong> Raw image. <strong className="text-neutral-300">Right:</strong> Difference mode. Anything that moved between frames lights up. Stationary features disappear.</p>
     </div>
   )},
 
+  // Solar: SUVI 304 (REAL SCREENSHOT)
+  { id: 'solar-suvi-304', section: 'Solar Dashboard', title: 'SUVI 304 Angstrom', render: () => (
+    <div className="space-y-3">
+      <p className="text-xs text-neutral-400 text-center">Best for dense eruptions and filaments.</p>
+      <Screenshot src="/tutorial-suvi-304.png" alt="SUVI 304 angstrom raw and difference imagery showing eruptions" />
+      <p className="text-[10px] text-neutral-500 text-center">Watch for bright spots erupting from the sun's surface. Filament eruptions show clearly in difference mode.</p>
+    </div>
+  )},
+
+  // Solar: SUVI 195 (REAL SCREENSHOT)
+  { id: 'solar-suvi-195', section: 'Solar Dashboard', title: 'SUVI 195 Angstrom', render: () => (
+    <div className="space-y-3">
+      <p className="text-xs text-neutral-400 text-center">Best for seeing structures leaving the sun.</p>
+      <Screenshot src="/tutorial-suvi-195.png" alt="SUVI 195 angstrom raw and difference imagery showing coronal structures" />
+      <p className="text-[10px] text-neutral-500 text-center">195 shows the solar corona in incredible detail. Difference mode reveals material flowing outward that you'd never see in the raw image.</p>
+    </div>
+  )},
+
+  // Solar: Coronagraph (REAL SCREENSHOT)
   { id: 'solar-coronagraph', section: 'Solar Dashboard', title: 'Coronagraph Imagery', render: () => (
     <div className="space-y-3">
-      <p className="text-xs text-neutral-400 text-center">Blocks the bright solar disk to reveal what's leaving the sun.</p>
-      <div className="flex justify-center">
-        <div className="relative w-36 h-36">
-          <svg viewBox="0 0 160 160" className="w-full h-full">
-            <circle cx="80" cy="80" r="55" fill="#1a1a1a" opacity="0.4" />
-            <circle cx="80" cy="80" r="14" fill="#262626" stroke="#333" strokeWidth="1" />
-            <circle cx="80" cy="80" r="6" fill="#fbbf24" opacity="0.3" />
-            <path d="M95,65 Q120,50 140,45" fill="none" stroke="#a3a3a3" strokeWidth="2" opacity="0.4" />
-            <circle cx="140" cy="45" r="6" fill="#a3a3a3" opacity="0.15" />
-            <text x="145" y="42" fill="#737373" fontSize="7">CME</text>
-          </svg>
-        </div>
-      </div>
-      <p className="text-[10px] text-neutral-500 text-center">CMEs appear as expanding clouds moving outward. Difference mode makes them far easier to spot.</p>
-      <p className="text-[10px] text-neutral-500 text-center">This is where you see potential storms before they reach Earth days later.</p>
+      <p className="text-xs text-neutral-400 text-center">Blocks the bright solar disk to reveal CMEs leaving the sun.</p>
+      <Screenshot src="/tutorial-coronagraph.png" alt="Coronagraph raw and difference imagery showing the outer corona" />
+      <p className="text-[10px] text-neutral-500 text-center">Multiple sources available: GOES-19, SOHO LASCO C2/C3, and STEREO-A. Difference mode makes CMEs expanding outward far easier to spot. This is where you see storms coming days before they arrive.</p>
     </div>
   )},
 
+  // Solar: Sunspots (REAL SCREENSHOT)
   { id: 'solar-sunspots', section: 'Solar Dashboard', title: 'Sunspot Tracker', render: () => (
-    <div className="space-y-2">
-      <p className="text-xs text-neutral-400 text-center">Classified by how explosive they could be.</p>
-      <SunspotClass cls="Alpha" risk="Stable" color="#34d399" desc="Simple, single polarity. Nothing to worry about." />
-      <SunspotClass cls="Beta" risk="Minor" color="#fbbf24" desc="Two polarities. Minor to moderate flares." />
-      <SunspotClass cls="B-G" risk="Active" color="#fb923c" desc="Beta-Gamma. Complex. Strong flares possible." />
-      <SunspotClass cls="BGD" risk="Danger" color="#f87171" desc="Beta-Gamma-Delta. X-class flares and major CMEs." />
+    <div className="space-y-3">
+      <p className="text-xs text-neutral-400 text-center">Tap any region for detailed info and flare probabilities.</p>
+      <Screenshot src="/tutorial-sunspots.png" alt="Active sunspot tracker showing labeled regions on the solar disk with detailed region info" />
+      <div className="space-y-1 mt-1">
+        <SunspotClass cls="Alpha" risk="Stable" color="#34d399" desc="Simple, single polarity. Nothing to worry about." />
+        <SunspotClass cls="Beta" risk="Minor" color="#fbbf24" desc="Two polarities. Minor to moderate flares." />
+        <SunspotClass cls="B-G" risk="Active" color="#fb923c" desc="Beta-Gamma. Strong flares possible." />
+        <SunspotClass cls="BGD" risk="Danger" color="#f87171" desc="Beta-Gamma-Delta. X-class flares and major CMEs." />
+      </div>
     </div>
   )},
 
-  { id: 'cme-overview', section: 'CME Visualization', title: 'World-First 3D CME Model', render: () => (
+  // CME: Overview (no screenshot yet, use SVG)
+  { id: 'cme-overview', section: 'CME Visualization', title: '3D CME Visualization', render: () => (
     <div className="space-y-3">
       <div className="flex justify-center">
         <svg viewBox="0 0 160 160" className="w-36 h-36">
@@ -250,36 +237,17 @@ const STEPS: StepDef[] = [
           <text x="118" y="52" fill="#f87171" fontSize="6" opacity="0.6">CME</text>
         </svg>
       </div>
-      <div className="text-center">
-        <span className="inline-block px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/30">World First</span>
-      </div>
-      <p className="text-xs text-neutral-400 text-center">Watch CMEs travel from the Sun to Earth in real-time 3D. Rotate, zoom, and scrub through time.</p>
-    </div>
-  )},
-
-  { id: 'cme-controls', section: 'CME Visualization', title: 'Timeline and Controls', render: () => (
-    <div className="space-y-3">
-      <div className="bg-neutral-800/60 rounded-lg px-3 py-2.5 flex items-center gap-2">
-        <div className="flex items-center gap-1">
-          <div className="w-6 h-6 rounded bg-neutral-700/60 flex items-center justify-center text-[10px]">⏮</div>
-          <div className="w-7 h-7 rounded bg-neutral-700/60 flex items-center justify-center text-xs">▶️</div>
-          <div className="w-6 h-6 rounded bg-neutral-700/60 flex items-center justify-center text-[10px]">⏭</div>
-        </div>
-        <div className="flex-1 h-1.5 bg-neutral-700 rounded-full"><div className="w-1/3 h-full bg-sky-500 rounded-full" /></div>
-        <div className="flex gap-0.5">
-          {['1x', '5x', '20x'].map(s => (
-            <div key={s} className={`px-1.5 py-0.5 rounded text-[8px] ${s === '1x' ? 'bg-sky-600/30 text-sky-400' : 'bg-neutral-800 text-neutral-500'}`}>{s}</div>
-          ))}
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        {[{ l: 'CME List', d: 'Tap any CME to focus on it' }, { l: 'Impact Graph', d: 'Predicted arrival at Earth' }, { l: 'Forecast Models', d: 'Compare arrival estimates' }, { l: 'Share CME', d: 'Copy a link to share' }].map(i => (
+      <WorldFirstBadge />
+      <p className="text-xs text-neutral-400 text-center">Watch Coronal Mass Ejections travel from the Sun to Earth in real-time 3D. Rotate, zoom, and scrub through time.</p>
+      <div className="grid grid-cols-2 gap-2 mt-2">
+        {[{ l: 'CME List', d: 'Tap any CME to focus' }, { l: 'Impact Graph', d: 'Predicted arrival' }, { l: 'Forecast Models', d: 'Compare estimates' }, { l: 'Share CME', d: 'Copy a link to share' }].map(i => (
           <div key={i.l} className="bg-neutral-800/40 rounded-lg px-3 py-2"><div className="text-[10px] font-semibold text-neutral-300">{i.l}</div><div className="text-[9px] text-neutral-500">{i.d}</div></div>
         ))}
       </div>
     </div>
   )},
 
+  // CME: HSS (no screenshot yet, use SVG)
   { id: 'cme-hss', section: 'CME Visualization', title: 'Coronal Hole / HSS Visualization', render: () => (
     <div className="space-y-3">
       <div className="flex justify-center">
@@ -292,29 +260,21 @@ const STEPS: StepDef[] = [
           <circle cx="130" cy="80" r="4" fill="#38bdf8" />
         </svg>
       </div>
-      <div className="text-center">
-        <span className="inline-block px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/30">World First</span>
-      </div>
-      <p className="text-xs text-neutral-400 text-center">See coronal holes and high-speed streams spiralling through the solar system. HSS interact with CMEs and are a common aurora driver in NZ.</p>
+      <WorldFirstBadge />
+      <p className="text-xs text-neutral-400 text-center">Toggle on to see coronal holes and high-speed streams spiralling through the solar system. HSS interact with CMEs and are a common aurora driver in NZ.</p>
     </div>
   )},
 
+  // Notifications (REAL SCREENSHOT)
   { id: 'notifications', section: 'Settings and Notifications', title: 'Aurora Notifications', render: () => (
     <div className="space-y-3">
-      <p className="text-xs text-neutral-400 text-center">Choose a preset or customise every alert.</p>
-      <div className="space-y-2">
-        <PresetButton emoji="👁️" label="Eye visibility" desc="Only when visible to the naked eye" />
-        <PresetButton emoji="📱" label="Phone camera" desc="When your phone camera will pick it up" active />
-        <PresetButton emoji="📷" label="DSLR / Mirrorless" desc="When a long exposure will show it" />
-        <PresetButton emoji="🔔" label="Everything" desc="All aurora and space weather alerts" />
-      </div>
-      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-neutral-800/30">
-        <span className="text-sm">🎛️</span>
-        <span className="text-[10px] text-neutral-400">Or go fully custom and toggle each alert individually</span>
-      </div>
+      <p className="text-xs text-neutral-400 text-center">Choose a preset based on your gear, or go fully custom.</p>
+      <Screenshot src="/tutorial-notifications.png" alt="Notification preset templates: naked eye, phone camera, DSLR, everything, and custom" />
+      <p className="text-[10px] text-neutral-500 text-center">Pick a template to get started, or choose Custom to toggle each alert individually. Install the app to your home screen for notifications to work reliably.</p>
     </div>
   )},
 
+  // Finish
   { id: 'finish', section: "You're All Set", title: 'Go Chase Some Aurora', render: () => (
     <div className="space-y-4 text-center">
       <div className="text-5xl">🎉</div>

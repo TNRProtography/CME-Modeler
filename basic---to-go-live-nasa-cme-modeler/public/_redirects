@@ -6,4 +6,5 @@
 /sitemap.xml    /sitemap.xml    200
 /fonts/*        /fonts/:splat   200
 /faq            /faq.html       200
+/tutorial-*.png  /tutorial-:splat.png  200
 /*              /index.html     200
