@@ -261,10 +261,22 @@ export const OvalForecastTimeline: React.FC<OvalForecastTimelineProps> = ({
 
   return (
     <div className="bg-neutral-900/90 border-t border-neutral-700 px-3 py-2.5 flex-shrink-0">
-      {/* Top row: time label + confidence */}
+      {/* Row 1: time label + controls + confidence */}
       <div className="flex items-center justify-between mb-2">
+        {/* Left: Live button (always takes space) + time info */}
         <div className="flex items-center gap-2">
-          {isForecasting ? (
+          <button
+            onClick={handleReset}
+            title="Back to live"
+            className={`px-2 py-1 rounded-md text-[10px] font-semibold uppercase tracking-wider flex-shrink-0 transition-colors ${
+              isForecasting
+                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 cursor-pointer'
+                : 'bg-emerald-500/10 text-emerald-400/60 border border-emerald-500/20 cursor-default'
+            }`}
+          >
+            Live
+          </button>
+          {isForecasting && (
             <>
               <span className="text-[10px] font-bold uppercase tracking-widest text-amber-400">Forecast</span>
               <span className="text-sm font-semibold text-neutral-200 tabular-nums">
@@ -274,10 +286,54 @@ export const OvalForecastTimeline: React.FC<OvalForecastTimelineProps> = ({
                 (+{activeFrame.minutesFromNow} min)
               </span>
             </>
-          ) : (
-            <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400">Live</span>
           )}
         </div>
+
+        {/* Centre: transport controls */}
+        <div className="flex items-center gap-1">
+          {/* Prev */}
+          <button
+            onClick={handleStepBack}
+            disabled={frameIndex === 0}
+            title="Previous frame"
+            className="p-1.5 rounded-md bg-neutral-800/50 text-neutral-200 hover:bg-neutral-700/60 border border-neutral-700/80 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <svg className="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
+            </svg>
+          </button>
+
+          {/* Play/Pause */}
+          <button
+            onClick={handlePlayPause}
+            title={isPlaying ? 'Pause' : 'Play forecast'}
+            className="p-1.5 rounded-md bg-neutral-800/50 text-neutral-200 hover:bg-neutral-700/60 border border-neutral-700/80 transition-colors"
+          >
+            {isPlaying ? (
+              <svg className="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+              </svg>
+            ) : (
+              <svg className="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            )}
+          </button>
+
+          {/* Next */}
+          <button
+            onClick={handleStepForward}
+            disabled={frameIndex >= TOTAL_FRAMES - 1}
+            title="Next frame"
+            className="p-1.5 rounded-md bg-neutral-800/50 text-neutral-200 hover:bg-neutral-700/60 border border-neutral-700/80 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <svg className="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Right: confidence */}
         <div className="flex items-center gap-1.5">
           <span
             className="inline-block w-2 h-2 rounded-full flex-shrink-0"
@@ -287,61 +343,9 @@ export const OvalForecastTimeline: React.FC<OvalForecastTimelineProps> = ({
         </div>
       </div>
 
-      {/* Controls row: prev, play/pause, next, slider */}
+      {/* Row 2: slider on its own full-width row */}
       <div className="flex items-center gap-2">
-        {/* Back to live button (only when forecasting) */}
-        {isForecasting && (
-          <button
-            onClick={handleReset}
-            title="Back to live"
-            className="px-2 py-1.5 rounded-md text-[10px] font-semibold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 transition-colors flex-shrink-0"
-          >
-            Live
-          </button>
-        )}
-
-        {/* Prev */}
-        <button
-          onClick={handleStepBack}
-          disabled={frameIndex === 0}
-          title="Previous frame"
-          className="p-1.5 rounded-md bg-neutral-800/50 text-neutral-200 hover:bg-neutral-700/60 border border-neutral-700/80 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          <svg className="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
-          </svg>
-        </button>
-
-        {/* Play/Pause */}
-        <button
-          onClick={handlePlayPause}
-          title={isPlaying ? 'Pause' : 'Play forecast'}
-          className="p-1.5 rounded-md bg-neutral-800/50 text-neutral-200 hover:bg-neutral-700/60 border border-neutral-700/80 transition-colors"
-        >
-          {isPlaying ? (
-            <svg className="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
-            </svg>
-          ) : (
-            <svg className="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M8 5v14l11-7z" />
-            </svg>
-          )}
-        </button>
-
-        {/* Next */}
-        <button
-          onClick={handleStepForward}
-          disabled={frameIndex >= TOTAL_FRAMES - 1}
-          title="Next frame"
-          className="p-1.5 rounded-md bg-neutral-800/50 text-neutral-200 hover:bg-neutral-700/60 border border-neutral-700/80 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          <svg className="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
-          </svg>
-        </button>
-
-        {/* Slider */}
+        <span className="flex-shrink-0 text-[10px] text-neutral-600 tabular-nums w-7">Now</span>
         <div className="relative flex-grow flex items-center h-5">
           <input
             type="range"
@@ -349,22 +353,10 @@ export const OvalForecastTimeline: React.FC<OvalForecastTimelineProps> = ({
             max={TOTAL_FRAMES - 1}
             value={frameIndex}
             onChange={handleSliderChange}
-            className="w-full h-1.5 bg-neutral-700/80 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-neutral-200 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-neutral-200"
+            className="w-full h-1.5 bg-neutral-700/80 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-neutral-200 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-neutral-200 [&::-moz-range-thumb]:border-0"
           />
-          {/* "Now" marker at position 0 when slider has moved away */}
-          {isForecasting && (
-            <div
-              className="absolute top-1/2 -translate-y-1/2 w-0.5 h-3.5 bg-emerald-400 rounded-full pointer-events-none"
-              style={{ left: '0%' }}
-              title="Now (live data)"
-            />
-          )}
         </div>
-
-        {/* Time labels at edges */}
-        <div className="flex-shrink-0 text-[10px] text-neutral-500 tabular-nums min-w-[32px] text-right">
-          {activeFrame.minutesFromNow === 0 ? 'Now' : `+${activeFrame.minutesFromNow}m`}
-        </div>
+        <span className="flex-shrink-0 text-[10px] text-neutral-600 tabular-nums w-7 text-right">2hr</span>
       </div>
     </div>
   );
