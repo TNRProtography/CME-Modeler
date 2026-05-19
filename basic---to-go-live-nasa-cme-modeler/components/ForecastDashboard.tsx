@@ -13,6 +13,7 @@ import GuideIcon from './icons/GuideIcon';
 import { useForecastData } from '../hooks/useForecastData';
 import ForecastChartPanel from './ForecastChartPanel';
 import FaqModal from './FaqModal';
+import NightModeToggle from './NightModeToggle';
 import DisturbanceIndexPanel from './DisturbanceIndexPanel';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
 
@@ -605,6 +606,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                           ?
                         </button>
                     </div>
+
+                    <NightModeToggle />
 
                     {viewMode === 'simple' ? (
                         <main className="grid grid-cols-12 gap-6">
