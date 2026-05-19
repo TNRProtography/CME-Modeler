@@ -607,7 +607,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                         </button>
                     </div>
 
-                    <NightModeToggle />
+                    <NightModeToggle sunsetMs={celestialTimes?.sun?.set ?? null} />
 
                     {viewMode === 'simple' ? (
                         <main className="grid grid-cols-12 gap-6">

@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import CloseIcon from './icons/CloseIcon';
 import FaqModal from './FaqModal';
 import ToggleSwitch from './ToggleSwitch';
+import { getNightAutoAfterDark, setNightAutoAfterDark } from './NightModeToggle';
 import {
   getNotificationPreference,
   setNotificationPreference,
@@ -429,6 +430,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [historyLoading, setHistoryLoading] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [isFaqOpen, setIsFaqOpen] = useState(false);
+  const [nightAutoAfterDark, setNightAutoAfterDarkState] = useState(() => getNightAutoAfterDark());
   // Which notification template the user currently has selected. Drives
   // whether the full per-notification list is shown (only for 'custom').
   // Persisted across sessions in localStorage (same key written by the
@@ -926,6 +928,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 <p className="text-xs text-neutral-500">
                   The selected layout is saved locally and applied whenever you load the forecast page without a shared link.
                 </p>
+              </div>
+            </div>
+
+            {/* Night mode auto setting */}
+            <div className="mt-4 pt-4 border-t border-neutral-800/60">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-neutral-300">Night mode after dark</p>
+                  <p className="text-xs text-neutral-500 mt-0.5">Automatically turn on night vision mode 2 hours after sunset at your location. Applies a red filter to preserve dark adaptation.</p>
+                </div>
+                <ToggleSwitch
+                  label=""
+                  checked={nightAutoAfterDark}
+                  onChange={(checked) => { setNightAutoAfterDarkState(checked); setNightAutoAfterDark(checked); }}
+                />
               </div>
             </div>
           </section>
