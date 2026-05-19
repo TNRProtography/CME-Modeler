@@ -193,17 +193,13 @@ const NightModeToggle: React.FC<NightModeToggleProps> = ({ sunsetMs }) => {
             }`} />
           </div>
         </button>
-        {/* Info button */}
+        {/* Info button — matches the ? button above for simple/advanced view */}
         <button
           onClick={handleLongPress}
-          className="p-1 rounded-full text-neutral-600 hover:text-neutral-400 transition-colors"
+          className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700"
           title="What is night mode?"
         >
-          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10" />
-            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-            <line x1="12" y1="17" x2="12.01" y2="17" />
-          </svg>
+          ?
         </button>
       </div>
     </>

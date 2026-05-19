@@ -933,17 +933,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
             {/* Night mode auto setting */}
             <div className="mt-4 pt-4 border-t border-neutral-800/60">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-neutral-300">Night mode after dark</p>
-                  <p className="text-xs text-neutral-500 mt-0.5">Automatically turn on night vision mode 2 hours after sunset at your location. Applies a red filter to preserve dark adaptation.</p>
-                </div>
-                <ToggleSwitch
-                  label=""
-                  checked={nightAutoAfterDark}
-                  onChange={(checked) => { setNightAutoAfterDarkState(checked); setNightAutoAfterDark(checked); }}
-                />
-              </div>
+              <ToggleSwitch
+                label="Night mode after dark"
+                checked={nightAutoAfterDark}
+                onChange={(checked) => { setNightAutoAfterDarkState(checked); setNightAutoAfterDark(checked); }}
+              />
+              <p className="text-xs text-neutral-500 mt-1.5">Automatically turn on night vision mode 2 hours after sunset at your location. Applies a red filter to preserve dark adaptation.</p>
             </div>
           </section>
 
