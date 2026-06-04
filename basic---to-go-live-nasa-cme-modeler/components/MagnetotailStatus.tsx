@@ -74,17 +74,17 @@ const VB_W = 1100, VB_H = 420;
 // ---- Tier system ----
 // Each tier represents "if the tail snaps at this loading level, the resulting
 // substorm would produce approximately this intensity of aurora for NZ."
-// Score ranges are consistent with the app's substorm score and roughly
-// correspond to Kp / NOAA G-scale equivalents for NZ viewing latitudes.
+// Score ranges are consistent with the app's substorm score. More stored
+// tail energy = stronger substorm on release = brighter, wider aurora.
 //
-//  Score    Kp equiv    NOAA    NZ visibility
-//  0-10     < 4         sub-G1  Background noise, no visible aurora
-//  10-25    Kp 4-5      G1      Possible on camera from deep south SI
-//  25-40    Kp 5-6      G1-G2   Camera aurora SI, maybe faint naked eye
-//  40-55    Kp 6-7      G2-G3   Naked eye South Island
-//  55-70    Kp 7        G3      Naked eye most of NZ
-//  70-85    Kp 8        G4      Bright display, overhead from SI
-//  85+      Kp 9        G5      Vivid overhead aurora all NZ
+//  Score    NZ visibility
+//  0-10     Background noise, no visible aurora
+//  10-25    Possible on camera from deep south SI
+//  25-40    Camera aurora SI, maybe faint naked eye
+//  40-55    Naked eye South Island
+//  55-70    Naked eye most of NZ
+//  70-85    Bright display, overhead from SI
+//  85+      Vivid overhead aurora all NZ
 
 interface Tier { label: string; score: number; colour: string; x: number; nzNote: string }
 
@@ -459,7 +459,7 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
             const isNext = i === currentTierIdx + 1;
             return (
               <g key={tier.label} className="mt-h"
-                onMouseMove={e => showTip(e, `${tier.label} (score ${tier.score}+): If the tail snaps at this loading level, expect ${tier.nzNote.toLowerCase()}. Roughly equivalent to Kp ${Math.floor(4 + i * 0.85)}${i >= 2 ? ' / G' + Math.min(5, i) : ''}.`)}
+                onMouseMove={e => showTip(e, `${tier.label} (score ${tier.score}+): If the tail snaps at this loading level, expect ${tier.nzNote.toLowerCase()}.`)}
                 onMouseLeave={hideTip}>
                 <line x1={tier.x} y1={CY - R * 1.8} x2={tier.x} y2={CY + R * 1.8}
                   stroke={tier.colour} strokeWidth={isCurrent ? 1.4 : 0.7}
