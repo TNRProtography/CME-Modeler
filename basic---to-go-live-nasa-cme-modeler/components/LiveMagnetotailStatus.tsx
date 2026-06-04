@@ -50,8 +50,14 @@ const EARTH_CY = 165;
 const EARTH_R = 52;
 const NZ_CENTER_LON = 174;
 const NZ_CENTER_LAT = -43;
-const NZ_LON_SPAN = 88;
-const NZ_LAT_SPAN = 76;
+const EARTH_TEXTURE_WIDTH = 358;
+const EARTH_TEXTURE_HEIGHT = 179;
+// Match the SVG lat/lon projection to the equirectangular Earth texture scale.
+// This keeps the NZ overlay, aurora oval, and texture landmasses registered.
+const NZ_LON_SPAN = (EARTH_R * 2 / EARTH_TEXTURE_WIDTH) * 360;
+const NZ_LAT_SPAN = (EARTH_R * 2 / EARTH_TEXTURE_HEIGHT) * 180;
+const EARTH_TEXTURE_X = EARTH_CX - ((NZ_CENTER_LON + 180) / 360) * EARTH_TEXTURE_WIDTH;
+const EARTH_TEXTURE_Y = EARTH_CY - ((90 - NZ_CENTER_LAT) / 180) * EARTH_TEXTURE_HEIGHT;
 
 const wrapLonDelta = (lon: number, center = NZ_CENTER_LON) => {
   let delta = lon - center;
@@ -85,6 +91,8 @@ const buildGmagBandSegment = (g0: number, g1: number): LatLon[] => {
   const inner = buildGmagSegment(g0, 122, 214, 2).reverse();
   return [...outer, ...inner];
 };
+
+const NZ_LABEL = projectNzView([-37.2, 180.2]);
 
 const NZ_LAND: LatLon[][] = [
   // North Island — simplified outline, enough to read clearly at dashboard scale.
@@ -268,8 +276,8 @@ const LiveMagnetotailStatus: React.FC<LiveMagnetotailStatusProps> = ({
             </g>
 
             <g clipPath="url(#liveEarthClip)">
-              <image href={SPACE_TEXTURES.EARTH_DAY} x="-94" y="91" width="358" height="179" preserveAspectRatio="none" opacity=".95" />
-              <image href={SPACE_TEXTURES.EARTH_DAY} x="264" y="91" width="358" height="179" preserveAspectRatio="none" opacity=".95" />
+              <image href={SPACE_TEXTURES.EARTH_DAY} x={EARTH_TEXTURE_X} y={EARTH_TEXTURE_Y} width={EARTH_TEXTURE_WIDTH} height={EARTH_TEXTURE_HEIGHT} preserveAspectRatio="none" opacity=".95" />
+              <image href={SPACE_TEXTURES.EARTH_DAY} x={EARTH_TEXTURE_X + EARTH_TEXTURE_WIDTH} y={EARTH_TEXTURE_Y} width={EARTH_TEXTURE_WIDTH} height={EARTH_TEXTURE_HEIGHT} preserveAspectRatio="none" opacity=".95" />
               <rect x={EARTH_CX - EARTH_R} y={EARTH_CY - EARTH_R} width={EARTH_R * 2} height={EARTH_R * 2} fill="#020617" opacity=".18" />
 
               {oval?.bands.map((band, index) => <path key={index} d={band.d} fill={band.colour} fillOpacity={band.opacity} stroke="none" />)}
@@ -283,7 +291,7 @@ const LiveMagnetotailStatus: React.FC<LiveMagnetotailStatusProps> = ({
             </g>
             <circle cx={EARTH_CX} cy={EARTH_CY} r={EARTH_R} fill="url(#earthShade)" />
             <circle cx={EARTH_CX} cy={EARTH_CY} r={EARTH_R + 1} fill="none" stroke="#93c5fd" strokeOpacity=".45" />
-            <text x="274" y="124" fill="#e5e7eb" fontSize="9" fontWeight="600">NZ</text>
+            <text x={NZ_LABEL.x} y={NZ_LABEL.y} fill="#e5e7eb" fontSize="8" fontWeight="600">NZ</text>
 
             <text x="24" y="30" fill="#94a3b8" fontSize="11" letterSpacing="2">SOLAR WIND</text>
             <text x="224" y="100" fill="#94a3b8" fontSize="11" letterSpacing="2">EARTH</text>
