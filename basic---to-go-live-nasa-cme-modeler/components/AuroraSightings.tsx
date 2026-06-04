@@ -15,6 +15,7 @@ import {
   trackSightingSubmitted,
   trackSightingSubmitFailed,
 } from '../utils/analytics';
+import { buildBandPolygon, buildOvalRing, computeOvalParams, ovalColour } from '../utils/auroraOvalGeometry';
 
 // --- Local SVG Icon components for the UI ---
 const GreenCheckIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -175,89 +176,8 @@ const InfoModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen
 
 // ─────────────────────────────────────────────────────────────
 // Aurora Oval Overlay — IGRF-13 dipole geomagnetic projection
-// ─────────────────────────────────────────────────────────────
-
-// IGRF-13 north magnetic dipole pole (geographic)
-const POLE_LAT_RAD =  80.65 * Math.PI / 180;
-const POLE_LON_RAD = -72.68 * Math.PI / 180;
-
-function geoToGmag(latDeg: number, lonDeg: number): number {
-  const φ = latDeg * Math.PI / 180;
-  const λ = lonDeg * Math.PI / 180;
-  const sin = Math.sin(φ) * Math.sin(POLE_LAT_RAD) +
-              Math.cos(φ) * Math.cos(POLE_LAT_RAD) * Math.cos(λ - POLE_LON_RAD);
-  return Math.asin(Math.max(-1, Math.min(1, sin))) * 180 / Math.PI;
-}
-
-function gmagToGeoLat(gmagLat: number, lonDeg: number): number {
-  // Numerical inversion via bisection
-  let lo = -90, hi = 90;
-  for (let i = 0; i < 48; i++) {
-    const mid = (lo + hi) / 2;
-    if (geoToGmag(mid, lonDeg) < gmagLat) lo = mid; else hi = mid;
-  }
-  return (lo + hi) / 2;
-}
-
-function buildOvalRing(gmagLat: number, lonStep = 1.5): [number, number][] {
-  const pts: [number, number][] = [];
-  // Loop -180 → 200 to ensure the ring extends well past the antimeridian and
-  // fully covers the NZ map bounds (which reach 185° E). Leaflet renders >180° correctly.
-  for (let lon = -180; lon <= 200; lon += lonStep) {
-    const normLon = ((lon + 180) % 360) - 180; // normalise for gmagToGeoLat calc
-    const geoLat = gmagToGeoLat(gmagLat, normLon);
-    if (geoLat >= -85 && geoLat <= 85) pts.push([geoLat, lon]);
-  }
-  return pts;
-}
-
-function buildBandPolygon(gmagInner: number, gmagOuter: number, lonStep = 2): [number, number][] {
-  const outer: [number, number][] = [];
-  const inner: [number, number][] = [];
-  // Extend to 200° to match buildOvalRing and fully cover the NZ map bounds.
-  for (let lon = -180; lon <= 200; lon += lonStep) {
-    const normLon = ((lon + 180) % 360) - 180;
-    outer.push([gmagToGeoLat(gmagOuter, normLon), lon]);
-    inner.push([gmagToGeoLat(gmagInner, normLon), lon]);
-  }
-  inner.reverse();
-  return [...outer, ...inner];
-}
-
-// Activity → colour scale: grey → sky → green → amber → orange → red
-function ovalColour(score: number): { line: string; fill: string; fillOpacity: number } {
-  if (score >= 80) return { line: '#f87171', fill: '#f87171', fillOpacity: 0.22 };
-  if (score >= 65) return { line: '#fb923c', fill: '#fb923c', fillOpacity: 0.20 };
-  if (score >= 50) return { line: '#f59e0b', fill: '#f59e0b', fillOpacity: 0.18 };
-  if (score >= 35) return { line: '#a3e635', fill: '#a3e635', fillOpacity: 0.15 };
-  if (score >= 20) return { line: '#34d399', fill: '#34d399', fillOpacity: 0.12 };
-  return             { line: '#38bdf8', fill: '#38bdf8', fillOpacity: 0.08 };
-}
-
-function computeOvalParams(metrics: SubstormRiskData['metrics'], bayOnset: boolean, score: number) {
-  const newell60 = metrics?.solar_wind?.newell_avg_60m ?? 0;
-  const newell30 = metrics?.solar_wind?.newell_avg_30m ?? 0;
-  const newell   = Math.max(newell60, newell30 * 0.85);
-
-  // Holzworth-Meng parameterisation via Newell coupling.
-  // This drives the equatorward (northern) edge — moves toward NZ as activity rises.
-  let equatorward = -(65.5 - newell / 1800);
-  equatorward = Math.max(equatorward, -76);
-  equatorward = Math.min(equatorward, -44);
-  if (bayOnset) equatorward = Math.min(equatorward, -47.2);
-
-  // The poleward (southern) edge is anchored at its quiet-time position and never moves.
-  // Only the equatorward edge expands northward during storms, making the oval thicker.
-  const QUIET_BOUNDARY  = -65.5;
-  const QUIET_HALFWIDTH =  3.5;
-  const poleward = QUIET_BOUNDARY - QUIET_HALFWIDTH; // fixed at ~-69 geomagnetic
-
-  // halfWidth is derived from the two edges so the band-polygon renderer still works.
-  const halfWidth = equatorward - poleward;
-  const boundary  = equatorward;
-
-  return { boundary, halfWidth };
-}
+// Shared geometry lives in utils/auroraOvalGeometry so this map and the
+// live magnetotail panel render the same New Zealand oval model.
 
 // ── React overlay component ───────────────────────────────────
 interface OvalOverlayProps {
