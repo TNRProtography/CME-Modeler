@@ -15,6 +15,7 @@ import ForecastChartPanel from './ForecastChartPanel';
 import FaqModal from './FaqModal';
 import NightModeToggle from './NightModeToggle';
 import DisturbanceIndexPanel from './DisturbanceIndexPanel';
+import MagnetotailStatus from './MagnetotailStatus';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
 
 import {
@@ -388,6 +389,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             'Solar wind ram pressure at Earth, driven mainly by density and speed.',
             'Pressure pulses can compress the magnetosphere and trigger sharp responses, often around shock/sheath arrivals that elevate aurora potential.',
             'Pressure alone is insufficient for strong displays; IMF orientation (especially Bz) controls geoeffective coupling efficiency.'
+        ),
+        'magnetotail': buildStatTooltip(
+            'Magnetotail Status',
+            'A live diagram of Earth\'s magnetosphere — the magnetic bubble protecting us from the solar wind. When the Sun\'s magnetic field (IMF) points south, energy loads into the night-side "tail," stretching it like a rubber band. When it snaps (reconnects), stored energy is released and particles slam into the poles, lighting the aurora.',
+            'The tail state is one of the best real-time clues for imminent aurora. "Loading" means energy is building; "Stretched" means a snap could happen within 15–30 minutes; "Reconnecting" means it\'s happening now — go outside if skies are dark and clear!',
+            'Driven by Bz, dynamic pressure, Newell coupling, and the substorm risk worker\'s onset detection. The aurora oval uses the same IGRF-13 dipole and Holzworth-Meng parameterisation as the sightings map overlay.'
         ),
         'simple-view': buildStatTooltip(
             'Simple View',
@@ -780,6 +787,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             >
                                 <SubstormIndexChart history={substormRiskData?.history_24h ?? []} />
                             </ForecastChartPanel>
+
+                            <MagnetotailStatus
+                                substormRiskData={substormRiskData}
+                                substormForecast={substormForecast}
+                                onOpenModal={() => openModal('magnetotail')}
+                            />
 
                             <ForecastChartPanel
                                 title="Newell Coupling Function"
