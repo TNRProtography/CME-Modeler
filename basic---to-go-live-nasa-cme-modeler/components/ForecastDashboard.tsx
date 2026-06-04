@@ -392,8 +392,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         ),
         'magnetotail': buildStatTooltip(
             'Magnetotail Status',
-            'A live diagram of Earth\'s magnetosphere — the magnetic bubble protecting us from the solar wind. When the Sun\'s magnetic field (IMF) points south, energy loads into the night-side "tail," stretching it like a rubber band. When it snaps (reconnects), stored energy is released and particles slam into the poles, lighting the aurora.',
-            'The tail state is one of the best real-time clues for imminent aurora. "Loading" means energy is building; "Stretched" means a snap could happen within 15–30 minutes; "Reconnecting" means it\'s happening now — go outside if skies are dark and clear!',
+            'A live diagram of Earth\'s magnetosphere, the magnetic bubble that shields us from the solar wind. When the IMF points south, energy loads into the night-side "tail," stretching it like a rubber band. When it snaps (reconnects), stored energy is released and particles slam into the poles, lighting the aurora.',
+            'The tail state is one of the best real-time clues for imminent aurora. "Loading" means energy is building. "Stretched" means a snap could happen in the next 15 to 30 minutes. "Reconnecting" means it\'s happening now, so get outside if skies are dark and clear!',
             'Driven by Bz, dynamic pressure, Newell coupling, and the substorm risk worker\'s onset detection. The aurora oval uses the same IGRF-13 dipole and Holzworth-Meng parameterisation as the sightings map overlay.'
         ),
         'simple-view': buildStatTooltip(
