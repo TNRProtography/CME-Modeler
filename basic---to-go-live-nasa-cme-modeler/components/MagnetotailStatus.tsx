@@ -246,7 +246,10 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
     const r = svgRef.current.getBoundingClientRect();
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-    setTip({ text, x: clientX - r.left, y: clientY - r.top - 14 });
+    // Convert screen pixels to SVG viewBox coordinates
+    const svgX = ((clientX - r.left) / r.width) * VB_W;
+    const svgY = ((clientY - r.top) / r.height) * VB_H;
+    setTip({ text, x: svgX, y: svgY - 10 });
     if (tipTimeout.current) clearTimeout(tipTimeout.current);
     tipTimeout.current = setTimeout(() => setTip(null), 4000);
   }, []);
@@ -275,6 +278,15 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
 
   return (
     <div className="col-span-12 card bg-neutral-950/80 p-3 sm:p-4 flex flex-col overflow-hidden">
+      <style>{`
+        .mt-scroll::-webkit-scrollbar { height: 5px; }
+        .mt-scroll::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); border-radius: 3px; }
+        .mt-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+        .mt-scroll { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.15) transparent; }
+        @keyframes mtHintPulse { 0%,100% { opacity: 0.4; } 50% { opacity: 0.85; } }
+        .mt-hint { animation: mtHintPulse 2.5s ease-in-out infinite; }
+        @media (prefers-reduced-motion: reduce) { .mt-hint { animation: none; } }
+      `}</style>
       {/* Header - stacks on mobile */}
       <div className="flex flex-wrap justify-between items-start gap-1 mb-1">
         <div className="flex items-center gap-1.5">
@@ -293,7 +305,8 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
       </div>
 
       {/* SVG - uses aspect-ratio with min-height for mobile */}
-      <div className="relative w-full" style={{ aspectRatio: `${VB_W}/${VB_H}`, minHeight: 220 }}>
+      <div className="overflow-x-auto overflow-y-hidden mt-1 rounded-lg mt-scroll" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="relative min-w-[680px] sm:min-w-0" style={{ aspectRatio: `${VB_W}/${VB_H}` }}>
         <svg ref={svgRef} viewBox={`0 0 ${VB_W} ${VB_H}`} className="absolute inset-0 w-full h-full" preserveAspectRatio="xMidYMid meet">
           <style>{`
             @keyframes mtFlow { to { stroke-dashoffset: -160; } }
@@ -439,7 +452,7 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
 
           {/* Tooltip */}
           {tip && (
-            <foreignObject x={Math.max(4, Math.min(tip.x - 60, VB_W - 230))} y={Math.max(4, tip.y - 52)} width="220" height="80" style={{pointerEvents:'none'}}>
+            <foreignObject x={Math.max(4, Math.min(tip.x - 60, VB_W - 230))} y={Math.min(Math.max(4, tip.y - 52), VB_H - 84)} width="220" height="80" style={{pointerEvents:'none'}}>
               <div style={{
                 background:'rgba(10,14,22,0.95)',border:'1px solid rgba(255,255,255,0.12)',
                 borderRadius:7,padding:'6px 8px',fontSize:10.5,lineHeight:1.4,color:'#d4d8e0',
@@ -449,6 +462,11 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
             </foreignObject>
           )}
         </svg>
+        </div>
+      </div>
+      {/* Mobile swipe hint */}
+      <div className="sm:hidden text-center text-[10px] text-neutral-600 mt-1.5 mt-hint">
+        Swipe across to follow the tail and snap tiers
       </div>
 
       {/* Status + legend combined row on mobile */}
