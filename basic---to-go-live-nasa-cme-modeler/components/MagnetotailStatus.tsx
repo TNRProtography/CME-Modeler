@@ -38,11 +38,6 @@ function computeOvalBoundary(risk: SubstormRiskDataLike | null | undefined): num
   if (risk.current.bay_onset_flag) eq = Math.min(eq, -47.2);
   return eq;
 }
-function ovalStroke(score: number): string {
-  if (score >= 80) return '#f87171'; if (score >= 65) return '#fb923c'; if (score >= 50) return '#f59e0b';
-  if (score >= 35) return '#a3e635'; if (score >= 20) return '#34d399'; return '#38bdf8';
-}
-
 // ---- IGRF-13 (same as AuroraSightings) ----
 const POLE_LAT_RAD = 80.65 * Math.PI / 180;
 const POLE_LON_RAD = -72.68 * Math.PI / 180;
@@ -115,7 +110,7 @@ function dayComp(pressure: number): number { return 1 - (Math.max(1, Math.min(pr
 // ---- Globe renderer with IGRF-13 curved oval ----
 function renderGlobe(
   canvas: HTMLCanvasElement, tex: HTMLImageElement,
-  centreLon: number, ovalBound: number, ovalCol: string, isSnapping: boolean
+  centreLon: number, ovalBound: number, score: number, isSnapping: boolean
 ) {
   const size = GLOBE_PX;
   canvas.width = size; canvas.height = size;
@@ -162,33 +157,72 @@ function renderGlobe(
   term.addColorStop(0, 'rgba(0,0,0,0)'); term.addColorStop(0.5, 'rgba(0,0,15,0.12)'); term.addColorStop(1, 'rgba(0,0,15,0.32)');
   ctx.fillStyle = term; ctx.fillRect(0, 0, size, size);
 
-  // IGRF-13 curved oval
-  const ovalPts: { x: number; y: number; vis: boolean }[] = [];
-  for (let lon = 0; lon < 360; lon += 5) {
-    const normLon = lon <= 180 ? lon : lon - 360;
-    const geoLat = gmagToGeoLat(ovalBound, normLon);
-    const latR = (geoLat * Math.PI) / 180;
-    const dlonR = ((normLon - centreLon) * Math.PI) / 180;
-    const cosC = Math.cos(latR) * Math.cos(dlonR);
-    ovalPts.push({ x: half + half * Math.cos(latR) * Math.sin(dlonR), y: half - half * Math.sin(latR), vis: cosC > 0 });
+  // ---- Aurora oval as a glowing band (OVATION-like) ----
+  // Build a ring of screen points at any geomagnetic latitude.
+  const DR = Math.PI / 180;
+  function ringPts(gmagLat: number) {
+    const pts: { x: number; y: number; vis: boolean }[] = [];
+    for (let lon = 0; lon <= 360; lon += 4) {
+      const normLon = lon <= 180 ? lon : lon - 360;
+      const geoLat = gmagToGeoLat(gmagLat, normLon);
+      const latR = geoLat * DR;
+      const dlonR = (normLon - centreLon) * DR;
+      const cosC = Math.cos(latR) * Math.cos(dlonR);
+      pts.push({ x: half + half * Math.cos(latR) * Math.sin(dlonR), y: half - half * Math.sin(latR), vis: cosC > 0 });
+    }
+    return pts;
   }
-  ctx.globalCompositeOperation = 'source-atop';
-  const tk = isSnapping ? 4.5 : 2.5;
-  ctx.strokeStyle = ovalCol; ctx.lineWidth = tk; ctx.globalAlpha = isSnapping ? 0.95 : 0.7; ctx.setLineDash([]);
-  // Front
-  ctx.beginPath(); let started = false;
-  for (const pt of ovalPts) { if (pt.vis) { if (!started) { ctx.moveTo(pt.x, pt.y); started = true; } else ctx.lineTo(pt.x, pt.y); } else started = false; }
-  ctx.stroke();
-  // Glow
-  ctx.globalAlpha = isSnapping ? 0.35 : 0.12; ctx.lineWidth = tk + 5; ctx.filter = 'blur(3px)';
-  ctx.beginPath(); started = false;
-  for (const pt of ovalPts) { if (pt.vis) { if (!started) { ctx.moveTo(pt.x, pt.y); started = true; } else ctx.lineTo(pt.x, pt.y); } else started = false; }
-  ctx.stroke(); ctx.filter = 'none';
-  // Back
-  ctx.globalAlpha = 0.18; ctx.lineWidth = 1.2; ctx.setLineDash([3, 5]);
-  ctx.beginPath(); started = false;
-  for (const pt of ovalPts) { if (!pt.vis) { if (!started) { ctx.moveTo(pt.x, pt.y); started = true; } else ctx.lineTo(pt.x, pt.y); } else started = false; }
-  ctx.stroke(); ctx.setLineDash([]);
+  function strokeVisible(pts: { x: number; y: number; vis: boolean }[]) {
+    ctx.beginPath();
+    let on = false;
+    for (const p of pts) {
+      if (p.vis) { if (!on) { ctx.moveTo(p.x, p.y); on = true; } else ctx.lineTo(p.x, p.y); }
+      else on = false;
+    }
+    ctx.stroke();
+  }
+
+  // Clip everything to the globe disc so the glow can't spill into space
+  ctx.save();
+  ctx.beginPath(); ctx.arc(half, half, half - 0.5, 0, Math.PI * 2); ctx.clip();
+
+  const act = Math.min(1, score / 100);                 // 0..1 activity
+  const widthDeg = 3.5 + act * 7 + (isSnapping ? 2 : 0); // band gets wider with activity
+  const layers = 16;
+  const base = 0.09 + act * 0.17 + (isSnapping ? 0.1 : 0);
+  const bandPx = (half * widthDeg) / 90;                 // band width in pixels
+
+  ctx.globalCompositeOperation = 'lighter';             // additive = emissive glow
+  ctx.lineCap = 'round';
+  ctx.globalAlpha = 1;
+
+  // Layered curtains from the bright equatorward edge fading toward the pole
+  for (let i = 0; i < layers; i++) {
+    const f = i / (layers - 1);                          // 0 = equatorward edge, 1 = poleward
+    const gmagLat = ovalBound - f * widthDeg;            // toward the pole (more negative)
+    const prof = Math.pow(1 - f, 1.5);                   // bright low edge, soft fade up
+    const alpha = base * (0.22 + 0.78 * prof);
+    let r = 70, g = 215, bl = 130;                       // aurora green
+    if (f < 0.4 && act > 0.4) {                          // crimson fringe on the low edge when strong
+      const redMix = ((act - 0.4) / 0.6) * (1 - f / 0.4);
+      r = Math.round(70 + redMix * 185);
+      g = Math.round(215 - redMix * 95);
+      bl = Math.round(130 - redMix * 55);
+    }
+    ctx.strokeStyle = `rgba(${r},${g},${bl},${alpha.toFixed(3)})`;
+    ctx.lineWidth = (bandPx / layers) * 2.6 + 0.6;
+    ctx.filter = `blur(${(1 + f * 2.4).toFixed(1)}px)`;
+    strokeVisible(ringPts(gmagLat));
+  }
+
+  // Crisp bright lower edge that defines the oval
+  ctx.filter = 'blur(0.5px)';
+  ctx.lineWidth = 1.3;
+  ctx.strokeStyle = `rgba(160,255,195,${(0.45 + act * 0.4).toFixed(2)})`;
+  strokeVisible(ringPts(ovalBound));
+  ctx.filter = 'none';
+  ctx.restore();
+  ctx.globalCompositeOperation = 'source-over';
   // NZ dot
   const nzLatR = (-43.5 * Math.PI) / 180, nzDlon = ((172 - centreLon) * Math.PI) / 180;
   const nzX = half + half * Math.cos(nzLatR) * Math.sin(nzDlon), nzY = half - half * Math.sin(nzLatR);
@@ -205,7 +239,6 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
   const bz = substormRiskData?.metrics?.solar_wind?.bz ?? 0;
   const pressure = substormRiskData?.metrics?.solar_wind?.dynamic_pressure_nPa ?? 2;
   const ovalBound = computeOvalBoundary(substormRiskData);
-  const ovalCol = ovalStroke(score);
   const comp = dayComp(pressure);
   const isSnapping = magState === 'SNAPPING';
   const tailEndX = isSnapping ? scoreToTailX(Math.max(score, 40)) : scoreToTailX(score);
@@ -219,7 +252,7 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
     function paint() {
       if (!texImgRef.current || !texLoadedRef.current) return;
       if (!offscreenRef.current) offscreenRef.current = document.createElement('canvas');
-      renderGlobe(offscreenRef.current, texImgRef.current, 172, ovalBound, ovalCol, isSnapping);
+      renderGlobe(offscreenRef.current, texImgRef.current, 172, ovalBound, score, isSnapping);
       setEarthUrl(offscreenRef.current.toDataURL());
     }
     if (texLoadedRef.current) paint();
@@ -227,7 +260,7 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
       const img = new Image(); img.crossOrigin = 'anonymous'; img.src = EARTH_TEX;
       texImgRef.current = img; img.onload = () => { texLoadedRef.current = true; paint(); };
     }
-  }, [ovalBound, ovalCol, isSnapping]);
+  }, [ovalBound, score, isSnapping]);
 
   // Snap tick
   const [snapTick, setSnapTick] = useState(0);
@@ -438,8 +471,8 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
 
           {/* Earth globe */}
           <g className="mt-h"
-            onClick={e => showTip(e, 'Earth, rotated to show NZ. The curved arc is the aurora oval, using the same IGRF-13 projection as the sightings map.')}
-            onMouseMove={e => showTip(e, 'Earth, rotated to show NZ. The curved arc is the aurora oval, using the same IGRF-13 projection as the sightings map.')}
+            onClick={e => showTip(e, 'Earth, rotated to show NZ. The glowing band is the live aurora oval, curved by the IGRF-13 dipole just like the sightings map.')}
+            onMouseMove={e => showTip(e, 'Earth, rotated to show NZ. The glowing band is the live aurora oval, curved by the IGRF-13 dipole just like the sightings map.')}
             onMouseLeave={hideTip}>
             <circle cx={CX} cy={CY} r={R+8} fill="url(#mt-aG)" className={isSnapping?'mt-atmo':''} style={isSnapping?undefined:{opacity:0.06}}/>
             {earthUrl ? <image href={earthUrl} x={CX-R} y={CY-R} width={R*2} height={R*2} clipPath="url(#mt-ec)" style={{imageRendering:'auto'}}/> : <circle cx={CX} cy={CY} r={R} fill="#1a3a5c"/>}
@@ -484,7 +517,7 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
         <span className="flex items-center gap-1"><svg width="12" height="6"><line x1="0" y1="3" x2="12" y2="3" stroke="#aeb7c6" strokeWidth="1.2"/></svg>Field lines</span>
         <span className="flex items-center gap-1"><svg width="12" height="6"><line x1="0" y1="3" x2="12" y2="3" stroke="#aeb7c6" strokeWidth="0.7" strokeDasharray="2 3"/></svg>Magnetopause</span>
         <span className="flex items-center gap-1"><svg width="10" height="6"><line x1="1" y1="1" x2="9" y2="5" stroke="#d2664a" strokeWidth="1.3"/><line x1="9" y1="1" x2="1" y2="5" stroke="#d2664a" strokeWidth="1.3"/></svg>Reconnection</span>
-        <span className="flex items-center gap-1"><svg width="12" height="6"><path d="M0 4 Q 6 1 12 4" fill="none" stroke={ovalCol} strokeWidth="1.6"/></svg>Aurora oval</span>
+        <span className="flex items-center gap-1"><svg width="14" height="8"><path d="M0 5 Q 7 1 14 5" fill="none" stroke="#46d782" strokeWidth="3" opacity="0.35"/><path d="M0 5 Q 7 1 14 5" fill="none" stroke="#a0ffc3" strokeWidth="1" opacity="0.9"/></svg>Aurora oval</span>
         <span className="flex items-center gap-1"><svg width="6" height="6"><circle cx="3" cy="3" r="2" fill="#5fb47a"/></svg>NZ</span>
         <span className="flex items-center gap-1"><svg width="10" height="6"><line x1="5" y1="0" x2="5" y2="6" stroke="#fbbf24" strokeWidth="0.7" strokeDasharray="1.5 2"/></svg>Snap tiers</span>
       </div>
