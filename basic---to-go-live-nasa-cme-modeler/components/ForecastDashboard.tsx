@@ -16,6 +16,7 @@ import FaqModal from './FaqModal';
 import NightModeToggle from './NightModeToggle';
 import DisturbanceIndexPanel from './DisturbanceIndexPanel';
 import MagnetotailStatus from './MagnetotailStatus';
+import RussellMcPherron from './RussellMcPherron';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
 
 import {
@@ -395,6 +396,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             'A live diagram of Earth\'s magnetosphere, the magnetic bubble that shields us from the solar wind. When the IMF points south, energy loads into the night-side "tail," stretching it like a rubber band. When it snaps (reconnects), stored energy is released and particles slam into the poles, lighting the aurora.',
             'The tail state is one of the best real-time clues for imminent aurora. "Loading" means energy is building. "Stretched" means a snap could happen in the next 15 to 30 minutes. "Reconnecting" means it\'s happening now, so get outside if skies are dark and clear!',
             'Driven by Bz, dynamic pressure, Newell coupling, and the substorm risk worker\'s onset detection. The aurora oval uses the same IGRF-13 dipole and Holzworth-Meng parameterisation as the sightings map overlay.'
+        ),
+        'russell-mcpherron': buildStatTooltip(
+            'Russell-McPherron Effect',
+            'The solar wind\'s magnetic field mostly lies flat in the Sun\'s equatorial plane as a dawn-dusk (By) field. Because Earth\'s tilted dipole means the GSM frame we chase in is rotated relative to that plane, some of that By gets turned into vertical Bz. When it turns into southward Bz, it drives aurora. This is the mechanism behind the equinox effect.',
+            'It shows two tilt angles (how far the dipole leans toward the Sun, and how far it leans dawn-to-dusk) and how much of the live By is currently being converted into southward Bz. Because the geometry cycles through the day, it also flags when conditions will most favour that conversion.',
+            'Angles use the Hapgood (1992) GSE-GSM transformation with the IGRF-13 dipole. The live GSM By and Bz are rotated back to GSEQ to isolate the By that drives the conversion. The Bz you already see includes this rotation, so it explains conditions rather than adding to them.'
         ),
         'simple-view': buildStatTooltip(
             'Simple View',
@@ -792,6 +799,11 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 substormRiskData={substormRiskData}
                                 substormForecast={substormForecast}
                                 onOpenModal={() => openModal('magnetotail')}
+                            />
+
+                            <RussellMcPherron
+                                magneticData={allMagneticData}
+                                onOpenModal={() => openModal('russell-mcpherron')}
                             />
 
                             <ForecastChartPanel
