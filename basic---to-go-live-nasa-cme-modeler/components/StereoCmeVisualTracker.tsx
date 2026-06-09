@@ -94,8 +94,8 @@ const StereoCmeVisualTracker: React.FC = () => {
     };
   }, [loadData]);
 
-  const stereoLongitude = data?.stereo?.longitudeDeg ?? data?.stereo?.separationDeg ?? null;
-  const elongation = useMemo(() => computeEarthElongation(data?.stereo?.distanceAu, stereoLongitude), [data?.stereo?.distanceAu, stereoLongitude]);
+  const stereoLongitude = data?.stereo?.heeLongitudeDeg ?? data?.stereo?.separationFromEarthDeg ?? null;
+  const elongation = useMemo(() => computeEarthElongation(data?.stereo?.rAu, stereoLongitude), [data?.stereo?.rAu, stereoLongitude]);
   const jmapSrc = `${JMAP_URLS[instrument]}?_=${refreshToken}`;
   const status = data?.status ?? (loading ? 'Data unavailable' : 'No active CME');
   const stale = isStale(data?.updatedAt);
@@ -174,8 +174,8 @@ const StereoCmeVisualTracker: React.FC = () => {
             <div className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-3">
               <h3 className="text-sm font-semibold text-neutral-100 mb-2">STEREO-A context</h3>
               <div className="grid grid-cols-2 gap-2 text-xs">
-                <div><span className="text-neutral-500">Distance</span><p className="text-neutral-200">{data?.stereo?.distanceAu ? `${data.stereo.distanceAu.toFixed(2)} AU` : 'Unavailable'}</p></div>
-                <div><span className="text-neutral-500">Longitude/separation</span><p className="text-neutral-200">{stereoLongitude != null ? `${stereoLongitude.toFixed(1)}°` : 'Unavailable'}</p></div>
+                <div><span className="text-neutral-500">Distance</span><p className="text-neutral-200">{data?.stereo?.rAu ? `${data.stereo.rAu.toFixed(3)} AU` : 'Unavailable'}</p></div>
+                <div><span className="text-neutral-500">HEE longitude/separation</span><p className="text-neutral-200">{stereoLongitude != null ? `${stereoLongitude.toFixed(1)}°` : 'Unavailable'}{data?.stereo?.separationFromEarthDeg != null ? ` / ${data.stereo.separationFromEarthDeg.toFixed(1)}°` : ''}</p></div>
                 <div className="col-span-2"><span className="text-neutral-500">Earth from STEREO-A</span><p className="text-purple-200">{elongation != null ? `${elongation.toFixed(1)}° elongation` : 'Unavailable'}</p></div>
               </div>
               {elongation != null && elongation > 70 && <p className="mt-2 text-xs text-amber-300/90">Earth may sit beyond the plotted HI field in the J-map, so a visible CME track may need to be extrapolated.</p>}

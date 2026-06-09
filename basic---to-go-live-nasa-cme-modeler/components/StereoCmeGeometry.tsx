@@ -25,8 +25,8 @@ const describeValue = (value: number | null | undefined, suffix = '') => (
 
 const StereoCmeGeometry: React.FC<StereoCmeGeometryProps> = ({ stereo, cme }) => {
   const earth = polarToSvg(1, 0);
-  const stereoLongitude = stereo?.longitudeDeg ?? stereo?.separationDeg ?? null;
-  const stereoRadius = stereo?.distanceAu ?? 1;
+  const stereoLongitude = stereo?.heeLongitudeDeg ?? stereo?.separationFromEarthDeg ?? null;
+  const stereoRadius = stereo?.rAu ?? 1;
   const stereoPoint = stereoLongitude != null ? polarToSvg(stereoRadius, stereoLongitude) : null;
 
   const cone = useMemo(() => {
@@ -100,7 +100,7 @@ const StereoCmeGeometry: React.FC<StereoCmeGeometryProps> = ({ stereo, cme }) =>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 p-3 border-t border-neutral-800 text-xs">
         <div><span className="text-neutral-500">Earth</span><p className="text-sky-200 font-medium">1.00 AU · 0°</p></div>
-        <div><span className="text-neutral-500">STEREO-A r</span><p className="text-purple-200 font-medium">{describeValue(stereo?.distanceAu, ' AU')}</p></div>
+        <div><span className="text-neutral-500">STEREO-A r</span><p className="text-purple-200 font-medium">{describeValue(stereo?.rAu, ' AU')}</p></div>
         <div><span className="text-neutral-500">STEREO-A lon</span><p className="text-purple-200 font-medium">{describeValue(stereoLongitude, '°')}</p></div>
         <div><span className="text-neutral-500">CME front</span><p className="text-orange-200 font-medium">{cme?.front ? `${cme.front.distanceAu.toFixed(2)} AU` : 'Not drawn'}</p></div>
       </div>

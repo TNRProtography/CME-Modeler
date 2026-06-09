@@ -10,11 +10,13 @@ export type TrackerStatus = 'No active CME' | 'Possible Earth-relevant CME' | 'S
 export type TrackerConfidence = 'none' | 'low' | 'medium' | 'high';
 
 export interface StereoPosition {
-  distanceAu: number | null;
-  longitudeDeg: number | null;
-  separationDeg: number | null;
+  available: boolean;
+  rAu: number | null;
+  heeLongitudeDeg: number | null;
+  heeLatitudeDeg: number | null;
+  separationFromEarthDeg: number | null;
   updatedAt: string | null;
-  source: string;
+  sourceUrl: string;
 }
 
 export interface EstimatedFront {
@@ -56,88 +58,80 @@ export interface StereoTrackerData {
 
 const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 
-const proxiedTextUrl = (target: string): string => `/api/proxy/text?url=${encodeURIComponent(target)}&ttl=300`;
 
-const extractNumber = (text: string, patterns: RegExp[]): number | null => {
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match?.[1]) {
-      const value = Number(match[1].replace(/[,+]/g, ''));
-      if (Number.isFinite(value)) return value;
-    }
-  }
-  return null;
+const SOLO_POSITION_URL = 'https://solo-worker.thenamesrock.workers.dev/solo/position';
+
+const normalizeNumber = (value: unknown): number | null => {
+  const numberValue = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
 };
 
-const cleanHtmlText = (html: string): string => html
-  .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-  .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-  .replace(/<br\s*\/?\s*>/gi, '\n')
-  .replace(/<\/tr>/gi, '\n')
-  .replace(/<\/p>/gi, '\n')
-  .replace(/<[^>]+>/g, ' ')
-  .replace(/&nbsp;/g, ' ')
-  .replace(/&deg;/g, '°')
-  .replace(/&minus;/g, '-')
-  .replace(/&#8722;/g, '-')
-  .replace(/\s+/g, ' ')
-  .trim();
+const normalizeWorkerStereoPosition = (payload: any): StereoPosition | null => {
+  if (!payload || payload.available === false) return null;
+  const rAu = normalizeNumber(payload.rAu);
+  const heeLongitudeDeg = normalizeNumber(payload.heeLongitudeDeg);
+  const heeLatitudeDeg = normalizeNumber(payload.heeLatitudeDeg);
+  const separationFromEarthDeg = normalizeNumber(payload.separationFromEarthDeg)
+    ?? (heeLongitudeDeg != null ? Math.abs(heeLongitudeDeg) : null);
 
-const parseStereoPosition = (html: string): StereoPosition => {
-  const text = cleanHtmlText(html);
-  const aheadIndex = text.search(/STEREO\s*-?\s*A|Ahead|AHEAD/i);
-  const aheadText = aheadIndex >= 0 ? text.slice(Math.max(0, aheadIndex - 250), aheadIndex + 1200) : text;
-
-  const distanceAu = extractNumber(aheadText, [
-    /(?:STEREO\s*-?\s*A|Ahead|AHEAD)[^\n]{0,220}?(?:radius|distance|heliocentric)[^\d-]{0,40}(-?\d+(?:\.\d+)?)\s*AU/i,
-    /(?:R|Radius|Distance)\s*=\s*(-?\d+(?:\.\d+)?)\s*AU/i,
-    /(-?\d+(?:\.\d+)?)\s*AU/i,
-  ]);
-
-  const longitudeDeg = extractNumber(aheadText, [
-    /(?:HEE|ecliptic|heliographic|longitude|lon)[^\d-]{0,40}(-?\d+(?:\.\d+)?)\s*(?:°|deg|degrees)/i,
-    /(?:Lon|Longitude)\s*=\s*(-?\d+(?:\.\d+)?)/i,
-  ]);
-
-  const separationDeg = extractNumber(aheadText, [
-    /(?:separation|sep\.?)[^\d-]{0,40}(-?\d+(?:\.\d+)?)\s*(?:°|deg|degrees)/i,
-    /(-?\d+(?:\.\d+)?)\s*(?:°|deg|degrees)\s*(?:ahead|from Earth|separation)/i,
-  ]);
-
-  const updatedAtMatch = text.match(/(?:Updated|Generated|Last\s+update)[^\d]{0,30}([A-Z][a-z]{2,9}\s+\d{1,2},?\s+\d{4}[^\n<]{0,40}|\d{4}[-/]\d{2}[-/]\d{2}[^\n<]{0,30})/i);
+  if (rAu == null && heeLongitudeDeg == null && separationFromEarthDeg == null) return null;
 
   return {
-    distanceAu: distanceAu && distanceAu > 0 && distanceAu < 2 ? distanceAu : null,
-    longitudeDeg: longitudeDeg != null ? longitudeDeg : separationDeg,
-    separationDeg,
-    updatedAt: updatedAtMatch?.[1]?.trim() ?? null,
-    source: STEREO_WHERE_URL,
+    available: true,
+    rAu,
+    heeLongitudeDeg,
+    heeLatitudeDeg,
+    separationFromEarthDeg,
+    updatedAt: typeof payload.updatedAt === 'string' ? payload.updatedAt : null,
+    sourceUrl: typeof payload.sourceUrl === 'string' ? payload.sourceUrl : STEREO_WHERE_URL,
   };
 };
 
-const hasStereoPositionFields = (position: StereoPosition): boolean => (
-  position.distanceAu != null || position.longitudeDeg != null || position.separationDeg != null
-);
+const normalizeSoloWorkerStereoPosition = (payload: any): StereoPosition | null => {
+  if (!payload?.ok) return null;
+  const stereoA = payload.positions?.stereoA;
+  const derived = payload.positions?.derived;
+  const rAu = normalizeNumber(stereoA?.r_au);
+  const heeLongitudeDeg = normalizeNumber(stereoA?.lon_deg) ?? normalizeNumber(derived?.stereo_earth_lon_sep_deg);
+  const heeLatitudeDeg = normalizeNumber(stereoA?.lat_deg);
+  const separationFromEarthDeg = normalizeNumber(derived?.stereo_earth_lon_sep_deg)
+    ?? (heeLongitudeDeg != null ? Math.abs(heeLongitudeDeg) : null);
+
+  if (rAu == null && heeLongitudeDeg == null && separationFromEarthDeg == null) return null;
+
+  return {
+    available: true,
+    rAu,
+    heeLongitudeDeg,
+    heeLatitudeDeg,
+    separationFromEarthDeg,
+    updatedAt: typeof payload.fetchedAt === 'string' ? payload.fetchedAt : null,
+    sourceUrl: SOLO_POSITION_URL,
+  };
+};
 
 export const fetchStereoPosition = async (): Promise<StereoPosition> => {
-  const fetchAndParse = async (url: string) => {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`STEREO position unavailable (${response.status})`);
-    return parseStereoPosition(await response.text());
-  };
+  try {
+    const response = await fetch('/api/stereo/position', { cache: 'no-store' });
+    if (response.ok) {
+      const parsed = normalizeWorkerStereoPosition(await response.json());
+      if (parsed) return parsed;
+    }
+  } catch (error) {
+    console.warn('Worker STEREO-A position fetch failed:', error);
+  }
 
   try {
-    const proxied = await fetchAndParse(proxiedTextUrl(STEREO_WHERE_URL));
-    if (hasStereoPositionFields(proxied)) return proxied;
+    const response = await fetch(SOLO_POSITION_URL, { cache: 'no-store' });
+    if (response.ok) {
+      const parsed = normalizeSoloWorkerStereoPosition(await response.json());
+      if (parsed) return parsed;
+    }
   } catch (error) {
-    console.warn('STEREO-A position proxy failed:', error);
+    console.warn('Existing STEREO-A position fallback failed:', error);
   }
 
-  const direct = await fetchAndParse(STEREO_WHERE_URL);
-  if (!hasStereoPositionFields(direct)) {
-    throw new Error('STEREO-A position could not be parsed');
-  }
-  return direct;
+  throw new Error('STEREO-A position unavailable');
 };
 
 const parseArrivalFromLinkedEvent = (activityID: string): string | null => {
