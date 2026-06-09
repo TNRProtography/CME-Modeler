@@ -49,12 +49,19 @@ const EPAM_BASE = 'https://epam.thenamesrock.workers.dev';
 const SOLAR_WIND_IMF_URL = 'https://imap-solar-data-test.thenamesrock.workers.dev/rtsw/merged-24h';
 // Ground neutron-monitor counts (OULU, 5-min, efficiency-corrected, last 7
 // days) from NMDB NEST — used for genuine Forbush-decrease detection. NMDB
-// sends no CORS headers, so this goes through the site's data proxy
-// (/api/proxy/data, see worker/index.ts). If the feed or proxy is
-// unavailable, the warning engine degrades gracefully (FD chip shows
-// "monitor feed unavailable").
-const NMDB_URL = 'https://www.nmdb.eu/nest/draw_graph.php?wget=1&stations[]=OULU&tabchoice=revori&dtype=corr_for_efficiency&tresolution=5&yunits=0&date_choice=last&last_days=7&output=ascii';
-const NM_PROXY_PATH = `/api/proxy/data?ttl=300&url=${encodeURIComponent(NMDB_URL)}`;
+// sends no CORS headers, so requests go through the site's data proxy
+// (/api/proxy/data, see worker/index.ts — the worker must be deployed with
+// that route). NMDB's NEST interface has two known parameter styles for
+// "last N days", so we try candidates in order until one parses; the working
+// one is remembered for subsequent refreshes. If everything fails, the
+// warning engine degrades gracefully (Forbush chip shows "monitor feed
+// unavailable").
+const NM_FEED_CANDIDATES = [
+  'https://www.nmdb.eu/nest/draw_graph.php?wget=1&stations[]=OULU&tabchoice=revori&dtype=corr_for_efficiency&tresolution=5&yunits=0&date_choice=last&last_days=7&output=ascii',
+  'https://www.nmdb.eu/nest/draw_graph.php?wget=1&stations[]=OULU&tabchoice=revori&dtype=corr_for_efficiency&tresolution=5&yunits=0&date_choice=last&last_label=7&last_unit=day&output=ascii',
+  'https://nest.nmdb.eu/draw_graph.php?wget=1&stations[]=OULU&tabchoice=revori&dtype=corr_for_efficiency&tresolution=5&yunits=0&date_choice=last&last_days=7&output=ascii',
+];
+const nmProxyPath = (target: string) => `/api/proxy/data?ttl=300&url=${encodeURIComponent(target)}`;
 
 // Views: raw charts per source + one combined averaged chart
 type ViewKey = 'ace-raw' | 'ace-roc' | 'goes-raw' | 'stereo-raw' | 'combined';
@@ -405,27 +412,56 @@ const EPAMPanel: React.FC = () => {
   const [magRaw,     setMagRaw]     = useState<SolarMagPoint[]>([]);
   const [nmRaw,      setNmRaw]      = useState<NmSample[]>([]);  // neutron monitor (Forbush)
   const mountedRef = useRef(true);
+  const nmGoodIdxRef = useRef(0); // last NMDB URL variant that worked
   const [modalState, setModalState] = useState<{ title: string; content: string } | null>(null);
 
-  const buildStatTooltip = (title: string, whatItIs: string, auroraEffect: string, advanced: string) => `
-    <div class='space-y-3 text-left'>
-      <p><strong>${title}</strong></p>
-      <p><strong>What this is:</strong> ${whatItIs}</p>
-      <p><strong>Why it matters for aurora:</strong> ${auroraEffect}</p>
-      <p class='text-xs text-neutral-400'><strong>Advanced:</strong> ${advanced}</p>
-    </div>
-  `;
 
   const openModal = useCallback(() => {
     setModalState({
       title: 'About Energetic Particle Monitor',
-      content: buildStatTooltip(
-        'Energetic Particle Monitor',
-        'Tracks upstream high-energy particle fluxes from ACE, GOES, and STEREO-A satellites. These channels measure electrons and protons accelerated by solar eruptions before they reach Earth.',
-        'Elevated particle counts are an early warning that a solar disturbance is approaching. A fast-rising spike across multiple channels often precedes a CME shock arrival and subsequent aurora enhancement by 30–90 minutes.',
-        'This is context data, not a direct aurora brightness forecast. Velocity dispersion signatures (higher-energy particles arriving first) and channel compression patterns help distinguish CME shocks from stream interaction regions.'
-      ),
+      content: `
+    <div class='space-y-3 text-left'>
+      <p><strong>What this is:</strong> Real-time high-energy particle readings from satellites positioned upstream of Earth — ACE and others at the L1 point, about 1.5 million km sunward of us. Particles accelerated by solar eruptions reach these satellites before the storm itself reaches Earth, which is what makes this an early-warning instrument. The analysis compares the latest readings against a full <strong>7-day baseline</strong>, so "elevated" always means elevated relative to what has actually been normal this week.</p>
+
+      <p><strong>The warning levels:</strong>
+      <span class='block mt-1'><strong class='text-green-400'>Quiet</strong> — at normal background. No storm signature.</span>
+      <span class='block'><strong class='text-yellow-300'>Watch</strong> — particle levels just starting to lift. Could be the front edge of something, could settle back down.</span>
+      <span class='block'><strong class='text-sky-300'>Elevated</strong> — clearly and persistently above background across multiple energy channels. Something real is upstream.</span>
+      <span class='block'><strong class='text-orange-300'>Storm Arrival Incoming</strong> — flux climbing fast and coherently: the classic lead-in to a CME shock. Typically 30–90 minutes of warning.</span>
+      <span class='block'><strong class='text-red-300'>Shock</strong> — the disturbance is passing the upstream satellite right now. Earth-side effects within the hour.</span></p>
+
+      <p><strong>The stats, and what each one means:</strong>
+      <span class='block mt-1'><strong>Above quiet baseline (σ)</strong> — how far current flux sits above this week's quiet conditions, in robust statistical units. ~2σ is everyday wobble; 5σ+ is a genuine event; 8σ+ with a fast climb is a storm arriving.</span>
+      <span class='block'><strong>Sustained, not a glitch</strong> — how long flux has stayed elevated. Single spikes are usually instrument noise; real events persist for 30+ minutes.</span>
+      <span class='block'><strong>Multiple channels rising</strong> — whether different particle energies (47 keV up to 1.9 MeV) are rising together. Real solar events are broadband; a single channel alone is usually an artifact.</span>
+      <span class='block'><strong>Sharp rate of climb</strong> — how fast flux is changing over 15 minutes, in log units: +0.30 means it doubled, +0.60 means it quadrupled. Shock fronts produce near-vertical climbs; slow solar-wind streams do not. The <strong>ACE Rate of Change</strong> chart view plots exactly this.</span>
+      <span class='block'><strong>Fast particles arrived first</strong> — velocity dispersion: the highest-energy particles from a fresh eruption outrun the slower ones, so the MeV channels rise hours before the keV channels. Seeing this means an eruption's particles are connecting to Earth — the earliest hint, sometimes 1–2 days before arrival.</span>
+      <span class='block'><strong>Channels converging</strong> — as a shock gets close it accelerates lower-energy particles locally, so the gap between the channel lines shrinks. On the chart this is the lines visibly squeezing together — a sign the source is getting near.</span>
+      <span class='block'><strong>Dip after elevation</strong> — a temporary drop from an elevated plateau, often seen tens of minutes to a couple of hours before a shock arrives. A dip from quiet means nothing, but a dip <em>after</em> sustained elevation followed by a sudden climb is one of the highest-confidence "it's about to hit" patterns EPAM offers.</span>
+      <span class='block'><strong>Cosmic-ray decrease (Forbush)</strong> — measured by a ground neutron monitor (Oulu, Finland), not by EPAM. When a large CME structure passes near Earth, its magnetic field sweeps away galactic cosmic rays and ground counts drop 1.5%+ below their weekly normal. This independently confirms a major structure is at our doorstep.</span></p>
+
+      <p><strong>Why it matters for aurora:</strong> A CME shock arrival is the trigger event for the biggest aurora displays. When this panel reads <strong>Storm Arrival Incoming</strong> or <strong>Shock</strong>, you typically have 30–90 minutes before effects reach Earth — enough time to get out and get set up. After arrival, whether the aurora actually fires depends on the magnetic field orientation (Bz): strongly southward Bz means the storm couples into Earth's field and the show begins. So treat this panel as the "get ready" signal and Bz as the "go" signal. Elevated particles raise the <em>potential</em> for aurora; they are not a guarantee of one.</p>
+
+      <p class='text-xs text-neutral-400'><strong>Advanced:</strong> The level is decided by the <em>combination</em> of signatures, never one number — magnitude, persistence, broadband agreement and rate of climb must coincide, which is what suppresses false alarms from glitches and slow stream interactions. When early-stage signatures fire (dispersion, convergence, a post-elevation dip, or a Forbush decrease), detection thresholds for the later stages are automatically lowered by up to 35% — the system earns extra sensitivity only when the storm sequence is genuinely under way. The score (0–100) is a continuous confidence measure behind the discrete levels.</p>
+    </div>
+  `,
     });
+  }, []);
+
+  // Try NMDB URL variants in order (starting from the last one that worked)
+  // until one returns parseable neutron-monitor data. Fails soft to [].
+  const fetchNeutronMonitor = useCallback(async (): Promise<NmSample[]> => {
+    const n = NM_FEED_CANDIDATES.length;
+    for (let i = 0; i < n; i++) {
+      const idx = (nmGoodIdxRef.current + i) % n;
+      try {
+        const res = await fetch(nmProxyPath(NM_FEED_CANDIDATES[idx]));
+        if (!res.ok) continue;
+        const parsed = parseNmAscii(await res.text());
+        if (parsed.length >= 100) { nmGoodIdxRef.current = idx; return parsed; }
+      } catch { /* try next variant */ }
+    }
+    return [];
   }, []);
 
   const fetchAll = useCallback(async () => {
@@ -438,8 +474,8 @@ const EPAMPanel: React.FC = () => {
         fetch(`${EPAM_BASE}/epam/analysis`).then(r=>r.ok?r.json():null),
         fetch(`${EPAM_BASE}/epam/combined`).then(r=>r.ok?r.json():null),
         fetch(`${SOLAR_WIND_IMF_URL}?_=${Date.now()}`).then(r=>r.ok?r.json():null),
-        // Neutron monitor (Forbush detection). Same-origin proxy; fails soft.
-        fetch(NM_PROXY_PATH).then(r=>r.ok?r.text():null).catch(()=>null),
+        // Neutron monitor (Forbush detection). Candidate chain; fails soft.
+        fetchNeutronMonitor(),
       ]);
       if (!mountedRef.current) return;
       if (r1.status==='fulfilled' && r1.value?.data)              setEpamRaw(r1.value.data);
@@ -447,10 +483,7 @@ const EPAMPanel: React.FC = () => {
       if (r3.status==='fulfilled' && r3.value?.data)              setStereoRaw(r3.value.data);
       if (r4.status==='fulfilled' && r4.value?.status)            setAnalysis(r4.value);
       if (r5.status==='fulfilled' && r5.value?.cross_validation)  setCombined(r5.value);
-      if (r7.status==='fulfilled' && typeof r7.value === 'string') {
-        const parsed = parseNmAscii(r7.value);
-        if (parsed.length) setNmRaw(parsed);
-      }
+      if (r7.status==='fulfilled' && r7.value.length)             setNmRaw(r7.value);
       if (r6.status==='fulfilled' && r6.value) {
         const s = Array.isArray((r6.value as any).speed) ? (r6.value as any).speed : [];
         const d = Array.isArray((r6.value as any).density) ? (r6.value as any).density : [];
@@ -464,7 +497,7 @@ const EPAMPanel: React.FC = () => {
       setLastUpdated(new Date());
     } catch {}
     finally { if (mountedRef.current) setLoading(false); }
-  }, []);
+  }, [fetchNeutronMonitor]);
 
   useEffect(() => {
     mountedRef.current = true;
