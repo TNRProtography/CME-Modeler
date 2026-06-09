@@ -142,14 +142,6 @@ const NOTIFICATION_GROUPS = [
         auroraEffect: 'Aurora is usually winding down at this point. Confirms the full passage of a solar wind structure and that conditions are returning toward baseline.',
         advanced: 'Slow reverse shocks are relatively uncommon. Density and temperature decrease while the magnetic field slightly increases across the boundary.',
       },
-      {
-        id: 'shock-imf',
-        emoji: '🧲',
-        label: 'IMF Field Shift',
-        plain: 'A sudden magnetic field change at L1 — no plasma shock, just the field direction changing rapidly.',
-        auroraEffect: 'If the field swings southward (Bz negative), aurora can ramp up very quickly — even without a speed or density increase. Fast-acting and easy to miss without real-time monitoring.',
-        advanced: 'IMF discontinuities often signal heliospheric current sheet crossings or magnetic flux ropes in the solar wind. Aurora response depends almost entirely on the Bz direction and duration that follows.',
-      },
     ],
   },
   {

@@ -141,7 +141,6 @@ const CATEGORY_EMOJI: Record<string, string> = {
   'shock-sf':          '💥',
   'shock-fr':          '💥',
   'shock-sr':          '💥',
-  'shock-imf':         '🧲',
   'substorm-forecast': '⚡',
   'admin-broadcast':   '📢',
 };
@@ -161,7 +160,7 @@ interface SettingsModalProps {
   pageViewStorageMode: 'server' | 'local';
 }
 
-const SHOCK_NOTIFICATION_IDS = new Set(['shock-ff', 'shock-sf', 'shock-fr', 'shock-sr', 'shock-imf']);
+const SHOCK_NOTIFICATION_IDS = new Set(['shock-ff', 'shock-sf', 'shock-fr', 'shock-sr']);
 
 // Notification categories shown in the UI — grouped for clarity.
 // Legacy topic IDs (aurora-Xpercent, substorm-forecast etc) are intentionally
@@ -261,12 +260,6 @@ const NOTIFICATION_GROUPS = [
         label: 'Slow reverse shock — trailing rarefaction',
         description: 'A rarefaction wave is passing — density and temperature falling with a magnetic field uptick. The tail end of a solar wind event.',
         tooltip: 'A slow reverse shock (SR) is a rarefaction where density and temperature decrease, speed stays up, but the magnetic field actually increases across the boundary. This is relatively uncommon and typically marks the very tail end of a complex solar wind structure. Aurora activity is usually winding down by this point.',
-      },
-      {
-        id: 'shock-imf',
-        label: 'IMF shift — magnetic field changed suddenly',
-        description: 'A sharp change in the interplanetary magnetic field without a major plasma shock. Can swing aurora conditions quickly.',
-        tooltip: 'An IMF enhancement or discontinuity is a sudden, large shift in the magnetic field (Bt or Bz) without the corresponding plasma jumps you see in a true shock. These can be sector boundary crossings, current sheet encounters, or magnetic structures embedded in the solar wind. If Bz swings strongly southward, aurora activity can ramp up quickly — even without a speed or density increase.',
       },
     ],
   },
@@ -394,12 +387,6 @@ const NOTIF_TOOLTIP_CONTENT: Record<string, NotifTooltipEntry> = {
     whatItIs: 'A rarefaction wave at the tail end of a solar wind structure — density and temperature decrease while the magnetic field slightly increases.',
     auroraEffect: 'Aurora activity is usually winding down at this point. This alert marks the very end of a complex solar wind event and confirms conditions are returning to baseline.',
     advanced: 'Slow reverse shocks are relatively uncommon and typically low-impact from an aurora perspective.',
-  },
-  'shock-imf': {
-    title: 'IMF Shift / Discontinuity Alert',
-    whatItIs: 'A sudden large shift in the interplanetary magnetic field (Bt or Bz) without the plasma jumps seen in a true shock — sector boundary crossings, current sheet encounters, or embedded magnetic structures.',
-    auroraEffect: 'If Bz swings strongly southward, aurora activity can ramp up quickly — even without a speed or density increase. One of the fastest-acting triggers and easy to miss without real-time monitoring.',
-    advanced: 'IMF discontinuities often signal heliospheric current sheet crossings or flux ropes embedded in the solar wind. Aurora response depends almost entirely on the Bz direction and duration that follows.',
   },
   'admin-broadcast': {
     title: 'Spot The Aurora Announcements',

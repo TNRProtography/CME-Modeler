@@ -33,7 +33,6 @@ export const SHOCK_IDS = new Set<string>([
   'shock-sf',
   'shock-fr',
   'shock-sr',
-  'shock-imf',
 ]);
 
 export const NOTIFICATION_PRESETS: NotificationPreset[] = [

@@ -22,7 +22,6 @@ const DocNotifications: React.FC = () => (
         ['shock-sf',         'Slow Forward Shock — speed↑, density↑, temp↑, Bt↓. Weaker compression, often SIR or CME flank. 4-hour cooldown.', 'No', 'On'],
         ['shock-fr',         'Fast Reverse Shock — speed↑, density↓, temp↓, Bt↓. CME trailing edge or HSS rear. 4-hour cooldown.', 'No', 'On'],
         ['shock-sr',         'Slow Reverse Shock — speed↑, density↓, temp↓, Bt↑. Uncommon trailing rarefaction. 4-hour cooldown.', 'No', 'On'],
-        ['shock-imf',        'IMF Enhancement — |Bt| ≥4 nT or |Bz| ≥8 nT jump with minimal plasma change. Sector boundary or embedded structure. 4-hour cooldown.', 'No', 'On'],
         ['admin-broadcast',  'Manual — sent by admin via push worker broadcast endpoint. Bypasses Banner API (Cloudflare worker-to-worker restriction, error 1042).', 'No', 'On'],
       ]}
     />

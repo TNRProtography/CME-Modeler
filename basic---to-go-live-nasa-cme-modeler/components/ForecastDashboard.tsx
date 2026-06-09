@@ -205,6 +205,15 @@ const getLatestPointTime = (series: Array<{ x?: number; time?: number; timestamp
 
 
 const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, onBetaShocksDetected, setMeasuredWindSpeedKms, navigationTarget, onInitialLoad, onInitialLoadProgress, viewMode, onViewModeChange, modalSlug, onModalSlugChange, refreshSignal }) => {
+  // Shared shock list: SolarWindQuickView detects (single shared detector),
+  // we keep a copy here so the same events drive the EPAM chart markers, and
+  // forward to App for the global banner.
+  const [betaShocks, setBetaShocks] = useState<DetectedShock[]>([]);
+  const handleShocksDetected = useCallback((shocks: DetectedShock[]) => {
+    setBetaShocks(shocks);
+    onBetaShocksDetected?.(shocks);
+  }, [onBetaShocksDetected]);
+
     // ... [Original Hooks & State] ...
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
@@ -848,11 +857,11 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 speedData={allSpeedData}
                                 densityData={allDensityData}
                                 tempData={allTempData}
-                                onShocksDetected={onBetaShocksDetected}
+                                onShocksDetected={handleShocksDetected}
                             />
 
                             <div className="col-span-12 card bg-neutral-950/80 p-4">
-                                <EPAMPanel />
+                                <EPAMPanel shockEvents={betaShocks} />
                             </div>
 
                             

@@ -14,20 +14,13 @@ import { createPortal } from 'react-dom';
 import { Line } from 'react-chartjs-2';
 import type { ChartOptions } from 'chart.js';
 import CloseIcon from './icons/CloseIcon';
+import { detectShocks, type DetectedShock } from '../utils/shockDetection';
 
 // ── Shape of a single detected shock, exposed to parent via onShocksDetected ──
-export interface DetectedShock {
-  t: number;       // ms timestamp
-  score: number;
-  label: string;
-  spdJ: number;    // speed delta (km/s)
-  denR: number;    // density ratio
-  tmpR: number;    // temp ratio
-  btJ:  number;    // Bt delta (nT)
-  bzJ:  number;    // Bz swing (nT)
-  ageMin: number;
-  ageStr: string;
-}
+// (Defined in utils/shockDetection.ts — the single shared detector — and
+// re-exported here so existing `import { type DetectedShock } from
+// './SolarWindQuickView'` call sites keep working.)
+export type { DetectedShock } from '../utils/shockDetection';
 
 interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string | React.ReactNode; }
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
@@ -216,7 +209,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
         'Solar Wind Quick View',
         'Live upstream L1 solar wind data from ACE: IMF Bz/Bt, clock angle (Phi), density, speed, and temperature. Each dot is one instrument reading from the ACE MAG and SWEPAM sensors roughly 1.5 million km from Earth.',
         'These parameters directly control aurora activity. Southward Bz (negative) opens the magnetosphere to energy input; high speed and density amplify that effect. Watching all five subplots together reveals whether conditions are building, stable, or declining — typically 30–60 minutes before they hit Earth.',
-        'Shock events are flagged automatically as yellow dashed vertical markers. Shock types: Fast Forward (FF) — density↑ temp↑ IMF↑ speed↑; Slow Forward (SF) — same but IMF↓; Fast Reverse (FR) — density↓ temp↓ IMF↓ speed↑; Slow Reverse (SR) — density↓ temp↓ IMF↑ speed↑; IMF Discontinuity — strong field step without a matching plasma jump.'
+        'Shock events are flagged automatically as dashed vertical markers. Shock types: Fast Forward (FF) — density↑ temp↑ IMF↑ speed↑, the classic CME arrival; Slow Forward (SF) — same but IMF↓; Fast Reverse (FR) — density↓ temp↓ IMF↓ speed↑; Slow Reverse (SR) — density↓ temp↓ IMF↑ speed↑. Detection requires the jump to be sharp (concentrated within minutes, not a gradual ramp) and confirmed by a matching dynamic-pressure change, which filters out slow stream interactions and magnetic sector boundaries. The same detections drive the shock markers on the Energetic Particle Monitor charts.'
       ),
     });
   }, []);
@@ -244,159 +237,15 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
   const hasData = mag.length > 0 || spd.length > 0;
 
   // ── Interplanetary shock detector ─────────────────────────────────────────
-  // This detector is intentionally conservative:
-  // - uses median pre/post windows (robust to spikes/gaps),
-  // - requires multi-parameter compression/rarefaction consistency,
-  // - and limits visible events to recent windows.
-  //
-  // Practical science intent:
-  // - Forward IP shock (CME/SIR front): V↑, N↑, Pdyn↑, usually |B|↑ and Tp↑.
-  // - Reverse IP shock / trailing rarefaction edge: V↓, N↓, Pdyn↓.
-  // - IMF enhancement/discontinuity: strong magnetic step/rotation with little plasma jump.
-  const shockEvents = useMemo(() => {
-    const LOOK_BACK = 6 * 3600000; // UI alerts should represent very recent structure only
-    const CANDIDATE_STEP = 3 * 60000;
-    const PRE_WIN = 18 * 60000;
-    const POST_WIN = 12 * 60000;
-    const now = Date.now();
-
-    const spdSorted = [...speedData].sort((a, b) => a.x - b.x);
-    const denSorted = [...densityData].sort((a, b) => a.x - b.x);
-    const tmpSorted = [...tempData].sort((a, b) => a.x - b.x);
-    const magSorted = [...magneticData].sort((a, b) => a.time - b.time);
-    if (spdSorted.length < 10 || denSorted.length < 10 || magSorted.length < 10) return [];
-
-    const median = (vals: number[]): number => {
-      if (!vals.length) return NaN;
-      const v = [...vals].sort((a, b) => a - b);
-      const m = Math.floor(v.length / 2);
-      return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
-    };
-    const sample = (arr: { x: number; y: number }[], a: number, b: number): number[] =>
-      arr.filter(p => p.x >= a && p.x < b).map(p => p.y).filter(n => Number.isFinite(n));
-    const sampleMag = (a: number, b: number): { bt: number[]; bz: number[] } => ({
-      bt: magSorted.filter(p => p.time >= a && p.time < b).map(p => p.bt).filter(n => Number.isFinite(n)),
-      bz: magSorted.filter(p => p.time >= a && p.time < b).map(p => p.bz).filter(n => Number.isFinite(n)),
-    });
-
-    const events: Array<{
-      t: number; score: number; label: string;
-      spdJ: number; denR: number; tmpR: number; btJ: number; bzJ: number;
-      ageMin: number; ageStr: string;
-    }> = [];
-
-    const tStart = Math.max(now - LOOK_BACK, spdSorted[0].x + PRE_WIN);
-    for (let t = tStart; t <= now - POST_WIN; t += CANDIDATE_STEP) {
-      const preSpd = sample(spdSorted, t - PRE_WIN, t);
-      const postSpd = sample(spdSorted, t, t + POST_WIN);
-      const preDen = sample(denSorted, t - PRE_WIN, t);
-      const postDen = sample(denSorted, t, t + POST_WIN);
-      const preTmp = sample(tmpSorted, t - PRE_WIN, t);
-      const postTmp = sample(tmpSorted, t, t + POST_WIN);
-      const preMag = sampleMag(t - PRE_WIN, t);
-      const postMag = sampleMag(t, t + POST_WIN);
-      if (preSpd.length < 3 || postSpd.length < 3 || preDen.length < 3 || postDen.length < 3 || preMag.bt.length < 3 || postMag.bt.length < 3) continue;
-
-      const spd1 = median(preSpd), spd2 = median(postSpd);
-      const den1 = median(preDen), den2 = median(postDen);
-      const tmp1 = median(preTmp), tmp2 = median(postTmp);
-      const bt1 = median(preMag.bt), bt2 = median(postMag.bt);
-      const bz1 = median(preMag.bz), bz2 = median(postMag.bz);
-      if (![spd1, spd2, den1, den2, bt1, bt2, bz1, bz2].every(Number.isFinite)) continue;
-
-      const pDyn1 = den1 > 0 ? den1 * spd1 * spd1 : NaN; // proportional dynamic pressure proxy
-      const pDyn2 = den2 > 0 ? den2 * spd2 * spd2 : NaN;
-      const spdDelta = spd2 - spd1;
-      const denRatio = den1 > 0 ? den2 / den1 : NaN;
-      const tmpRatio = tmp1 > 0 ? tmp2 / tmp1 : NaN;
-      const btDelta = bt2 - bt1;
-      const btRatio = bt1 > 0 ? bt2 / bt1 : NaN;
-      const bzDelta = bz2 - bz1;
-      const pDynRatio = pDyn1 > 0 ? pDyn2 / pDyn1 : NaN;
-      if (![denRatio, tmpRatio, btRatio, pDynRatio].every(Number.isFinite)) continue;
-
-      // Four IPS signatures in spacecraft frame (FF / SF / FR / SR):
-      // - N,T step direction defines forward(+,+) vs reverse(-,-)
-      // - B step sign separates fast vs slow branch
-      // - V increases across all four classes at the shock crossing.
-      // Sensitivity-tuned thresholds:
-      // keep the same FF/SF/FR/SR physics signatures, but lower cutoffs so
-      // moderate shocks/step-changes are not missed in noisier real-time data.
-      const vUp = spdDelta >= 12;
-      const nUp = denRatio >= 1.2;
-      const nDown = denRatio <= 0.82;
-      const tUp = tmpRatio >= 1.1;
-      const tDown = tmpRatio <= 0.9;
-      const bUp = btRatio >= 1.1 || btDelta >= 1.0;
-      const bDown = btRatio <= 0.92 || btDelta <= -1.0;
-
-      const ff = vUp && nUp && tUp && bUp;     // Fast Forward
-      const sf = vUp && nUp && tUp && bDown;   // Slow Forward
-      const fr = vUp && nDown && tDown && bDown; // Fast Reverse
-      const sr = vUp && nDown && tDown && bUp; // Slow Reverse
-
-      const imfEnhancement =
-        (Math.abs(btDelta) >= 3 || btRatio >= 1.3 || Math.abs(bzDelta) >= 6) &&
-        Math.abs(spdDelta) < 30 &&
-        denRatio > 0.7 && denRatio < 1.45 &&
-        pDynRatio > 0.65 && pDynRatio < 1.8;
-
-      let label = '';
-      let score = 0;
-      if (ff) {
-        label = 'Fast Forward Shock (FF)';
-        score = 8 + Number(pDynRatio >= 1.8) + Number(btRatio >= 1.3);
-      } else if (sf) {
-        label = 'Slow Forward Shock (SF)';
-        score = 7 + Number(pDynRatio >= 1.6);
-      } else if (fr) {
-        label = 'Fast Reverse Shock (FR)';
-        score = 7 + Number(pDynRatio <= 0.75);
-      } else if (sr) {
-        label = 'Slow Reverse Shock (SR)';
-        score = 6 + Number(pDynRatio <= 0.8);
-      } else if (imfEnhancement) {
-        label = 'IMF Enhancement / Discontinuity';
-        score = 3 + Number(Math.abs(bzDelta) >= 8);
-      } else {
-        continue;
-      }
-
-      const ageMin = Math.round((now - t) / 60000);
-      if (ageMin > 360) continue;
-      const ageStr = ageMin < 2   ? 'just now'
-        : ageMin < 60 ? `~${ageMin} min ago`
-        : `~${Math.floor(ageMin / 60)}h${ageMin % 60 > 0 ? ` ${ageMin % 60}min` : ''} ago`;
-
-      events.push({
-        t,
-        score,
-        label,
-        spdJ: Math.round(spdDelta),
-        denR: +denRatio.toFixed(2),
-        tmpR: +tmpRatio.toFixed(2),
-        btJ: +btDelta.toFixed(1),
-        bzJ: +bzDelta.toFixed(1),
-        ageMin,
-        ageStr,
-      });
-    }
-
-    if (!events.length) return [];
-    // Keep strongest non-overlapping events, then order chronologically.
-    const dedupeWindowMs = 20 * 60000;
-    const selected = events
-      .sort((a, b) => b.score - a.score || b.t - a.t)
-      .reduce<typeof events>((acc, ev) => {
-        const overlaps = acc.some((s) => Math.abs(s.t - ev.t) < dedupeWindowMs);
-        if (!overlaps) acc.push(ev);
-        return acc;
-      }, [])
-      .slice(0, 4)
-      .sort((a, b) => a.t - b.t);
-
-    return selected;
-  }, [speedData, densityData, tempData, magneticData]);
+  // Single shared detector (utils/shockDetection.ts) — also drives the EPAM
+  // panel's chart markers, so the summary, banner, and EPAM graph always show
+  // the SAME events. Tightened in v2: IMF enhancement/discontinuity removed,
+  // sharpness gate added to reject gradual SIR ramps, dynamic-pressure
+  // confirmation required. See that file for full rationale and thresholds.
+  const shockEvents = useMemo(
+    () => detectShocks(speedData, densityData, tempData, magneticData),
+    [speedData, densityData, tempData, magneticData],
+  );
 
   // Latest shock (most recent by time); this is what the carousel defaults to.
   // shockEvents is already sorted chronologically in the reducer above.

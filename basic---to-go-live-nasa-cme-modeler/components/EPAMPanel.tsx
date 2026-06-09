@@ -14,6 +14,7 @@ import {
   type NmSample,
   type WarnLevel,
 } from './epamWarning';
+import { detectShocks, type DetectedShock } from '../utils/shockDetection';
 
 interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string | React.ReactNode; }
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
@@ -43,7 +44,6 @@ interface AnalysisData { status: string; statusLabel: string; description: strin
 interface CombinedData { cross_validation: { confidence: string; confidenceLabel: string; ace_epam_elevated: boolean; goes_s1_alert: boolean; stereo_elevated: boolean }; }
 interface SolarWindPoint { x: number; y: number; }
 interface SolarMagPoint { time: number; bt: number; bz: number; }
-interface ShockEvent { t: number; label: string; score: number; }
 
 const EPAM_BASE = 'https://epam.thenamesrock.workers.dev';
 const SOLAR_WIND_IMF_URL = 'https://imap-solar-data-test.thenamesrock.workers.dev/rtsw/merged-24h';
@@ -275,7 +275,6 @@ const SHOCK_COLORS: Record<string, string> = {
   'Slow Forward Shock (SF)': 'rgba(249, 115, 22, 0.95)',
   'Fast Reverse Shock (FR)': 'rgba(59, 130, 246, 0.95)',
   'Slow Reverse Shock (SR)': 'rgba(14, 165, 233, 0.95)',
-  'IMF Enhancement / Discontinuity': 'rgba(250, 204, 21, 0.95)',
 };
 
 function shockMarkerDataset(t: number, yMin: number, yMax: number, color: string) {
@@ -292,94 +291,6 @@ function shockMarkerDataset(t: number, yMin: number, yMax: number, color: string
   };
 }
 
-function deriveShockEvents(speed: SolarWindPoint[], density: SolarWindPoint[], temp: SolarWindPoint[], mag: SolarMagPoint[]): ShockEvent[] {
-  const now = Date.now();
-  const LOOK_BACK = 6 * 3600000;
-  const CANDIDATE_STEP = 3 * 60000;
-  const PRE_WIN = 18 * 60000;
-  const POST_WIN = 12 * 60000;
-  const spdSorted = [...speed].sort((a, b) => a.x - b.x);
-  const denSorted = [...density].sort((a, b) => a.x - b.x);
-  const tmpSorted = [...temp].sort((a, b) => a.x - b.x);
-  const magSorted = [...mag].sort((a, b) => a.time - b.time);
-  if (spdSorted.length < 10 || denSorted.length < 10 || magSorted.length < 10) return [];
-
-  const median = (vals: number[]): number => {
-    if (!vals.length) return NaN;
-    const v = [...vals].sort((a, b) => a - b);
-    const m = Math.floor(v.length / 2);
-    return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
-  };
-  const sample = (arr: { x: number; y: number }[], a: number, b: number): number[] =>
-    arr.filter(p => p.x >= a && p.x < b).map(p => p.y).filter(n => Number.isFinite(n));
-  const sampleMag = (a: number, b: number): { bt: number[]; bz: number[] } => ({
-    bt: magSorted.filter(p => p.time >= a && p.time < b).map(p => p.bt).filter(n => Number.isFinite(n)),
-    bz: magSorted.filter(p => p.time >= a && p.time < b).map(p => p.bz).filter(n => Number.isFinite(n)),
-  });
-
-  const events: ShockEvent[] = [];
-  const tStart = Math.max(now - LOOK_BACK, spdSorted[0].x + PRE_WIN);
-  for (let t = tStart; t <= now - POST_WIN; t += CANDIDATE_STEP) {
-    const preSpd = sample(spdSorted, t - PRE_WIN, t);
-    const postSpd = sample(spdSorted, t, t + POST_WIN);
-    const preDen = sample(denSorted, t - PRE_WIN, t);
-    const postDen = sample(denSorted, t, t + POST_WIN);
-    const preTmp = sample(tmpSorted, t - PRE_WIN, t);
-    const postTmp = sample(tmpSorted, t, t + POST_WIN);
-    const preMag = sampleMag(t - PRE_WIN, t);
-    const postMag = sampleMag(t, t + POST_WIN);
-    if (preSpd.length < 3 || postSpd.length < 3 || preDen.length < 3 || postDen.length < 3 || preMag.bt.length < 3 || postMag.bt.length < 3) continue;
-
-    const spd1 = median(preSpd), spd2 = median(postSpd);
-    const den1 = median(preDen), den2 = median(postDen);
-    const tmp1 = median(preTmp), tmp2 = median(postTmp);
-    const bt1 = median(preMag.bt), bt2 = median(postMag.bt);
-    const bz1 = median(preMag.bz), bz2 = median(postMag.bz);
-    if (![spd1, spd2, den1, den2, bt1, bt2, bz1, bz2].every(Number.isFinite)) continue;
-
-    const pDyn1 = den1 > 0 ? den1 * spd1 * spd1 : NaN;
-    const pDyn2 = den2 > 0 ? den2 * spd2 * spd2 : NaN;
-    const spdDelta = spd2 - spd1;
-    const denRatio = den1 > 0 ? den2 / den1 : NaN;
-    const tmpRatio = tmp1 > 0 ? tmp2 / tmp1 : NaN;
-    const btDelta = bt2 - bt1;
-    const btRatio = bt1 > 0 ? bt2 / bt1 : NaN;
-    const bzDelta = bz2 - bz1;
-    const pDynRatio = pDyn1 > 0 ? pDyn2 / pDyn1 : NaN;
-    if (![denRatio, tmpRatio, btRatio, pDynRatio].every(Number.isFinite)) continue;
-
-    const vUp = spdDelta >= 20;
-    const nUp = denRatio >= 1.35;
-    const nDown = denRatio <= 0.75;
-    const tUp = tmpRatio >= 1.2;
-    const tDown = tmpRatio <= 0.85;
-    const bUp = btRatio >= 1.15 || btDelta >= 1.5;
-    const bDown = btRatio <= 0.88 || btDelta <= -1.5;
-
-    let label = '';
-    let score = 0;
-    if (vUp && nUp && tUp && bUp) { label = 'Fast Forward Shock (FF)'; score = 8 + Number(pDynRatio >= 1.8); }
-    else if (vUp && nUp && tUp && bDown) { label = 'Slow Forward Shock (SF)'; score = 7 + Number(pDynRatio >= 1.6); }
-    else if (vUp && nDown && tDown && bDown) { label = 'Fast Reverse Shock (FR)'; score = 7 + Number(pDynRatio <= 0.75); }
-    else if (vUp && nDown && tDown && bUp) { label = 'Slow Reverse Shock (SR)'; score = 6 + Number(pDynRatio <= 0.8); }
-    else if ((Math.abs(btDelta) >= 4 || btRatio >= 1.4 || Math.abs(bzDelta) >= 8) && Math.abs(spdDelta) < 25 && denRatio > 0.75 && denRatio < 1.35) {
-      label = 'IMF Enhancement / Discontinuity';
-      score = 3 + Number(Math.abs(bzDelta) >= 8);
-    } else continue;
-
-    events.push({ t, label, score });
-  }
-
-  const dedupeWindowMs = 20 * 60000;
-  return events
-    .sort((a, b) => b.score - a.score || b.t - a.t)
-    .reduce<ShockEvent[]>((acc, ev) => {
-      if (!acc.some((e) => Math.abs(e.t - ev.t) < dedupeWindowMs)) acc.push(ev);
-      return acc;
-    }, [])
-    .slice(0, 4)
-    .sort((a, b) => a.t - b.t);
-}
 
 // ─── View metadata ────────────────────────────────────────────────────────────
 const VIEW_INFO: Record<ViewKey, {title: string; subtitle: string; note?: string}> = {
@@ -391,7 +302,15 @@ const VIEW_INFO: Record<ViewKey, {title: string; subtitle: string; note?: string
 };
 
 // ─── Main component ───────────────────────────────────────────────────────────
-const EPAMPanel: React.FC = () => {
+interface EPAMPanelProps {
+  /** Shocks from the shared detector (passed down by ForecastDashboard from
+   *  SolarWindQuickView) so the EPAM markers show exactly the same events as
+   *  the solar-wind summary and global banner. When absent (standalone use),
+   *  the panel runs the same shared detector on its own self-fetched feed. */
+  shockEvents?: DetectedShock[];
+}
+
+const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) => {
   const [view,       setView]       = useState<ViewKey>('ace-raw');
   const [timeRange,  setTimeRange]  = useState<TimeRange>(24);
   const [epamRaw,    setEpamRaw]    = useState<EpamPoint[]>([]);
@@ -530,7 +449,14 @@ const EPAMPanel: React.FC = () => {
     return epamRateOfChange15m(epamSamples).filter(p => p.x > cutoff);
   }, [epamSamples, timeRange]);
 
-  const shockEvents = useMemo(() => deriveShockEvents(speedRaw, densityRaw, tempRaw, magRaw), [speedRaw, densityRaw, tempRaw, magRaw]);
+  // Prefer shocks handed down from ForecastDashboard (same detector instance
+  // that drives the summary/banner). Fall back to running the shared detector
+  // on this panel's own solar-wind feed when used standalone.
+  const ownShockEvents = useMemo(
+    () => (shockEventsProp ? [] : detectShocks(speedRaw, densityRaw, tempRaw, magRaw)),
+    [shockEventsProp, speedRaw, densityRaw, tempRaw, magRaw],
+  );
+  const shockEvents = shockEventsProp ?? ownShockEvents;
   const visibleShockEvents = useMemo(() => {
     const cutoff = Date.now() - timeRange * 3600 * 1000;
     return shockEvents.filter((e) => e.t >= cutoff);
