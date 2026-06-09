@@ -4,6 +4,14 @@ import { createPortal } from 'react-dom';
 import { Line } from 'react-chartjs-2';
 import type { ChartOptions, ChartData } from 'chart.js';
 import CloseIcon from './icons/CloseIcon';
+import {
+  toEpamSamples,
+  computeEpamWarning,
+  epamRateOfChange15m,
+  EPAM_WARN_CONFIG,
+  type EpamWarning,
+  type WarnLevel,
+} from './epamWarning';
 
 interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string | React.ReactNode; }
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
@@ -39,13 +47,26 @@ const EPAM_BASE = 'https://epam.thenamesrock.workers.dev';
 const SOLAR_WIND_IMF_URL = 'https://imap-solar-data-test.thenamesrock.workers.dev/rtsw/merged-24h';
 
 // Views: raw charts per source + one combined averaged chart
-type ViewKey = 'ace-raw' | 'goes-raw' | 'stereo-raw' | 'combined';
+type ViewKey = 'ace-raw' | 'ace-roc' | 'goes-raw' | 'stereo-raw' | 'combined';
 const VIEWS: {key: ViewKey; label: string}[] = [
   {key: 'ace-raw',  label: 'ACE Raw'},
+  {key: 'ace-roc',  label: 'ACE Rate of Change'},
   {key: 'goes-raw', label: 'GOES Raw'},
   {key: 'stereo-raw', label: 'STEREO Raw'},
   {key: 'combined',   label: 'Combined Average'},
 ];
+
+// ACE proton channels used by the robust warning engine (same set as ACE_CH).
+const ACE_WARN_CHANNELS = ['p1', 'p3', 'p5', 'p7', 'p8'];
+
+// Warning-level styling for the robust early-warning banner.
+const WARN_STYLES: Record<WarnLevel, {dot:string;bg:string;border:string;text:string;pulse:string}> = {
+  SHOCK:    {dot:'bg-red-500',    bg:'bg-red-950/60',    border:'border-red-700/60',    text:'text-red-300',    pulse:'animate-ping'},
+  ONSET:    {dot:'bg-orange-400', bg:'bg-orange-950/60', border:'border-orange-700/60', text:'text-orange-300', pulse:'animate-pulse'},
+  ELEVATED: {dot:'bg-sky-500',    bg:'bg-sky-950/45',    border:'border-sky-800/60',    text:'text-sky-300',    pulse:''},
+  WATCH:    {dot:'bg-yellow-400', bg:'bg-yellow-950/45', border:'border-yellow-700/50', text:'text-yellow-300', pulse:''},
+  QUIET:    {dot:'bg-green-500',  bg:'bg-neutral-900/60',border:'border-neutral-700/60',text:'text-neutral-400',pulse:''},
+};
 
 type TimeRange = 24 | 72 | 168;
 const TIME_RANGES: {value: TimeRange; label: string}[] = [
@@ -346,6 +367,7 @@ function deriveShockEvents(speed: SolarWindPoint[], density: SolarWindPoint[], t
 // ─── View metadata ────────────────────────────────────────────────────────────
 const VIEW_INFO: Record<ViewKey, {title: string; subtitle: string; note?: string}> = {
   'ace-raw':  {title: 'Solar Storm Early Warning (L1 Satellite)', subtitle: 'Real-time particle readings from a satellite parked 1.5 million km in front of Earth — about 45–60 minutes upstream of us. When the lines start rising together across all colours and converging on the graph, that is the pattern that often precedes a solar storm arriving at Earth. The earlier the lines rise, the more warning time you have.'},
+  'ace-roc':  {title: 'ACE EPAM — Rate of Change (15-min)', subtitle: 'How fast the averaged ACE particle flux is climbing or falling, expressed as the change in log-flux over a rolling 15-minute window. Flat near zero means steady. A sharp positive spike means the flux is jumping — the near-vertical climb that marks a CME shock front arriving. Sustained negative values mean a stream is decaying. This is the leading-edge view: it reacts before the raw flux looks dramatic.', note: 'Reads in log-units per 15 min: +0.30 ≈ a doubling, +0.60 ≈ a 4× jump in 15 minutes. Brief single-point spikes are noise; a real onset shows several rising steps in a row.'},
   'goes-raw': {title: 'GOES Satellite — Storm Confirmation', subtitle: 'A second satellite in a fixed orbit above Earth, used to confirm what the upstream L1 satellite is seeing. If both satellites are elevated at the same time, the solar storm signal is much more reliable. The ≥10 MeV line is the key one to watch — if it jumps sharply, a solar radiation storm is in progress.'},
   'stereo-raw': {title: 'STEREO-A — Ahead-of-Earth Satellite', subtitle: 'Particle readings from a satellite that orbits slightly ahead of Earth, giving an early peek at what is coming along the Sun–Earth line.', note: '⚠ STEREO-A orbits about 10–15° ahead of Earth and sees the Sun from a different angle — so elevated readings here do not always mean the same storm will hit Earth. Think of it as a neighbour getting rain before you — useful context, but not a direct forecast for your location.'},
   'combined': {title: 'All Satellites — Combined Overview', subtitle: 'One averaged trend line per satellite, making it easy to compare all three at a glance. If all three are rising together, that is the strongest possible signal. Toggle individual satellites on or off with the buttons below.'},
@@ -438,6 +460,26 @@ const EPAMPanel: React.FC = () => {
   const filteredEpam   = useMemo(() => filterByTimeRange(epamRaw,   timeRange), [epamRaw,   timeRange]);
   const filteredGoes   = useMemo(() => filterByTimeRange(goesRaw,   timeRange), [goesRaw,   timeRange]);
   const filteredStereo = useMemo(() => filterByTimeRange(stereoRaw, timeRange), [stereoRaw, timeRange]);
+
+  // Robust early-warning analysis. Built from the FULL ACE EPAM history available
+  // (the whole week), independent of the chart's time-range selector — the
+  // baseline must always see the full week to know what "quiet" looks like.
+  const epamSamples = useMemo(
+    () => toEpamSamples(epamRaw as any, ACE_WARN_CHANNELS, parseUTC),
+    [epamRaw],
+  );
+  const warning: EpamWarning | null = useMemo(
+    () => (epamSamples.length ? computeEpamWarning(epamSamples) : null),
+    [epamSamples],
+  );
+
+  // Rate-of-change series for the ACE ROC view, clipped to the selected range.
+  const rocSeries = useMemo(() => {
+    if (!epamSamples.length) return [] as {x:number;y:number|null}[];
+    const cutoff = Date.now() - timeRange * 3600 * 1000;
+    return epamRateOfChange15m(epamSamples).filter(p => p.x > cutoff);
+  }, [epamSamples, timeRange]);
+
   const shockEvents = useMemo(() => deriveShockEvents(speedRaw, densityRaw, tempRaw, magRaw), [speedRaw, densityRaw, tempRaw, magRaw]);
   const visibleShockEvents = useMemo(() => {
     const cutoff = Date.now() - timeRange * 3600 * 1000;
@@ -464,6 +506,19 @@ const EPAMPanel: React.FC = () => {
     if (view === 'ace-raw') {
       if (!filteredEpam.length) return null;
       return { datasets: withShockMarkers(ACE_CH.map(c => mkDs(rev(filteredEpam), 'time_tag', c.k, c.c, c.l))) };
+    }
+
+    if (view === 'ace-roc') {
+      if (!rocSeries.length) return null;
+      // Two overlaid datasets: positive (rising = orange/red interest) and the
+      // full signed line. Threshold reference bands are drawn via chart options.
+      const pos = rocSeries.map(p => ({ x: p.x, y: p.y !== null && p.y > 0 ? p.y : null }));
+      return {
+        datasets: [
+          { label: 'Δlog flux / 15 min', borderColor: '#38bdf8', backgroundColor: '#38bdf820', borderWidth: 1.5, pointRadius: 0, tension: 0.15, spanGaps: false, data: rocSeries, fill: false },
+          { label: 'Rising', borderColor: '#fb923c', backgroundColor: '#fb923c30', borderWidth: 2, pointRadius: 0, tension: 0.15, spanGaps: false, data: pos, fill: true },
+        ],
+      };
     }
 
     if (view === 'goes-raw') {
@@ -517,10 +572,33 @@ const EPAMPanel: React.FC = () => {
     }
 
     return null;
-  }, [view, filteredEpam, filteredGoes, filteredStereo, showAce, showGoes, showStereo, showShockMarkers, visibleShockEvents]);
+  }, [view, filteredEpam, filteredGoes, filteredStereo, rocSeries, showAce, showGoes, showStereo, showShockMarkers, visibleShockEvents]);
 
   // ── Chart options ─────────────────────────────────────────────────────────
   const chartOptions: ChartOptions<'line'> = useMemo(() => {
+    if (view === 'ace-roc') {
+      const base = baseOptions('linear', 'Δlog₁₀ flux / 15 min');
+      return {
+        ...base,
+        plugins: {
+          ...base.plugins,
+          legend: { ...(base.plugins as any).legend, labels: { ...((base.plugins as any).legend?.labels ?? {}), filter: (item: any) => String(item.text ?? '') !== '__shock__' } },
+        },
+        scales: {
+          x: (base as any).scales.x,
+          y: {
+            type: 'linear',
+            suggestedMin: -0.4, suggestedMax: 0.7,
+            grid: {
+              color: (ctx: any) => (ctx.tick && Math.abs(ctx.tick.value) < 1e-9 ? '#52525b' : '#27272a'),
+            },
+            ticks: { color: '#71717a', font: { size: 10 }, maxTicksLimit: 7,
+              callback: (v: number | string) => Number(v).toFixed(2) },
+            title: { display: true, text: 'Δlog₁₀ flux / 15 min', color: '#71717a', font: { size: 10 } },
+          },
+        },
+      };
+    }
     if (view === 'stereo-raw') {
       return {
         ...baseOptions('logarithmic', 'Particle flux'),
@@ -601,7 +679,47 @@ const EPAMPanel: React.FC = () => {
         </div>
       )}
 
-      {/* View selector */}
+      {/* Robust early-warning banner — full-week ACE EPAM baseline (client-side).
+          This complements the upstream worker status with a transparent,
+          baseline-anchored read that is harder to fool with glitches and gentle
+          stream rises. */}
+      {!loading && warning && (
+        (() => {
+          const w = WARN_STYLES[warning.level];
+          const d = warning.diagnostics;
+          return (
+            <div className={`${w.bg} border ${w.border} rounded-lg px-4 py-3 mb-4`}>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${w.dot} ${w.pulse}`} />
+                <span className={`text-sm font-semibold ${w.text}`}>ACE EPAM · {warning.levelLabel}</span>
+                <span className="text-xs text-neutral-500 font-mono">score {warning.score}</span>
+                <span className="ml-auto text-[10px] text-neutral-600">7-day baseline · ACE only</span>
+              </div>
+              <p className="text-sm text-neutral-200 mt-1.5 leading-relaxed">{warning.headline}</p>
+              <p className="text-[11px] text-neutral-500 mt-1 font-mono leading-relaxed">{warning.detail}</p>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {warning.reasons.map(r => (
+                  <span key={r.key}
+                    title={r.detail}
+                    className={`px-2 py-0.5 rounded-full text-[11px] border ${
+                      r.active
+                        ? 'bg-sky-900/40 border-sky-700/50 text-sky-300'
+                        : 'bg-neutral-800/40 border-neutral-700/50 text-neutral-500'
+                    }`}>
+                    {r.active ? '✓ ' : '· '}{r.label}
+                    <span className="ml-1 text-neutral-500">{r.detail}</span>
+                  </span>
+                ))}
+              </div>
+              {d.usableHours < EPAM_WARN_CONFIG.BASELINE_HOURS * 0.5 && (
+                <p className="text-[11px] text-amber-400/80 mt-1.5">
+                  ⚠ Only {Math.round(d.usableHours)}h of history available — baseline still settling, treat levels as provisional.
+                </p>
+              )}
+            </div>
+          );
+        })()
+      )}
       <div className="flex justify-center gap-2 mb-3 flex-wrap">
         {VIEWS.map(v => (
           <button key={v.key} onClick={()=>setView(v.key)}
@@ -622,7 +740,7 @@ const EPAMPanel: React.FC = () => {
       </div>
 
       {/* Shock marker toggle (ACE / GOES / Combined only) */}
-      {view !== 'stereo-raw' && (
+      {view !== 'stereo-raw' && view !== 'ace-roc' && (
         <div className="flex justify-center mb-3">
           <button
             onClick={() => setShowShockMarkers(v => !v)}
