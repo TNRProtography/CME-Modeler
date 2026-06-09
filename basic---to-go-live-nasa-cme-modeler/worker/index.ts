@@ -4,6 +4,7 @@ const ALLOWED_HOSTS = new Set([
   'sdo.gsfc.nasa.gov',
   'jsoc1.stanford.edu',
   'services.swpc.noaa.gov',
+  'stereo-ssc.nascom.nasa.gov',
 ]);
 
 const BLOCKED_HOST_RE = /(^localhost$)|(^127\.)|(^10\.)|(^192\.168\.)|(^169\.254\.)|(^172\.(1[6-9]|2\d|3[0-1])\.)|(^0\.)/;
@@ -78,6 +79,44 @@ const proxyImage = async (request: Request): Promise<Response> => {
   return withCors(response);
 };
 
+const proxyText = async (request: Request): Promise<Response> => {
+  const url = new URL(request.url);
+  const target = validateTarget(url.searchParams.get('url'));
+  const ttl = Number(url.searchParams.get('ttl') || '300');
+  const ttlSafe = Number.isFinite(ttl) ? Math.max(60, Math.min(900, ttl)) : 300;
+  const { cacheKey } = cacheRequestFor(request, ttlSafe);
+
+  const cached = await caches.default.match(cacheKey);
+  if (cached) return withCors(cached);
+
+  const upstream = await fetch(target.toString(), {
+    method: 'GET',
+    cf: { cacheTtl: ttlSafe, cacheEverything: true },
+    headers: {
+      'User-Agent': 'spot-the-aurora-text-proxy',
+      'Accept': 'text/html,text/plain,*/*;q=0.8',
+    },
+  });
+
+  if (!upstream.ok) {
+    return withCors(new Response(`Upstream fetch failed: ${upstream.status}`, { status: upstream.status }));
+  }
+
+  const headers = new Headers(upstream.headers);
+  headers.set('Cache-Control', `public, max-age=${ttlSafe}, s-maxage=${ttlSafe}`);
+  headers.set('Content-Type', headers.get('content-type') || 'text/html; charset=utf-8');
+  headers.set('Vary', 'Accept');
+
+  const response = new Response(upstream.body, {
+    status: upstream.status,
+    statusText: upstream.statusText,
+    headers,
+  });
+
+  await caches.default.put(cacheKey, response.clone());
+  return withCors(response);
+};
+
 const proxyImageMeta = async (request: Request): Promise<Response> => {
   const url = new URL(request.url);
   const target = validateTarget(url.searchParams.get('url'));
@@ -109,6 +148,14 @@ export default {
     if (url.pathname === '/api/proxy/meta') {
       try {
         return await proxyImageMeta(request);
+      } catch (error) {
+        return withCors(new Response((error as Error).message, { status: 400 }));
+      }
+    }
+
+    if (url.pathname === '/api/proxy/text') {
+      try {
+        return await proxyText(request);
       } catch (error) {
         return withCors(new Response((error as Error).message, { status: 400 }));
       }
