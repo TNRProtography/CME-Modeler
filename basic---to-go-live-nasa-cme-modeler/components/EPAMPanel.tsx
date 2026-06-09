@@ -624,8 +624,6 @@ const EPAMPanel: React.FC = () => {
 
   const info    = VIEW_INFO[view];
   const isGoes  = view === 'goes-raw';
-  const s       = STATUS_STYLES[analysis?.status ?? 'QUIET'] ?? STATUS_STYLES.QUIET;
-  const arrival = analysis ? estimateArrival(analysis.status, analysis.metrics.log_spread_4h_trend) : null;
   const noData  = !chartData;
 
   return (
@@ -652,38 +650,12 @@ const EPAMPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* Status banner */}
+      {/* Early-warning banner — robust full-week ACE EPAM baseline (client-side),
+          with cross-satellite confirmation (GOES / STEREO) folded in from the
+          upstream worker analysis. One combined box. */}
       {loading ? (
         <div className="h-14 bg-neutral-800/50 rounded-lg animate-pulse mb-4" />
-      ) : analysis && (
-        <div className={`${s.bg} border ${s.border} rounded-lg px-4 py-3 mb-4`}>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${s.dot} ${analysis.status==='SHOCK_PASSAGE'?'animate-ping':analysis.status==='CME_WATCH'?'animate-pulse':''}`} />
-            <span className={`text-sm font-semibold ${s.text}`}>{analysis.statusLabel}</span>
-            {analysis.signatures.velocity_dispersion && <span className="px-2 py-0.5 rounded-full bg-purple-900/50 border border-purple-700/40 text-purple-300 text-xs">Early Storm Signal</span>}
-            {analysis.signatures.channel_compression && <span className="px-2 py-0.5 rounded-full bg-orange-900/50 border border-orange-700/40 text-orange-300 text-xs">Storm Building</span>}
-            {analysis.signatures.sharp_spike         && <span className="px-2 py-0.5 rounded-full bg-red-900/50    border border-red-700/40    text-red-300    text-xs">Shock Arriving</span>}
-            {analysis.signatures.anisotropy_elevated && <span className="px-2 py-0.5 rounded-full bg-sky-900/50    border border-sky-700/40    text-sky-300    text-xs">Particle Stream</span>}
-          </div>
-          <p className="text-xs text-neutral-400 mt-1.5 leading-relaxed">{analysis.description}</p>
-          {arrival && <p className="text-xs font-mono text-neutral-300 mt-1">{arrival}</p>}
-          {analysis.goes_validation?.available && (
-            <p className="text-xs text-neutral-500 mt-1">
-              Second satellite: <span className={analysis.goes_validation.elevated?'text-orange-400':'text-green-400'}>{analysis.goes_validation.elevated?'also elevated — confirms activity':'quiet — not yet confirmed'}</span>
-              {analysis.goes_validation.s1_alert && <span className="ml-1 text-yellow-400 font-semibold"> · Radiation storm in progress</span>}
-            </p>
-          )}
-          {combined?.cross_validation.confidence!=='QUIET' && (
-            <p className="text-xs text-neutral-500 mt-0.5">{combined?.cross_validation.confidenceLabel}</p>
-          )}
-        </div>
-      )}
-
-      {/* Robust early-warning banner — full-week ACE EPAM baseline (client-side).
-          This complements the upstream worker status with a transparent,
-          baseline-anchored read that is harder to fool with glitches and gentle
-          stream rises. */}
-      {!loading && warning && (
+      ) : warning && (
         (() => {
           const w = WARN_STYLES[warning.level];
           const d = warning.diagnostics;
@@ -711,6 +683,22 @@ const EPAMPanel: React.FC = () => {
                   </span>
                 ))}
               </div>
+
+              {/* Cross-satellite confirmation (from worker analysis) */}
+              {(analysis?.goes_validation?.available || (combined && combined.cross_validation.confidence !== 'QUIET')) && (
+                <div className="mt-2.5 pt-2.5 border-t border-white/5 space-y-0.5">
+                  {analysis?.goes_validation?.available && (
+                    <p className="text-xs text-neutral-500">
+                      Second satellite (GOES): <span className={analysis.goes_validation.elevated?'text-orange-400':'text-green-400'}>{analysis.goes_validation.elevated?'also elevated — confirms activity':'quiet — not yet confirmed'}</span>
+                      {analysis.goes_validation.s1_alert && <span className="ml-1 text-yellow-400 font-semibold"> · Radiation storm in progress</span>}
+                    </p>
+                  )}
+                  {combined && combined.cross_validation.confidence !== 'QUIET' && (
+                    <p className="text-xs text-neutral-500">{combined.cross_validation.confidenceLabel}</p>
+                  )}
+                </div>
+              )}
+
               {d.usableHours < EPAM_WARN_CONFIG.BASELINE_HOURS * 0.5 && (
                 <p className="text-[11px] text-amber-400/80 mt-1.5">
                   ⚠ Only {Math.round(d.usableHours)}h of history available — baseline still settling, treat levels as provisional.
