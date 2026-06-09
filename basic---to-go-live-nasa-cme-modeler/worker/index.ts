@@ -25,6 +25,7 @@ const validateTarget = (raw: string | null): URL => {
   return url;
 };
 
+
 const cacheRequestFor = (request: Request, ttlSeconds: number) => {
   const cacheKey = new Request(request.url, request);
   const responseInit = {
@@ -77,6 +78,7 @@ const proxyImage = async (request: Request): Promise<Response> => {
 
   return withCors(response);
 };
+
 
 const proxyImageMeta = async (request: Request): Promise<Response> => {
   const url = new URL(request.url);
