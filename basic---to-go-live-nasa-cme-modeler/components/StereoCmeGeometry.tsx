@@ -26,8 +26,7 @@ const describeValue = (value: number | null | undefined, suffix = '') => (
 );
 
 const getFrontLabel = (source: CmeFrontEstimate['source']) => {
-  if (source === 'jmap-trace') return 'Front from J-map trace';
-  if (source === 'ballistic') return 'Front from ballistic estimate';
+  if (source === 'ballistic') return 'Front from DONKI ballistic estimate';
   if (source === 'donki-arrival') return 'Front from DONKI arrival';
   return null;
 };
@@ -83,8 +82,8 @@ const StereoCmeGeometry: React.FC<StereoCmeGeometryProps> = ({ stereo, cme, fron
         {cone && (
           <g>
             <path d={cone.wedgePath} fill="rgba(251,146,60,0.16)" stroke="rgba(251,146,60,0.45)" strokeWidth="1" />
-            {canDrawFront && <path d={cone.frontPath} fill="none" stroke={frontEstimate.source === 'jmap-trace' ? '#f472b6' : '#fb923c'} strokeWidth="2.4" strokeLinecap="round" />}
-            <text x={cone.labelPoint.x} y={cone.labelPoint.y} fill={frontEstimate.source === 'jmap-trace' ? '#f9a8d4' : '#fdba74'} fontSize="9" textAnchor="middle">{frontLabel ?? 'CME cone'}</text>
+            {canDrawFront && <path d={cone.frontPath} fill="none" stroke="#fb923c" strokeWidth="2.4" strokeLinecap="round" />}
+            <text x={cone.labelPoint.x} y={cone.labelPoint.y} fill="#fdba74" fontSize="9" textAnchor="middle">{frontLabel ?? 'CME cone'}</text>
           </g>
         )}
 
@@ -120,11 +119,9 @@ const StereoCmeGeometry: React.FC<StereoCmeGeometryProps> = ({ stereo, cme, fron
           <span><span className="inline-block w-2 h-2 rounded-full bg-sky-400 mr-1" />Earth marker</span>
           <span><span className="inline-block w-2 h-2 rounded-full bg-purple-500 mr-1" />STEREO-A marker</span>
           <span><span className="inline-block w-3 h-2 bg-orange-400/30 border border-orange-400/70 mr-1" />DONKI CME cone</span>
-          <span><span className="inline-block w-4 border-t-2 border-pink-400 mr-1 align-middle" />Front from J-map trace</span>
-          <span><span className="inline-block w-4 border-t-2 border-orange-400 mr-1 align-middle" />Front from ballistic estimate</span>
-          <span><span className="inline-block w-4 border-t-2 border-dashed border-pink-400 mr-1 align-middle" />Dashed = modelled extension</span>
+          <span><span className="inline-block w-4 border-t-2 border-orange-400 mr-1 align-middle" />Front from DONKI ballistic estimate</span>
         </div>
-        <p>Solid trace/front = based on visible J-map ridge. Dashed/extrapolated = modelled beyond visible data.</p>
+        <p>Diagram geometry is approximate visual context. CME cone and front use DONKI analysis when available; J-map imagery is for visual inspection only.</p>
       </div>
     </div>
   );
