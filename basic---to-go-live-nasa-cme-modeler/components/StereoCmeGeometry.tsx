@@ -115,6 +115,17 @@ const StereoCmeGeometry: React.FC<StereoCmeGeometryProps> = ({ stereo, cme, fron
         <div><span className="text-neutral-500">STEREO-A HEE lon</span><p className="text-purple-200 font-medium">{describeValue(stereoLongitude, '°')}</p></div>
         <div><span className="text-neutral-500">Front source</span><p className="text-orange-200 font-medium">{frontLabel ?? 'Unavailable'}</p></div>
       </div>
+      <div className="border-t border-neutral-800 p-3 text-xs text-neutral-400 space-y-2">
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          <span><span className="inline-block w-2 h-2 rounded-full bg-sky-400 mr-1" />Earth marker</span>
+          <span><span className="inline-block w-2 h-2 rounded-full bg-purple-500 mr-1" />STEREO-A marker</span>
+          <span><span className="inline-block w-3 h-2 bg-orange-400/30 border border-orange-400/70 mr-1" />DONKI CME cone</span>
+          <span><span className="inline-block w-4 border-t-2 border-pink-400 mr-1 align-middle" />Front from J-map trace</span>
+          <span><span className="inline-block w-4 border-t-2 border-orange-400 mr-1 align-middle" />Front from ballistic estimate</span>
+          <span><span className="inline-block w-4 border-t-2 border-dashed border-pink-400 mr-1 align-middle" />Dashed = modelled extension</span>
+        </div>
+        <p>Solid trace/front = based on visible J-map ridge. Dashed/extrapolated = modelled beyond visible data.</p>
+      </div>
     </div>
   );
 };
