@@ -92,10 +92,12 @@ const normalizeSoloWorkerStereoPosition = (payload: any): StereoPosition | null 
   const stereoA = payload.positions?.stereoA;
   const derived = payload.positions?.derived;
   const rAu = normalizeNumber(stereoA?.r_au);
-  const heeLongitudeDeg = normalizeNumber(stereoA?.lon_deg) ?? normalizeNumber(derived?.stereo_earth_lon_sep_deg);
+  // The existing solo-worker exposes a reliable STEREO/Earth separation used by the coronagraph panel.
+  // Prefer that for the fallback HEE-style longitude because stereoA.lon_deg can be an inertial display angle.
+  const derivedSeparationDeg = normalizeNumber(derived?.stereo_earth_lon_sep_deg);
+  const heeLongitudeDeg = derivedSeparationDeg ?? normalizeNumber(stereoA?.lon_deg);
   const heeLatitudeDeg = normalizeNumber(stereoA?.lat_deg);
-  const separationFromEarthDeg = normalizeNumber(derived?.stereo_earth_lon_sep_deg)
-    ?? (heeLongitudeDeg != null ? Math.abs(heeLongitudeDeg) : null);
+  const separationFromEarthDeg = derivedSeparationDeg ?? (heeLongitudeDeg != null ? Math.abs(heeLongitudeDeg) : null);
 
   if (rAu == null && heeLongitudeDeg == null && separationFromEarthDeg == null) return null;
 

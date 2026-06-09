@@ -1,9 +1,11 @@
 import React, { useMemo } from 'react';
 import type { StereoPosition, TrackerCmeCandidate } from '../services/stereoCmeTracker';
+import type { CmeFrontEstimate } from './StereoCmeVisualTracker';
 
 interface StereoCmeGeometryProps {
   stereo: StereoPosition | null;
   cme: TrackerCmeCandidate | null;
+  frontEstimate: CmeFrontEstimate;
 }
 
 const CENTER = 150;
@@ -23,9 +25,16 @@ const describeValue = (value: number | null | undefined, suffix = '') => (
   typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(value < 10 ? 2 : 0)}${suffix}` : 'Unavailable'
 );
 
-const StereoCmeGeometry: React.FC<StereoCmeGeometryProps> = ({ stereo, cme }) => {
+const getFrontLabel = (source: CmeFrontEstimate['source']) => {
+  if (source === 'jmap-trace') return 'Front from J-map trace';
+  if (source === 'ballistic') return 'Front from ballistic estimate';
+  if (source === 'donki-arrival') return 'Front from DONKI arrival';
+  return null;
+};
+
+const StereoCmeGeometry: React.FC<StereoCmeGeometryProps> = ({ stereo, cme, frontEstimate }) => {
   const earth = polarToSvg(1, 0);
-  const stereoLongitude = stereo?.heeLongitudeDeg ?? stereo?.separationFromEarthDeg ?? null;
+  const stereoLongitude = stereo?.heeLongitudeDeg ?? null;
   const stereoRadius = stereo?.rAu ?? 1;
   const stereoPoint = stereoLongitude != null ? polarToSvg(stereoRadius, stereoLongitude) : null;
 
@@ -33,8 +42,7 @@ const StereoCmeGeometry: React.FC<StereoCmeGeometryProps> = ({ stereo, cme }) =>
     if (!cme || cme.longitude == null || cme.halfAngle == null) return null;
     if (!Number.isFinite(cme.longitude) || !Number.isFinite(cme.halfAngle)) return null;
     const halfAngle = clamp(cme.halfAngle, 5, 80);
-    const frontAu = cme.front?.distanceAu ?? 0.55;
-    const displayRadius = clamp(frontAu, 0.18, 1.2);
+    const displayRadius = clamp(frontEstimate.distanceAu ?? cme.front?.distanceAu ?? 0.55, 0.18, 1.2);
     const start = polarToSvg(displayRadius, cme.longitude - halfAngle);
     const end = polarToSvg(displayRadius, cme.longitude + halfAngle);
     const largeArc = halfAngle * 2 > 180 ? 1 : 0;
@@ -44,7 +52,10 @@ const StereoCmeGeometry: React.FC<StereoCmeGeometryProps> = ({ stereo, cme }) =>
       labelPoint: polarToSvg(Math.min(1.12, displayRadius + 0.08), cme.longitude),
       frontAu: displayRadius,
     };
-  }, [cme]);
+  }, [cme, frontEstimate.distanceAu]);
+
+  const frontLabel = getFrontLabel(frontEstimate.source);
+  const canDrawFront = Boolean(cone && frontEstimate.distanceAu != null && frontLabel);
 
   return (
     <div className="bg-neutral-950/60 rounded-xl border border-neutral-800 overflow-hidden">
@@ -71,9 +82,9 @@ const StereoCmeGeometry: React.FC<StereoCmeGeometryProps> = ({ stereo, cme }) =>
 
         {cone && (
           <g>
-            <path d={cone.wedgePath} fill="rgba(251,146,60,0.18)" stroke="rgba(251,146,60,0.55)" strokeWidth="1" />
-            <path d={cone.frontPath} fill="none" stroke="#fb923c" strokeWidth="2.2" strokeLinecap="round" strokeDasharray={cme?.front ? 'none' : '5 4'} />
-            <text x={cone.labelPoint.x} y={cone.labelPoint.y} fill="#fdba74" fontSize="9" textAnchor="middle">CME</text>
+            <path d={cone.wedgePath} fill="rgba(251,146,60,0.16)" stroke="rgba(251,146,60,0.45)" strokeWidth="1" />
+            {canDrawFront && <path d={cone.frontPath} fill="none" stroke={frontEstimate.source === 'jmap-trace' ? '#f472b6' : '#fb923c'} strokeWidth="2.4" strokeLinecap="round" />}
+            <text x={cone.labelPoint.x} y={cone.labelPoint.y} fill={frontEstimate.source === 'jmap-trace' ? '#f9a8d4' : '#fdba74'} fontSize="9" textAnchor="middle">{frontLabel ?? 'CME cone'}</text>
           </g>
         )}
 
@@ -101,8 +112,8 @@ const StereoCmeGeometry: React.FC<StereoCmeGeometryProps> = ({ stereo, cme }) =>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 p-3 border-t border-neutral-800 text-xs">
         <div><span className="text-neutral-500">Earth</span><p className="text-sky-200 font-medium">1.00 AU · 0°</p></div>
         <div><span className="text-neutral-500">STEREO-A r</span><p className="text-purple-200 font-medium">{describeValue(stereo?.rAu, ' AU')}</p></div>
-        <div><span className="text-neutral-500">STEREO-A lon</span><p className="text-purple-200 font-medium">{describeValue(stereoLongitude, '°')}</p></div>
-        <div><span className="text-neutral-500">CME front</span><p className="text-orange-200 font-medium">{cme?.front ? `${cme.front.distanceAu.toFixed(2)} AU` : 'Not drawn'}</p></div>
+        <div><span className="text-neutral-500">STEREO-A HEE lon</span><p className="text-purple-200 font-medium">{describeValue(stereoLongitude, '°')}</p></div>
+        <div><span className="text-neutral-500">Front source</span><p className="text-orange-200 font-medium">{frontLabel ?? 'Unavailable'}</p></div>
       </div>
     </div>
   );
