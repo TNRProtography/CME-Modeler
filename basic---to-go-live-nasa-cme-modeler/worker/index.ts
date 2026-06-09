@@ -6,6 +6,16 @@ const ALLOWED_HOSTS = new Set([
   'services.swpc.noaa.gov',
 ]);
 
+// Hosts permitted for the generic text/data proxy (/api/proxy/data).
+// NMDB (neutron monitor database) provides ground cosmic-ray counts used for
+// genuine Forbush-decrease detection in the EPAM early-warning engine; its
+// servers do not send CORS headers, so the browser must go through here.
+const ALLOWED_DATA_HOSTS = new Set([
+  'www.nmdb.eu',
+  'nest.nmdb.eu',
+  'services.swpc.noaa.gov',
+]);
+
 const BLOCKED_HOST_RE = /(^localhost$)|(^127\.)|(^10\.)|(^192\.168\.)|(^169\.254\.)|(^172\.(1[6-9]|2\d|3[0-1])\.)|(^0\.)/;
 
 const withCors = (response: Response): Response => {
@@ -78,6 +88,46 @@ const proxyImage = async (request: Request): Promise<Response> => {
   return withCors(response);
 };
 
+// Generic text/data passthrough for allow-listed scientific feeds (e.g. NMDB
+// neutron-monitor counts). Cached server-side; CORS-enabled for the browser.
+const proxyData = async (request: Request): Promise<Response> => {
+  const url = new URL(request.url);
+  const raw = url.searchParams.get('url');
+  if (!raw) throw new Error('Missing url query parameter');
+  const target = new URL(raw);
+  if (!['http:', 'https:'].includes(target.protocol)) throw new Error('Only http/https URLs are allowed');
+  if (!ALLOWED_DATA_HOSTS.has(target.hostname)) throw new Error('Host is not allow-listed for data proxy');
+  if (BLOCKED_HOST_RE.test(target.hostname)) throw new Error('Host is blocked');
+
+  const ttl = Number(url.searchParams.get('ttl') || '300');
+  const ttlSafe = Number.isFinite(ttl) ? Math.max(60, Math.min(900, ttl)) : 300;
+  const { cacheKey } = cacheRequestFor(request, ttlSafe);
+
+  const cached = await caches.default.match(cacheKey);
+  if (cached) return withCors(cached);
+
+  const upstream = await fetch(target.toString(), {
+    method: 'GET',
+    cf: { cacheTtl: ttlSafe, cacheEverything: true },
+    headers: {
+      'User-Agent': 'spot-the-aurora-data-proxy',
+      'Accept': 'text/plain,application/json,*/*;q=0.8',
+    },
+  });
+
+  if (!upstream.ok) {
+    return withCors(new Response(`Upstream fetch failed: ${upstream.status}`, { status: upstream.status }));
+  }
+
+  const headers = new Headers();
+  headers.set('Content-Type', upstream.headers.get('content-type') ?? 'text/plain; charset=utf-8');
+  headers.set('Cache-Control', `public, max-age=${ttlSafe}, s-maxage=${ttlSafe}`);
+
+  const response = new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers });
+  await caches.default.put(cacheKey, response.clone());
+  return withCors(response);
+};
+
 const proxyImageMeta = async (request: Request): Promise<Response> => {
   const url = new URL(request.url);
   const target = validateTarget(url.searchParams.get('url'));
@@ -109,6 +159,14 @@ export default {
     if (url.pathname === '/api/proxy/meta') {
       try {
         return await proxyImageMeta(request);
+      } catch (error) {
+        return withCors(new Response((error as Error).message, { status: 400 }));
+      }
+    }
+
+    if (url.pathname === '/api/proxy/data') {
+      try {
+        return await proxyData(request);
       } catch (error) {
         return withCors(new Response((error as Error).message, { status: 400 }));
       }

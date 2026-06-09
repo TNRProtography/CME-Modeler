@@ -1,130 +1,175 @@
 // --- START OF FILE src/components/epamWarning.ts ---
 //
-// Robust client-side ACE EPAM early-warning engine for CME-shock arrival.
+// Robust client-side ACE EPAM early-warning engine for CME-shock arrival. (v2)
 //
 // WHY THIS EXISTS
 // ---------------
-// The server worker (epam.thenamesrock.workers.dev/epam/analysis) historically
-// based its "elevated" decision on a short ~4-hour window (see
-// `log_spread_4h_trend`). A 4-hour window is fragile: it has no stable concept
-// of "quiet", so a slow stream-interaction-region rise looks the same as a
-// genuine CME shock, and a brief glitch can trip an alert. This module instead
-// looks at the FULL WEEK of ACE EPAM to build a robust quiet-time baseline, then
-// asks whether the most recent readings genuinely depart from that baseline.
+// The server worker historically based its "elevated" decision on a short
+// ~4-hour window. This module instead looks at the FULL WEEK of ACE EPAM to
+// build a robust quiet-time baseline, then asks whether recent readings
+// genuinely depart from it.
 //
-// DESIGN GOALS (the "hard ask")
-// -----------------------------
-//   * Sensitive — do not miss a real shock onset.
-//   * Specific — do not fire on glitches, single spikes, or gentle SIR rises.
-//   * Honest — every level comes with the concrete reasons that produced it,
-//     so the UI can explain itself and a forecaster can sanity-check it.
+// V2: SEQUENCE-AWARE PATTERN RECOGNITION
+// --------------------------------------
+// A CME approach is a story told in stages, and EPAM forecasting is about the
+// COMBINATION of behaviours, not isolated stats. The canonical sequence:
 //
-// EPAM is genuinely not cut-and-dry, so the engine never relies on a single
-// number. A high warning level requires AGREEMENT across several independent
-// signatures (magnitude above baseline, sustained over time, multiple energy
-// channels rising together, and a sharp positive rate of change). Any one of
-// those alone is downgraded; only their coincidence is treated as a real
-// shock-arrival signal. That coincidence requirement is what suppresses false
-// positives without blunting sensitivity to the real thing.
+//   1. SEP onset with VELOCITY DISPERSION — high-energy channels (P7/P8) rise
+//      before low-energy ones (P1/P3): fastest particles from a fresh solar
+//      eruption arrive first. Earliest hint, hours to ~2 days out.
+//   2. SUSTAINED ELEVATION — the plateau while the CME is in transit.
+//   3. CHANNEL COMPRESSION — the spread between channels shrinks as the shock
+//      approaches and accelerates low-energy particles locally ("the lines
+//      converge").
+//   4. PRE-ARRIVAL DEPRESSION — a temporary dip from the elevated plateau,
+//      tens of minutes to a couple of hours before arrival. A dip from quiet
+//      means nothing; a dip AFTER sustained elevation is a high-specificity
+//      "brace" signal. (This is the EPAM-visible cousin of a Forbush
+//      precursor; a TRUE Forbush decrease is a galactic-cosmic-ray drop and is
+//      detected separately from neutron-monitor data below.)
+//   5. ESP SPIKE — the sudden broadband jump at shock arrival.
 //
-// All math is done in log10 space because EPAM flux spans many orders of
-// magnitude; additive statistics in log space behave like multiplicative
-// statistics in linear space, which is the physically correct frame for flux.
+// The engine runs a detector for each signature, then a SEQUENCE layer
+// combines them: when earlier stages have fired, the thresholds for calling
+// the next stage are lowered (balanced boost, capped). That is how the system
+// gets EARLIER without more false positives — sensitivity is only granted
+// when prior stages have earned it. The user's exact pattern (elevated → dip
+// → sudden rise) is additionally encoded as an explicit fast-path to
+// "Storm Arrival Incoming".
+//
+// NEUTRON-MONITOR (FORBUSH) INPUT
+// -------------------------------
+// computeEpamWarning optionally accepts ground neutron-monitor count data
+// (e.g. OULU via NMDB). A genuine Forbush decrease onset — counts dropping
+// >~1.5% below their own 7-day baseline and still falling — confirms that a
+// large magnetic structure is sweeping cosmic rays away near Earth, and feeds
+// the sequence booster. If the feed is unavailable, everything else still
+// works; the FD signature simply reports unavailable.
+//
+// All EPAM math is done in log10 space because flux spans many orders of
+// magnitude.
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
 export interface EpamSample {
   /** epoch ms (UTC) */
   t: number;
-  /** geometric-mean flux across the proton channels supplied, or null if no valid channel */
+  /** geometric-mean flux across the proton channels supplied, or null */
   flux: number | null;
-  /** per-channel log10 flux, null where channel missing/non-positive */
+  /** per-channel log10 flux (ascending energy order), null where missing */
   logCh: (number | null)[];
 }
 
-export type WarnLevel =
-  | 'QUIET'        // nothing of note
-  | 'WATCH'        // baseline departure beginning, not yet confirmed
-  | 'ELEVATED'     // sustained, multi-channel departure from quiet baseline
-  | 'ONSET'        // sharp coincident rise — shock front likely arriving
-  | 'SHOCK';       // extreme, fast, broadband jump — shock passage in progress
+/** Ground neutron-monitor sample (for true Forbush-decrease detection). */
+export interface NmSample {
+  /** epoch ms (UTC) */
+  t: number;
+  /** count rate (counts/s, efficiency-corrected) */
+  counts: number;
+}
+
+export type WarnLevel = 'QUIET' | 'WATCH' | 'ELEVATED' | 'ONSET' | 'SHOCK';
 
 export interface WarnReason {
   key: string;
   label: string;
-  /** true when this condition is currently contributing to the level */
   active: boolean;
-  /** human-readable current value, for tooltips / debugging */
   detail: string;
 }
 
 export interface EpamWarning {
   level: WarnLevel;
   levelLabel: string;
-  /** 0..100 — a continuous confidence score, useful for sparkline/threshold tuning */
+  /** 0..100 continuous confidence score */
   score: number;
-  /** plain-language one-liner suitable for a banner headline */
+  /** plain-language banner headline */
   headline: string;
-  /** technical one-liner (σ vs baseline, slope, channels) shown beneath the headline */
+  /** technical one-liner beneath the headline */
   detail: string;
-  /** the individual signatures and whether each fired */
   reasons: WarnReason[];
-  /** diagnostics so the engine is transparent and tunable */
   diagnostics: {
-    baselineLogMedian: number | null;   // quiet-time log10 flux over the week
-    baselineLogMad: number | null;      // robust spread (MAD) of the quiet baseline
-    recentLogMedian: number | null;     // log10 flux over the recent window
-    sigmaAboveBaseline: number | null;  // (recent - baseline) / MAD, robust z-score
-    sustainedMinutes: number;           // how long the recent elevation has persisted
-    channelsRising: number;             // # of energy channels rising together
+    baselineLogMedian: number | null;
+    baselineLogMad: number | null;
+    recentLogMedian: number | null;
+    sigmaAboveBaseline: number | null;
+    sustainedMinutes: number;
+    channelsRising: number;
     channelsTotal: number;
-    maxSlopePer15m: number | null;      // steepest +log10 slope over any 15-min step
-    usableHours: number;                // span of history actually available
+    maxSlopePer15m: number | null;
+    usableHours: number;
+    // v2 sequence diagnostics
+    dispersionLeadMin: number | null;   // how far high channels led low ones
+    spreadRecent: number | null;        // current inter-channel log spread
+    spreadPast: number | null;          // spread 8–14h ago
+    dipDepthLog: number | null;         // depth of pre-arrival depression
+    fdPctNow: number | null;            // neutron monitor % vs its 7-day baseline
+    nmAvailable: boolean;
+    thresholdBoost: number;             // 0..0.35 — how much the sequence lowered the bars
   };
 }
 
 // ── Tunables ────────────────────────────────────────────────────────────────
-// These are deliberately surfaced as named constants so the system can be
-// calibrated against historical events without hunting through logic.
 
 export const EPAM_WARN_CONFIG = {
-  // How much history we try to use to define "quiet". A full week gives the
-  // baseline enough quiet hours to be stable even if the last day or two were
-  // active. If less is available we degrade gracefully.
-  BASELINE_HOURS: 168,            // 7 days — the "full week" the analysis is built on
-
-  // The recent window we judge against the baseline. Short enough to react,
-  // long enough that a single bad reading cannot define it.
-  RECENT_WINDOW_MIN: 45,          // ~3 ACE cadence steps
-
-  // Quiet baseline is computed from the LOWER part of the week's distribution,
-  // so that a few active days do not inflate "normal". We take the median of the
-  // lowest `BASELINE_QUANTILE` fraction of log-flux samples.
+  BASELINE_HOURS: 168,          // 7 days — the full week the analysis is built on
+  RECENT_WINDOW_MIN: 45,
   BASELINE_QUANTILE: 0.6,
 
-  // Robust z-score thresholds (recent vs baseline, in MAD units).
   SIGMA_WATCH: 3,
   SIGMA_ELEVATED: 5,
   SIGMA_ONSET: 8,
   SIGMA_SHOCK: 12,
 
-  // A departure must persist at least this long to count as "sustained" — this
-  // is the single biggest false-positive killer for glitches and lone spikes.
   SUSTAINED_MIN: 30,
 
-  // Rate-of-change (log10 flux per 15 minutes) thresholds. EPAM shock fronts
-  // produce steep, near-vertical rises; SIRs and noise do not.
-  SLOPE_ONSET: 0.30,              // ~2x in 15 min
-  SLOPE_SHOCK: 0.60,              // ~4x in 15 min
+  SLOPE_ONSET: 0.30,            // ~2x in 15 min
+  SLOPE_SHOCK: 0.60,            // ~4x in 15 min
 
-  // How many of the supplied channels must be rising together to call it
-  // "broadband". Cross-channel coincidence separates real particle events from
-  // single-channel instrument artifacts.
   MIN_CHANNELS_RISING: 2,
-
-  // MAD floor so that an unrealistically tight quiet period cannot make tiny
-  // wiggles look like enormous sigma departures.
   MIN_LOG_MAD: 0.05,
+
+  // ── v2: signature detectors ──
+  // Velocity dispersion: high-energy onset must lead low-energy onset by this
+  // much, within this lookback, to count.
+  DISPERSION_LEAD_MIN: 30,
+  DISPERSION_LOOKBACK_H: 48,
+  ONSET_EPISODE_MIN: 15,        // a channel "onset" must persist this long
+
+  // Channel compression: recent spread must shrink to this fraction of the
+  // earlier spread, while flux is elevated.
+  COMPRESSION_RATIO: 0.75,
+  COMPRESSION_MIN_PAST_SPREAD: 0.4,   // channels must have been spread out before
+  COMPRESSION_RECENT_H: 2,
+  COMPRESSION_PAST_FROM_H: 14,
+  COMPRESSION_PAST_TO_H: 8,
+
+  // Pre-arrival depression: dip of at least this many log units from the
+  // recent elevated plateau, while still above quiet (so it's a dip from
+  // elevation, not ordinary decay back to background).
+  DIP_DEPTH_LOG: 0.12,                // ≈ −24%
+  DIP_PLATEAU_FROM_H: 8,
+  DIP_PLATEAU_TO_H: 1.5,
+  DIP_RECENT_MIN: 30,
+  DIP_PLATEAU_MIN_SIGMA: 3,           // plateau must have been genuinely elevated
+  DIP_FLOOR_SIGMA: 1.5,               // dip must stay above quiet by this much
+  DIP_MEMORY_H: 2.5,                  // a dip within this window still arms the fast-path
+  // Slope required for the dip→rise fast-path. Lower than SLOPE_ONSET because
+  // a confirmed post-elevation dip already supplies the specificity — a climb
+  // out of it does not need to be as steep as a cold-start spike to carry the
+  // same meaning. ≈ +50% in 15 minutes.
+  DIP_RISE_SLOPE: 0.18,
+
+  // Forbush decrease (neutron monitor): % below its own 7-day baseline.
+  FD_ONSET_PCT: -1.5,
+  FD_PREDECREASE_PCT: -0.8,
+  FD_DECLINE_PCT: 0.5,                // must be lower than ~3h ago by this much
+  FD_BASELINE_EXCLUDE_H: 24,          // exclude last 24h from the NM baseline
+
+  // ── v2: balanced sequence boost ──
+  // Context units: compression +1, dispersion +1, depression +1.5,
+  // FD onset +1.5 (pre-decrease +0.75). boost = min(CAP, RATE × units).
+  BOOST_RATE: 0.10,
+  BOOST_CAP: 0.35,
 } as const;
 
 // ── Small numeric helpers ─────────────────────────────────────────────────────
@@ -136,12 +181,11 @@ function median(xs: number[]): number | null {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
-/** Median absolute deviation, scaled to be comparable to a standard deviation. */
 function mad(xs: number[], center: number): number | null {
   if (!xs.length) return null;
   const dev = xs.map((x) => Math.abs(x - center));
   const m = median(dev);
-  return m === null ? null : m * 1.4826; // consistency constant for normal data
+  return m === null ? null : m * 1.4826;
 }
 
 function quantile(xsSorted: number[], q: number): number | null {
@@ -149,6 +193,8 @@ function quantile(xsSorted: number[], q: number): number | null {
   const idx = Math.min(xsSorted.length - 1, Math.max(0, Math.round((xsSorted.length - 1) * q)));
   return xsSorted[idx];
 }
+
+function clamp01(x: number): number { return Math.max(0, Math.min(1, x)); }
 
 const LEVEL_LABELS: Record<WarnLevel, string> = {
   QUIET: 'Quiet',
@@ -162,8 +208,7 @@ const LEVEL_RANK: Record<WarnLevel, number> = {
   QUIET: 0, WATCH: 1, ELEVATED: 2, ONSET: 3, SHOCK: 4,
 };
 
-// ── Core: build samples from raw EPAM rows ────────────────────────────────────
-// Caller passes raw rows + the channel keys to use (ACE protons by default).
+// ── Build samples from raw EPAM rows ──────────────────────────────────────────
 
 export function toEpamSamples(
   rows: Array<Record<string, unknown>>,
@@ -182,14 +227,13 @@ export function toEpamSamples(
     const flux = valid.length ? Math.pow(10, valid.reduce((a, b) => a + b, 0) / valid.length) : null;
     out.push({ t, flux, logCh });
   }
-  // ascending time
   out.sort((a, b) => a.t - b.t);
   return out;
 }
 
 // ── Core: compute the warning ─────────────────────────────────────────────────
 
-export function computeEpamWarning(samples: EpamSample[]): EpamWarning {
+export function computeEpamWarning(samples: EpamSample[], nm?: NmSample[] | null): EpamWarning {
   const cfg = EPAM_WARN_CONFIG;
   const now = samples.length ? samples[samples.length - 1].t : Date.now();
 
@@ -197,6 +241,8 @@ export function computeEpamWarning(samples: EpamSample[]): EpamWarning {
     baselineLogMedian: null, baselineLogMad: null, recentLogMedian: null,
     sigmaAboveBaseline: null, sustainedMinutes: 0, channelsRising: 0,
     channelsTotal: samples[0]?.logCh.length ?? 0, maxSlopePer15m: null, usableHours: 0,
+    dispersionLeadMin: null, spreadRecent: null, spreadPast: null,
+    dipDepthLog: null, fdPctNow: null, nmAvailable: false, thresholdBoost: 0,
   };
 
   if (samples.length < 5) {
@@ -210,15 +256,13 @@ export function computeEpamWarning(samples: EpamSample[]): EpamWarning {
 
   const usableHours = (now - samples[0].t) / 3_600_000;
 
-  // ── Baseline over the week (quiet-biased) ──────────────────────────────────
+  // ── Baseline over the week (quiet-biased) ───────────────────────────────────
   const baseStart = now - cfg.BASELINE_HOURS * 3_600_000;
   const baseLogs = samples
     .filter((s) => s.t >= baseStart && s.flux !== null && s.flux > 0)
     .map((s) => Math.log10(s.flux as number))
     .sort((a, b) => a - b);
 
-  // Use the lower fraction of the week to represent "quiet" so active days
-  // don't inflate normal. Median + MAD of that quiet subset.
   const quietCut = quantile(baseLogs, cfg.BASELINE_QUANTILE);
   const quietLogs = quietCut === null ? baseLogs : baseLogs.filter((v) => v <= quietCut);
   const baselineLogMedian = median(quietLogs.length ? quietLogs : baseLogs);
@@ -227,7 +271,7 @@ export function computeEpamWarning(samples: EpamSample[]): EpamWarning {
     : mad(quietLogs.length ? quietLogs : baseLogs, baselineLogMedian);
   if (baselineLogMad !== null) baselineLogMad = Math.max(baselineLogMad, cfg.MIN_LOG_MAD);
 
-  // ── Recent window ──────────────────────────────────────────────────────────
+  // ── Recent window ───────────────────────────────────────────────────────────
   const recentStart = now - cfg.RECENT_WINDOW_MIN * 60_000;
   const recent = samples.filter((s) => s.t >= recentStart);
   const recentLogs = recent
@@ -240,11 +284,10 @@ export function computeEpamWarning(samples: EpamSample[]): EpamWarning {
       ? (recentLogMedian - baselineLogMedian) / baselineLogMad
       : null;
 
-  // ── Sustained elevation: how long has flux stayed above (baseline + WATCH σ)? ─
+  // ── Sustained elevation ─────────────────────────────────────────────────────
   let sustainedMinutes = 0;
   if (baselineLogMedian !== null && baselineLogMad) {
     const elevatedThresh = baselineLogMedian + cfg.SIGMA_WATCH * baselineLogMad;
-    // Walk backwards from the latest sample while it stays above threshold.
     let earliest = now;
     for (let i = samples.length - 1; i >= 0; i--) {
       const s = samples[i];
@@ -255,42 +298,107 @@ export function computeEpamWarning(samples: EpamSample[]): EpamWarning {
     sustainedMinutes = Math.max(0, (now - earliest) / 60_000);
   }
 
-  // ── Rate of change: steepest +log10 slope per 15 min over the recent window ──
+  // ── Rate of change ──────────────────────────────────────────────────────────
   const maxSlopePer15m = maxLogSlopePer15m(recent);
 
-  // ── Cross-channel agreement: how many channels are rising right now? ─────────
+  // ── Cross-channel agreement ─────────────────────────────────────────────────
   const channelsTotal = samples[0]?.logCh.length ?? 0;
   const channelsRising = countChannelsRising(samples, cfg.RECENT_WINDOW_MIN, cfg.BASELINE_HOURS, now);
 
-  // ── Build reasons ────────────────────────────────────────────────────────────
+  // ════ v2 SIGNATURE DETECTORS ════════════════════════════════════════════════
+
+  // 1. Velocity dispersion — high-energy channels rose before low-energy ones.
+  const dispersion = detectDispersion(samples, now);
+
+  // 3. Channel compression — inter-channel spread shrinking while elevated.
+  const compression = detectCompression(samples, now, sigmaAboveBaseline);
+
+  // 4. Pre-arrival depression — a dip from the elevated plateau (now, or
+  //    recently enough that a rise out of it is still the user's dip→spike
+  //    pattern).
+  const dipNow = detectDepression(samples, now, baselineLogMedian, baselineLogMad);
+  let dipRecent = dipNow.detected;
+  if (!dipRecent) {
+    // check half-hour steps back through DIP_MEMORY_H
+    for (let back = 30; back <= cfg.DIP_MEMORY_H * 60; back += 30) {
+      const ref = now - back * 60_000;
+      const past = samples.filter((s) => s.t <= ref);
+      if (past.length < 5) break;
+      if (detectDepression(past, ref, baselineLogMedian, baselineLogMad).detected) { dipRecent = true; break; }
+    }
+  }
+
+  // True Forbush decrease — neutron monitor counts vs their own 7-day baseline.
+  const fd = detectForbush(nm ?? null, now);
+
+  // ════ BALANCED SEQUENCE BOOST ═══════════════════════════════════════════════
+  // Earlier stages lower the bars for later ones — capped, and only granted
+  // when independent physics has actually fired.
+  let contextUnits = 0;
+  if (compression.detected) contextUnits += 1.0;
+  if (dispersion.detected) contextUnits += 1.0;
+  if (dipRecent) contextUnits += 1.5;
+  if (fd.onset) contextUnits += 1.5;
+  else if (fd.preDecrease) contextUnits += 0.75;
+  const boost = Math.min(cfg.BOOST_CAP, cfg.BOOST_RATE * contextUnits);
+
+  const SIGMA_ONSET_EFF = cfg.SIGMA_ONSET * (1 - boost);
+  const SLOPE_ONSET_EFF = cfg.SLOPE_ONSET * (1 - boost);
+  const SIGMA_ELEVATED_EFF = cfg.SIGMA_ELEVATED * (1 - boost / 2);
+  const SIGMA_SHOCK_EFF = cfg.SIGMA_SHOCK * (1 - boost / 2);
+  const SLOPE_SHOCK_EFF = cfg.SLOPE_SHOCK * (1 - boost / 2);
+
+  // ── Reasons (chips) ─────────────────────────────────────────────────────────
   const reasons: WarnReason[] = [
     {
-      key: 'magnitude',
-      label: 'Above quiet baseline',
+      key: 'magnitude', label: 'Above quiet baseline',
       active: sigmaAboveBaseline !== null && sigmaAboveBaseline >= cfg.SIGMA_WATCH,
       detail: sigmaAboveBaseline === null ? 'n/a' : `${sigmaAboveBaseline.toFixed(1)}σ vs 7-day quiet`,
     },
     {
-      key: 'sustained',
-      label: 'Sustained, not a glitch',
+      key: 'sustained', label: 'Sustained, not a glitch',
       active: sustainedMinutes >= cfg.SUSTAINED_MIN,
       detail: `${Math.round(sustainedMinutes)} min elevated`,
     },
     {
-      key: 'broadband',
-      label: 'Multiple channels rising',
+      key: 'broadband', label: 'Multiple channels rising',
       active: channelsRising >= cfg.MIN_CHANNELS_RISING,
       detail: `${channelsRising}/${channelsTotal} channels`,
     },
     {
-      key: 'slope',
-      label: 'Sharp rate of climb',
-      active: maxSlopePer15m !== null && maxSlopePer15m >= cfg.SLOPE_ONSET,
+      key: 'slope', label: 'Sharp rate of climb',
+      active: maxSlopePer15m !== null && maxSlopePer15m >= SLOPE_ONSET_EFF,
       detail: maxSlopePer15m === null ? 'n/a' : `${maxSlopePer15m >= 0 ? '+' : ''}${maxSlopePer15m.toFixed(2)} log/15m`,
+    },
+    {
+      key: 'dispersion', label: 'Fast particles arrived first',
+      active: dispersion.detected,
+      detail: dispersion.leadMin === null ? 'not seen' : `high channels led by ${Math.round(dispersion.leadMin)} min`,
+    },
+    {
+      key: 'compression', label: 'Channels converging',
+      active: compression.detected,
+      detail: compression.spreadRecent === null || compression.spreadPast === null
+        ? 'n/a'
+        : `spread ${compression.spreadPast.toFixed(2)}→${compression.spreadRecent.toFixed(2)} log`,
+    },
+    {
+      key: 'depression', label: 'Dip after elevation',
+      active: dipRecent,
+      detail: dipNow.depthLog === null
+        ? (dipRecent ? 'dip within last 2.5h' : 'not seen')
+        : `−${dipNow.depthLog.toFixed(2)} log from plateau`,
+    },
+    {
+      key: 'forbush', label: 'Cosmic-ray decrease (Forbush)',
+      active: fd.onset,
+      detail: !fd.available ? 'monitor feed unavailable'
+        : fd.pctNow === null ? 'n/a'
+        : `${fd.pctNow.toFixed(1)}% vs 7-day baseline${fd.preDecrease && !fd.onset ? ' (pre-decrease)' : ''}`,
     },
   ];
 
-  // ── Decide level via coincidence, not any single number ──────────────────────
+  // ── Decide level — coincidence plus sequence-armed fast paths ───────────────
   const sig = sigmaAboveBaseline ?? -Infinity;
   const slope = maxSlopePer15m ?? -Infinity;
   const sustained = sustainedMinutes >= cfg.SUSTAINED_MIN;
@@ -298,54 +406,58 @@ export function computeEpamWarning(samples: EpamSample[]): EpamWarning {
 
   let level: WarnLevel = 'QUIET';
 
-  // SHOCK: extreme magnitude AND a near-vertical broadband jump. This is the
-  // unambiguous "it's here" case and is allowed to fire fast (no sustain needed,
-  // because shock fronts are sudden by nature) — but still requires broadband
-  // agreement so a single-channel spike cannot trigger it.
-  if (sig >= cfg.SIGMA_SHOCK && slope >= cfg.SLOPE_SHOCK && broadband) {
+  if (sig >= SIGMA_SHOCK_EFF && slope >= SLOPE_SHOCK_EFF && broadband) {
     level = 'SHOCK';
   }
-  // ONSET: a strong, fast, broadband rise that is beginning — the early-warning
-  // sweet spot. Requires magnitude + steep slope + cross-channel agreement.
-  else if (sig >= cfg.SIGMA_ONSET && slope >= cfg.SLOPE_ONSET && broadband) {
+  else if (sig >= SIGMA_ONSET_EFF && slope >= SLOPE_ONSET_EFF && broadband) {
     level = 'ONSET';
   }
-  // ELEVATED: clearly above baseline AND sustained AND broadband. No steep slope
-  // required — this is the "something real is going on" steady state.
-  else if (sig >= cfg.SIGMA_ELEVATED && sustained && broadband) {
+  // FAST PATH — the elevated → dip → sudden rise pattern. Climbing out of a
+  // recent dip, sigma lags the physics (the recent-window median still
+  // includes dip samples), so when a recent dip has armed the system, a
+  // broadband climb of ≥ DIP_RISE_SLOPE from a previously-elevated state is
+  // called ONSET even below the sigma/slope bars. This is the single
+  // highest-specificity pre-arrival pattern EPAM offers.
+  else if (dipRecent && slope >= cfg.DIP_RISE_SLOPE && broadband && sig >= cfg.SIGMA_WATCH) {
+    level = 'ONSET';
+  }
+  else if (sig >= SIGMA_ELEVATED_EFF && sustained && broadband) {
     level = 'ELEVATED';
   }
-  // WATCH: a departure has started but has not yet met the confirmation bar.
-  // Either a modest magnitude departure, OR a steep slope that isn't yet
-  // broadband/sustained. Deliberately easy to enter and easy to leave.
-  else if (sig >= cfg.SIGMA_WATCH || (slope >= cfg.SLOPE_ONSET && sig >= cfg.SIGMA_WATCH * 0.7)) {
+  else if (sig >= cfg.SIGMA_WATCH || (slope >= SLOPE_ONSET_EFF && sig >= cfg.SIGMA_WATCH * 0.7)) {
     level = 'WATCH';
   }
 
-  // ── Continuous score (for sparklines / tuning), 0..100 ───────────────────────
-  const sigScore = clamp01((sig - cfg.SIGMA_WATCH) / (cfg.SIGMA_SHOCK - cfg.SIGMA_WATCH)) * 45;
-  const slopeScore = clamp01(slope / cfg.SLOPE_SHOCK) * 30;
-  const sustainScore = clamp01(sustainedMinutes / 120) * 15;
-  const bandScore = channelsTotal ? (channelsRising / channelsTotal) * 10 : 0;
-  const score = Math.round(Math.min(100, sigScore + slopeScore + sustainScore + bandScore));
+  // ── Continuous score ────────────────────────────────────────────────────────
+  const sigScore = clamp01((sig - cfg.SIGMA_WATCH) / (cfg.SIGMA_SHOCK - cfg.SIGMA_WATCH)) * 40;
+  const slopeScore = clamp01(slope / cfg.SLOPE_SHOCK) * 25;
+  const sustainScore = clamp01(sustainedMinutes / 120) * 12;
+  const bandScore = channelsTotal ? (channelsRising / channelsTotal) * 8 : 0;
+  const seqScore = clamp01(boost / cfg.BOOST_CAP) * 15;
+  const score = Math.round(Math.min(100, sigScore + slopeScore + sustainScore + bandScore + seqScore));
 
   return {
     level,
     levelLabel: LEVEL_LABELS[level],
     score: LEVEL_RANK[level] === 0 ? Math.min(score, 15) : score,
     headline: buildHeadline(level),
-    detail: buildDetail(level, { sig, slope, sustainedMinutes, channelsRising, channelsTotal }),
+    detail: buildDetail(level, { sig, slope, sustainedMinutes, channelsRising, channelsTotal, boost, fdPct: fd.pctNow, dipRecent }),
     reasons,
     diagnostics: {
       baselineLogMedian, baselineLogMad, recentLogMedian, sigmaAboveBaseline,
       sustainedMinutes, channelsRising, channelsTotal, maxSlopePer15m, usableHours,
+      dispersionLeadMin: dispersion.leadMin,
+      spreadRecent: compression.spreadRecent,
+      spreadPast: compression.spreadPast,
+      dipDepthLog: dipNow.depthLog,
+      fdPctNow: fd.pctNow,
+      nmAvailable: fd.available,
+      thresholdBoost: boost,
     },
   };
 }
 
-// ── Rate-of-change series for the "Rate of Change" chart view ──────────────────
-// Returns log10(flux) slope per 15 minutes, evaluated at each sample using the
-// nearest sample ~15 min earlier. This is the series the new ACE view plots.
+// ── Rate-of-change series (chart view) ────────────────────────────────────────
 
 export interface RocPoint { x: number; y: number | null; }
 
@@ -355,7 +467,6 @@ export function epamRateOfChange15m(samples: EpamSample[]): RocPoint[] {
   for (let i = 0; i < samples.length; i++) {
     const cur = samples[i];
     if (cur.flux === null || cur.flux <= 0) { out.push({ x: cur.t, y: null }); continue; }
-    // find the sample closest to 15 min before cur.t
     const target = cur.t - WINDOW_MS;
     let best: EpamSample | null = null;
     let bestErr = Infinity;
@@ -364,16 +475,170 @@ export function epamRateOfChange15m(samples: EpamSample[]): RocPoint[] {
       if (s.flux === null || s.flux <= 0) continue;
       const err = Math.abs(s.t - target);
       if (err < bestErr) { bestErr = err; best = s; }
-      if (s.t < target - WINDOW_MS) break; // gone too far back
+      if (s.t < target - WINDOW_MS) break;
     }
     if (!best || bestErr > WINDOW_MS) { out.push({ x: cur.t, y: null }); continue; }
     const dtMin = (cur.t - best.t) / 60_000;
     if (dtMin <= 0) { out.push({ x: cur.t, y: null }); continue; }
     const dLog = Math.log10(cur.flux) - Math.log10(best.flux as number);
-    // normalise to a per-15-minute slope
     out.push({ x: cur.t, y: (dLog / dtMin) * 15 });
   }
   return out;
+}
+
+// ── Neutron-monitor parsing (NMDB NEST ascii output) ─────────────────────────
+// Defensive: accepts lines of "YYYY-MM-DD HH:MM:SS;value", skips everything
+// else. Exposed so the panel (and tests) can share one parser.
+
+export function parseNmAscii(text: string): NmSample[] {
+  const out: NmSample[] = [];
+  for (const line of text.split('\n')) {
+    const m = line.trim().match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)\s*;\s*([-\d.eE]+)/);
+    if (!m) continue;
+    const t = Date.parse(`${m[1]}T${m[2].length === 5 ? m[2] + ':00' : m[2]}Z`);
+    const counts = parseFloat(m[3]);
+    if (Number.isFinite(t) && Number.isFinite(counts) && counts > 0) out.push({ t, counts });
+  }
+  out.sort((a, b) => a.t - b.t);
+  return out;
+}
+
+// ── v2 detectors ──────────────────────────────────────────────────────────────
+
+function detectDispersion(
+  samples: EpamSample[],
+  now: number,
+): { detected: boolean; leadMin: number | null } {
+  const cfg = EPAM_WARN_CONFIG;
+  const nCh = samples[0]?.logCh.length ?? 0;
+  if (nCh < 4) return { detected: false, leadMin: null };
+  const lookStart = now - cfg.DISPERSION_LOOKBACK_H * 3_600_000;
+
+  // Per-channel quiet stats over the full week, then find the start of each
+  // channel's most recent elevated episode within the lookback.
+  const onsets: (number | null)[] = [];
+  for (let c = 0; c < nCh; c++) {
+    const weekVals: number[] = [];
+    for (const s of samples) { const v = s.logCh[c]; if (v !== null) weekVals.push(v); }
+    if (weekVals.length < 20) { onsets.push(null); continue; }
+    const med = median(weekVals)!;
+    const m = Math.max(mad(weekVals, med) ?? cfg.MIN_LOG_MAD, cfg.MIN_LOG_MAD);
+    const thresh = med + 3 * m;
+
+    // Walk backwards: find the contiguous elevated run that includes the most
+    // recent elevated sample; onset = start of that run. Run must last long
+    // enough to be real.
+    let runEnd = -1;
+    for (let i = samples.length - 1; i >= 0; i--) {
+      const v = samples[i].logCh[c];
+      if (v === null) continue;
+      if (v >= thresh) { runEnd = i; break; }
+      if (samples[i].t < lookStart) break;
+    }
+    if (runEnd < 0 || samples[runEnd].t < lookStart) { onsets.push(null); continue; }
+    let runStart = runEnd;
+    for (let i = runEnd; i >= 0; i--) {
+      const v = samples[i].logCh[c];
+      if (v === null) continue;
+      if (v >= thresh) runStart = i; else break;
+    }
+    const durMin = (samples[runEnd].t - samples[runStart].t) / 60_000;
+    onsets.push(durMin >= cfg.ONSET_EPISODE_MIN ? samples[runStart].t : null);
+  }
+
+  // Compare onset time of the high-energy half vs the low-energy half.
+  const half = Math.floor(nCh / 2);
+  const lowOnsets = onsets.slice(0, half).filter((v): v is number => v !== null);
+  const highOnsets = onsets.slice(nCh - half).filter((v): v is number => v !== null);
+  if (!lowOnsets.length || !highOnsets.length) return { detected: false, leadMin: null };
+  const lowMean = lowOnsets.reduce((a, b) => a + b, 0) / lowOnsets.length;
+  const highMean = highOnsets.reduce((a, b) => a + b, 0) / highOnsets.length;
+  const leadMin = (lowMean - highMean) / 60_000; // positive = high channels led
+  return { detected: leadMin >= cfg.DISPERSION_LEAD_MIN, leadMin };
+}
+
+function detectCompression(
+  samples: EpamSample[],
+  now: number,
+  sigma: number | null,
+): { detected: boolean; spreadRecent: number | null; spreadPast: number | null } {
+  const cfg = EPAM_WARN_CONFIG;
+  const spreadOver = (fromMs: number, toMs: number): number | null => {
+    const vals: number[] = [];
+    for (const s of samples) {
+      if (s.t < fromMs || s.t > toMs) continue;
+      const ch = s.logCh.filter((v): v is number => v !== null);
+      if (ch.length < 3) continue;
+      vals.push(Math.max(...ch) - Math.min(...ch));
+    }
+    return median(vals);
+  };
+  const spreadRecent = spreadOver(now - cfg.COMPRESSION_RECENT_H * 3_600_000, now);
+  const spreadPast = spreadOver(now - cfg.COMPRESSION_PAST_FROM_H * 3_600_000, now - cfg.COMPRESSION_PAST_TO_H * 3_600_000);
+  const elevated = sigma !== null && sigma >= 2;
+  const detected =
+    elevated &&
+    spreadRecent !== null && spreadPast !== null &&
+    spreadPast >= cfg.COMPRESSION_MIN_PAST_SPREAD &&
+    spreadRecent <= spreadPast * cfg.COMPRESSION_RATIO;
+  return { detected, spreadRecent, spreadPast };
+}
+
+function detectDepression(
+  samples: EpamSample[],
+  refNow: number,
+  baseMed: number | null,
+  baseMad: number | null,
+): { detected: boolean; depthLog: number | null } {
+  const cfg = EPAM_WARN_CONFIG;
+  if (baseMed === null || !baseMad) return { detected: false, depthLog: null };
+  const logsIn = (fromMs: number, toMs: number): number[] => {
+    const out: number[] = [];
+    for (const s of samples) {
+      if (s.t < fromMs || s.t > toMs || s.flux === null || s.flux <= 0) continue;
+      out.push(Math.log10(s.flux));
+    }
+    return out;
+  };
+  const plateauLogs = logsIn(refNow - cfg.DIP_PLATEAU_FROM_H * 3_600_000, refNow - cfg.DIP_PLATEAU_TO_H * 3_600_000);
+  const recentLogs = logsIn(refNow - cfg.DIP_RECENT_MIN * 60_000, refNow);
+  if (plateauLogs.length < 10 || recentLogs.length < 4) return { detected: false, depthLog: null };
+  const plateau = median(plateauLogs)!;
+  const recentMed = median(recentLogs)!;
+  const plateauElevated = plateau >= baseMed + cfg.DIP_PLATEAU_MIN_SIGMA * baseMad;
+  const stillAboveQuiet = recentMed >= baseMed + cfg.DIP_FLOOR_SIGMA * baseMad;
+  const depth = plateau - recentMed;
+  const detected = plateauElevated && stillAboveQuiet && depth >= cfg.DIP_DEPTH_LOG;
+  return { detected, depthLog: detected ? depth : (depth > 0 ? depth : null) };
+}
+
+function detectForbush(
+  nm: NmSample[] | null,
+  now: number,
+): { available: boolean; onset: boolean; preDecrease: boolean; pctNow: number | null } {
+  const cfg = EPAM_WARN_CONFIG;
+  if (!nm || nm.length < 100) return { available: false, onset: false, preDecrease: false, pctNow: null };
+  const weekStart = now - cfg.BASELINE_HOURS * 3_600_000;
+  const baseEnd = now - cfg.FD_BASELINE_EXCLUDE_H * 3_600_000;
+  const baseCounts = nm.filter((s) => s.t >= weekStart && s.t <= baseEnd).map((s) => s.counts);
+  if (baseCounts.length < 50) return { available: false, onset: false, preDecrease: false, pctNow: null };
+  const base = median(baseCounts)!;
+  if (!(base > 0)) return { available: false, onset: false, preDecrease: false, pctNow: null };
+
+  const medIn = (fromMs: number, toMs: number): number | null =>
+    median(nm.filter((s) => s.t >= fromMs && s.t <= toMs).map((s) => s.counts));
+
+  const nowMed = medIn(now - 60 * 60_000, now);
+  const agoMed = medIn(now - 4 * 3_600_000, now - 3 * 3_600_000);
+  if (nowMed === null) return { available: true, onset: false, preDecrease: false, pctNow: null };
+
+  const pctNow = ((nowMed - base) / base) * 100;
+  const pctAgo = agoMed === null ? null : ((agoMed - base) / base) * 100;
+  const declining = pctAgo === null ? true : pctNow <= pctAgo - cfg.FD_DECLINE_PCT;
+
+  const onset = pctNow <= cfg.FD_ONSET_PCT && declining;
+  const preDecrease = !onset && pctNow <= cfg.FD_PREDECREASE_PCT && declining;
+  return { available: true, onset, preDecrease, pctNow };
 }
 
 // ── internal helpers ──────────────────────────────────────────────────────────
@@ -405,8 +670,7 @@ function countChannelsRising(
       else if (s.t >= baseStart) base.push(v);
     }
     if (rec.length < 1 || base.length < 5) continue;
-    const bSorted = [...base].sort((a, b) => a - b);
-    const bMed = median(bSorted) ?? 0;
+    const bMed = median(base) ?? 0;
     let bMad = mad(base, bMed) ?? EPAM_WARN_CONFIG.MIN_LOG_MAD;
     bMad = Math.max(bMad, EPAM_WARN_CONFIG.MIN_LOG_MAD);
     const rMed = median(rec) ?? 0;
@@ -415,12 +679,9 @@ function countChannelsRising(
   return rising;
 }
 
-function clamp01(x: number): number {
-  return Math.max(0, Math.min(1, x));
-}
+// ── Wording ───────────────────────────────────────────────────────────────────
+// Plain-English headline first; technical detail in a separate smaller line.
 
-// Plain-English headline — the big line a non-technical reader sees first.
-// Says what it means and what to do, no numbers or jargon.
 function buildHeadline(level: WarnLevel): string {
   switch (level) {
     case 'SHOCK':
@@ -436,27 +697,28 @@ function buildHeadline(level: WarnLevel): string {
   }
 }
 
-// Technical one-liner shown in smaller text beneath the headline — for the
-// forecaster / power-user who wants the actual numbers behind the call.
 function buildDetail(
   level: WarnLevel,
-  m: { sig: number; slope: number; sustainedMinutes: number; channelsRising: number; channelsTotal: number },
+  m: { sig: number; slope: number; sustainedMinutes: number; channelsRising: number; channelsTotal: number; boost: number; fdPct: number | null; dipRecent: boolean },
 ): string {
   const sigTxt = Number.isFinite(m.sig) ? `${m.sig.toFixed(1)}σ above 7-day quiet baseline` : 'baseline still forming';
   const slopeTxt = Number.isFinite(m.slope) ? `${m.slope >= 0 ? '+' : ''}${m.slope.toFixed(2)} log/15m` : 'no slope';
   const chanTxt = `${m.channelsRising}/${m.channelsTotal} channels rising`;
   const sustTxt = `${Math.round(m.sustainedMinutes)} min elevated`;
+  const seqTxt = m.boost > 0 ? `, sequence boost −${Math.round(m.boost * 100)}% thresholds` : '';
+  const fdTxt = m.fdPct !== null ? `, cosmic rays ${m.fdPct.toFixed(1)}%` : '';
+  const dipTxt = m.dipRecent ? ', post-dip rise pattern' : '';
   switch (level) {
     case 'SHOCK':
-      return `Technical: ${sigTxt}, climbing ${slopeTxt} across ${chanTxt}.`;
+      return `Technical: ${sigTxt}, climbing ${slopeTxt} across ${chanTxt}${fdTxt}${seqTxt}.`;
     case 'ONSET':
-      return `Technical: ${sigTxt}, ${slopeTxt}, ${chanTxt}.`;
+      return `Technical: ${sigTxt}, ${slopeTxt}, ${chanTxt}${dipTxt}${fdTxt}${seqTxt}.`;
     case 'ELEVATED':
-      return `Technical: ${sigTxt}, ${sustTxt}, ${chanTxt}.`;
+      return `Technical: ${sigTxt}, ${sustTxt}, ${chanTxt}${fdTxt}${seqTxt}.`;
     case 'WATCH':
-      return `Technical: ${sigTxt}, ${chanTxt} — not yet sustained or broadband enough to confirm.`;
+      return `Technical: ${sigTxt}, ${chanTxt} — not yet sustained or broadband enough to confirm${fdTxt}${seqTxt}.`;
     default:
-      return `Technical: ${sigTxt}.`;
+      return `Technical: ${sigTxt}${fdTxt}.`;
   }
 }
 
