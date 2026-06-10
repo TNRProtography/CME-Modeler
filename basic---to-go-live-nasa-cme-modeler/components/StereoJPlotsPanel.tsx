@@ -1,6 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import CloseIcon from './icons/CloseIcon';
 
 const STEREO_BEACON_BASE = 'https://stereo-ssc.nascom.nasa.gov/beacon';
 const SUN_TEXTURE_URL = 'https://upload.wikimedia.org/wikipedia/commons/c/cb/Solarsystemscope_texture_2k_sun.jpg';
@@ -9,27 +7,6 @@ const MAX_GUIDE_AU = 1.5;
 const GUIDE_LEFT = 92;
 const GUIDE_RIGHT = 936;
 const GUIDE_WIDTH = GUIDE_RIGHT - GUIDE_LEFT;
-
-interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string | React.ReactNode; }
-const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
-  if (!isOpen) return null;
-  if (typeof document === 'undefined') return null;
-  return createPortal(
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[9999] flex justify-center items-center p-4" onClick={onClose}>
-      <div className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-lg max-h-[85vh] text-neutral-300 flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
-          <h3 className="text-xl font-bold text-neutral-200">{title}</h3>
-          <button onClick={onClose} className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition-colors"><CloseIcon className="w-6 h-6" /></button>
-        </div>
-        <div className="overflow-y-auto p-5 styled-scrollbar pr-4 text-sm leading-relaxed">
-          {typeof content === 'string' ? (<div dangerouslySetInnerHTML={{ __html: content }} />) : (content)}
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-};
-
 
 interface StereoJPlotInfo {
   key: string;
@@ -180,7 +157,6 @@ const StereoJPlotsPanel: React.FC = () => {
   const [useProxy, setUseProxy] = useState(true);
   const [imageFailed, setImageFailed] = useState(false);
   const [showGuide, setShowGuide] = useState(true);
-  const [modalState, setModalState] = useState<{ title: string; content: string } | null>(null);
   const imageScrollRef = useRef<HTMLDivElement | null>(null);
   const selected = useMemo(
     () => STEREO_JPLOTS.find(plot => plot.key === selectedKey) ?? STEREO_JPLOTS[0],
@@ -207,37 +183,12 @@ const StereoJPlotsPanel: React.FC = () => {
     setImageFailed(false);
   };
 
-  const openModal = useCallback(() => {
-    setModalState({
-      title: 'About STEREO Beacon J-plots',
-      content: `
-        <div class='space-y-3 text-left'>
-          <p><strong>STEREO Beacon J-plots</strong></p>
-          <p><strong>What this is:</strong> These are NASA STEREO-A heliospheric imager J-plots. A J-plot stacks narrow image slices over time so outward-moving CME structure appears as bright or dark diagonal tracks.</p>
-          <p><strong>How to view it:</strong> Choose <strong>HI1</strong> for the inner heliosphere closer to the Sun, or <strong>HI2</strong> for the wider view that reaches Earth-orbit distances. On mobile, the image opens scrolled to the newest/right-hand side. You can still drag sideways to inspect earlier times.</p>
-          <p><strong>Field-of-view guide:</strong> The bar and diagram show where the selected imager sits between the Sun, STEREO-A, and Earth. AU positions are shown to scale; the Sun, Earth, and spacecraft icons are not size-to-scale.</p>
-          <p><strong>What to look for:</strong> A real CME front usually appears as a coherent diagonal feature moving upward/right through time. The slope gives a quick visual sense of speed: steeper tracks generally mean faster outward motion.</p>
-          <p class='text-xs text-neutral-400'><strong>Advanced:</strong> These beacon products are context imagery, not a direct impact forecast. Use them alongside EPAM, solar-wind shock markers, and CME model timing. STEREO-A views the Sun from a different longitude than Earth, so alignment and projection can shift where a feature appears.</p>
-        </div>
-      `,
-    });
-  }, []);
-
   return (
     <div id="stereo-jplots-section" className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col">
-      <InfoModal isOpen={!!modalState} onClose={() => setModalState(null)} title={modalState?.title ?? ''} content={modalState?.content ?? ''} />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-xl font-semibold text-white">STEREO Beacon J-plots</h2>
-            <button
-              type="button"
-              onClick={openModal}
-              className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
-              title="About STEREO Beacon J-plots"
-            >
-              ?
-            </button>
             <span className="rounded-full border border-neutral-700/80 bg-neutral-800/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
               STEREO-A
             </span>
@@ -331,6 +282,9 @@ const StereoJPlotsPanel: React.FC = () => {
             <p className="text-neutral-500 mt-1">Open it to see where HI1 and HI2 sit between the Sun, STEREO-A, and Earth.</p>
           </div>
         )}
+        <p className="text-neutral-600 leading-relaxed mt-3">
+          Images load through the app proxy first for CORS support, then retry direct from NASA if the proxy is unavailable.
+        </p>
       </div>
     </div>
   );
