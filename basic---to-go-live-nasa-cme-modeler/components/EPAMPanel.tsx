@@ -63,269 +63,136 @@ const NM_FEED_CANDIDATES = [
 ];
 const nmProxyPath = (target: string) => `/api/proxy/data?ttl=300&url=${encodeURIComponent(target)}`;
 
-const STEREO_BASE = 'https://stereo-ssc.nascom.nasa.gov';
-const JMAP_DAYS = 5;
-const JMAP_SLOT_HOURS = 3;
-const JMAP_IMAGE_SIZE = 256;
-const JMAP_CANVAS_WIDTH = 960;
-const JMAP_CANVAS_HEIGHT = 430;
-const JMAP_LEFT_PAD = 58;
-const JMAP_RIGHT_PAD = 16;
-const JMAP_TOP_PAD = 18;
-const JMAP_BOTTOM_PAD = 46;
-const JMAP_MIN_ELONGATION = 4;
-const JMAP_MAX_ELONGATION = 88.7;
+const STEREO_BEACON_BASE = 'https://stereo-ssc.nascom.nasa.gov/beacon';
 
-interface JMapImageEntry { time: number; url: string; product: 'hi1_rdiff' | 'hi2_rdiff' | 'hi2'; }
-interface JMapSlot { time: number; hi1?: JMapImageEntry; hi2?: JMapImageEntry; }
-interface JMapStatus { slots: number; hi1: number; hi2: number; generatedAt: number; }
+interface StereoJPlotInfo {
+  key: string;
+  title: string;
+  description: string;
+  imageUrl: string;
+  sourceUrl: string;
+  startAu: number;
+  endAu: number;
+  earthRemainingAu: number;
+  accent: string;
+}
 
-const stereoDataProxyPath = (target: string) => `/api/proxy/data?ttl=900&url=${encodeURIComponent(target)}`;
-const stereoImageProxyPath = (target: string) => `/api/proxy/image?ttl=900&url=${encodeURIComponent(target)}`;
+const STEREO_JPLOTS: StereoJPlotInfo[] = [
+  {
+    key: 'hi1',
+    title: 'HI1 Ahead · 090°',
+    description: 'Inner heliosphere J-plot: the hand-off region after COR2 and before the larger HI2 field.',
+    imageUrl: `${STEREO_BEACON_BASE}/jplot_hi1_ahead_090.gif`,
+    sourceUrl: `${STEREO_BEACON_BASE}/jplot_hi1_ahead_090.gif`,
+    startAu: 0.056,
+    endAu: 0.391,
+    earthRemainingAu: 0.609,
+    accent: 'from-sky-500/25 to-cyan-500/10 border-sky-500/30 text-sky-200',
+  },
+  {
+    key: 'hi2',
+    title: 'HI2 Ahead · 090°',
+    description: 'Wide heliospheric J-plot that carries features through Earth-orbit distances.',
+    imageUrl: `${STEREO_BEACON_BASE}/jplot_hi2_ahead_090.gif`,
+    sourceUrl: `${STEREO_BEACON_BASE}/jplot_hi2_ahead_090.gif`,
+    startAu: 0.307,
+    endAu: 1.479,
+    earthRemainingAu: 0,
+    accent: 'from-purple-500/25 to-fuchsia-500/10 border-purple-500/30 text-purple-200',
+  },
+  {
+    key: 'cor2',
+    title: 'COR2 Ahead West · 090°',
+    description: 'Near-Sun coronagraph J-plot for the first outward motion before the HI fields pick it up.',
+    imageUrl: `${STEREO_BEACON_BASE}/jplot_cor2_ahead_west_090.gif`,
+    sourceUrl: `${STEREO_BEACON_BASE}/jplot_cor2_ahead_west_090.gif`,
+    startAu: 0.012,
+    endAu: 0.070,
+    earthRemainingAu: 0.930,
+    accent: 'from-amber-500/25 to-orange-500/10 border-amber-500/30 text-amber-200',
+  },
+];
 
-const formatUtcDayPath = (time: number) => {
-  const d = new Date(time);
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  return { y, m, day, ymd: `${y}${m}${day}` };
-};
+const stereoImageProxyPath = (target: string, refreshKey: number) => `/api/proxy/image?ttl=300&url=${encodeURIComponent(target)}&v=${refreshKey}`;
 
-const buildJMapSlots = (): number[] => {
-  const end = Math.floor(Date.now() / (JMAP_SLOT_HOURS * 3600 * 1000)) * JMAP_SLOT_HOURS * 3600 * 1000;
-  const count = (JMAP_DAYS * 24) / JMAP_SLOT_HOURS;
-  return Array.from({ length: count }, (_, i) => end - (count - 1 - i) * JMAP_SLOT_HOURS * 3600 * 1000);
-};
-
-const parseStereoBrowseHtml = (html: string, directoryUrl: string, product: JMapImageEntry['product']): JMapImageEntry[] => {
-  const entries: JMapImageEntry[] = [];
-  const seen = new Set<string>();
-  const re = /href=["']?([^"'\s>]+\.jpg)["']?/gi;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(html))) {
-    const href = match[1];
-    const name = href.split('/').pop() ?? href;
-    const stamp = name.match(/(20\d{6})_(\d{6})_/);
-    if (!stamp || seen.has(name)) continue;
-    seen.add(name);
-    const [, ymd, hms] = stamp;
-    const time = Date.UTC(
-      Number(ymd.slice(0, 4)),
-      Number(ymd.slice(4, 6)) - 1,
-      Number(ymd.slice(6, 8)),
-      Number(hms.slice(0, 2)),
-      Number(hms.slice(2, 4)),
-      Number(hms.slice(4, 6)),
-    );
-    entries.push({ time, url: new URL(href, directoryUrl).toString(), product });
-  }
-  return entries.sort((a, b) => a.time - b.time);
-};
-
-const loadImage = (src: string): Promise<HTMLImageElement> => new Promise((resolve, reject) => {
-  const img = new Image();
-  img.crossOrigin = 'anonymous';
-  img.onload = () => resolve(img);
-  img.onerror = () => reject(new Error(`Could not load ${src}`));
-  img.src = src;
-});
-
-const drawModernJMapFrame = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-  const plotW = width - JMAP_LEFT_PAD - JMAP_RIGHT_PAD;
-  const plotH = height - JMAP_TOP_PAD - JMAP_BOTTOM_PAD;
-  const x0 = JMAP_LEFT_PAD;
-  const y0 = JMAP_TOP_PAD;
-  ctx.clearRect(0, 0, width, height);
-  const bg = ctx.createLinearGradient(0, 0, 0, height);
-  bg.addColorStop(0, '#020617');
-  bg.addColorStop(1, '#0a0a0a');
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, width, height);
-  ctx.fillStyle = '#111827';
-  ctx.fillRect(x0, y0, plotW, plotH);
-
-  ctx.strokeStyle = 'rgba(148, 163, 184, 0.16)';
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= 5; i++) {
-    const y = y0 + (plotH * i) / 5;
-    ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0 + plotW, y); ctx.stroke();
-  }
-  for (let i = 0; i <= JMAP_DAYS; i++) {
-    const x = x0 + (plotW * i) / JMAP_DAYS;
-    ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y0 + plotH); ctx.stroke();
-  }
-
-  ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
-  ctx.strokeRect(x0, y0, plotW, plotH);
-  ctx.fillStyle = '#cbd5e1';
-  ctx.font = '12px system-ui, -apple-system, sans-serif';
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  const ticks = [4, 15, 30, 45, 60, 75, 88.7];
-  ticks.forEach((e) => {
-    const y = y0 + ((JMAP_MAX_ELONGATION - e) / (JMAP_MAX_ELONGATION - JMAP_MIN_ELONGATION)) * plotH;
-    ctx.fillText(`${e === 88.7 ? 'Earth' : `${e}°`}`, x0 - 8, y);
-  });
-  ctx.save();
-  ctx.translate(14, y0 + plotH / 2);
-  ctx.rotate(-Math.PI / 2);
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#94a3b8';
-  ctx.fillText('Elongation / distance from Sun → Earth', 0, 0);
-  ctx.restore();
-
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = '#fbbf24';
-  ctx.fillText('☉ Sunward', x0, height - 16);
-  ctx.textAlign = 'right';
-  ctx.fillStyle = '#93c5fd';
-  ctx.fillText('Timeline (UT)', x0 + plotW, height - 16);
-};
-
-const drawSliver = (ctx: CanvasRenderingContext2D, img: HTMLImageElement, columnX: number, columnW: number, minEl: number, maxEl: number) => {
-  const plotH = JMAP_CANVAS_HEIGHT - JMAP_TOP_PAD - JMAP_BOTTOM_PAD;
-  const srcY = Math.max(0, Math.floor(img.naturalHeight * 0.5) - 1);
-  const srcH = Math.min(3, img.naturalHeight - srcY);
-  const yTop = JMAP_TOP_PAD + ((JMAP_MAX_ELONGATION - maxEl) / (JMAP_MAX_ELONGATION - JMAP_MIN_ELONGATION)) * plotH;
-  const yBottom = JMAP_TOP_PAD + ((JMAP_MAX_ELONGATION - minEl) / (JMAP_MAX_ELONGATION - JMAP_MIN_ELONGATION)) * plotH;
-  ctx.drawImage(img, 0, srcY, img.naturalWidth, srcH, columnX, yTop, columnW, Math.max(1, yBottom - yTop));
-};
+const formatAu = (value: number) => `${value.toFixed(3)} AU`;
 
 const StereoJMapPanel: React.FC = () => {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [status, setStatus] = useState<JMapStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const buildJMap = useCallback(async () => {
-    if (typeof document === 'undefined') return;
-    setLoading(true);
-    setError(null);
-    const slotTimes = buildJMapSlots();
-    const days = Array.from(new Set(slotTimes.map(t => formatUtcDayPath(t).ymd))).map(ymd => {
-      const time = Date.UTC(Number(ymd.slice(0, 4)), Number(ymd.slice(4, 6)) - 1, Number(ymd.slice(6, 8)));
-      return formatUtcDayPath(time);
-    });
-
-    try {
-      const fetchProduct = async (product: JMapImageEntry['product']) => {
-        const all: JMapImageEntry[] = [];
-        await Promise.all(days.map(async ({ y, m, day }) => {
-          const dir = `${STEREO_BASE}/browse/${y}/${m}/${day}/ahead/${product}/${JMAP_IMAGE_SIZE}/`;
-          try {
-            const res = await fetch(stereoDataProxyPath(dir));
-            if (!res.ok) return;
-            all.push(...parseStereoBrowseHtml(await res.text(), dir, product));
-          } catch { /* missing day/product directories are normal during telemetry gaps */ }
-        }));
-        return all.sort((a, b) => a.time - b.time);
-      };
-
-      const [hi1, hi2Diff] = await Promise.all([fetchProduct('hi1_rdiff'), fetchProduct('hi2_rdiff')]);
-      const hi2 = hi2Diff.length ? hi2Diff : await fetchProduct('hi2');
-      const choose = (entries: JMapImageEntry[], slot: number) => entries
-        .map(e => ({ e, dt: Math.abs(e.time - slot) }))
-        .filter(({ dt }) => dt <= 90 * 60 * 1000)
-        .sort((a, b) => a.dt - b.dt)[0]?.e;
-      const slots: JMapSlot[] = slotTimes.map(time => ({ time, hi1: choose(hi1, time), hi2: choose(hi2, time) }));
-
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      canvas.width = JMAP_CANVAS_WIDTH;
-      canvas.height = JMAP_CANVAS_HEIGHT;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      drawModernJMapFrame(ctx, JMAP_CANVAS_WIDTH, JMAP_CANVAS_HEIGHT);
-      const plotW = JMAP_CANVAS_WIDTH - JMAP_LEFT_PAD - JMAP_RIGHT_PAD;
-      const colW = Math.max(1, plotW / slots.length);
-
-      for (let i = 0; i < slots.length; i++) {
-        const slot = slots[i];
-        const x = JMAP_LEFT_PAD + i * colW;
-        ctx.fillStyle = i % 2 === 0 ? 'rgba(15, 23, 42, 0.42)' : 'rgba(2, 6, 23, 0.42)';
-        ctx.fillRect(x, JMAP_TOP_PAD, Math.ceil(colW), JMAP_CANVAS_HEIGHT - JMAP_TOP_PAD - JMAP_BOTTOM_PAD);
-        if (slot.hi2) {
-          try { drawSliver(ctx, await loadImage(stereoImageProxyPath(slot.hi2.url)), x, Math.ceil(colW), 18.7, 88.7); } catch { /* blank slot */ }
-        }
-        if (slot.hi1) {
-          try { drawSliver(ctx, await loadImage(stereoImageProxyPath(slot.hi1.url)), x, Math.ceil(colW), 4, 24); } catch { /* blank slot */ }
-        }
-      }
-
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = '11px system-ui, -apple-system, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      for (let d = 0; d <= JMAP_DAYS; d++) {
-        const idx = Math.min(slots.length - 1, Math.round((slots.length - 1) * d / JMAP_DAYS));
-        const x = JMAP_LEFT_PAD + (plotW * d) / JMAP_DAYS;
-        const label = new Date(slots[idx].time).toLocaleDateString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short' });
-        ctx.fillText(label, x, JMAP_TOP_PAD + (JMAP_CANVAS_HEIGHT - JMAP_TOP_PAD - JMAP_BOTTOM_PAD) + 8);
-      }
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.72)';
-      ctx.fillRect(JMAP_LEFT_PAD + 8, JMAP_TOP_PAD + 8, 250, 44);
-      ctx.fillStyle = '#e2e8f0';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'alphabetic';
-      ctx.font = '13px system-ui, -apple-system, sans-serif';
-      ctx.fillText('STEREO-A HI running-difference J-map', JMAP_LEFT_PAD + 18, JMAP_TOP_PAD + 27);
-      ctx.font = '11px system-ui, -apple-system, sans-serif';
-      ctx.fillStyle = '#94a3b8';
-      ctx.fillText('3-hour slots · blanks = no matched beacon image', JMAP_LEFT_PAD + 18, JMAP_TOP_PAD + 43);
-
-      setStatus({ slots: slots.length, hi1: slots.filter(s => s.hi1).length, hi2: slots.filter(s => s.hi2).length, generatedAt: Date.now() });
-    } catch (err) {
-      setError((err as Error).message || 'Could not build STEREO J-map');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { buildJMap(); }, [buildJMap]);
+  const [selectedKey, setSelectedKey] = useState(STEREO_JPLOTS[0].key);
+  const [refreshKey, setRefreshKey] = useState(() => Date.now());
+  const selected = STEREO_JPLOTS.find(plot => plot.key === selectedKey) ?? STEREO_JPLOTS[0];
 
   return (
     <div className="mt-6 rounded-2xl border border-sky-900/40 bg-gradient-to-b from-slate-950/90 to-neutral-950/90 p-4 shadow-2xl shadow-sky-950/20">
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-sky-500/10 text-sky-300 border border-sky-500/20">☄</span>
-            <div>
-              <h3 className="text-lg font-semibold text-white">STEREO HI Sun–Earth J-map</h3>
-              <p className="text-xs text-neutral-500">Five days of HI1/HI2 ecliptic slivers, sampled every 3 hours.</p>
-            </div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-sky-500/10 text-sky-300 border border-sky-500/20">☄</span>
+          <div>
+            <h3 className="text-lg font-semibold text-white">STEREO Beacon J-plots</h3>
+            <p className="text-xs text-neutral-500">NASA STEREO-A beacon plots for tracking outward-moving CME structure from near the Sun toward Earth orbit.</p>
           </div>
         </div>
-        <button onClick={buildJMap} disabled={loading} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-600/20 text-sky-200 border border-sky-500/40 hover:bg-sky-600/30 disabled:opacity-60 transition-colors">
-          {loading ? 'Building…' : 'Refresh J-map'}
+        <button
+          onClick={() => setRefreshKey(Date.now())}
+          className="self-start px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-600/20 text-sky-200 border border-sky-500/40 hover:bg-sky-600/30 transition-colors"
+        >
+          Refresh images
         </button>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_230px]">
-        <div className="relative overflow-x-auto rounded-xl border border-neutral-800 bg-black/50 p-2">
-          {loading && <div className="absolute inset-2 z-10 rounded-lg bg-neutral-950/70 backdrop-blur-sm flex items-center justify-center text-sm text-sky-200">Building sliver map from STEREO beacon imagery…</div>}
-          {error && <div className="absolute inset-2 z-10 rounded-lg bg-red-950/80 backdrop-blur-sm flex items-center justify-center text-sm text-red-200">{error}</div>}
-          <canvas ref={canvasRef} className="block min-w-[760px] w-full h-auto rounded-lg" aria-label="STEREO HI Sun Earth J-map" />
+      <div className="grid gap-2 md:grid-cols-3 mb-4">
+        {STEREO_JPLOTS.map(plot => {
+          const active = selected.key === plot.key;
+          const reachesPastEarth = plot.endAu > 1;
+          return (
+            <button
+              key={plot.key}
+              onClick={() => setSelectedKey(plot.key)}
+              className={`text-left rounded-xl border p-3 transition-all ${active ? `bg-gradient-to-br ${plot.accent}` : 'bg-neutral-900/50 border-neutral-800 text-neutral-400 hover:border-neutral-700 hover:bg-neutral-900/80'}`}
+            >
+              <p className="text-sm font-semibold text-neutral-100">{plot.title}</p>
+              <p className="text-[11px] mt-1 leading-relaxed">Starts {formatAu(plot.startAu)} from Sun · ends {formatAu(plot.endAu)}</p>
+              <p className="text-[11px] mt-1 leading-relaxed">
+                {reachesPastEarth ? 'Reaches past 1 AU; Earth orbit is inside this plot.' : `${formatAu(plot.earthRemainingAu)} left to Earth at plot end.`}
+              </p>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+        <div className="overflow-x-auto rounded-xl border border-neutral-800 bg-black/60 p-2">
+          <a href={selected.sourceUrl} target="_blank" rel="noopener noreferrer" title={`Open ${selected.title} source image`}>
+            <img
+              src={stereoImageProxyPath(selected.imageUrl, refreshKey)}
+              alt={`${selected.title} STEREO beacon J-plot`}
+              className="block min-w-[720px] w-full h-auto rounded-lg"
+              loading="lazy"
+            />
+          </a>
         </div>
         <div className="space-y-3 text-xs text-neutral-400">
-          <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3">
-            <p className="font-semibold text-neutral-200 mb-1">Distance coverage</p>
-            <p><span className="text-sky-300">HI1:</span> 4°–24° elongation, roughly 12–84 R☉ from the Sun.</p>
-            <p className="mt-1"><span className="text-purple-300">HI2:</span> 18.7°–88.7° elongation, roughly 66–318 R☉ and out to Earth orbit.</p>
+          <div className={`rounded-xl border bg-gradient-to-br p-3 ${selected.accent}`}>
+            <p className="font-semibold text-neutral-100 mb-1">{selected.title}</p>
+            <p className="leading-relaxed">{selected.description}</p>
           </div>
           <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3">
-            <p className="font-semibold text-neutral-200 mb-1">Availability</p>
-            {status ? (
-              <>
-                <p>{status.slots} three-hour slots.</p>
-                <p>HI1 matched: <span className="text-neutral-200">{status.hi1}</span></p>
-                <p>HI2 matched: <span className="text-neutral-200">{status.hi2}</span></p>
-                <p className="text-neutral-600 mt-1">Generated {new Date(status.generatedAt).toLocaleTimeString('en-GB', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' })} UT</p>
-              </>
-            ) : <p>Waiting for first build.</p>}
+            <p className="font-semibold text-neutral-200 mb-2">Approximate distance coverage</p>
+            <dl className="space-y-1.5">
+              <div className="flex justify-between gap-3"><dt>Starts from Sun</dt><dd className="text-neutral-100 font-medium">{formatAu(selected.startAu)}</dd></div>
+              <div className="flex justify-between gap-3"><dt>Ends from Sun</dt><dd className="text-neutral-100 font-medium">{formatAu(selected.endAu)}</dd></div>
+              <div className="flex justify-between gap-3"><dt>Distance shown</dt><dd className="text-neutral-100 font-medium">{formatAu(selected.endAu - selected.startAu)}</dd></div>
+              <div className="flex justify-between gap-3"><dt>AU left at end</dt><dd className="text-neutral-100 font-medium">{selected.endAu > 1 ? '0.000 AU' : formatAu(selected.earthRemainingAu)}</dd></div>
+            </dl>
+            {selected.endAu > 1 && (
+              <p className="text-[11px] text-purple-200/80 mt-2 leading-relaxed">HI2 nominally extends beyond 1 AU by {formatAu(selected.endAu - 1)}; for Sun→Earth tracking, Earth orbit is reached before the plot's outer edge.</p>
+            )}
           </div>
-          <p className="leading-relaxed">Bright/dark diagonal bands show outward-moving density structures. Empty vertical bands are intentional when no image is available within a 3-hour slot.</p>
-          <a href="https://stereo-ssc.nascom.nasa.gov/beacon/secchi_jplot.shtml" target="_blank" rel="noopener noreferrer" className="inline-flex text-sky-400 hover:text-sky-300">Compare NASA SECCHI J-plots ↗</a>
+          <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3">
+            <p className="font-semibold text-neutral-200 mb-1">Coverage reference</p>
+            <p className="leading-relaxed">Distances use nominal SECCHI fields of view converted from solar radii to AU: COR2 2.5–15 R☉, HI1 12–84 R☉, HI2 66–318 R☉.</p>
+          </div>
+          <p className="leading-relaxed">The GIFs are served directly from the NASA STEREO beacon feed. Bright/dark diagonal tracks indicate outward-moving density structures in running-difference style J-plots.</p>
         </div>
       </div>
     </div>
