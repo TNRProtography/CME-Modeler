@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const STEREO_BEACON_BASE = 'https://stereo-ssc.nascom.nasa.gov/beacon';
+const SUN_TEXTURE_URL = 'https://upload.wikimedia.org/wikipedia/commons/c/cb/Solarsystemscope_texture_2k_sun.jpg';
+const EARTH_TEXTURE_URL = 'https://upload.wikimedia.org/wikipedia/commons/c/c3/Solarsystemscope_texture_2k_earth_daymap.jpg';
 const MAX_GUIDE_AU = 1.5;
 const GUIDE_LEFT = 92;
 const GUIDE_RIGHT = 936;
@@ -87,34 +89,21 @@ const StereoFovGuide: React.FC<{ selected: StereoJPlotInfo }> = ({ selected }) =
     <div className="rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-2">
         <p className="font-semibold text-neutral-200">Sun–Earth field of view</p>
-        <span className="text-[11px] text-neutral-500">AU positions are linear; Sun/Earth/STEREO icon sizes are illustrative.</span>
+        <span className="text-[11px] text-neutral-500">AU positions are linear; planet icon sizes are illustrative.</span>
       </div>
       <svg viewBox="0 0 1000 320" role="img" aria-label="Sun, Earth, STEREO-A and instrument field of view ranges on a linear AU scale" className="w-full h-auto overflow-visible">
         <defs>
-          <radialGradient id="sunGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#fde68a" />
-            <stop offset="55%" stopColor="#f59e0b" />
-            <stop offset="100%" stopColor="#7c2d12" />
-          </radialGradient>
-          <radialGradient id="earthGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#bfdbfe" />
-            <stop offset="58%" stopColor="#2563eb" />
-            <stop offset="100%" stopColor="#0f172a" />
-          </radialGradient>
-          <filter id="softGlow">
-            <feGaussianBlur stdDeviation="4" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
+          <clipPath id="stereoGuideSunClip">
+            <circle cx={sunX} cy="174" r="26" />
+          </clipPath>
+          <clipPath id="stereoGuideEarthClip">
+            <circle cx={earthX} cy="174" r="16" />
+          </clipPath>
         </defs>
 
-        <rect x="0" y="0" width="1000" height="320" rx="12" fill="rgba(2, 6, 23, 0.52)" />
-        <rect x={GUIDE_LEFT} y="38" width={earthX - GUIDE_LEFT} height="230" rx="10" fill="rgba(14, 165, 233, 0.045)" />
-        <rect x={earthX} y="38" width={GUIDE_RIGHT - earthX} height="230" rx="10" fill="rgba(167, 139, 250, 0.045)" />
-        <line x1={GUIDE_LEFT} y1="174" x2={GUIDE_RIGHT} y2="174" stroke="#334155" strokeWidth="2" />
-        <line x1={earthX} y1="48" x2={earthX} y2="262" stroke="#60a5fa" strokeWidth="2" strokeDasharray="5 6" />
+        <rect x="0" y="0" width="1000" height="320" rx="12" fill="#030303" />
+        <line x1={GUIDE_LEFT} y1="174" x2={GUIDE_RIGHT} y2="174" stroke="#262626" strokeWidth="2" />
+        <line x1={earthX} y1="48" x2={earthX} y2="262" stroke="#525252" strokeWidth="1.5" strokeDasharray="5 6" />
 
         {[0, 0.25, 0.5, 0.75, 1, 1.25, 1.5].map(tick => (
           <g key={tick}>
@@ -123,11 +112,13 @@ const StereoFovGuide: React.FC<{ selected: StereoJPlotInfo }> = ({ selected }) =
           </g>
         ))}
 
-        <path d={`M ${stereoX} 106 Q ${earthX + 52} 130 ${earthX} 174`} fill="none" stroke="#64748b" strokeWidth="1.5" strokeDasharray="4 5" />
-        <circle cx={sunX} cy="174" r="26" fill="url(#sunGlow)" filter="url(#softGlow)" />
-        <text x={sunX} y="242" textAnchor="middle" fill="#fbbf24" fontSize="13" fontWeight="700">Sun</text>
-        <circle cx={earthX} cy="174" r="16" fill="url(#earthGlow)" filter="url(#softGlow)" />
-        <text x={earthX} y="242" textAnchor="middle" fill="#93c5fd" fontSize="13" fontWeight="700">Earth · 1 AU</text>
+        <path d={`M ${stereoX} 106 Q ${earthX + 52} 130 ${earthX} 174`} fill="none" stroke="#525252" strokeWidth="1.5" strokeDasharray="4 5" />
+        <image href={SUN_TEXTURE_URL} x={sunX - 26} y="148" width="52" height="52" preserveAspectRatio="xMidYMid slice" clipPath="url(#stereoGuideSunClip)" />
+        <circle cx={sunX} cy="174" r="26" fill="none" stroke="#a16207" strokeWidth="1" />
+        <text x={sunX} y="242" textAnchor="middle" fill="#d4d4d4" fontSize="13" fontWeight="700">Sun</text>
+        <image href={EARTH_TEXTURE_URL} x={earthX - 16} y="158" width="32" height="32" preserveAspectRatio="xMidYMid slice" clipPath="url(#stereoGuideEarthClip)" />
+        <circle cx={earthX} cy="174" r="16" fill="none" stroke="#737373" strokeWidth="1" />
+        <text x={earthX} y="242" textAnchor="middle" fill="#d4d4d4" fontSize="13" fontWeight="700">Earth · 1 AU</text>
         <g transform={`translate(${stereoX} 94)`}>
           <rect x="-16" y="-10" width="32" height="20" rx="3" fill="#1f2937" stroke="#a78bfa" strokeWidth="2" />
           <path d="M -27 -7 L -16 -2 M -27 7 L -16 2 M 16 -2 L 27 -7 M 16 2 L 27 7" stroke="#a78bfa" strokeWidth="2" />
