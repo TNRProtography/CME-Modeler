@@ -65,16 +65,22 @@ const ForecastChartPanel: React.FC<ForecastChartPanelProps> = ({
       }`}
     >
       <div className="flex justify-between items-start mb-2">
-        <div className="flex items-center gap-2">
-          <h3 className="text-xl font-semibold text-white">{title}</h3>
-          {satKey && <SatelliteBadge satellite={satKey} />}
-          <button
-            onClick={onOpenModal}
-            className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
-            title={`About ${title}`}
-          >
-            ?
-          </button>
+        <div className="flex flex-col gap-1.5 min-w-0">
+          <div className="flex items-center gap-2">
+            <h3 className="text-xl font-semibold text-white">{title}</h3>
+            <button
+              onClick={onOpenModal}
+              className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
+              title={`About ${title}`}
+            >
+              ?
+            </button>
+          </div>
+          {satKey && (
+            <div>
+              <SatelliteBadge satellite={satKey} />
+            </div>
+          )}
         </div>
         <div className="text-right">
           <div className="text-3xl font-bold text-white" dangerouslySetInnerHTML={{ __html: currentValue }}></div>
