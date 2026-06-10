@@ -44,18 +44,6 @@ const STEREO_JPLOTS: StereoJPlotInfo[] = [
     color: '#a78bfa',
     fill: 'rgba(167, 139, 250, 0.24)',
   },
-  {
-    key: 'cor2',
-    label: 'COR2',
-    title: 'STEREO-A COR2 west J-plot',
-    description: 'Near-Sun coronagraph view for the first outward motion before the CME front reaches the HI fields.',
-    fileName: 'jplot_cor2_ahead_west_090.gif',
-    startAu: 0.012,
-    endAu: 0.070,
-    nominalRange: '2.5–15 R☉',
-    color: '#f59e0b',
-    fill: 'rgba(245, 158, 11, 0.28)',
-  },
 ];
 
 const directImageUrl = (plot: StereoJPlotInfo) => `${STEREO_BEACON_BASE}/${plot.fileName}`;
@@ -300,7 +288,7 @@ const StereoJPlotsPanel: React.FC = () => {
         ) : (
           <div className="rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">
             <p className="font-semibold text-neutral-200">Field-of-view guide hidden</p>
-            <p className="text-neutral-500 mt-1">Open it to see where COR2, HI1, and HI2 sit between the Sun, STEREO-A, and Earth.</p>
+            <p className="text-neutral-500 mt-1">Open it to see where HI1 and HI2 sit between the Sun, STEREO-A, and Earth.</p>
           </div>
         )}
         <p className="text-neutral-600 leading-relaxed mt-3">
