@@ -4,6 +4,7 @@ const ALLOWED_HOSTS = new Set([
   'sdo.gsfc.nasa.gov',
   'jsoc1.stanford.edu',
   'services.swpc.noaa.gov',
+  'stereo-ssc.nascom.nasa.gov',
 ]);
 
 // Hosts permitted for the generic text/data proxy (/api/proxy/data).
