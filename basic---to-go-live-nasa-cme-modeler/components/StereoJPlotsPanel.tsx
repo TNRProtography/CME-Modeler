@@ -1,7 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const STEREO_BEACON_BASE = 'https://stereo-ssc.nascom.nasa.gov/beacon';
 const MAX_GUIDE_AU = 1.5;
+const GUIDE_LEFT = 92;
+const GUIDE_RIGHT = 936;
+const GUIDE_WIDTH = GUIDE_RIGHT - GUIDE_LEFT;
 
 interface StereoJPlotInfo {
   key: string;
@@ -11,7 +14,6 @@ interface StereoJPlotInfo {
   fileName: string;
   startAu: number;
   endAu: number;
-  earthRemainingAu: number;
   nominalRange: string;
   color: string;
   fill: string;
@@ -26,7 +28,6 @@ const STEREO_JPLOTS: StereoJPlotInfo[] = [
     fileName: 'jplot_hi1_ahead_090.gif',
     startAu: 0.056,
     endAu: 0.391,
-    earthRemainingAu: 0.609,
     nominalRange: '12–84 R☉',
     color: '#38bdf8',
     fill: 'rgba(56, 189, 248, 0.26)',
@@ -39,7 +40,6 @@ const STEREO_JPLOTS: StereoJPlotInfo[] = [
     fileName: 'jplot_hi2_ahead_090.gif',
     startAu: 0.307,
     endAu: 1.479,
-    earthRemainingAu: 0,
     nominalRange: '66–318 R☉',
     color: '#a78bfa',
     fill: 'rgba(167, 139, 250, 0.24)',
@@ -52,7 +52,6 @@ const STEREO_JPLOTS: StereoJPlotInfo[] = [
     fileName: 'jplot_cor2_ahead_west_090.gif',
     startAu: 0.012,
     endAu: 0.070,
-    earthRemainingAu: 0.930,
     nominalRange: '2.5–15 R☉',
     color: '#f59e0b',
     fill: 'rgba(245, 158, 11, 0.28)',
@@ -63,7 +62,31 @@ const directImageUrl = (plot: StereoJPlotInfo) => `${STEREO_BEACON_BASE}/${plot.
 const proxiedImageUrl = (plot: StereoJPlotInfo, refreshKey: number) =>
   `/api/proxy/image?ttl=300&url=${encodeURIComponent(directImageUrl(plot))}&v=${refreshKey}`;
 const formatAu = (value: number) => `${value.toFixed(3)} AU`;
-const xForAu = (value: number) => 72 + (Math.min(value, MAX_GUIDE_AU) / MAX_GUIDE_AU) * 548;
+const xForAu = (value: number) => GUIDE_LEFT + (Math.min(value, MAX_GUIDE_AU) / MAX_GUIDE_AU) * GUIDE_WIDTH;
+
+const SelectedRangeBar: React.FC<{ selected: StereoJPlotInfo }> = ({ selected }) => {
+  const startPct = (selected.startAu / MAX_GUIDE_AU) * 100;
+  const widthPct = ((Math.min(selected.endAu, MAX_GUIDE_AU) - selected.startAu) / MAX_GUIDE_AU) * 100;
+  const earthPct = (1 / MAX_GUIDE_AU) * 100;
+
+  return (
+    <div className="mb-4 rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-2">
+        <p className="text-xs font-semibold text-neutral-200">Selected FOV range · {selected.label}</p>
+        <p className="text-[11px] text-neutral-500">{formatAu(selected.startAu)} → {formatAu(selected.endAu)} from the Sun · {selected.nominalRange}</p>
+      </div>
+      <div className="relative h-5 rounded-full bg-neutral-800/90 overflow-hidden border border-neutral-700/70">
+        <div className="absolute inset-y-0 w-px bg-sky-300/80" style={{ left: `${earthPct}%` }} />
+        <div className="absolute inset-y-0 rounded-full" style={{ left: `${startPct}%`, width: `${widthPct}%`, backgroundColor: selected.color, boxShadow: `0 0 16px ${selected.color}` }} />
+      </div>
+      <div className="relative mt-1 h-4 text-[10px] text-neutral-500">
+        <span className="absolute left-0">Sun</span>
+        <span className="absolute -translate-x-1/2 text-sky-300" style={{ left: `${earthPct}%` }}>Earth · 1 AU</span>
+        <span className="absolute right-0">1.5 AU</span>
+      </div>
+    </div>
+  );
+};
 
 const StereoFovGuide: React.FC<{ selected: StereoJPlotInfo }> = ({ selected }) => {
   const sunX = xForAu(0);
@@ -74,11 +97,11 @@ const StereoFovGuide: React.FC<{ selected: StereoJPlotInfo }> = ({ selected }) =
 
   return (
     <div className="rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">
-      <div className="flex items-center justify-between gap-3 mb-2">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-2">
         <p className="font-semibold text-neutral-200">Sun–Earth field of view</p>
-        <span className="text-[11px] text-neutral-500">Selected: {selected.label}</span>
+        <span className="text-[11px] text-neutral-500">AU positions are linear; Sun/Earth/STEREO icon sizes are illustrative.</span>
       </div>
-      <svg viewBox="0 0 680 270" role="img" aria-label="Sun, Earth, STEREO-A and instrument field of view ranges" className="w-full h-auto overflow-visible">
+      <svg viewBox="0 0 1000 320" role="img" aria-label="Sun, Earth, STEREO-A and instrument field of view ranges on a linear AU scale" className="w-full h-auto overflow-visible">
         <defs>
           <radialGradient id="sunGlow" cx="50%" cy="50%" r="50%">
             <stop offset="0%" stopColor="#fde68a" />
@@ -99,46 +122,50 @@ const StereoFovGuide: React.FC<{ selected: StereoJPlotInfo }> = ({ selected }) =
           </filter>
         </defs>
 
-        <rect x="0" y="0" width="680" height="270" rx="12" fill="rgba(2, 6, 23, 0.52)" />
-        <line x1={sunX} y1="138" x2={xForAu(MAX_GUIDE_AU)} y2="138" stroke="#334155" strokeWidth="2" />
+        <rect x="0" y="0" width="1000" height="320" rx="12" fill="rgba(2, 6, 23, 0.52)" />
+        <rect x={GUIDE_LEFT} y="38" width={earthX - GUIDE_LEFT} height="230" rx="10" fill="rgba(14, 165, 233, 0.045)" />
+        <rect x={earthX} y="38" width={GUIDE_RIGHT - earthX} height="230" rx="10" fill="rgba(167, 139, 250, 0.045)" />
+        <line x1={GUIDE_LEFT} y1="174" x2={GUIDE_RIGHT} y2="174" stroke="#334155" strokeWidth="2" />
+        <line x1={earthX} y1="48" x2={earthX} y2="262" stroke="#60a5fa" strokeWidth="2" strokeDasharray="5 6" />
+
         {[0, 0.25, 0.5, 0.75, 1, 1.25, 1.5].map(tick => (
           <g key={tick}>
-            <line x1={xForAu(tick)} y1="128" x2={xForAu(tick)} y2="148" stroke={tick === 1 ? '#60a5fa' : '#475569'} strokeWidth={tick === 1 ? 2 : 1} />
-            <text x={xForAu(tick)} y="170" textAnchor="middle" fill={tick === 1 ? '#93c5fd' : '#64748b'} fontSize="11">{tick.toFixed(tick === 0 ? 0 : 2)} AU</text>
+            <line x1={xForAu(tick)} y1="162" x2={xForAu(tick)} y2="186" stroke={tick === 1 ? '#60a5fa' : '#475569'} strokeWidth={tick === 1 ? 2 : 1} />
+            <text x={xForAu(tick)} y="207" textAnchor="middle" fill={tick === 1 ? '#93c5fd' : '#64748b'} fontSize="12">{tick.toFixed(tick === 0 ? 0 : 2)} AU</text>
           </g>
         ))}
 
-        <path d={`M ${stereoX} 96 Q ${earthX + 36} 112 ${earthX} 138`} fill="none" stroke="#64748b" strokeWidth="1.5" strokeDasharray="4 5" />
-        <circle cx={sunX} cy="138" r="22" fill="url(#sunGlow)" filter="url(#softGlow)" />
-        <text x={sunX} y="198" textAnchor="middle" fill="#fbbf24" fontSize="12" fontWeight="600">Sun</text>
-        <circle cx={earthX} cy="138" r="14" fill="url(#earthGlow)" filter="url(#softGlow)" />
-        <text x={earthX} y="198" textAnchor="middle" fill="#93c5fd" fontSize="12" fontWeight="600">Earth</text>
-        <g transform={`translate(${stereoX} 82)`}>
-          <rect x="-13" y="-8" width="26" height="16" rx="3" fill="#1f2937" stroke="#a78bfa" />
-          <path d="M -22 -6 L -13 -2 M -22 6 L -13 2 M 13 -2 L 22 -6 M 13 2 L 22 6" stroke="#a78bfa" strokeWidth="2" />
-          <text x="0" y="-17" textAnchor="middle" fill="#c4b5fd" fontSize="11" fontWeight="600">STEREO-A</text>
+        <path d={`M ${stereoX} 106 Q ${earthX + 52} 130 ${earthX} 174`} fill="none" stroke="#64748b" strokeWidth="1.5" strokeDasharray="4 5" />
+        <circle cx={sunX} cy="174" r="26" fill="url(#sunGlow)" filter="url(#softGlow)" />
+        <text x={sunX} y="242" textAnchor="middle" fill="#fbbf24" fontSize="13" fontWeight="700">Sun</text>
+        <circle cx={earthX} cy="174" r="16" fill="url(#earthGlow)" filter="url(#softGlow)" />
+        <text x={earthX} y="242" textAnchor="middle" fill="#93c5fd" fontSize="13" fontWeight="700">Earth · 1 AU</text>
+        <g transform={`translate(${stereoX} 94)`}>
+          <rect x="-16" y="-10" width="32" height="20" rx="3" fill="#1f2937" stroke="#a78bfa" strokeWidth="2" />
+          <path d="M -27 -7 L -16 -2 M -27 7 L -16 2 M 16 -2 L 27 -7 M 16 2 L 27 7" stroke="#a78bfa" strokeWidth="2" />
+          <text x="0" y="-20" textAnchor="middle" fill="#c4b5fd" fontSize="12" fontWeight="700">STEREO-A</text>
         </g>
 
         {STEREO_JPLOTS.map((plot, index) => {
-          const y = 64 + index * 30;
+          const y = 70 + index * 36;
           const startX = xForAu(plot.startAu);
           const endX = xForAu(plot.endAu);
           const active = plot.key === selected.key;
           return (
-            <g key={plot.key} opacity={active ? 1 : 0.46}>
-              <line x1={startX} y1={y} x2={endX} y2={y} stroke={plot.color} strokeWidth={active ? 12 : 8} strokeLinecap="round" />
-              <rect x={startX} y={y - (active ? 13 : 9)} width={Math.max(3, endX - startX)} height={active ? 26 : 18} rx="7" fill={plot.fill} stroke={active ? plot.color : 'transparent'} />
-              <line x1={startX} y1={y - 16} x2={startX} y2="138" stroke={plot.color} strokeWidth="1" strokeDasharray="3 5" />
-              <line x1={endX} y1={y - 16} x2={endX} y2="138" stroke={plot.color} strokeWidth="1" strokeDasharray="3 5" />
-              <text x="18" y={y + 4} fill={active ? '#e5e7eb' : '#94a3b8'} fontSize="12" fontWeight={active ? 700 : 500}>{plot.label}</text>
-              <text x={Math.min(628, endX + 8)} y={y + 4} fill={plot.color} fontSize="11">{formatAu(plot.startAu)}–{formatAu(plot.endAu)}</text>
+            <g key={plot.key} opacity={active ? 1 : 0.38}>
+              {active && <rect x={startX - 8} y={y - 20} width={Math.max(18, endX - startX + 16)} height="40" rx="12" fill={plot.fill} stroke={plot.color} strokeWidth="2" />}
+              <line x1={startX} y1={y} x2={endX} y2={y} stroke={plot.color} strokeWidth={active ? 15 : 8} strokeLinecap="round" />
+              <line x1={startX} y1={y - 23} x2={startX} y2="174" stroke={plot.color} strokeWidth="1" strokeDasharray="3 6" />
+              <line x1={endX} y1={y - 23} x2={endX} y2="174" stroke={plot.color} strokeWidth="1" strokeDasharray="3 6" />
+              <text x="28" y={y + 5} fill={active ? '#f8fafc' : '#94a3b8'} fontSize="13" fontWeight={active ? 800 : 600}>{plot.label}</text>
+              {active && <text x={Math.min(930, endX + 14)} y={y + 5} fill={plot.color} fontSize="12" fontWeight="700">SELECTED</text>}
             </g>
           );
         })}
 
-        <path d={`M ${selectedStart} 216 L ${selectedEnd} 216`} stroke={selected.color} strokeWidth="7" strokeLinecap="round" />
-        <text x={(selectedStart + selectedEnd) / 2} y="240" textAnchor="middle" fill="#d4d4d8" fontSize="12">
-          {selected.label} is the highlighted distance band shown in the selected J-plot
+        <path d={`M ${selectedStart} 284 L ${selectedEnd} 284`} stroke={selected.color} strokeWidth="8" strokeLinecap="round" />
+        <text x={(selectedStart + selectedEnd) / 2} y="306" textAnchor="middle" fill="#d4d4d8" fontSize="12">
+          {selected.label}: {formatAu(selected.startAu)}–{formatAu(selected.endAu)} from Sun
         </text>
       </svg>
     </div>
@@ -151,11 +178,25 @@ const StereoJPlotsPanel: React.FC = () => {
   const [useProxy, setUseProxy] = useState(true);
   const [imageFailed, setImageFailed] = useState(false);
   const [showGuide, setShowGuide] = useState(true);
+  const imageScrollRef = useRef<HTMLDivElement | null>(null);
   const selected = useMemo(
     () => STEREO_JPLOTS.find(plot => plot.key === selectedKey) ?? STEREO_JPLOTS[0],
     [selectedKey],
   );
   const selectedSrc = useProxy ? proxiedImageUrl(selected, refreshKey) : `${directImageUrl(selected)}?v=${refreshKey}`;
+
+  const scrollImageToNewest = useCallback(() => {
+    const scroller = imageScrollRef.current;
+    if (!scroller) return;
+    requestAnimationFrame(() => {
+      scroller.scrollLeft = scroller.scrollWidth;
+    });
+  }, []);
+
+  useEffect(() => {
+    const id = window.setTimeout(scrollImageToNewest, 80);
+    return () => window.clearTimeout(id);
+  }, [selectedKey, refreshKey, useProxy, imageFailed, scrollImageToNewest]);
 
   const handleSelect = (key: string) => {
     setSelectedKey(key);
@@ -189,17 +230,20 @@ const StereoJPlotsPanel: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex justify-center gap-2 mb-4 flex-wrap">
+      <div className="flex justify-center gap-2 mb-3 flex-wrap">
         {STEREO_JPLOTS.map(plot => (
           <button
             key={plot.key}
             onClick={() => handleSelect(plot.key)}
-            className={`px-3 py-1 text-xs rounded transition-colors ${selected.key === plot.key ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600 text-neutral-300'}`}
+            style={selected.key === plot.key ? { borderColor: plot.color, boxShadow: `0 0 0 1px ${plot.color}, 0 0 18px ${plot.fill}`, backgroundColor: plot.color } : undefined}
+            className={`px-3 py-1 text-xs rounded border transition-colors ${selected.key === plot.key ? 'text-white font-semibold' : 'bg-neutral-700 border-neutral-700 hover:bg-neutral-600 text-neutral-300'}`}
           >
             {plot.label}
           </button>
         ))}
       </div>
+
+      <SelectedRangeBar selected={selected} />
 
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
@@ -216,71 +260,52 @@ const StereoJPlotsPanel: React.FC = () => {
         </button>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="relative bg-neutral-900/40 rounded-lg p-2 border border-neutral-800/80 overflow-x-auto">
-          {!imageFailed ? (
-            <a href={directImageUrl(selected)} target="_blank" rel="noopener noreferrer" title={`Open ${selected.title} at NASA`}>
-              <img
-                key={`${selected.key}-${refreshKey}-${useProxy ? 'proxy' : 'direct'}`}
-                src={selectedSrc}
-                alt={`${selected.title} from NASA STEREO beacon`}
-                className="block min-w-[680px] w-full h-auto rounded bg-black object-contain"
-                loading="lazy"
-                referrerPolicy="no-referrer"
-                onError={() => {
-                  if (useProxy) {
-                    setUseProxy(false);
-                    return;
-                  }
-                  setImageFailed(true);
-                }}
-              />
-            </a>
-          ) : (
-            <div className="min-h-[320px] min-w-[680px] rounded bg-neutral-900/80 border border-neutral-800 flex flex-col items-center justify-center text-center p-6">
-              <p className="text-sm font-semibold text-neutral-200">STEREO image could not be loaded</p>
-              <p className="text-xs text-neutral-500 mt-1 max-w-md">The app proxy and direct NASA image both failed. You can still open the source GIF directly from NASA.</p>
-              <a href={directImageUrl(selected)} target="_blank" rel="noopener noreferrer" className="mt-3 px-3 py-1 text-xs rounded bg-neutral-700 hover:bg-neutral-600 text-neutral-200 transition-colors">Open NASA GIF</a>
-            </div>
-          )}
-          {useProxy && !imageFailed && (
-            <div className="absolute right-3 top-3 rounded bg-black/70 border border-neutral-700 px-2 py-1 text-[11px] text-neutral-300">
-              using app proxy
-            </div>
-          )}
-        </div>
-
-        <div id="stereo-fov-guide" className="space-y-3 text-xs text-neutral-400">
-          {showGuide ? (
-            <StereoFovGuide selected={selected} />
-          ) : (
-            <div className="rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">
-              <p className="font-semibold text-neutral-200">Field-of-view guide hidden</p>
-              <p className="text-neutral-500 mt-1">Open it to see where COR2, HI1, and HI2 sit between the Sun, STEREO-A, and Earth.</p>
-            </div>
-          )}
-          <div className="rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">
-            <p className="font-semibold text-neutral-200 mb-1">Selected range</p>
-            <div className="h-2 rounded-full bg-neutral-800 overflow-hidden mb-2">
-              <div
-                className="h-full rounded-full"
-                style={{
-                  marginLeft: `${(selected.startAu / MAX_GUIDE_AU) * 100}%`,
-                  width: `${((Math.min(selected.endAu, MAX_GUIDE_AU) - selected.startAu) / MAX_GUIDE_AU) * 100}%`,
-                  backgroundColor: selected.color,
-                }}
-              />
-            </div>
-            <div className="flex justify-between text-[11px] text-neutral-500">
-              <span>Sun</span>
-              <span>Earth · 1 AU</span>
-              <span>1.5 AU</span>
-            </div>
+      <div ref={imageScrollRef} className="relative bg-neutral-900/40 rounded-lg p-2 border border-neutral-800/80 overflow-x-auto">
+        {!imageFailed ? (
+          <a href={directImageUrl(selected)} target="_blank" rel="noopener noreferrer" title={`Open ${selected.title} at NASA`}>
+            <img
+              key={`${selected.key}-${refreshKey}-${useProxy ? 'proxy' : 'direct'}`}
+              src={selectedSrc}
+              alt={`${selected.title} from NASA STEREO beacon`}
+              className="block min-w-[680px] w-full h-auto rounded bg-black object-contain"
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              onLoad={scrollImageToNewest}
+              onError={() => {
+                if (useProxy) {
+                  setUseProxy(false);
+                  return;
+                }
+                setImageFailed(true);
+              }}
+            />
+          </a>
+        ) : (
+          <div className="min-h-[320px] min-w-[680px] rounded bg-neutral-900/80 border border-neutral-800 flex flex-col items-center justify-center text-center p-6">
+            <p className="text-sm font-semibold text-neutral-200">STEREO image could not be loaded</p>
+            <p className="text-xs text-neutral-500 mt-1 max-w-md">The app proxy and direct NASA image both failed. You can still open the source GIF directly from NASA.</p>
+            <a href={directImageUrl(selected)} target="_blank" rel="noopener noreferrer" className="mt-3 px-3 py-1 text-xs rounded bg-neutral-700 hover:bg-neutral-600 text-neutral-200 transition-colors">Open NASA GIF</a>
           </div>
-          <p className="text-neutral-600 leading-relaxed">
-            Images load through the app proxy first for CORS support, then retry direct from NASA if the proxy is unavailable.
-          </p>
-        </div>
+        )}
+        {useProxy && !imageFailed && (
+          <div className="absolute right-3 top-3 rounded bg-black/70 border border-neutral-700 px-2 py-1 text-[11px] text-neutral-300">
+            using app proxy
+          </div>
+        )}
+      </div>
+
+      <div id="stereo-fov-guide" className="mt-4 text-xs text-neutral-400">
+        {showGuide ? (
+          <StereoFovGuide selected={selected} />
+        ) : (
+          <div className="rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">
+            <p className="font-semibold text-neutral-200">Field-of-view guide hidden</p>
+            <p className="text-neutral-500 mt-1">Open it to see where COR2, HI1, and HI2 sit between the Sun, STEREO-A, and Earth.</p>
+          </div>
+        )}
+        <p className="text-neutral-600 leading-relaxed mt-3">
+          Images load through the app proxy first for CORS support, then retry direct from NASA if the proxy is unavailable.
+        </p>
       </div>
     </div>
   );
