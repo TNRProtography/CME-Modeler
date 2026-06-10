@@ -4,6 +4,7 @@ const ALLOWED_HOSTS = new Set([
   'sdo.gsfc.nasa.gov',
   'jsoc1.stanford.edu',
   'services.swpc.noaa.gov',
+  'stereo-ssc.nascom.nasa.gov',
 ]);
 
 // Hosts permitted for the generic text/data proxy (/api/proxy/data).
@@ -14,6 +15,7 @@ const ALLOWED_DATA_HOSTS = new Set([
   'www.nmdb.eu',
   'nest.nmdb.eu',
   'services.swpc.noaa.gov',
+  'stereo-ssc.nascom.nasa.gov',
 ]);
 
 const BLOCKED_HOST_RE = /(^localhost$)|(^127\.)|(^10\.)|(^192\.168\.)|(^169\.254\.)|(^172\.(1[6-9]|2\d|3[0-1])\.)|(^0\.)/;
