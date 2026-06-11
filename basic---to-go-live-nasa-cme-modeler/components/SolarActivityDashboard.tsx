@@ -988,6 +988,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const coronagraphFrameLoadingRef = useRef<boolean>(false);
   const [suviGifProgress, setSuviGifProgress] = useState<{done:number;total:number}|null>(null);
   const [coronagraphGifProgress, setCoronagraphGifProgress] = useState<{done:number;total:number}|null>(null);
+  const [suviGifPrompt, setSuviGifPrompt] = useState(false);
+  const [coronagraphGifPrompt, setCoronagraphGifPrompt] = useState(false);
   const [activeSunImage, setActiveSunImage] = useState<SolarImageryMode>('SUVI_131');
 
   // Difference-imagery defaults tuned to match provided reference settings.
@@ -2648,50 +2650,72 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     return ctx.getImageData(0, 0, w, h);
   }, []);
 
-  const downloadSuviGif = useCallback(async () => {
+  /** Stamp NZT timestamp into top-right corner of an ImageData by drawing on an offscreen canvas. */
+  const stampTimestamp = useCallback((imgData: ImageData, timestamp: string | null): ImageData => {
+    if (!timestamp) return imgData;
+    const c = document.createElement('canvas'); c.width = imgData.width; c.height = imgData.height;
+    const ctx = c.getContext('2d')!;
+    ctx.putImageData(imgData, 0, 0);
+    const fontSize = Math.max(11, Math.round(imgData.width * 0.028));
+    ctx.font = `bold ${fontSize}px monospace`;
+    ctx.textAlign = 'right';
+    const nzt = new Date(timestamp).toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+    const label = `${nzt} NZT`;
+    const pad = Math.round(fontSize * 0.5);
+    const textW = ctx.measureText(label).width;
+    // Background pill
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.beginPath();
+    ctx.roundRect(imgData.width - textW - pad * 2, pad * 0.4, textW + pad * 1.4, fontSize + pad * 0.8, 4);
+    ctx.fill();
+    // Text
+    ctx.fillStyle = '#e5e5e5';
+    ctx.fillText(label, imgData.width - pad, pad + fontSize * 0.85);
+    return ctx.getImageData(0, 0, imgData.width, imgData.height);
+  }, []);
+
+  const doSuviGifDownload = useCallback(async (useDiff: boolean) => {
+    setSuviGifPrompt(false);
     if (suviFrames.length < 2 || suviGifProgress) return;
     setSuviGifProgress({ done: 0, total: suviFrames.length });
     try {
       const resolvedUrls = suviFrames.map(f => resolveSuviWorkerUrl(f?.url)).filter(Boolean) as string[];
       if (resolvedUrls.length < 2) return;
-      // Determine output size (scale to gifMaxDim)
       const probe = await loadImageAsync(resolvedUrls[0]);
       const aspect = probe.naturalWidth / probe.naturalHeight;
       const w = aspect >= 1 ? gifMaxDim : Math.round(gifMaxDim * aspect);
       const h = aspect >= 1 ? Math.round(gifMaxDim / aspect) : gifMaxDim;
       const delayMs = Math.max(40, Math.round(200 / suviPlaybackSpeed));
       const gifFrames: GifFrame[] = [];
-      const diff = suviDifference;
       const cfg = activeSuviDiffConfig;
       for (let i = 0; i < resolvedUrls.length; i++) {
         const curr = await loadImageAsync(resolvedUrls[i]);
         let data: ImageData;
-        if (diff && i > 0) {
+        if (useDiff && i > 0) {
           const prev = await loadImageAsync(resolvedUrls[i - 1]);
           data = renderDiffFrame(prev, curr, w, h, cfg.gain, cfg.noiseFloor, cfg.gamma);
-        } else if (diff && i === 0) {
-          data = renderRawFrame(curr, w, h); // no previous for first frame in diff mode
         } else {
           data = renderRawFrame(curr, w, h);
         }
+        data = stampTimestamp(data, suviFrames[i]?.ts ?? null);
         gifFrames.push({ data, delayMs });
         setSuviGifProgress({ done: i + 1, total: resolvedUrls.length });
       }
       const blob = encodeGif(w, h, gifFrames);
       const sourceLabel = activeSuviSourceState?.label ?? activeSuviSourceKey;
+      const suffix = useDiff ? '-diff' : '';
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${sourceLabel.replace(/\s+/g, '-').toLowerCase()}-${suviFrameWindowHours}h-${suviPlaybackSpeed}x.gif`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      a.download = `${sourceLabel.replace(/\s+/g, '-').toLowerCase()}-${suviFrameWindowHours}h-${suviPlaybackSpeed}x${suffix}.gif`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (e) { console.error('GIF encode failed:', e); }
     finally { setSuviGifProgress(null); }
-  }, [suviFrames, suviGifProgress, resolveSuviWorkerUrl, loadImageAsync, suviPlaybackSpeed, suviDifference, activeSuviDiffConfig, renderDiffFrame, renderRawFrame, activeSuviSourceState?.label, activeSuviSourceKey, suviFrameWindowHours]);
+  }, [suviFrames, suviGifProgress, resolveSuviWorkerUrl, loadImageAsync, suviPlaybackSpeed, activeSuviDiffConfig, renderDiffFrame, renderRawFrame, stampTimestamp, activeSuviSourceState?.label, activeSuviSourceKey, suviFrameWindowHours]);
 
-  const downloadCoronagraphGif = useCallback(async () => {
+  const doCoronagraphGifDownload = useCallback(async (useDiff: boolean) => {
+    setCoronagraphGifPrompt(false);
     if (coronagraphFrames.length < 2 || coronagraphGifProgress) return;
     setCoronagraphGifProgress({ done: 0, total: coronagraphFrames.length });
     try {
@@ -2703,34 +2727,31 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       const h = aspect >= 1 ? Math.round(gifMaxDim / aspect) : gifMaxDim;
       const delayMs = Math.max(40, Math.round(200 / coronagraphPlaybackSpeed));
       const gifFrames: GifFrame[] = [];
-      const diff = coronagraphDifference;
       for (let i = 0; i < resolvedUrls.length; i++) {
         const curr = await loadImageAsync(resolvedUrls[i]);
         let data: ImageData;
-        if (diff && i > 0) {
+        if (useDiff && i > 0) {
           const prev = await loadImageAsync(resolvedUrls[i - 1]);
           data = renderDiffFrame(prev, curr, w, h, CORONAGRAPH_DIFF_GAIN, CORONAGRAPH_DIFF_NOISE_FLOOR, CORONAGRAPH_DIFF_GAMMA);
-        } else if (diff && i === 0) {
-          data = renderRawFrame(curr, w, h);
         } else {
           data = renderRawFrame(curr, w, h);
         }
+        data = stampTimestamp(data, coronagraphFrames[i]?.ts ?? null);
         gifFrames.push({ data, delayMs });
         setCoronagraphGifProgress({ done: i + 1, total: resolvedUrls.length });
       }
       const blob = encodeGif(w, h, gifFrames);
       const sourceLabel = coronagraphSourceState?.label ?? coronagraphSource;
+      const suffix = useDiff ? '-diff' : '';
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${sourceLabel.replace(/\s+/g, '-').toLowerCase()}-${coronagraphFrameWindowHours}h-${coronagraphPlaybackSpeed}x.gif`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      a.download = `${sourceLabel.replace(/\s+/g, '-').toLowerCase()}-${coronagraphFrameWindowHours}h-${coronagraphPlaybackSpeed}x${suffix}.gif`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (e) { console.error('GIF encode failed:', e); }
     finally { setCoronagraphGifProgress(null); }
-  }, [coronagraphFrames, coronagraphGifProgress, resolveCoronagraphUrl, loadImageAsync, coronagraphPlaybackSpeed, coronagraphDifference, renderDiffFrame, renderRawFrame, coronagraphSourceState?.label, coronagraphSource, coronagraphFrameWindowHours]);
+  }, [coronagraphFrames, coronagraphGifProgress, resolveCoronagraphUrl, loadImageAsync, coronagraphPlaybackSpeed, renderDiffFrame, renderRawFrame, stampTimestamp, coronagraphSourceState?.label, coronagraphSource, coronagraphFrameWindowHours]);
 
   useEffect(() => {
     const canvas = suviCanvasRef.current;
@@ -3081,14 +3102,23 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   >
                     ⬇ Download frame
                   </button>
-                  <button
-                    onClick={downloadSuviGif}
-                    disabled={suviFrames.length < 2 || !!suviGifProgress}
-                    className="px-3 py-1.5 text-xs rounded bg-purple-700 hover:bg-purple-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
-                    title="Download animation as GIF"
-                  >
-                    {suviGifProgress ? `⏳ ${suviGifProgress.done}/${suviGifProgress.total}` : '🎞 Download GIF'}
-                  </button>
+                  <div className="relative">
+                    <button
+                      onClick={() => setSuviGifPrompt(p => !p)}
+                      disabled={suviFrames.length < 2 || !!suviGifProgress}
+                      className="px-3 py-1.5 text-xs rounded bg-purple-700 hover:bg-purple-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
+                      title="Download animation as GIF"
+                    >
+                      {suviGifProgress ? `⏳ ${suviGifProgress.done}/${suviGifProgress.total}` : '🎞 Download GIF'}
+                    </button>
+                    {suviGifPrompt && !suviGifProgress && (
+                      <div className="absolute bottom-full left-0 mb-1 bg-neutral-900 border border-neutral-700 rounded-lg shadow-xl p-2 z-50 min-w-[160px]">
+                        <p className="text-[10px] text-neutral-400 px-2 mb-1">Choose imagery type</p>
+                        <button onClick={() => doSuviGifDownload(true)} className="w-full text-left px-3 py-1.5 text-xs rounded hover:bg-purple-700/50 text-purple-200 transition-colors">🔬 Difference imagery</button>
+                        <button onClick={() => doSuviGifDownload(false)} className="w-full text-left px-3 py-1.5 text-xs rounded hover:bg-sky-700/50 text-sky-200 transition-colors">🌞 Normal imagery</button>
+                      </div>
+                    )}
+                  </div>
                   <label className="ml-auto flex items-center gap-2 text-xs text-neutral-300">
                     Speed
                     <select
@@ -3600,14 +3630,23 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   >
                     ⬇ Download frame
                   </button>
-                  <button
-                    onClick={downloadCoronagraphGif}
-                    disabled={coronagraphFrames.length < 2 || !!coronagraphGifProgress}
-                    className="px-3 py-1.5 text-xs rounded bg-purple-700 hover:bg-purple-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
-                    title="Download animation as GIF"
-                  >
-                    {coronagraphGifProgress ? `⏳ ${coronagraphGifProgress.done}/${coronagraphGifProgress.total}` : '🎞 Download GIF'}
-                  </button>
+                  <div className="relative">
+                    <button
+                      onClick={() => setCoronagraphGifPrompt(p => !p)}
+                      disabled={coronagraphFrames.length < 2 || !!coronagraphGifProgress}
+                      className="px-3 py-1.5 text-xs rounded bg-purple-700 hover:bg-purple-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
+                      title="Download animation as GIF"
+                    >
+                      {coronagraphGifProgress ? `⏳ ${coronagraphGifProgress.done}/${coronagraphGifProgress.total}` : '🎞 Download GIF'}
+                    </button>
+                    {coronagraphGifPrompt && !coronagraphGifProgress && (
+                      <div className="absolute bottom-full left-0 mb-1 bg-neutral-900 border border-neutral-700 rounded-lg shadow-xl p-2 z-50 min-w-[160px]">
+                        <p className="text-[10px] text-neutral-400 px-2 mb-1">Choose imagery type</p>
+                        <button onClick={() => doCoronagraphGifDownload(true)} className="w-full text-left px-3 py-1.5 text-xs rounded hover:bg-purple-700/50 text-purple-200 transition-colors">🔬 Difference imagery</button>
+                        <button onClick={() => doCoronagraphGifDownload(false)} className="w-full text-left px-3 py-1.5 text-xs rounded hover:bg-sky-700/50 text-sky-200 transition-colors">🌞 Normal imagery</button>
+                      </div>
+                    )}
+                  </div>
                   <label className="ml-auto flex items-center gap-2 text-xs text-neutral-300">
                     Speed
                     <select

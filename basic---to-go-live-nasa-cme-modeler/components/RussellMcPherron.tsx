@@ -161,6 +161,10 @@ const RussellMcPherron: React.FC<Props> = ({ magneticData, onOpenModal }) => {
       <div className="flex flex-wrap justify-between items-start gap-1 mb-2">
         <div className="flex items-center gap-1.5">
           <h3 className="text-lg sm:text-xl font-semibold text-white">Equinox Boost</h3>
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide bg-amber-500/15 text-amber-400 border border-amber-500/30">
+            <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            BETA
+          </span>
           <button onClick={onOpenModal} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors" title="About the Russell-McPherron effect">?</button>
         </div>
         <span className="text-[10px] text-neutral-500 mt-1">Russell-McPherron effect</span>

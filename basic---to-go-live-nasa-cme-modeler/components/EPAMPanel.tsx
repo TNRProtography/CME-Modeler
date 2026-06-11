@@ -104,10 +104,10 @@ const nmProxyPath = (target: string) => `/api/proxy/data?ttl=300&url=${encodeURI
 type ViewKey = 'ace-raw' | 'ace-roc' | 'solar1-raw' | 'imap-raw' | 'stereo-raw' | 'combined';
 const VIEWS: {key: ViewKey; label: string}[] = [
   {key: 'ace-raw',     label: 'ACE'},
-  {key: 'ace-roc',     label: 'Rate of Change'},
   {key: 'solar1-raw',  label: 'SOLAR-1'},
   {key: 'imap-raw',    label: 'IMAP'},
   {key: 'stereo-raw',  label: 'STEREO'},
+  {key: 'ace-roc',     label: 'Rate of Change'},
   {key: 'combined',    label: 'Combined Average'},
 ];
 
@@ -706,6 +706,10 @@ const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) =
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-xl font-semibold text-white">Energetic Particle Monitor</h2>
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide bg-amber-500/15 text-amber-400 border border-amber-500/30">
+              <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              BETA
+            </span>
             <button
               onClick={openModal}
               className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
