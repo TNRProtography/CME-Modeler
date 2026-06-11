@@ -233,9 +233,8 @@ const parseNOAATime = (s: string): number => {
 };
 
 const getSourceLabel = (source?: unknown) => {
-  if (typeof source !== 'string' || !source) return '—';
-  // Pass through the satellite name from the worker (SOLAR1, ACE, IMAP, DSCOVR)
-  return source;
+  if (typeof source !== 'string') return '—';
+  return source.includes('IMAP') ? 'IMAP' : 'NOAA RTSW';
 };
 
 const toFiniteNumber = (value: unknown): number | null => {

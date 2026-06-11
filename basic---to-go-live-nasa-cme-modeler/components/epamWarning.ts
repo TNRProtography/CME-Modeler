@@ -37,6 +37,23 @@
 // → sudden rise) is additionally encoded as an explicit fast-path to
 // "Storm Arrival Incoming".
 //
+// V3: CROSS-SPACECRAFT CONFIRMATION (SOLAR-1 / IMAP)
+// --------------------------------------------------
+// computeEpamWarning now optionally accepts raw samples from INDEPENDENT L1
+// particle sources (SOLAR-1 EPAM and IMAP EPAM via the worker's HAPI feeds).
+// Each confirmation source is judged against ITS OWN 7-day quiet baseline —
+// never against the primary source's — so a confirmation means two physically
+// separate instruments independently agree that particles are elevated.
+//
+//   • Each independently-elevated spacecraft adds context units to the
+//     sequence booster (same capped mechanism as dispersion/compression/FD),
+//     so confirmed signals escalate earlier WITHOUT raising false positives:
+//     a glitch on one spacecraft cannot be confirmed by another.
+//   • Confirmation state is surfaced as chips, in the technical detail line,
+//     and in diagnostics.confirmations for the UI.
+//   • If confirmation feeds are unavailable, everything degrades gracefully
+//     to single-spacecraft behaviour (the pre-v3 logic, unchanged).
+//
 // NEUTRON-MONITOR (FORBUSH) INPUT
 // -------------------------------
 // computeEpamWarning optionally accepts ground neutron-monitor count data
@@ -69,6 +86,27 @@ export interface NmSample {
 }
 
 export type WarnLevel = 'QUIET' | 'WATCH' | 'ELEVATED' | 'ONSET' | 'SHOCK';
+
+/** Raw samples from an independent confirmation spacecraft (SOLAR-1, IMAP…). */
+export interface EpamConfirmationInput {
+  /** stable key, e.g. 'solar1' | 'imap' */
+  key: string;
+  /** display label, e.g. 'SOLAR-1' | 'IMAP' */
+  label: string;
+  samples: EpamSample[];
+}
+
+/** Result of judging one confirmation spacecraft against its own baseline. */
+export interface SourceConfirmation {
+  key: string;
+  label: string;
+  /** enough fresh data to judge */
+  available: boolean;
+  /** independently elevated vs its own 7-day quiet baseline */
+  elevated: boolean;
+  sigma: number | null;
+  channelsRising: number;
+}
 
 export interface WarnReason {
   key: string;
@@ -105,6 +143,9 @@ export interface EpamWarning {
     fdPctNow: number | null;            // neutron monitor % vs its 7-day baseline
     nmAvailable: boolean;
     thresholdBoost: number;             // 0..0.35 — how much the sequence lowered the bars
+    // v3 cross-spacecraft confirmation diagnostics
+    confirmations: SourceConfirmation[];
+    confirmedCount: number;             // sources that independently confirm elevation
   };
 }
 
@@ -170,6 +211,14 @@ export const EPAM_WARN_CONFIG = {
   // FD onset +1.5 (pre-decrease +0.75). boost = min(CAP, RATE × units).
   BOOST_RATE: 0.10,
   BOOST_CAP: 0.35,
+
+  // ── v3: cross-spacecraft confirmation (SOLAR-1 / IMAP EPAM) ──
+  // Each independent spacecraft that is ALSO elevated (vs its own 7-day quiet
+  // baseline) adds this many context units to the sequence booster (max 2
+  // confirming sources counted).
+  CONFIRM_UNIT: 1.0,
+  CONFIRM_MIN_SAMPLES: 30,      // need this many samples to judge a source
+  CONFIRM_MAX_AGE_MIN: 180,     // newest sample must be fresher than this
 } as const;
 
 // ── Small numeric helpers ─────────────────────────────────────────────────────
@@ -233,7 +282,11 @@ export function toEpamSamples(
 
 // ── Core: compute the warning ─────────────────────────────────────────────────
 
-export function computeEpamWarning(samples: EpamSample[], nm?: NmSample[] | null): EpamWarning {
+export function computeEpamWarning(
+  samples: EpamSample[],
+  nm?: NmSample[] | null,
+  confirmSources?: EpamConfirmationInput[] | null,
+): EpamWarning {
   const cfg = EPAM_WARN_CONFIG;
   const now = samples.length ? samples[samples.length - 1].t : Date.now();
 
@@ -243,6 +296,7 @@ export function computeEpamWarning(samples: EpamSample[], nm?: NmSample[] | null
     channelsTotal: samples[0]?.logCh.length ?? 0, maxSlopePer15m: null, usableHours: 0,
     dispersionLeadMin: null, spreadRecent: null, spreadPast: null,
     dipDepthLog: null, fdPctNow: null, nmAvailable: false, thresholdBoost: 0,
+    confirmations: [] as SourceConfirmation[], confirmedCount: 0,
   };
 
   if (samples.length < 5) {
@@ -331,6 +385,16 @@ export function computeEpamWarning(samples: EpamSample[], nm?: NmSample[] | null
   // True Forbush decrease — neutron monitor counts vs their own 7-day baseline.
   const fd = detectForbush(nm ?? null, now);
 
+  // ════ v3: CROSS-SPACECRAFT CONFIRMATION (SOLAR-1 / IMAP) ════════════════════
+  // Each confirmation source is judged against ITS OWN 7-day quiet baseline at
+  // the SAME reference time as the primary — simultaneous, independent
+  // agreement is what makes a confirmation meaningful.
+  const confirmations: SourceConfirmation[] = (confirmSources ?? []).map((src) =>
+    assessConfirmationSource(src, now),
+  );
+  const confirmedCount = confirmations.filter((c) => c.available && c.elevated).length;
+  const availableConfirmCount = confirmations.filter((c) => c.available).length;
+
   // ════ BALANCED SEQUENCE BOOST ═══════════════════════════════════════════════
   // Earlier stages lower the bars for later ones — capped, and only granted
   // when independent physics has actually fired.
@@ -340,6 +404,10 @@ export function computeEpamWarning(samples: EpamSample[], nm?: NmSample[] | null
   if (dipRecent) contextUnits += 1.5;
   if (fd.onset) contextUnits += 1.5;
   else if (fd.preDecrease) contextUnits += 0.75;
+  // v3: independent spacecraft confirming elevation. A second (and third)
+  // instrument agreeing is the cleanest false-positive killer there is, so it
+  // earns the same kind of capped sensitivity bonus as the physics signatures.
+  contextUnits += cfg.CONFIRM_UNIT * Math.min(2, confirmedCount);
   const boost = Math.min(cfg.BOOST_CAP, cfg.BOOST_RATE * contextUnits);
 
   const SIGMA_ONSET_EFF = cfg.SIGMA_ONSET * (1 - boost);
@@ -398,6 +466,21 @@ export function computeEpamWarning(samples: EpamSample[], nm?: NmSample[] | null
     },
   ];
 
+  // v3: one chip per confirmation spacecraft (SOLAR-1 / IMAP) — judged against
+  // its own baseline, so "active" here means a genuinely independent vote.
+  for (const c of confirmations) {
+    reasons.push({
+      key: `confirm_${c.key}`,
+      label: `${c.label} confirms`,
+      active: c.available && c.elevated,
+      detail: !c.available
+        ? 'no fresh data'
+        : c.elevated
+          ? `also elevated${c.sigma !== null ? ` (${c.sigma.toFixed(1)}σ)` : ''}, ${c.channelsRising} ch rising`
+          : `quiet${c.sigma !== null ? ` (${c.sigma.toFixed(1)}σ)` : ''}`,
+    });
+  }
+
   // ── Decide level — coincidence plus sequence-armed fast paths ───────────────
   const sig = sigmaAboveBaseline ?? -Infinity;
   const slope = maxSlopePer15m ?? -Infinity;
@@ -436,12 +519,22 @@ export function computeEpamWarning(samples: EpamSample[], nm?: NmSample[] | null
   const seqScore = clamp01(boost / cfg.BOOST_CAP) * 15;
   const score = Math.round(Math.min(100, sigScore + slopeScore + sustainScore + bandScore + seqScore));
 
+  let detail = buildDetail(level, { sig, slope, sustainedMinutes, channelsRising, channelsTotal, boost, fdPct: fd.pctNow, dipRecent });
+  if (availableConfirmCount > 0) {
+    const names = confirmations.filter((c) => c.available && c.elevated).map((c) => c.label);
+    if (names.length) {
+      detail += ` Independently confirmed by ${names.join(' + ')}.`;
+    } else if (LEVEL_RANK[level] >= LEVEL_RANK.ELEVATED) {
+      detail += ' Other spacecraft are quiet — single-source signal, treat with some caution.';
+    }
+  }
+
   return {
     level,
     levelLabel: LEVEL_LABELS[level],
     score: LEVEL_RANK[level] === 0 ? Math.min(score, 15) : score,
     headline: buildHeadline(level),
-    detail: buildDetail(level, { sig, slope, sustainedMinutes, channelsRising, channelsTotal, boost, fdPct: fd.pctNow, dipRecent }),
+    detail,
     reasons,
     diagnostics: {
       baselineLogMedian, baselineLogMad, recentLogMedian, sigmaAboveBaseline,
@@ -453,6 +546,8 @@ export function computeEpamWarning(samples: EpamSample[], nm?: NmSample[] | null
       fdPctNow: fd.pctNow,
       nmAvailable: fd.available,
       thresholdBoost: boost,
+      confirmations,
+      confirmedCount,
     },
   };
 }
@@ -639,6 +734,64 @@ function detectForbush(
   const onset = pctNow <= cfg.FD_ONSET_PCT && declining;
   const preDecrease = !onset && pctNow <= cfg.FD_PREDECREASE_PCT && declining;
   return { available: true, onset, preDecrease, pctNow };
+}
+
+// ── v3: cross-spacecraft confirmation ─────────────────────────────────────────
+// Judges one independent spacecraft (SOLAR-1 EPAM, IMAP, …) against ITS OWN
+// 7-day quiet-biased baseline at the primary feed's reference time `now`.
+// A source "confirms" when its recent flux sits ≥ SIGMA_WATCH above its own
+// baseline AND at least MIN_CHANNELS_RISING of its channels are rising — i.e.
+// the same physics, measured by different hardware. Sources with too little or
+// too stale data report unavailable and never count against confirmation.
+
+function assessConfirmationSource(
+  src: EpamConfirmationInput,
+  now: number,
+): SourceConfirmation {
+  const cfg = EPAM_WARN_CONFIG;
+  const unavailable: SourceConfirmation = {
+    key: src.key, label: src.label,
+    available: false, elevated: false, sigma: null, channelsRising: 0,
+  };
+
+  const samples = src.samples ?? [];
+  if (samples.length < cfg.CONFIRM_MIN_SAMPLES) return unavailable;
+
+  const newest = samples[samples.length - 1].t;
+  if (now - newest > cfg.CONFIRM_MAX_AGE_MIN * 60_000) return unavailable;
+
+  // Quiet-biased baseline over this source's own week of data.
+  const baseStart = now - cfg.BASELINE_HOURS * 3_600_000;
+  const baseLogs = samples
+    .filter((s) => s.t >= baseStart && s.flux !== null && s.flux > 0)
+    .map((s) => Math.log10(s.flux as number))
+    .sort((a, b) => a - b);
+  if (baseLogs.length < cfg.CONFIRM_MIN_SAMPLES) return unavailable;
+
+  const quietCut = quantile(baseLogs, cfg.BASELINE_QUANTILE);
+  const quietLogs = quietCut === null ? baseLogs : baseLogs.filter((v) => v <= quietCut);
+  const baseMed = median(quietLogs.length ? quietLogs : baseLogs);
+  let baseMad = baseMed === null ? null : mad(quietLogs.length ? quietLogs : baseLogs, baseMed);
+  if (baseMad !== null) baseMad = Math.max(baseMad, cfg.MIN_LOG_MAD);
+
+  // Recent window, same as the primary detector uses.
+  const recentStart = now - cfg.RECENT_WINDOW_MIN * 60_000;
+  const recentLogs = samples
+    .filter((s) => s.t >= recentStart && s.flux !== null && s.flux > 0)
+    .map((s) => Math.log10(s.flux as number));
+  const recMed = median(recentLogs);
+
+  const sigma =
+    baseMed !== null && baseMad && recMed !== null
+      ? (recMed - baseMed) / baseMad
+      : null;
+
+  const channelsRising = countChannelsRising(samples, cfg.RECENT_WINDOW_MIN, cfg.BASELINE_HOURS, now);
+
+  const elevated =
+    sigma !== null && sigma >= cfg.SIGMA_WATCH && channelsRising >= cfg.MIN_CHANNELS_RISING;
+
+  return { key: src.key, label: src.label, available: true, elevated, sigma, channelsRising };
 }
 
 // ── internal helpers ──────────────────────────────────────────────────────────

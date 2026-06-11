@@ -33,12 +33,4 @@ ChartJS.register(
   annotationPlugin
 );
 
-// --- Mobile scroll-tooltip fix ---
-// By default Chart.js listens to ['mousemove','mouseout','click','touchstart','touchmove'],
-// which makes tooltips pop up while the user is merely scrolling past a chart on mobile.
-// Removing the touch events fixes that: a deliberate tap still works because the browser
-// synthesizes a 'click' after a tap (but NOT after a scroll), and desktop hover via
-// 'mousemove' is unaffected.
-ChartJS.defaults.events = ['mousemove', 'mouseout', 'click'];
-
 export { ChartJS };

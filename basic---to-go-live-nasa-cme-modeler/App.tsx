@@ -13,57 +13,29 @@ import React, { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspens
  * A sessionStorage flag prevents an infinite reload loop if the error persists
  * for an unrelated reason.
  */
-const CHUNK_RELOAD_KEY = 'sta_chunk_reload_attempted_at';
-const CHUNK_RELOAD_RETRY_WINDOW_MS = 30_000;
-const CHUNK_RELOAD_PARAM = 'sta_cache_bust';
-
-const isDynamicImportChunkError = (err: unknown): boolean => {
-  if (!(err instanceof Error)) return false;
-  const message = err.message || '';
-  return (
-    message.includes('Failed to fetch dynamically imported module') ||
-    message.includes('Importing a module script failed') ||
-    message.includes('error loading dynamically imported module') ||
-    message.includes('Loading chunk') ||
-    message.includes('ChunkLoadError')
-  );
-};
-
-const reloadWithFreshHtml = () => {
-  const url = new URL(window.location.href);
-  url.searchParams.set(CHUNK_RELOAD_PARAM, String(Date.now()));
-  window.location.replace(url.toString());
-};
-
+const CHUNK_RELOAD_KEY = 'sta_chunk_reload_attempted';
 function retryLazyLoad<T extends React.ComponentType<any>>(
   importFn: () => Promise<{ default: T }>
 ): React.LazyExoticComponent<T> {
   return lazy(() =>
-    importFn()
-      .then((module) => {
-        // If the recovery reload succeeded, allow future deployments to recover
-        // too. The previous implementation left this flag set forever, so the
-        // next stale hashed chunk could fall straight through to ErrorBoundary.
-        sessionStorage.removeItem(CHUNK_RELOAD_KEY);
-        return module;
-      })
-      .catch((err: unknown) => {
-        if (isDynamicImportChunkError(err)) {
-          const lastAttempt = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY) || '0');
-          const retryWindowExpired = !Number.isFinite(lastAttempt) || Date.now() - lastAttempt > CHUNK_RELOAD_RETRY_WINDOW_MS;
+    importFn().catch((err: unknown) => {
+      const isChunkError =
+        err instanceof Error &&
+        (err.message.includes('Failed to fetch dynamically imported module') ||
+          err.message.includes('Importing a module script failed') ||
+          err.message.includes('error loading dynamically imported module'));
 
-          if (retryWindowExpired) {
-            sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now()));
-            reloadWithFreshHtml();
-            // Return a never-resolving promise — the reload will take over.
-            return new Promise<{ default: T }>(() => {});
-          }
-        }
-
-        // Not a chunk error, or it persisted immediately after a recovery
-        // attempt — re-throw so ErrorBoundary can display the real problem.
-        throw err;
-      })
+      if (isChunkError && !sessionStorage.getItem(CHUNK_RELOAD_KEY)) {
+        sessionStorage.setItem(CHUNK_RELOAD_KEY, '1');
+        window.location.reload();
+        // Return a never-resolving promise — the reload will take over
+        return new Promise<{ default: T }>(() => {});
+      }
+      // Not a chunk error, or already retried — clear flag and re-throw so
+      // the ErrorBoundary can display the real problem
+      sessionStorage.removeItem(CHUNK_RELOAD_KEY);
+      throw err;
+    })
   );
 }
 
