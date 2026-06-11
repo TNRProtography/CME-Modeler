@@ -3109,13 +3109,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       className="px-3 py-1.5 text-xs rounded bg-purple-700 hover:bg-purple-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
                       title="Download animation as GIF"
                     >
-                      {suviGifProgress ? `⏳ ${suviGifProgress.done}/${suviGifProgress.total}` : '🎞 Download GIF'}
+                      {suviGifProgress ? `Encoding ${suviGifProgress.done}/${suviGifProgress.total}` : 'Download GIF'}
                     </button>
                     {suviGifPrompt && !suviGifProgress && (
                       <div className="absolute bottom-full left-0 mb-1 bg-neutral-900 border border-neutral-700 rounded-lg shadow-xl p-2 z-50 min-w-[160px]">
                         <p className="text-[10px] text-neutral-400 px-2 mb-1">Choose imagery type</p>
-                        <button onClick={() => doSuviGifDownload(true)} className="w-full text-left px-3 py-1.5 text-xs rounded hover:bg-purple-700/50 text-purple-200 transition-colors">🔬 Difference imagery</button>
-                        <button onClick={() => doSuviGifDownload(false)} className="w-full text-left px-3 py-1.5 text-xs rounded hover:bg-sky-700/50 text-sky-200 transition-colors">🌞 Normal imagery</button>
+                        <button onClick={() => doSuviGifDownload(true)} className="w-full text-left px-3 py-1.5 text-xs rounded hover:bg-purple-700/50 text-purple-200 transition-colors">Difference imagery</button>
+                        <button onClick={() => doSuviGifDownload(false)} className="w-full text-left px-3 py-1.5 text-xs rounded hover:bg-sky-700/50 text-sky-200 transition-colors">Normal imagery</button>
                       </div>
                     )}
                   </div>
@@ -3637,13 +3637,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       className="px-3 py-1.5 text-xs rounded bg-purple-700 hover:bg-purple-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
                       title="Download animation as GIF"
                     >
-                      {coronagraphGifProgress ? `⏳ ${coronagraphGifProgress.done}/${coronagraphGifProgress.total}` : '🎞 Download GIF'}
+                      {coronagraphGifProgress ? `Encoding ${coronagraphGifProgress.done}/${coronagraphGifProgress.total}` : 'Download GIF'}
                     </button>
                     {coronagraphGifPrompt && !coronagraphGifProgress && (
                       <div className="absolute bottom-full left-0 mb-1 bg-neutral-900 border border-neutral-700 rounded-lg shadow-xl p-2 z-50 min-w-[160px]">
                         <p className="text-[10px] text-neutral-400 px-2 mb-1">Choose imagery type</p>
-                        <button onClick={() => doCoronagraphGifDownload(true)} className="w-full text-left px-3 py-1.5 text-xs rounded hover:bg-purple-700/50 text-purple-200 transition-colors">🔬 Difference imagery</button>
-                        <button onClick={() => doCoronagraphGifDownload(false)} className="w-full text-left px-3 py-1.5 text-xs rounded hover:bg-sky-700/50 text-sky-200 transition-colors">🌞 Normal imagery</button>
+                        <button onClick={() => doCoronagraphGifDownload(true)} className="w-full text-left px-3 py-1.5 text-xs rounded hover:bg-purple-700/50 text-purple-200 transition-colors">Difference imagery</button>
+                        <button onClick={() => doCoronagraphGifDownload(false)} className="w-full text-left px-3 py-1.5 text-xs rounded hover:bg-sky-700/50 text-sky-200 transition-colors">Normal imagery</button>
                       </div>
                     )}
                   </div>
