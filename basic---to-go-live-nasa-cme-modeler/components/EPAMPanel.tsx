@@ -101,10 +101,10 @@ const NM_FEED_CANDIDATES = [
 const nmProxyPath = (target: string) => `/api/proxy/data?ttl=300&url=${encodeURIComponent(target)}`;
 
 // Views: raw charts per source + one combined averaged chart
-type ViewKey = 'active-raw' | 'active-roc' | 'solar1-raw' | 'imap-raw' | 'stereo-raw' | 'combined';
+type ViewKey = 'ace-raw' | 'ace-roc' | 'solar1-raw' | 'imap-raw' | 'stereo-raw' | 'combined';
 const VIEWS: {key: ViewKey; label: string}[] = [
-  {key: 'active-raw',  label: 'L1 Primary'},
-  {key: 'active-roc',  label: 'Rate of Change'},
+  {key: 'ace-raw',     label: 'ACE'},
+  {key: 'ace-roc',     label: 'Rate of Change'},
   {key: 'solar1-raw',  label: 'SOLAR-1'},
   {key: 'imap-raw',    label: 'IMAP'},
   {key: 'stereo-raw',  label: 'STEREO'},
@@ -307,8 +307,8 @@ function shockMarkerDataset(t: number, yMin: number, yMax: number, color: string
 
 // ─── View metadata ────────────────────────────────────────────────────────────
 const VIEW_INFO: Record<ViewKey, {title: string; subtitle: string; note?: string}> = {
-  'active-raw':  {title: 'Solar Storm Early Warning (L1 Primary Feed)', subtitle: 'Real-time particle readings from SWPC\u2019s primary blended L1 feed — satellites parked 1.5 million km in front of Earth, about 45–60 minutes upstream of us. When the lines start rising together across all colours and converging on the graph, that is the pattern that often precedes a solar storm arriving at Earth. The earlier the lines rise, the more warning time you have.'},
-  'active-roc':  {title: 'L1 Primary — Rate of Change (15-min)', subtitle: 'How fast the averaged L1 particle flux is climbing or falling, expressed as the change in log-flux over a rolling 15-minute window. Flat near zero means steady. A sharp positive spike means the flux is jumping — the near-vertical climb that marks a CME shock front arriving. Sustained negative values mean a stream is decaying. This is the leading-edge view: it reacts before the raw flux looks dramatic.', note: 'Reads in log-units per 15 min: +0.30 ≈ a doubling, +0.60 ≈ a 4× jump in 15 minutes. Brief single-point spikes are noise; a real onset shows several rising steps in a row.'},
+  'ace-raw':  {title: 'Solar Storm Early Warning (ACE EPAM)', subtitle: 'Real-time particle readings from ACE EPAM — satellites parked 1.5 million km in front of Earth, about 45–60 minutes upstream of us. When the lines start rising together across all colours and converging on the graph, that is the pattern that often precedes a solar storm arriving at Earth. The earlier the lines rise, the more warning time you have.'},
+  'ace-roc':  {title: 'ACE — Rate of Change (15-min)', subtitle: 'How fast the averaged ACE particle flux is climbing or falling, expressed as the change in log-flux over a rolling 15-minute window. Flat near zero means steady. A sharp positive spike means the flux is jumping — the near-vertical climb that marks a CME shock front arriving. Sustained negative values mean a stream is decaying. This is the leading-edge view: it reacts before the raw flux looks dramatic.', note: 'Reads in log-units per 15 min: +0.30 ≈ a doubling, +0.60 ≈ a 4× jump in 15 minutes. Brief single-point spikes are noise; a real onset shows several rising steps in a row.'},
   'solar1-raw': {title: 'SOLAR-1 EPAM — Independent Confirmation', subtitle: 'A second, fully independent spacecraft at the L1 point measuring the same particle environment with its own instrument. If SOLAR-1 is elevated at the same time as the primary feed, the storm signal is much more reliable — two different detectors agreeing is hard to fake with instrument noise.'},
   'imap-raw': {title: 'IMAP — Independent Confirmation', subtitle: 'NASA\u2019s IMAP spacecraft at L1, providing a third independent particle measurement. Like SOLAR-1, simultaneous elevation here cross-confirms what the primary feed is seeing.', note: 'IMAP\u2019s real-time particle feed is new — gaps and outages are expected while SWPC brings it fully online. When no data is available the panel simply marks IMAP as unavailable.'},
   'stereo-raw': {title: 'STEREO-A — Ahead-of-Earth Satellite', subtitle: 'Particle readings from a satellite that orbits slightly ahead of Earth, giving an early peek at what is coming along the Sun–Earth line.', note: '⚠ STEREO-A orbits about 10–15° ahead of Earth and sees the Sun from a different angle — so elevated readings here do not always mean the same storm will hit Earth. Think of it as a neighbour getting rain before you — useful context, but not a direct forecast for your location.'},
@@ -325,7 +325,7 @@ interface EPAMPanelProps {
 }
 
 const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) => {
-  const [view,       setView]       = useState<ViewKey>('active-raw');
+  const [view,       setView]       = useState<ViewKey>('ace-raw');
   const [timeRange,  setTimeRange]  = useState<TimeRange>(24);
   const [activeRaw,  setActiveRaw]  = useState<EpamPoint[]>([]);
   const [activeMeta, setActiveMeta] = useState<RawMeta|null>(null);
@@ -425,7 +425,7 @@ const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) =
     if (!mountedRef.current) return;
     try {
       const [rActive,rSolar1,rImap,rStereo,rAnalysis,rCombined,rSw,rNm] = await Promise.allSettled([
-        fetchRawSource(),          // default — worker falls back active → solar1 → ace → legacy
+        fetchRawSource('ace'),         // explicit ACE — avoids blended "active" feed jumps
         fetchRawSource('solar1'),  // explicit — no silent fallback
         fetchRawSource('imap'),    // explicit, optional — fails soft
         fetch(`${EPAM_BASE}/epam/stereo`).then(r=>r.ok?r.json():null),
@@ -553,12 +553,12 @@ const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) =
       return [...datasets, ...markers];
     };
 
-    if (view === 'active-raw') {
+    if (view === 'ace-raw') {
       if (!filteredActive.length) return null;
       return { datasets: withShockMarkers(L1_CH.map(c => mkDs(rev(filteredActive), 'time_tag', c.k, c.c, c.l))) };
     }
 
-    if (view === 'active-roc') {
+    if (view === 'ace-roc') {
       if (!rocSeries.length) return null;
       // Two overlaid datasets: positive (rising = orange/red interest) and the
       // full signed line. Threshold reference bands are drawn via chart options.
@@ -643,7 +643,7 @@ const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) =
 
   // ── Chart options ─────────────────────────────────────────────────────────
   const chartOptions: ChartOptions<'line'> = useMemo(() => {
-    if (view === 'active-roc') {
+    if (view === 'ace-roc') {
       const base = baseOptions('linear', 'Δlog₁₀ flux / 15 min');
       return {
         ...base,
@@ -816,7 +816,7 @@ const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) =
       </div>
 
       {/* Shock marker toggle (L1 / Combined views only) */}
-      {view !== 'stereo-raw' && view !== 'active-roc' && (
+      {view !== 'stereo-raw' && view !== 'ace-roc' && (
         <div className="flex justify-center mb-3">
           <button
             onClick={() => setShowShockMarkers(v => !v)}
