@@ -15,7 +15,6 @@ import {
 import { stableHash } from '../utils/dataFreshness';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
 import { workerStatePreload } from '../utils/appPreloader';
-import { encodeGif, downloadGif, type GifFrame } from '../utils/gifEncoder';
 import FaqModal from './FaqModal';
 
 interface SolarActivityDashboardProps {
@@ -986,16 +985,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   // Refs so playback interval closures always see the latest loading state
   const suviFrameLoadingRef = useRef<boolean>(false);
   const coronagraphFrameLoadingRef = useRef<boolean>(false);
-  // GIF timeline export (shared between the SUVI and coronagraph sections —
-  // one export at a time). phase 'choose' shows the normal/difference prompt.
-  const [gifExport, setGifExport] = useState<{
-    section: 'suvi' | 'coronagraph';
-    phase: 'choose' | 'rendering' | 'encoding';
-    done: number;
-    total: number;
-    error?: string | null;
-  } | null>(null);
-  const gifAbortRef = useRef<boolean>(false);
   const [activeSunImage, setActiveSunImage] = useState<SolarImageryMode>('SUVI_131');
 
   // Difference-imagery defaults tuned to match provided reference settings.
@@ -2610,169 +2599,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     document.body.removeChild(link);
   }, [activeCoronagraphFrame?.ts, activeCoronagraphUrl, coronagraphSource, coronagraphSourceState?.label, coronagraphDifference]);
 
-  // ── GIF timeline export (shared by SUVI + coronagraph sections) ─────────────
-  // Renders every frame of the CURRENT timeline window (normal imagery, or
-  // pairwise difference imagery using exactly the same per-pixel math as the
-  // live diff view), paced at the CURRENTLY SELECTED playback speed, and
-  // encodes a looping GIF entirely client-side (utils/gifEncoder — no deps).
-  const runGifExport = useCallback(async (section: 'suvi' | 'coronagraph', mode: 'normal' | 'difference') => {
-    const GIF_MAX_DIMENSION = 512; // cap frame size to keep files reasonable
-    const isSuvi = section === 'suvi';
-    const frames = isSuvi ? suviFrames : coronagraphFrames;
-    const resolveUrl = isSuvi ? resolveSuviWorkerUrl : resolveCoronagraphUrl;
-    const speed = isSuvi ? suviPlaybackSpeed : coronagraphPlaybackSpeed;
-    const windowHours = isSuvi ? suviFrameWindowHours : coronagraphFrameWindowHours;
-    const sourceLabel = isSuvi
-      ? (activeSuviSourceState?.label ?? activeSuviSourceKey)
-      : (coronagraphSourceState?.label ?? coronagraphSource);
-    const diffCfg = isSuvi
-      ? activeSuviDiffConfig
-      : { gain: CORONAGRAPH_DIFF_GAIN, noiseFloor: CORONAGRAPH_DIFF_NOISE_FLOOR, gamma: CORONAGRAPH_DIFF_GAMMA };
-
-    const entries = frames
-      .map((f) => ({ url: resolveUrl(f.url), ts: f.ts }))
-      .filter((e): e is { url: string; ts: string } => !!e.url);
-    const outputCount = mode === 'difference' ? Math.max(0, entries.length - 1) : entries.length;
-    if (outputCount < 2) {
-      setGifExport({ section, phase: 'choose', done: 0, total: 0, error: 'Need at least 2 frames in the selected time window to build an animation.' });
-      return;
-    }
-
-    // Match the on-screen playback pacing at the selected speed.
-    // GIF delays are in centiseconds; <2cs is clamped because browsers treat
-    // smaller values as 10cs, which would silently IGNORE the chosen speed.
-    const frameIntervalMs = Math.max(40, Math.round(200 / speed));
-    const delayCs = Math.max(2, Math.round(frameIntervalMs / 10));
-
-    gifAbortRef.current = false;
-    setGifExport({ section, phase: 'rendering', done: 0, total: outputCount });
-
-    const loadImage = (src: string) => new Promise<HTMLImageElement>((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error('a frame image failed to load'));
-      img.src = src;
-    });
-
-    try {
-      let watermark: HTMLImageElement | null = null;
-      if (mode === 'difference') {
-        try { watermark = await loadImage(DIFF_WATERMARK_URL); } catch { watermark = null; }
-      }
-
-      // First frame fixes the output size for the whole animation.
-      const firstImg = await loadImage(entries[0].url);
-      const nativeW = firstImg.naturalWidth || firstImg.width;
-      const nativeH = firstImg.naturalHeight || firstImg.height;
-      if (!nativeW || !nativeH) throw new Error('first frame has no dimensions');
-      const scale = Math.min(1, GIF_MAX_DIMENSION / Math.max(nativeW, nativeH));
-      const outW = Math.max(1, Math.round(nativeW * scale));
-      const outH = Math.max(1, Math.round(nativeH * scale));
-
-      const canvas = document.createElement('canvas');
-      canvas.width = outW; canvas.height = outH;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      const tempA = document.createElement('canvas');
-      const tempB = document.createElement('canvas');
-      tempA.width = tempB.width = outW;
-      tempA.height = tempB.height = outH;
-      const aCtx = tempA.getContext('2d', { willReadFrequently: true });
-      const bCtx = tempB.getContext('2d', { willReadFrequently: true });
-      if (!ctx || !aCtx || !bCtx) throw new Error('canvas unavailable');
-
-      const stampTimestamp = (ts: string) => {
-        const fontPx = Math.max(11, Math.round(outW * 0.03));
-        ctx.save();
-        ctx.font = `${fontPx}px monospace`;
-        ctx.textBaseline = 'bottom';
-        ctx.shadowColor = 'rgba(0,0,0,0.9)';
-        ctx.shadowBlur = 4;
-        ctx.fillStyle = 'rgba(255,255,255,0.92)';
-        ctx.fillText(`${formatNZTimestamp(ts)} NZT`, Math.round(fontPx * 0.6), outH - Math.round(fontPx * 0.5));
-        ctx.restore();
-      };
-      const stampWatermark = () => {
-        if (!watermark?.naturalWidth || !watermark?.naturalHeight) return;
-        const targetWidth = Math.max(48, Math.round(outW * 0.12));
-        const ratio = watermark.naturalHeight / watermark.naturalWidth;
-        const targetHeight = Math.max(20, Math.round(targetWidth * ratio));
-        const pad = Math.max(8, Math.round(outW * 0.015));
-        ctx.save();
-        ctx.globalAlpha = 0.88;
-        ctx.drawImage(watermark, outW - targetWidth - pad, outH - targetHeight - pad, targetWidth, targetHeight);
-        ctx.restore();
-      };
-
-      const gifFrames: GifFrame[] = [];
-      let prevImg: HTMLImageElement = firstImg;
-      for (let i = 0; i < entries.length; i++) {
-        if (gifAbortRef.current) { setGifExport(null); return; }
-        const img = i === 0 ? firstImg : await loadImage(entries[i].url);
-
-        if (mode === 'normal') {
-          ctx.fillStyle = '#000';
-          ctx.fillRect(0, 0, outW, outH);
-          ctx.drawImage(img, 0, 0, outW, outH);
-          stampTimestamp(entries[i].ts);
-          gifFrames.push({ data: ctx.getImageData(0, 0, outW, outH).data, width: outW, height: outH });
-          setGifExport({ section, phase: 'rendering', done: gifFrames.length, total: outputCount });
-        } else if (i > 0) {
-          // Pairwise difference — identical math to the live diff canvases.
-          aCtx.clearRect(0, 0, outW, outH); aCtx.drawImage(prevImg, 0, 0, outW, outH);
-          bCtx.clearRect(0, 0, outW, outH); bCtx.drawImage(img, 0, 0, outW, outH);
-          const dataA = aCtx.getImageData(0, 0, outW, outH);
-          const dataB = bCtx.getImageData(0, 0, outW, outH);
-          const out = ctx.createImageData(outW, outH);
-          for (let px = 0; px < dataA.data.length; px += 4) {
-            const aGray = (dataA.data[px] + dataA.data[px + 1] + dataA.data[px + 2]) / 3;
-            const bGray = (dataB.data[px] + dataB.data[px + 1] + dataB.data[px + 2]) / 3;
-            const rawDelta = Math.abs(bGray - aGray);
-            const aboveNoise = Math.max(0, rawDelta - diffCfg.noiseFloor);
-            const amplified = Math.min(255, aboveNoise * diffCfg.gain);
-            const normalized = Math.pow(amplified / 255, diffCfg.gamma);
-            const [r, g, b] = colorizeCoronagraphDelta(normalized);
-            out.data[px] = r; out.data[px + 1] = g; out.data[px + 2] = b; out.data[px + 3] = 255;
-          }
-          ctx.putImageData(out, 0, 0);
-          stampWatermark();
-          stampTimestamp(entries[i].ts);
-          gifFrames.push({ data: ctx.getImageData(0, 0, outW, outH).data, width: outW, height: outH });
-          setGifExport({ section, phase: 'rendering', done: gifFrames.length, total: outputCount });
-        }
-        prevImg = img;
-        await new Promise<void>((r) => setTimeout(r, 0)); // keep the UI alive
-      }
-
-      if (gifAbortRef.current) { setGifExport(null); return; }
-      setGifExport({ section, phase: 'encoding', done: 0, total: gifFrames.length });
-      const bytes = await encodeGif(
-        gifFrames,
-        gifFrames.map(() => delayCs),
-        (done, total) => setGifExport({ section, phase: 'encoding', done, total }),
-        () => gifAbortRef.current,
-      );
-      if (!bytes) { setGifExport(null); return; } // aborted during encode
-
-      const safeLabel = String(sourceLabel).replace(/\s+/g, '-').toLowerCase();
-      const fileName = `${safeLabel}-${mode === 'difference' ? 'difference' : 'normal'}-last${windowHours}h-${speed}x.gif`;
-      downloadGif(bytes, fileName);
-      setGifExport(null);
-    } catch (error) {
-      console.error('GIF export failed:', error);
-      setGifExport({
-        section, phase: 'choose', done: 0, total: 0,
-        error: `GIF export failed: ${error instanceof Error ? error.message : 'unknown error'}. Some frames may still be loading — try again shortly.`,
-      });
-    }
-  }, [
-    suviFrames, coronagraphFrames, resolveSuviWorkerUrl, resolveCoronagraphUrl,
-    suviPlaybackSpeed, coronagraphPlaybackSpeed, suviFrameWindowHours, coronagraphFrameWindowHours,
-    activeSuviSourceState?.label, activeSuviSourceKey, coronagraphSourceState?.label, coronagraphSource,
-    activeSuviDiffConfig, colorizeCoronagraphDelta,
-    CORONAGRAPH_DIFF_GAIN, CORONAGRAPH_DIFF_NOISE_FLOOR, CORONAGRAPH_DIFF_GAMMA,
-  ]);
-
   useEffect(() => {
     const canvas = suviCanvasRef.current;
     if (!canvas || !activeSuviFrameUrl || !previousSuviFrameUrl || activeSuviFrameUrl === previousSuviFrameUrl) return;
@@ -3121,14 +2947,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                     title="Download current frame"
                   >
                     ⬇ Download frame
-                  </button>
-                  <button
-                    onClick={() => { gifAbortRef.current = false; setGifExport({ section: 'suvi', phase: 'choose', done: 0, total: 0 }); }}
-                    disabled={suviFrames.length < 2 || !!gifExport}
-                    className="px-3 py-1.5 text-xs rounded bg-violet-700 hover:bg-violet-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
-                    title="Export the current timeline as an animated GIF at the selected speed"
-                  >
-                    🎞 Download GIF
                   </button>
                   <label className="ml-auto flex items-center gap-2 text-xs text-neutral-300">
                     Speed
@@ -3641,14 +3459,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   >
                     ⬇ Download frame
                   </button>
-                  <button
-                    onClick={() => { gifAbortRef.current = false; setGifExport({ section: 'coronagraph', phase: 'choose', done: 0, total: 0 }); }}
-                    disabled={coronagraphFrames.length < 2 || !!gifExport}
-                    className="px-3 py-1.5 text-xs rounded bg-violet-700 hover:bg-violet-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
-                    title="Export the current timeline as an animated GIF at the selected speed"
-                  >
-                    🎞 Download GIF
-                  </button>
                   <label className="ml-auto flex items-center gap-2 text-xs text-neutral-300">
                     Speed
                     <select
@@ -3713,83 +3523,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           <FaqModal isOpen={isFaqOpen} onClose={() => setIsFaqOpen(false)} />
         </div>
       </div>
-
-      {/* GIF timeline export — choose imagery type, then progress */}
-      {gifExport && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[9999] flex justify-center items-center p-4"
-          onClick={() => { if (gifExport.phase === 'choose') setGifExport(null); }}>
-          <div className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-md text-neutral-300 p-5"
-            onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-bold text-neutral-200 mb-1">
-              Export {gifExport.section === 'suvi' ? 'SUVI' : 'coronagraph'} timeline as GIF
-            </h3>
-
-            {gifExport.phase === 'choose' && (
-              <>
-                <p className="text-xs text-neutral-500 mb-3">
-                  {(() => {
-                    const n = gifExport.section === 'suvi' ? suviFrames.length : coronagraphFrames.length;
-                    const hours = gifExport.section === 'suvi' ? suviFrameWindowHours : coronagraphFrameWindowHours;
-                    const speed = gifExport.section === 'suvi' ? suviPlaybackSpeed : coronagraphPlaybackSpeed;
-                    return `${n} frames · last ${hours >= 24 ? '24+' : hours}h · ${speed}x playback speed. The GIF plays at the speed currently selected in the viewer.`;
-                  })()}
-                </p>
-                {gifExport.error && (
-                  <p className="text-xs text-red-400 mb-3">{gifExport.error}</p>
-                )}
-                <p className="text-sm text-neutral-300 mb-3">Which imagery would you like?</p>
-                <div className="flex flex-col gap-2">
-                  <button
-                    onClick={() => runGifExport(gifExport.section, 'normal')}
-                    className="px-4 py-2.5 text-sm rounded bg-sky-700 hover:bg-sky-600 text-white font-semibold transition-colors text-left"
-                  >
-                    Normal imagery
-                    <span className="block text-xs font-normal text-sky-200/70">The raw frames, exactly as shown in the Raw panel.</span>
-                  </button>
-                  <button
-                    onClick={() => runGifExport(gifExport.section, 'difference')}
-                    className="px-4 py-2.5 text-sm rounded bg-violet-700 hover:bg-violet-600 text-white font-semibold transition-colors text-left"
-                  >
-                    Difference imagery
-                    <span className="block text-xs font-normal text-violet-200/70">Frame-to-frame change, colourised like the Difference panel.</span>
-                  </button>
-                  <button
-                    onClick={() => setGifExport(null)}
-                    className="px-4 py-2 text-xs rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-400 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </>
-            )}
-
-            {(gifExport.phase === 'rendering' || gifExport.phase === 'encoding') && (
-              <>
-                <p className="text-sm text-neutral-300 mb-2">
-                  {gifExport.phase === 'rendering'
-                    ? `Rendering frame ${gifExport.done} / ${gifExport.total}…`
-                    : `Encoding GIF — frame ${gifExport.done} / ${gifExport.total}…`}
-                </p>
-                <div className="w-full h-2 rounded bg-neutral-800 overflow-hidden mb-3">
-                  <div
-                    className="h-full bg-violet-500 transition-all"
-                    style={{ width: `${gifExport.total ? Math.round((gifExport.done / gifExport.total) * 100) : 0}%` }}
-                  />
-                </div>
-                <p className="text-[11px] text-neutral-500 mb-3">
-                  Frames are processed in your browser — nothing is uploaded. Larger time windows take longer.
-                </p>
-                <button
-                  onClick={() => { gifAbortRef.current = true; }}
-                  className="px-4 py-2 text-xs rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-400 transition-colors"
-                >
-                  Cancel export
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Flare Modal */}
       <InfoModal

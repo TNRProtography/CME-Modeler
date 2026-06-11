@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import '../utils/chartSetup'; // registers Chart.js scales/plugins — must run before any <Line> renders
 import EPAMPanel from './EPAMPanel';
+import StereoJPlotsPanel from './StereoJPlotsPanel';
 import SolarWindQuickView, { type DetectedShock } from './SolarWindQuickView';
 import FluxRopeAnalyzer from './FluxRopeAnalyzer';
 import KpForecastTimeline from './KpForecastTimeline';
@@ -184,7 +185,7 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
 };
 
 
-const isImapSource = (source?: string) => Boolean(source && source.includes('IMAP'));
+const getSatelliteSource = (source?: string) => source && source !== '—' ? source : undefined;
 
 const formatTimeHHMM = (timestamp: number | null | undefined): string => {
     if (!timestamp || !Number.isFinite(timestamp)) return '—';
@@ -747,7 +748,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 currentValue={`Bt: ${gaugeData.bt.value} / Bz: ${gaugeData.bz.value} <span class='text-base'>nT</span><span class='text-xs block text-neutral-400'>Toggle Bx/By inside chart · Bt source: ${gaugeData.bt.source} · Bz source: ${gaugeData.bz.source}</span>`}
                                 emoji={gaugeData.bz.emoji}
                                 onOpenModal={() => openModal('bz')}
-                                isImap={isImapSource(gaugeData.bt.source) || isImapSource(gaugeData.bz.source)}
+                                satellite={getSatelliteSource(gaugeData.bt.source) || getSatelliteSource(gaugeData.bz.source)}
                                 lastDataReceived={imfLastReceived}
                             >
                                 <MagneticFieldChart data={allMagneticData} />
@@ -757,7 +758,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 currentValue={`${allImfClockData.length ? `${allImfClockData[allImfClockData.length - 1].y.toFixed(0)}°` : 'N/A'} <span class='text-base'>clock</span><span class='text-xs block text-neutral-400'>Advanced IMF orientation aid</span>`}
                                 emoji="🧭"
                                 onOpenModal={() => openModal('imf-clock')}
-                                isImap={isImapSource(gaugeData.bt.source) || isImapSource(gaugeData.bz.source)}
+                                satellite={getSatelliteSource(gaugeData.bt.source) || getSatelliteSource(gaugeData.bz.source)}
                                 lastDataReceived={imfLastReceived}
                             >
                                 <IMFClockChart magneticData={allMagneticData} clockData={allImfClockData} speedData={allSpeedData} densityData={allDensityData} tempData={allTempData} />
@@ -768,7 +769,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 currentValue={`${gaugeData.speed.value} <span class='text-base'>km/s</span><span class='text-xs block text-neutral-400'>Source: ${gaugeData.speed.source}</span>`}
                                 emoji={gaugeData.speed.emoji}
                                 onOpenModal={() => openModal('speed')}
-                                isImap={isImapSource(gaugeData.speed.source)}
+                                satellite={getSatelliteSource(gaugeData.speed.source)}
                                 lastDataReceived={speedLastReceived}
                             >
                                 <SolarWindSpeedChart data={allSpeedData} />
@@ -778,7 +779,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 currentValue={`${gaugeData.density.value} <span class='text-base'>p/cm³</span><span class='text-xs block text-neutral-400'>Source: ${gaugeData.density.source}</span>`}
                                 emoji={gaugeData.density.emoji}
                                 onOpenModal={() => openModal('density')}
-                                isImap={isImapSource(gaugeData.density.source)}
+                                satellite={getSatelliteSource(gaugeData.density.source)}
                                 lastDataReceived={densityLastReceived}
                             >
                                 <SolarWindDensityChart data={allDensityData} />
@@ -788,7 +789,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 currentValue={`${gaugeData.temp?.value ?? 'N/A'} <span class='text-base'>K</span><span class='text-xs block text-neutral-400'>Source: ${gaugeData.temp?.source ?? '—'}</span>`}
                                 emoji={gaugeData.temp?.emoji ?? '❓'}
                                 onOpenModal={() => openModal('temp')}
-                                isImap={isImapSource(gaugeData.temp?.source)}
+                                satellite={getSatelliteSource(gaugeData.temp?.source)}
                                 lastDataReceived={tempLastReceived}
                             >
                                 <SolarWindTemperatureChart data={allTempData} />
@@ -863,6 +864,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             <div className="col-span-12 card bg-neutral-950/80 p-4">
                                 <EPAMPanel shockEvents={betaShocks} />
                             </div>
+
+                            <StereoJPlotsPanel />
 
                             
                         </main>
