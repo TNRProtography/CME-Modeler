@@ -562,22 +562,22 @@ export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[]; sp
                             <div className="absolute left-[46%] top-[56%] w-[30%] h-[20%] rounded-[60%_40%_50%_50%] bg-emerald-200/70" />
                             <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_25%,rgba(255,255,255,0.35),rgba(255,255,255,0)_40%)]" />
                         </div>
-                        <div className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-semibold text-amber-400/80">SUN →</div>
-                        <div className="absolute left-1/2 top-1/2 h-[2px] w-16 bg-gradient-to-r from-amber-400/50 to-transparent" style={{ transform: 'translate(-115%, -50%)' }} />
+                        <div className="absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-semibold text-neutral-400">By−</div>
+                        <div className="absolute left-1/2 top-1/2 h-[2px] w-16 bg-gradient-to-r from-neutral-500/30 to-transparent" style={{ transform: 'translate(-115%, -50%)' }} />
                         <div className="absolute left-1/2 top-1/2 h-[2px] w-16 bg-gradient-to-r from-neutral-500/50 to-transparent" style={{ transform: 'translate(10%, -120%)' }} />
                         <div className="absolute left-1/2 top-1/2 h-[2px] w-16 bg-gradient-to-r from-neutral-500/50 to-transparent" style={{ transform: 'translate(10%, 20%)' }} />
-                        <div className="absolute left-[66%] top-[43%] text-[10px] uppercase tracking-wide text-neutral-500">MAGNETOTAIL</div>
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-semibold text-neutral-400">By+</div>
 
                         {/* IMF pointer — sky/emerald encodes direction semantically */}
                         <div className="absolute left-1/2 top-1/2 w-[3px] h-[4.9rem] origin-bottom bg-sky-400 rounded-full shadow-[0_0_8px_rgba(56,189,248,0.5)]" style={{ transform: `translate(-50%, -100%) rotate(${animatedAngle}deg)` }} />
                         <div className="absolute left-1/2 top-1/2 w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/90 border border-neutral-400" />
-                        <div className="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] text-neutral-500">North</div>
-                        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] text-emerald-400">South (best)</div>
+                        <div className="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] text-neutral-500">Bz+ North</div>
+                        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] text-emerald-400">Bz− South</div>
                     </div>
 
                     <div className="text-xs text-neutral-400 space-y-1.5 w-full max-w-xs">
                         <div className="text-neutral-300">By now appears in the quick-read row because negative By can reinforce auroral coupling when Bz is southward.</div>
-                        <div className="text-neutral-500">Core view: Earth in center, Sun on left, magnetotail extends right.</div>
+                        <div className="text-neutral-500">Bx is coming toward you. By is horizontal (dawn–dusk). Bz is vertical (north–south).</div>
                         <p className="text-neutral-500 pt-2">
                             Easy read: when the pointer spends more time near the lower half (south), aurora coupling is usually stronger.
                         </p>

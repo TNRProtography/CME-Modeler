@@ -485,6 +485,12 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
           {/* Labels */}
           <text x={SUN_X} y={CY-SUN_R-8} textAnchor="middle" fill="#9aa2b1" fontSize="8" fontWeight="500" letterSpacing="0.1em" style={{textTransform:'uppercase' as const,fontFamily:'system-ui,sans-serif'}}>Sun</text>
           <text x={CX} y={CY+R+18} textAnchor="middle" fill="#9aa2b1" fontSize="8" fontWeight="500" letterSpacing="0.1em" style={{textTransform:'uppercase' as const,fontFamily:'system-ui,sans-serif'}}>Earth</text>
+
+          {/* Directional labels */}
+          <text x={SUN_X+SUN_R+14} y={16} textAnchor="start" fill="#52525b" fontSize="7.5" fontWeight="500" style={{fontFamily:'system-ui,sans-serif'}}>Bz+ (North)</text>
+          <text x={SUN_X+SUN_R+14} y={VB_H-8} textAnchor="start" fill="#52525b" fontSize="7.5" fontWeight="500" style={{fontFamily:'system-ui,sans-serif'}}>Bz− (South)</text>
+          <text x={SUN_X} y={VB_H-8} textAnchor="middle" fill="#52525b" fontSize="7" fontWeight="500" style={{fontFamily:'system-ui,sans-serif'}}>Sunward ←</text>
+          <text x={VB_W-8} y={CY+4} textAnchor="end" fill="#52525b" fontSize="7" fontWeight="500" style={{fontFamily:'system-ui,sans-serif'}}>→ Tailward</text>
           {isSnapping && <text x={tailEndX-16} y={CY-20} textAnchor="middle" fill="#d2664a" fontSize="8" fontWeight="600" className="mt-snap" style={{fontFamily:'system-ui,sans-serif'}}>SNAP</text>}
 
           {/* Tooltip */}
