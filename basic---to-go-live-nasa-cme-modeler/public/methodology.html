@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How Spot The Aurora Forecasts Aurora Visibility</title>
+  <meta name="description" content="Learn how Spot The Aurora forecasts aurora visibility using live solar wind, IMF Bz, clock angle, Newell coupling, dynamic pressure, substorm context, moonlight, darkness and NZ-specific viewing conditions.">
+  <meta name="robots" content="index,follow">
+  <link rel="canonical" href="https://spottheaurora.co.nz/methodology">
+
+  <meta property="og:locale" content="en_NZ">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Spot The Aurora">
+  <meta property="og:title" content="How Spot The Aurora Forecasts Aurora Visibility">
+  <meta property="og:description" content="The methodology behind Spot The Aurora's NZ aurora forecast: live solar wind, IMF, coupling functions, substorm context, moonlight and darkness adjustment.">
+  <meta property="og:url" content="https://spottheaurora.co.nz/methodology">
+  <meta property="og:image" content="https://spottheaurora.co.nz/background-aurora.jpg">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="How Spot The Aurora Forecasts Aurora Visibility">
+  <meta name="twitter:description" content="The methodology behind Spot The Aurora's NZ aurora forecast.">
+  <meta name="twitter:image" content="https://spottheaurora.co.nz/background-aurora.jpg">
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png">
+  <link rel="shortcut icon" href="/favicon.ico">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "Spot The Aurora", "item": "https://spottheaurora.co.nz/" },
+      { "@type": "ListItem", "position": 2, "name": "Methodology", "item": "https://spottheaurora.co.nz/methodology" }
+    ]
+  }
+  </script>
+
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a0a0a;color:#d4d4d4;line-height:1.7;-webkit-font-smoothing:antialiased}
+    .wrap{max-width:760px;margin:0 auto;padding:40px 20px 80px}
+    a{color:#38bdf8;text-decoration:none}a:hover{text-decoration:underline}
+    .back{display:inline-flex;align-items:center;gap:6px;font-size:14px;margin-bottom:32px}
+    h1{font-size:26px;font-weight:700;color:#f5f5f5;margin-bottom:8px;line-height:1.3}
+    .lead{font-size:15px;color:#a3a3a3;margin-bottom:40px;line-height:1.8}
+    h2{font-size:18px;font-weight:600;color:#e5e5e5;margin:40px 0 10px;padding-top:20px;border-top:1px solid #1a1a1a}
+    h2:first-of-type{border-top:none;margin-top:24px}
+    p{margin-bottom:14px;font-size:14px;color:#a3a3a3}
+    .callout{background:#141414;border-left:3px solid #38bdf8;padding:14px 18px;margin:16px 0;border-radius:0 8px 8px 0;font-size:13px;color:#a3a3a3}
+    .callout strong{color:#e5e5e5}
+    .lim{background:#1a1212;border:1px solid #2e1a1a;border-radius:10px;padding:24px;margin:40px 0}
+    .lim h2{border:none;margin-top:0;padding-top:0;color:#fca5a5}
+    .nav-links{display:flex;flex-wrap:wrap;gap:12px;margin-top:48px;padding-top:24px;border-top:1px solid #262626;font-size:13px}
+    .footer{margin-top:24px;text-align:center;font-size:12px;color:#525252}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <a href="/" class="back">← Back to Spot The Aurora</a>
+  <h1>How the Spot The Aurora forecast works</h1>
+  <p class="lead">The forecast is designed to answer a simple question — is it worth going outside to look for the aurora? — using real-time space-weather data rather than broad planetary indices alone. Here is how it works and why it is built this way.</p>
+
+  <h2>Why the app does not rely only on Kp</h2>
+  <p>Kp is a 3-hour planetary geomagnetic index. It is useful for broad planning over the next few days, but it is too slow and too coarse for live aurora forecasting. Kp can read 3 while a strong substorm is producing visible aurora, or read 5 while the aurora is fading. The live forecast uses real-time solar wind data from upstream L1 spacecraft instead, because aurora visibility changes on timescales of minutes, not hours.</p>
+
+  <h2>How live solar wind and IMF affect aurora chances</h2>
+  <p>The solar wind is a continuous stream of charged particles flowing from the Sun. When it carries a southward-pointing magnetic field (negative Bz), it connects to Earth's magnetosphere and transfers energy into the system. The stronger the southward field and the faster the wind, the more energy arrives. The forecast monitors solar wind speed, density, temperature, and magnetic field in real time from spacecraft positioned about 1.5 million kilometres upstream of Earth.</p>
+
+  <h2>Why southward Bz matters</h2>
+  <p>Bz is the north-south component of the interplanetary magnetic field (IMF). Earth's magnetic field points roughly northward. When the IMF points southward (negative Bz), it reconnects with Earth's field at the dayside magnetopause, opening the door for solar wind energy to flow in. The more southward and the more sustained, the stronger the geomagnetic response. A brief dip to −5 nT may not do much. A sustained −10 nT can drive visible aurora to mid-latitudes.</p>
+  <div class="callout"><strong>Plain version:</strong> Think of Bz as a tap. When it is turned southward, energy pours into Earth's magnetic system. The further south and the longer it stays, the more aurora you get.</div>
+
+  <h2>What IMF clock angle means</h2>
+  <p>The clock angle describes the direction of the IMF in the By-Bz plane, as if you were looking from the Sun toward Earth. When the arrow points down (southward), coupling is strongest. When it points up (northward), coupling is weakest. The clock angle is useful because it captures the full magnetic orientation, not just the Bz component. A strongly rotated field with moderate Bz can still drive significant coupling.</p>
+
+  <h2>What Newell coupling means</h2>
+  <p>The Newell coupling function combines solar wind speed, transverse magnetic field strength, and clock angle into a single number that estimates how much magnetic flux is being opened at the magnetopause. It captures the combined effect of all three factors and is a better predictor of geomagnetic activity than any one parameter alone. Higher values mean more energy is flowing into the magnetosphere.</p>
+
+  <h2>Why dynamic pressure can matter</h2>
+  <p>Dynamic pressure is the ram force of the solar wind against the magnetopause. A sudden increase in pressure — from a density spike or speed jump — compresses the magnetosphere and can trigger or intensify substorms. Pressure pulses often arrive at the leading edge of a CME or at stream interaction regions. The forecast monitors pressure because a compression event can produce a sudden aurora intensification even when Bz has not changed much.</p>
+
+  <h2>How substorms can change visibility quickly</h2>
+  <p>A substorm is a sudden release of energy stored in the magnetotail. During sustained southward Bz, magnetic energy accumulates in the stretched tail. When the tail reconnects, that energy is dumped into the ionosphere in minutes, producing a rapid brightening and expansion of the aurora oval. Substorms are the reason aurora can go from invisible to eye-visible in a short time. The app's magnetotail context attempts to estimate whether conditions are building toward a release, but substorm timing is inherently difficult to predict.</p>
+
+  <h2>How moonlight and daylight affect the score</h2>
+  <p>A faint aurora that would be visible under a dark sky can be washed out by a bright moon or residual twilight. The forecast reduces the visibility score when the moon is above the horizon and bright (particularly within a few days of full moon), and when twilight is still present. This means the score reflects what you are likely to actually see, not just what the magnetosphere is doing.</p>
+
+  <h2>What camera, phone, and eye visibility means</h2>
+  <p>Modern phone cameras in night mode can capture aurora that is invisible to the naked eye. A DSLR or mirrorless camera with a long exposure can capture even fainter activity. The forecast provides three visibility tiers so you know whether to expect something only a dedicated camera will pick up, something your phone should capture, or something you will see with your own eyes.</p>
+
+  <h2>How the forecast horizons work</h2>
+  <p>The 15-minute forecast is the most reliable. It uses current solar wind conditions and the known travel time from L1 to Earth (roughly 30–60 minutes depending on speed) to estimate what is arriving imminently. The 30-minute forecast extends this using trend analysis. The 1-hour and 2-hour forecasts use broader IMF trends and hemispheric power estimates and should be treated as a guide for whether conditions are likely to improve or deteriorate, not as a precise prediction.</p>
+
+  <h2>Why the 3-day forecast uses NOAA Kp</h2>
+  <p>Beyond about 2 hours, real-time solar wind data cannot see what is coming. The 3-day outlook uses NOAA/SWPC Kp forecasts as a broad planning guide, layered with local darkness windows, moonrise and moonset times, and likely viewing conditions for New Zealand. This tells you which evenings are worth staying up for, even though the precise timing and intensity cannot be known days in advance.</p>
+
+  <div class="lim">
+    <h2>Data uncertainty and limitations</h2>
+    <p>All aurora forecasts carry uncertainty. CMEs can arrive earlier or later than predicted, with stronger or weaker magnetic fields, or miss Earth entirely. Bz can flip direction without warning. Substorms are difficult to forecast precisely. Solar wind data comes from a small number of upstream spacecraft and can contain gaps or glitches. Local cloud cover and light pollution determine whether you can see anything regardless of space weather. The app aims to present the most useful interpretation of available data, but it cannot guarantee visibility.</p>
+  </div>
+
+  <div class="nav-links">
+    <a href="/features">All Features</a>
+    <a href="/best-aurora-app-new-zealand">Best Aurora App for NZ</a>
+    <a href="/faq">FAQs</a>
+    <a href="/spot-the-aurora-forecast">Open Forecast →</a>
+  </div>
+  <div class="footer">
+    <p>Spot The Aurora — Built in New Zealand by <a href="https://spottheaurora.co.nz">Dean French</a></p>
+  </div>
+</div>
+</body>
+</html>
