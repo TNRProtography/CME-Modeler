@@ -1,13 +1,6 @@
-/icons/*        /icons/:splat   200
-/assets/*       /assets/:splat  200
-/sw.js          /sw.js          200
-/manifest.json  /manifest.json  200
-/robots.txt     /robots.txt     200
-/sitemap.xml    /sitemap.xml    200
 /faq            /faq.html       200
 /features       /features.html  200
 /methodology    /methodology.html 200
 /best-aurora-app-new-zealand /best-aurora-app-new-zealand.html 200
 /aurora-photographers-and-chasers /aurora-photographers-and-chasers.html 200
-/tutorial-*.png  /tutorial-:splat.png  200
 /*              /index.html     200
