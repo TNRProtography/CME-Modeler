@@ -15,6 +15,32 @@ type ChangelogEntry = {
 
 const changelogEntries: ChangelogEntry[] = [
   {
+    version: 'v1.7',
+    title: 'Night Mode, JMAP Imagery and Spacecraft Data Upgrades',
+    date: '14 Jun 2026',
+    intro: 'This update expands low-light viewing, adds new solar imagery sources, improves EPAM detection, and gives users more context around seasonal and magnetotail effects.',
+    sections: [
+      {
+        title: 'New Features',
+        items: [
+          'Added new Night Mode for easier viewing while preserving dark adaptation.',
+          'Added new JMAP STEREO imagery.',
+          'Added SOLAR-1 and IMAP EPAM data sources.',
+          'Added an Equinox Boost section that uses the Russell-McPherron effect to show how much aurora may be influenced by Earth’s tilt.',
+          'Added a new magnetotail section showing magnetosphere compression and an estimate of the substorm size if the tail snaps.',
+          'Added a Download GIF button for the currently selected timeframe and playback speed for SUVI imagery and coronagraph imagery.',
+          'Added source indicators on solar wind data, such as ACE, SOLAR-1, and IMAP.',
+        ],
+      },
+      {
+        title: 'Data Improvements',
+        items: [
+          'Re-worked the EPAM engine for more accurate detection based on the last 7 days of EPAM activity.',
+        ],
+      },
+    ],
+  },
+  {
     version: 'v1.6',
     title: 'Bug Fixes and MANY Enhancements',
     date: '23 Apr 2026',
