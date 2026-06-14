@@ -194,7 +194,7 @@ const SOLAR_INITIAL_TASKS: InitialLoadTaskKey[] = [
 
 const MODELER_INITIAL_TASKS: InitialLoadTaskKey[] = ['modelerCmeData'];
 
-const getInitialRequiredTasks = (page: 'forecast' | 'modeler' | 'solar-activity'): Set<InitialLoadTaskKey> => {
+const getInitialRequiredTasks = (page: 'forecast' | 'modeler' | 'solar-activity' | 'changelog'): Set<InitialLoadTaskKey> => {
   // Only require the tasks that belong to the page the user actually landed on.
   // Previously this ignored `page` and required ALL tasks from all three pages,
   // which caused the loader to hang forever once ForecastDashboard and
@@ -202,8 +202,9 @@ const getInitialRequiredTasks = (page: 'forecast' | 'modeler' | 'solar-activity'
   switch (page) {
     case 'forecast':      return new Set(FORECAST_INITIAL_TASKS);
     case 'solar-activity': return new Set(SOLAR_INITIAL_TASKS);
-    case 'modeler':
-    default:              return new Set(MODELER_INITIAL_TASKS);
+    case 'modeler':            return new Set(MODELER_INITIAL_TASKS);
+    case 'changelog':
+    default:                 return new Set();
   }
 };
 
@@ -244,6 +245,7 @@ const parseLatestShortBandFlux = (raw: any[]): number | null => {
 const SolarSurferGame = retryLazyLoad(() => import('./components/SolarSurferGame'));
 const ImpactGraphModal = retryLazyLoad(() => import('./components/ImpactGraphModal'));
 const DebugPanel = retryLazyLoad(() => import('./components/DebugPanel'));
+const ChangelogPage = retryLazyLoad(() => import('./components/ChangelogPage'));
 
 
 const App: React.FC = () => {
@@ -269,7 +271,7 @@ const App: React.FC = () => {
 
   const [isDashboardMode, setIsDashboardMode] = useState<boolean>(() => getStoredDashboardMode());
 
-  const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity'>(
+  const [activePage, setActivePage] = useState<'forecast' | 'modeler' | 'solar-activity' | 'changelog'>(
     () => getPageFromPathname(window.location.pathname) ?? getStoredMainPage()
   );
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
@@ -366,7 +368,7 @@ const App: React.FC = () => {
   const [isMinTimeElapsed, setIsMinTimeElapsed] = useState(false);
   const [isFadingOut, setIsFadingOut] = useState(false);
   const [showInitialLoader, setShowInitialLoader] = useState(true);
-  const initialPageRef = useRef<'forecast' | 'modeler' | 'solar-activity'>(activePage);
+  const initialPageRef = useRef<'forecast' | 'modeler' | 'solar-activity' | 'changelog'>(activePage);
   const initialRequiredTasks = useRef<Set<InitialLoadTaskKey>>(getInitialRequiredTasks(initialPageRef.current));
   const [initialLoadTasks, setInitialLoadTasks] = useState<Record<InitialLoadTaskKey, boolean>>(() => {
     const required = getInitialRequiredTasks(initialPageRef.current);
@@ -392,7 +394,7 @@ const App: React.FC = () => {
   const lastProgressRef = useRef(0);
   const lastProgressAtRef = useRef(Date.now());
   const cmePageLoadedOnce = useRef(false);
-  const lastMainPageRef = useRef<'forecast' | 'modeler' | 'solar-activity'>(activePage);
+  const lastMainPageRef = useRef<'forecast' | 'modeler' | 'solar-activity' | 'changelog'>(activePage);
   const [forecastViewMode, setForecastViewMode] = useState<'simple' | 'advanced'>(() => {
     const viewFromSearch = getForecastViewFromSearch(window.location.search);
     if (viewFromSearch) return viewFromSearch;
@@ -525,7 +527,7 @@ const App: React.FC = () => {
   );
 
   const navigateToPage = useCallback(
-    (page: 'forecast' | 'solar-activity' | 'modeler', replaceHistory = false) => {
+    (page: 'forecast' | 'solar-activity' | 'modeler' | 'changelog', replaceHistory = false) => {
       if (page === 'forecast') {
         navigateToPath(getForecastPath(forecastViewMode, forecastModalSlug), replaceHistory);
         return;
@@ -558,10 +560,11 @@ const App: React.FC = () => {
     lastMainPageRef.current = activePage;
   }, [activePage]);
 
-  const [visitedPages, setVisitedPages] = useState<Record<'forecast' | 'modeler' | 'solar-activity', boolean>>(() => ({
+  const [visitedPages, setVisitedPages] = useState<Record<'forecast' | 'modeler' | 'solar-activity' | 'changelog', boolean>>(() => ({
     forecast: initialPageRef.current === 'forecast',
     modeler: initialPageRef.current === 'modeler',
     'solar-activity': initialPageRef.current === 'solar-activity',
+    changelog: initialPageRef.current === 'changelog',
   }));
 
   useEffect(() => {
@@ -1262,7 +1265,7 @@ const App: React.FC = () => {
   const isAuroraAlert = useMemo(() => currentAuroraScore !== null && currentAuroraScore >= 50, [currentAuroraScore]);
 
   const isSubstormAlert = useMemo(() =>
-    substormActivityStatus?.isStretching &&
+    !!substormActivityStatus?.isStretching &&
     !substormActivityStatus?.isErupting &&
     (substormActivityStatus.probability ?? 0) > 0,
   [substormActivityStatus]);
@@ -1465,6 +1468,15 @@ const App: React.FC = () => {
                   </div>
               </div>
               <div className="flex items-center gap-1.5 sm:gap-2">
+                  {!isDashboardMode && (
+                    <button
+                      onClick={() => navigateToPage('changelog')}
+                      className={`inline-flex px-2 py-1.5 sm:px-2.5 rounded-xl text-[10px] sm:text-xs font-semibold text-white shadow-xl transition-all active:scale-95 border modern-cta ${activePage === 'changelog' ? 'bg-gradient-to-r from-cyan-500/75 to-fuchsia-500/75 border-white/30 ring-2 ring-white/35' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
+                      title="View the Spot The Aurora change log"
+                    >
+                      <span className="sm:hidden">Log</span><span className="hidden sm:inline">Change Log</span>
+                    </button>
+                  )}
                   {isDashboardMode && (
                     <button
                       onClick={() => handleDashboardModeChange(false)}
@@ -1693,6 +1705,13 @@ const App: React.FC = () => {
                         onInitialLoad={handleSolarInitialLoad}
                         onInitialLoadProgress={handleSolarLoadPoint}
                     />
+                  </Suspense>
+                </div>
+              )}
+              {visitedPages.changelog && (
+                <div className={`w-full h-full ${activePage === 'changelog' ? 'block' : 'hidden'}`}>
+                  <Suspense fallback={null}>
+                    <ChangelogPage />
                   </Suspense>
                 </div>
               )}

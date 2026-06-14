@@ -1,9 +1,10 @@
 // Centralized navigation helpers and keys used across the app shell.
 
-export const PAGE_PATHS: Record<'forecast' | 'solar-activity' | 'modeler', string> = {
+export const PAGE_PATHS: Record<'forecast' | 'solar-activity' | 'modeler' | 'changelog', string> = {
   forecast: '/spot-the-aurora-forecast',
   'solar-activity': '/solar-dashboard',
   modeler: '/cme-visualization',
+  changelog: '/changelog',
 };
 
 export const SETTINGS_PATH = '/settings';
@@ -32,9 +33,9 @@ export const getForecastPath = (view: 'simple' | 'advanced', modalSlug?: string 
 
 export const getPageAndSlugFromPathname = (
   pathname: string
-): { page: 'forecast' | 'solar-activity' | 'modeler' | null; slug: string | null } => {
+): { page: 'forecast' | 'solar-activity' | 'modeler' | 'changelog' | null; slug: string | null } => {
   const sortedEntries = Object.entries(PAGE_PATHS).sort((a, b) => b[1].length - a[1].length) as Array<
-    ['forecast' | 'solar-activity' | 'modeler', string]
+    ['forecast' | 'solar-activity' | 'modeler' | 'changelog', string]
   >;
 
   for (const [page, basePath] of sortedEntries) {
@@ -74,6 +75,6 @@ export const getForecastViewFromSearch = (
 
 export const getPageFromPathname = (
   pathname: string
-): 'forecast' | 'solar-activity' | 'modeler' | null => {
+): 'forecast' | 'solar-activity' | 'modeler' | 'changelog' | null => {
   return getPageAndSlugFromPathname(pathname).page;
 };
