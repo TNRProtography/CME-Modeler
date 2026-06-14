@@ -825,6 +825,11 @@ const App: React.FC = () => {
     navigateToPath(SETTINGS_PATH);
   }, [navigateToPath]);
 
+  const handleOpenChangelog = useCallback(() => {
+    setIsSettingsOpen(false);
+    navigateToPage('changelog');
+  }, [navigateToPage]);
+
   const handleCloseSettings = useCallback(() => {
     setIsSettingsOpen(false);
     navigateToPage(lastMainPageRef.current);
@@ -1468,15 +1473,6 @@ const App: React.FC = () => {
                   </div>
               </div>
               <div className="flex items-center gap-1.5 sm:gap-2">
-                  {!isDashboardMode && (
-                    <button
-                      onClick={() => navigateToPage('changelog')}
-                      className={`inline-flex px-2 py-1.5 sm:px-2.5 rounded-xl text-[10px] sm:text-xs font-semibold text-white shadow-xl transition-all active:scale-95 border modern-cta ${activePage === 'changelog' ? 'bg-gradient-to-r from-cyan-500/75 to-fuchsia-500/75 border-white/30 ring-2 ring-white/35' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
-                      title="View the Spot The Aurora change log"
-                    >
-                      <span className="sm:hidden">Log</span><span className="hidden sm:inline">Change Log</span>
-                    </button>
-                  )}
                   {isDashboardMode && (
                     <button
                       onClick={() => handleDashboardModeChange(false)}
@@ -1747,6 +1743,7 @@ const App: React.FC = () => {
               appVersion={APP_VERSION}
               onShowTutorial={handleShowTutorial}
               onOpenDocumentation={() => { setShowDocumentation(true); handleCloseSettings(); }}
+              onOpenChangelog={handleOpenChangelog}
               defaultMainPage={defaultMainPage}
               defaultForecastView={defaultForecastView}
               onDefaultMainPageChange={handleDefaultMainPageChange}

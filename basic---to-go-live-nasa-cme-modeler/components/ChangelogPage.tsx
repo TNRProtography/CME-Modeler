@@ -255,59 +255,51 @@ const changelogEntries: ChangelogEntry[] = [
 
 const ChangelogPage: React.FC = () => {
   return (
-    <main className="relative h-full w-full overflow-y-auto bg-black text-neutral-100">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(14,165,233,0.18),transparent_32%),radial-gradient(circle_at_80%_20%,rgba(168,85,247,0.16),transparent_30%),linear-gradient(180deg,rgba(0,0,0,0.1),#000_78%)]" />
-      <div className="relative mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
-        <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] shadow-2xl backdrop-blur-xl">
-          <div className="border-b border-white/10 bg-gradient-to-r from-sky-500/15 via-indigo-500/15 to-fuchsia-500/15 p-5 sm:p-8">
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-sky-300/20 bg-sky-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-sky-200">
-              <span className="h-2 w-2 rounded-full bg-emerald-300 shadow-[0_0_16px_rgba(110,231,183,0.9)]" />
-              Spot The Aurora
-            </div>
-            <h1 className="text-3xl font-black tracking-tight text-white sm:text-5xl">Change Log</h1>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-300 sm:text-base">
-              Follow the major releases, fixes, visual upgrades, and forecasting improvements that have shaped Spot The Aurora.
-            </p>
-          </div>
+    <main className="h-full w-full overflow-y-auto bg-black text-neutral-300 styled-scrollbar">
+      <div className="mx-auto max-w-4xl px-4 py-5 sm:px-6 sm:py-8">
+        <header className="mb-6 border-b border-neutral-800 pb-5">
+          <p className="text-xs font-semibold uppercase tracking-widest text-sky-400">Spot The Aurora</p>
+          <h1 className="mt-2 text-2xl font-bold text-neutral-100 sm:text-3xl">Change Log</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-neutral-400">
+            Product updates, fixes, and forecasting improvements for the Spot The Aurora app.
+          </p>
+        </header>
 
-          <div className="p-4 sm:p-6 lg:p-8">
-            <div className="space-y-6">
-              {changelogEntries.map((entry, index) => (
-                <article key={`${entry.version}-${entry.date}`} className="group relative overflow-hidden rounded-3xl border border-white/10 bg-neutral-950/70 p-4 shadow-xl transition-all hover:border-sky-300/30 hover:bg-neutral-900/80 sm:p-6">
-                  <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-sky-400 via-indigo-400 to-fuchsia-400" />
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full border border-sky-300/25 bg-sky-400/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] text-sky-100">{entry.version}</span>
-                        {index === 0 && <span className="rounded-full border border-emerald-300/25 bg-emerald-400/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-emerald-100">Latest</span>}
-                      </div>
-                      <h2 className="mt-3 text-xl font-black text-white sm:text-2xl">{entry.title}</h2>
+        <div className="space-y-5">
+          {changelogEntries.map((entry, index) => (
+            <article key={`${entry.version}-${entry.date}`} className="rounded-lg border border-neutral-800 bg-neutral-950/80 shadow-xl">
+              <div className="border-b border-neutral-800 p-4 sm:p-5">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-sky-400">{entry.version}</span>
+                      {index === 0 && <span className="rounded border border-emerald-800/80 bg-emerald-950/50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-emerald-300">Latest</span>}
                     </div>
-                    <time className="shrink-0 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-neutral-300">{entry.date}</time>
+                    <h2 className="mt-1 text-xl font-semibold text-neutral-100">{entry.title}</h2>
                   </div>
+                  <time className="text-sm text-neutral-500">{entry.date}</time>
+                </div>
+                {entry.intro && <p className="mt-3 text-sm leading-relaxed text-neutral-400">{entry.intro}</p>}
+              </div>
 
-                  {entry.intro && <p className="mt-4 max-w-4xl text-sm leading-6 text-neutral-300">{entry.intro}</p>}
-
-                  <div className="mt-5 grid gap-4 lg:grid-cols-2">
-                    {entry.sections.map((section) => (
-                      <section key={section.title} className="rounded-2xl border border-white/10 bg-black/30 p-4">
-                        <h3 className="text-sm font-extrabold uppercase tracking-[0.2em] text-cyan-200">{section.title}</h3>
-                        <ul className="mt-3 space-y-2 text-sm leading-6 text-neutral-300">
-                          {section.items.map((item) => (
-                            <li key={item} className="flex gap-2">
-                              <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-300 shadow-[0_0_10px_rgba(125,211,252,0.85)]" />
-                              <span>{item}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </section>
-                    ))}
-                  </div>
-                </article>
-              ))}
-            </div>
-          </div>
-        </section>
+              <div className="divide-y divide-neutral-800">
+                {entry.sections.map((section) => (
+                  <section key={section.title} className="p-4 sm:p-5">
+                    <h3 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">{section.title}</h3>
+                    <ul className="mt-3 space-y-2 text-sm leading-relaxed text-neutral-400">
+                      {section.items.map((item) => (
+                        <li key={item} className="flex gap-2">
+                          <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
       </div>
     </main>
   );
