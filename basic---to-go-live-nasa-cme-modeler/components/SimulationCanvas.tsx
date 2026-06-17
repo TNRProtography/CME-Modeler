@@ -34,6 +34,11 @@ import {
   computeMoonSceneAngle,
   EARTH_TILT_RAD,
 } from '../utils/astronomicalPositions';
+import {
+  fetchLatestSatelliteEphemerides,
+  getEphemerisForSource,
+  gseKilometresToSceneOffset,
+} from '../utils/satelliteEphemerides';
 
 /** =========================================================
  *  STABLE, HOTLINK-SAFE TEXTURE URLS
@@ -418,17 +423,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const starsNearRef = useRef<any>(null);
   const starsFarRef  = useRef<any>(null);
 
-  // ── Spacecraft markers (SolO, STEREO-A, ACE, DSCOVR, IMAP, SWFO-L1) ──────
+  // ── Spacecraft markers (SolO, STEREO-A, ACE, DSCOVR, SOLAR-1, IMAP) ───────
   const spacecraftGroupRef = useRef<any>(null);
   const spacecraftPositionsRef = useRef<Record<string, {x:number;y:number;z:number;name:string;color:string}>>({});
-  // For each spacecraft we also store (a) its offset from Earth in the scene frame
-  // at snapshot time, and (b) Earth's ecliptic longitude at that same snapshot
-  // time. Each frame we rotate the stored offset by (Earth_lon_now - Earth_lon_snap)
-  // around the Y axis and add it to the current Earth position. This keeps L1
-  // spacecraft (ACE, DSCOVR, SWFO-L1, IMAP) locked to the Sun–Earth line as the
-  // user scrubs the timeline, instead of leaving them frozen in world space.
-  // For heliocentric spacecraft (SolO, STEREO-A) this is an approximation that
-  // degrades slowly — far better than keeping them stationary.
+  // For each spacecraft we store its offset from Earth in the scene frame at
+  // snapshot time plus Earth's ecliptic longitude at that same snapshot time.
+  // NOAA RTSW GSE ephemerides supply the latest real L1 positions for ACE,
+  // DSCOVR, SOLAR-1 and IMAP; SolO/STEREO-A still use heliocentric positions.
+  // The animation loop rotates those offsets with Earth so timeline scrubbing
+  // keeps spacecraft attached to their physical upstream geometry.
   const spacecraftOffsetsRef = useRef<Record<string, { dx:number; dy:number; dz:number; snapEarthLon:number; meshName:string; isL1?:boolean; l1Lateral?:number; l1Vertical?:number }>>({});
 
   // ── CME–CME collision tracking ───────────────────────────────────────────
@@ -1049,104 +1052,98 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     });
 
     // ── Spacecraft markers ────────────────────────────────────────────────────
-    // SolO, STEREO-A, ACE, DSCOVR, IMAP, SWFO-L1 — small glowing tetrahedra.
-    // Positions are fetched from the solo-worker and updated in a useEffect.
+    // SolO, STEREO-A, ACE, DSCOVR, SOLAR-1 and IMAP — small glowing tetrahedra.
+    // L1 positions use NOAA RTSW ephemerides; SolO/STEREO-A use the existing worker.
     const scGroup = new THREE.Group(); scGroup.name = 'spacecraft'; scene.add(scGroup);
     spacecraftGroupRef.current = scGroup;
 
-    // Fetch spacecraft positions from the solo-worker (non-blocking).
-    fetch('https://solo-worker.thenamesrock.workers.dev/solo/position')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (!data?.ok || !data.positions) return;
-        const { positions } = data;
-        // Snapshot time — when the worker computed these positions. If the
-        // worker returns a `time` field (ISO string or ms), use it; otherwise
-        // fall back to now, which is what the worker normally computes for.
-        const snapTimeMs = (() => {
-          const t = data.time ?? data.timestamp ?? data.epoch;
-          if (typeof t === 'number' && Number.isFinite(t)) {
-            return t > 1e12 ? t : t * 1000; // seconds -> ms if needed
-          }
+    // Fetch spacecraft positions (non-blocking).
+    // L1 spacecraft now use NOAA RTSW's latest hourly GSE ephemerides so ACE,
+    // DSCOVR, SOLAR-1 and IMAP are placed from their real upstream positions.
+    // SolO/STEREO-A still come from the existing heliocentric worker because
+    // they are not included in the RTSW L1 ephemerides feed.
+    Promise.allSettled([
+      fetch('https://solo-worker.thenamesrock.workers.dev/solo/position').then(r => r.ok ? r.json() : null),
+      fetchLatestSatelliteEphemerides(),
+    ])
+      .then(([soloResult, ephemerisResult]) => {
+        const soloData = soloResult.status === 'fulfilled' ? soloResult.value : null;
+        const positions = soloData?.ok && soloData.positions ? soloData.positions : {};
+        const latestEphemerides = ephemerisResult.status === 'fulfilled' ? ephemerisResult.value : {};
+
+        // Snapshot time — use the newest satellite ephemeris timestamp when it
+        // is available because the real L1 positions are Earth-relative at that
+        // epoch. Fall back to the SolO worker timestamp or now.
+        const latestEphemerisTime = Object.values(latestEphemerides).reduce((max, row) => {
+          const t = Date.parse(row.timeTag);
+          return Number.isNaN(t) ? max : Math.max(max, t);
+        }, 0);
+        const soloSnapTimeMs = (() => {
+          const t = soloData?.time ?? soloData?.timestamp ?? soloData?.epoch;
+          if (typeof t === 'number' && Number.isFinite(t)) return t > 1e12 ? t : t * 1000;
           if (typeof t === 'string') {
             const parsed = Date.parse(t);
             if (!Number.isNaN(parsed)) return parsed;
           }
-          return Date.now();
+          return 0;
         })();
+        const snapTimeMs = latestEphemerisTime || soloSnapTimeMs || Date.now();
+
         // Earth's scene-frame position at the snapshot time. We need this to
-        // convert each spacecraft's absolute scene-frame position into an
-        // Earth-relative offset, so we can re-attach it to Earth each frame.
+        // convert each spacecraft's absolute/earth-relative position into a
+        // scene offset that can be rotated with Earth as the timeline scrubs.
         const snapEarthLon = computeEclipticLongitude('EARTH', snapTimeMs);
         const snapEarthRadius = PLANET_DATA_MAP.EARTH.radius;
         const snapEarthX = snapEarthRadius * Math.sin(snapEarthLon);
         const snapEarthZ = snapEarthRadius * Math.cos(snapEarthLon);
-        // Spacecraft definitions. `isL1` tags those that live at the Sun–Earth
-        // L1 point; for those, we ignore the worker's absolute heliocentric
-        // position and instead place them on the visual Earth-to-Sun line at
-        // the same exaggerated distance used by the L1 POI marker (~15M km,
-        // about 10× true L1 — chosen by the app for visibility). Each L1
-        // spacecraft also gets a tiny lateral + vertical offset so their
-        // markers and labels don't all stack on top of each other.
-        // `l1Lateral` is in scene units, perpendicular to the Earth-Sun line
-        // in the ecliptic plane. `l1Vertical` is in scene units, above/below
-        // the ecliptic plane.
-        const VISUAL_L1_DIST = (15e6 / AU_IN_KM) * SCENE_SCALE; // matches POI_DATA_MAP.L1
-        const SPACECRAFT_DEF: Array<{key:string;name:string;color:number;size:number;isL1?:boolean;l1Lateral?:number;l1Vertical?:number}> = [
+
+        const SPACECRAFT_DEF: Array<{
+          key:string;
+          name:string;
+          color:number;
+          size:number;
+          l1Aliases?:string[];
+        }> = [
           { key:'solo',    name:'SolO',     color:0xf97316, size:0.018 * SCENE_SCALE },
           { key:'stereoA', name:'STEREO-A', color:0xa78bfa, size:0.014 * SCENE_SCALE },
-          // L1 cluster — spread them slightly so labels are readable.
-          { key:'ace',     name:'ACE',      color:0x34d399, size:0.012 * SCENE_SCALE, isL1:true, l1Lateral: -0.018 * SCENE_SCALE, l1Vertical:  0.010 * SCENE_SCALE },
-          { key:'dscovr',  name:'DSCOVR',   color:0x67e8f9, size:0.012 * SCENE_SCALE, isL1:true, l1Lateral:  0.018 * SCENE_SCALE, l1Vertical:  0.010 * SCENE_SCALE },
-          { key:'imap',    name:'IMAP',     color:0xf0abfc, size:0.012 * SCENE_SCALE, isL1:true, l1Lateral: -0.018 * SCENE_SCALE, l1Vertical: -0.010 * SCENE_SCALE },
-          { key:'swfoL1',  name:'SWFO-L1',  color:0xfbbf24, size:0.012 * SCENE_SCALE, isL1:true, l1Lateral:  0.018 * SCENE_SCALE, l1Vertical: -0.010 * SCENE_SCALE },
+          { key:'ace',     name:'ACE',      color:0x34d399, size:0.012 * SCENE_SCALE, l1Aliases:['ACE'] },
+          { key:'dscovr',  name:'DSCOVR',   color:0x67e8f9, size:0.012 * SCENE_SCALE, l1Aliases:['DSCOVR'] },
+          { key:'solar1',  name:'SOLAR-1',  color:0xfbbf24, size:0.012 * SCENE_SCALE, l1Aliases:['SOLAR1', 'SOLAR-1'] },
+          { key:'imap',    name:'IMAP',     color:0xf0abfc, size:0.012 * SCENE_SCALE, l1Aliases:['IMAP'] },
         ];
+
         // Clear any previously-placed markers
         while (scGroup.children.length > 0) scGroup.remove(scGroup.children[0]);
         spacecraftOffsetsRef.current = {};
-        planetLabelInfos.filter(l => l.id.startsWith('sc-')).length; // noop — labels added below
         const scLabelInfos: PlanetLabelInfo[] = [];
-        SPACECRAFT_DEF.forEach(({ key, name, color, size, isL1, l1Lateral, l1Vertical }) => {
+
+        SPACECRAFT_DEF.forEach(({ key, name, color, size, l1Aliases }) => {
           const meshName = `sc-${key}`;
 
-          if (isL1) {
-            // L1 spacecraft — ignore worker absolute position. Place at the
-            // visual L1 distance sunward of Earth with small lateral/vertical
-            // offsets so the cluster doesn't collapse into one pixel. The
-            // animation loop will re-anchor to Earth each frame.
-            // Earth-relative offset at snapshot time, in the Earth→Sun frame:
-            //   "sunward" unit vector = -Earth_position_hat
-            //   "lateral" unit vector = perpendicular to sunward in the ecliptic (XZ) plane
-            const earthDirX = Math.sin(snapEarthLon);
-            const earthDirZ = Math.cos(snapEarthLon);
-            const sunwardX = -earthDirX;
-            const sunwardZ = -earthDirZ;
-            // Perpendicular in the ecliptic plane (rotate sunward 90° about Y axis)
-            const latX =  sunwardZ;
-            const latZ = -sunwardX;
-            const lat = l1Lateral ?? 0;
-            const vert = l1Vertical ?? 0;
-            const offX = sunwardX * VISUAL_L1_DIST + latX * lat;
-            const offZ = sunwardZ * VISUAL_L1_DIST + latZ * lat;
+          if (l1Aliases) {
+            const ephemeris = getEphemerisForSource(latestEphemerides, l1Aliases);
+            if (!ephemeris) return;
+
+            const offset = gseKilometresToSceneOffset(ephemeris, snapEarthLon);
             spacecraftOffsetsRef.current[key] = {
-              dx: offX,
-              dy: vert,
-              dz: offZ,
+              dx: offset.dx,
+              dy: offset.dy,
+              dz: offset.dz,
               snapEarthLon,
               meshName,
               isL1: true,
-              l1Lateral: lat,
-              l1Vertical: vert,
             };
-            // Initial absolute position (animation loop will correct per frame)
-            const initX = snapEarthX + offX;
-            const initZ = snapEarthZ + offZ;
-            spacecraftPositionsRef.current[key] = { x: initX, y: vert, z: initZ, name, color: '#' + color.toString(16).padStart(6,'0') };
-            const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 });
+
+            const initX = snapEarthX + offset.dx;
+            const initY = offset.dy;
+            const initZ = snapEarthZ + offset.dz;
+            spacecraftPositionsRef.current[key] = { x: initX, y: initY, z: initZ, name, color: '#' + color.toString(16).padStart(6,'0') };
+            const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: ephemeris.active ? 1 : 0.78 });
             const mesh = new THREE.Mesh(new THREE.TetrahedronGeometry(size, 0), mat);
-            mesh.position.set(initX, vert, initZ);
+            mesh.position.set(initX, initY, initZ);
             mesh.name = meshName;
-            const light = new THREE.PointLight(color, 0.4, size * 80);
+            mesh.userData = { satelliteEphemeris: ephemeris };
+            const light = new THREE.PointLight(color, ephemeris.active ? 0.65 : 0.35, size * 80);
             mesh.add(light);
             scGroup.add(mesh);
             const labelId = `sc-${key}-label`;
@@ -1182,7 +1179,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
         setPlanetMeshesForLabels([...planetLabelInfos, ...scLabelInfos]);
       })
-      .catch(() => {/* worker unavailable — spacecraft markers silently absent */});
+      .catch(() => {/* spacecraft markers are optional; keep the model usable */});
 
     setPlanetMeshesForLabels(planetLabelInfos);
 
@@ -1331,20 +1328,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
 
       // ── Spacecraft position update ────────────────────────────────────────
-      // The solo-worker gives us absolute heliocentric positions at a single
-      // snapshot time. Leaving those positions frozen in world space causes
-      // L1 spacecraft (ACE, DSCOVR, SWFO-L1, IMAP) to appear detached from
-      // Earth whenever the user scrubs the timeline. To fix that, at snapshot
-      // time we recorded each spacecraft's offset from Earth and Earth's
-      // ecliptic longitude. Each frame we rotate that offset by the change in
-      // Earth's longitude between snapshot time and simulation time, then
-      // re-anchor it to Earth's current scene position.
-      //
-      // For L1 spacecraft this is essentially exact — L1 is on the Sun–Earth
-      // line by construction, so rotating the offset with Earth's orbit keeps
-      // them locked in place relative to Earth. For heliocentric spacecraft
-      // (SolO, STEREO-A) it's an approximation, but far better than leaving
-      // them stationary while Earth orbits around them.
+      // NOAA RTSW gives real latest GSE positions for L1 spacecraft; the
+      // solo-worker gives absolute heliocentric positions for SolO/STEREO-A.
+      // At snapshot time we record every marker as an Earth-relative scene
+      // offset plus Earth's ecliptic longitude. Each frame we rotate that
+      // offset by the change in Earth's longitude and re-anchor it to Earth so
+      // satellite positions stay physically tied to the selected timeline
+      // epoch instead of floating in stale world-space coordinates.
       const scGroupLocal = spacecraftGroupRef.current;
       const earthForSc = celestialBodiesRef.current.EARTH?.mesh;
       const scOffsets = spacecraftOffsetsRef.current;

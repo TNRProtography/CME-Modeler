@@ -151,6 +151,7 @@ interface SettingsModalProps {
   onClose: () => void;
   appVersion: string;
   onOpenDocumentation?: () => void;
+  onOpenChangelog?: () => void;
   onShowTutorial: () => void;
   defaultMainPage: 'forecast' | 'solar-activity' | 'modeler';
   defaultForecastView: 'simple' | 'advanced';
@@ -401,6 +402,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   appVersion,
   onOpenDocumentation,
+  onOpenChangelog,
   onShowTutorial,
   defaultMainPage,
   defaultForecastView,
@@ -1289,14 +1291,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         
         <div className="flex justify-between items-center p-4 border-t border-neutral-700/80 text-xs text-neutral-500">
           <span>Version: {appVersion}</span>
-          <a 
-            href="https://www.tnrprotography.co.nz/spot-the-aurora---change-log" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="text-sky-400 hover:underline hover:text-sky-300 transition-colors"
+          <button
+            type="button"
+            onClick={onOpenChangelog}
+            className="text-sky-400 hover:underline hover:text-sky-300 transition-colors disabled:text-neutral-600 disabled:no-underline"
+            disabled={!onOpenChangelog}
           >
             View Changelog
-          </a>
+          </button>
         </div>
       </div>
     </div>
