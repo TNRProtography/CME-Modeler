@@ -127,6 +127,8 @@ type Status = "QUIET" | "WATCH" | "LIKELY_60" | "IMMINENT_30" | "ONSET";
 const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
 const SUBSTORM_RISK_URL = 'https://aurora-index-sta.thenamesrock.workers.dev/api/substorm?resolution=5m';
 const SOLAR_WIND_IMF_URL = 'https://imap-solar-data-test.thenamesrock.workers.dev/rtsw/merged-24h';
+const NOAA_RTSW_MAG_URL = 'https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json';
+const NOAA_RTSW_PLASMA_URL = 'https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json';
 const NOAA_GOES18_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/primary/magnetometers-1-day.json';
 const NOAA_GOES19_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/secondary/magnetometers-1-day.json';
 const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
@@ -415,6 +417,92 @@ const fetchJsonWithRecovery = async (url: string, timeoutMs = 15000) => {
   }
 };
 
+const headerIndex = (headers: unknown[], ...names: string[]): number => {
+  const normalized = headers.map(header => String(header).toLowerCase());
+  return names
+    .map(name => normalized.indexOf(name.toLowerCase()))
+    .find(index => index >= 0) ?? -1;
+};
+
+const readProductCell = (row: unknown[], headers: unknown[], ...names: string[]): unknown => {
+  const index = headerIndex(headers, ...names);
+  return index >= 0 ? row[index] : undefined;
+};
+
+const mergeNoaaRtswProducts = (magProduct: unknown, plasmaProduct: unknown) => {
+  const rowsByTime = new Map<string, any>();
+
+  const upsert = (time: unknown) => {
+    if (typeof time !== 'string' || !time) return null;
+    const parsedTime = parseNOAATime(time);
+    const timeUtc = Number.isFinite(parsedTime) ? new Date(parsedTime).toISOString() : time;
+    const existing = rowsByTime.get(timeUtc) ?? { time_utc: timeUtc, rtsw: {}, src: {} };
+    rowsByTime.set(timeUtc, existing);
+    return existing;
+  };
+
+  const ingestProduct = (product: unknown, applyRow: (target: any, row: unknown[], headers: unknown[]) => void) => {
+    if (!Array.isArray(product) || product.length < 2 || !Array.isArray(product[0])) return;
+    const headers = product[0];
+    for (const candidate of product.slice(1)) {
+      if (!Array.isArray(candidate)) continue;
+      const target = upsert(readProductCell(candidate, headers, 'time_tag', 'time_utc'));
+      if (!target) continue;
+      applyRow(target, candidate, headers);
+    }
+  };
+
+  ingestProduct(plasmaProduct, (target, row, headers) => {
+    const speed = toFiniteNumber(readProductCell(row, headers, 'speed'));
+    const density = toFiniteNumber(readProductCell(row, headers, 'density'));
+    const temp = toFiniteNumber(readProductCell(row, headers, 'temperature', 'temp'));
+    if (speed !== null) { target.rtsw.speed = speed; target.src.speed = 'NOAA RTSW'; }
+    if (density !== null) { target.rtsw.density = density; target.src.density = 'NOAA RTSW'; }
+    if (temp !== null) { target.rtsw.temp = temp; target.src.temp = 'NOAA RTSW'; }
+  });
+
+  ingestProduct(magProduct, (target, row, headers) => {
+    const bx = toFiniteNumber(readProductCell(row, headers, 'bx_gsm', 'bx'));
+    const by = toFiniteNumber(readProductCell(row, headers, 'by_gsm', 'by'));
+    const bz = toFiniteNumber(readProductCell(row, headers, 'bz_gsm', 'bz'));
+    const bt = toFiniteNumber(readProductCell(row, headers, 'bt'));
+    if (bx !== null) { target.rtsw.bx = bx; target.src.bx = 'NOAA RTSW'; }
+    if (by !== null) { target.rtsw.by = by; target.src.by = 'NOAA RTSW'; }
+    if (bz !== null) { target.rtsw.bz = bz; target.src.bz = 'NOAA RTSW'; }
+    if (bt !== null) { target.rtsw.bt = bt; target.src.bt = 'NOAA RTSW'; }
+  });
+
+  return Array.from(rowsByTime.values());
+};
+
+const overlayFreshNoaaRtswRows = (baseRows: any[], noaaRows: any[]) => {
+  if (!noaaRows.length) return baseRows;
+  const rowsByTime = new Map<string, any>();
+
+  for (const row of baseRows) {
+    const time = row?.time_utc ?? row?.time_nz;
+    if (typeof time === 'string') rowsByTime.set(time, row);
+  }
+
+  for (const row of noaaRows) {
+    const time = row?.time_utc;
+    if (typeof time !== 'string') continue;
+    const existing = rowsByTime.get(time) ?? {};
+    rowsByTime.set(time, {
+      ...existing,
+      ...row,
+      rtsw: { ...(existing.rtsw ?? {}), ...(row.rtsw ?? {}) },
+      src: { ...(existing.src ?? {}), ...(row.src ?? {}) },
+    });
+  }
+
+  return Array.from(rowsByTime.values()).sort((a, b) => {
+    const at = Date.parse(a?.time_utc ?? a?.time_nz ?? '');
+    const bt = Date.parse(b?.time_utc ?? b?.time_nz ?? '');
+    return (Number.isFinite(at) ? at : 0) - (Number.isFinite(bt) ? bt : 0);
+  });
+};
+
 const getVisibilityBlurb = (score: number | null): string => {
     if (score === null) return 'Potential visibility is unknown.';
     if (score >= 80) return 'Potential visibility is high, with a significant display likely.';
@@ -684,7 +772,29 @@ export const useForecastData = (
 
     const results = await Promise.allSettled([
       withInitialProgress(fetchJsonWithRecovery(`${FORECAST_API_URL}?_=${Date.now()}`), 'forecastApi'),
-      withInitialProgress(fetchJsonWithRecovery(`${SOLAR_WIND_IMF_URL}?_=${Date.now()}`), 'solarWindApi'),
+      withInitialProgress((async () => {
+        const [mergedResult, magResult, plasmaResult] = await Promise.allSettled([
+          fetchJsonWithRecovery(`${SOLAR_WIND_IMF_URL}?_=${Date.now()}`),
+          fetchJsonWithRecovery(`${NOAA_RTSW_MAG_URL}?_=${Date.now()}`, 7000),
+          fetchJsonWithRecovery(`${NOAA_RTSW_PLASMA_URL}?_=${Date.now()}`, 7000),
+        ]);
+
+        const noaaRows = mergeNoaaRtswProducts(
+          magResult.status === 'fulfilled' ? magResult.value : null,
+          plasmaResult.status === 'fulfilled' ? plasmaResult.value : null
+        );
+        if (mergedResult.status === 'rejected') return noaaRows;
+        const mergedPayload = mergedResult.value;
+        const mergedRows = Array.isArray(mergedPayload)
+          ? mergedPayload
+          : (mergedPayload?.ok && Array.isArray(mergedPayload.data) ? mergedPayload.data : []);
+
+        if (Array.isArray(mergedPayload)) return overlayFreshNoaaRtswRows(mergedRows, noaaRows);
+        return {
+          ...mergedPayload,
+          data: overlayFreshNoaaRtswRows(mergedRows, noaaRows),
+        };
+      })(), 'solarWindApi'),
       withInitialProgress(fetchJsonWithRecovery(`${NOAA_GOES18_MAG_URL}?_=${Date.now()}`), 'goes18Api'),
       withInitialProgress(fetchJsonWithRecovery(`${NOAA_GOES19_MAG_URL}?_=${Date.now()}`), 'goes19Api'),
       // ipsApi and nzMagApi are non-blocking (not in FORECAST_INITIAL_TASKS) so they don't
