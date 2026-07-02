@@ -2170,7 +2170,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, [allProtonData]);
 
   // --- Build the 24h summary strictly from the last 24 hours ---
-  useMemo(() => {
+  useEffect(() => {
     const now = Date.now();
     const dayAgo = now - 24 * 60 * 60 * 1000;
 
@@ -2179,8 +2179,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
     const flares24 = (solarFlares as (SolarFlare & { hasCME?: boolean })[]).filter(flare => {
       const t = flare.peakTime ?? flare.startTime ?? flare.endTime;
-      const ts = t ? new Date(t).getTime() : NaN;
-      return !isNaN(ts) && ts >= dayAgo && ts <= now;
+      if (!t) return false;
+      const ts = new Date(t).getTime();
+      return Number.isFinite(ts) && ts >= dayAgo && ts <= now;
     });
 
     if (xray24.length === 0 && proton24.length === 0 && flares24.length === 0) {
@@ -3173,7 +3174,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   {activeSuviFrame ? `Frame: ${formatNZTimestamp(activeSuviFrame.ts)} · fetched ${activeSuviFrame.fetched_at ? formatNZTimestamp(activeSuviFrame.fetched_at) : '—'}` : 'No frame selected'}
                 </div>
                 <div className="text-[11px] text-neutral-500 leading-relaxed">
-                  Imagery source: NOAA SWPC SUVI via suvi-difference-imagery.thenamesrock.workers.dev. Difference imagery processing and visualization by TNR Protography.
+                  Imagery source: NOAA SWPC SUVI. Difference imagery processing and visualization by TNR Protography.
                 </div>
               </div>
 
