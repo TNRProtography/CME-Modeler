@@ -2623,7 +2623,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, [activeCoronagraphFrame?.ts, activeCoronagraphUrl, coronagraphSource, coronagraphSourceState?.label, coronagraphDifference]);
 
   // ── GIF download helpers ─────────────────────────────────────────────────────
-  const gifMaxDim = 480; // scale frames to keep GIF file size sane
+  const gifMaxDim = 800; // scale frames to keep GIF file size sane
 
   const loadImageAsync = useCallback((src: string) => new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image();
