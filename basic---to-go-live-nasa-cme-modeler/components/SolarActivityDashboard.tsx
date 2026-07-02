@@ -1003,7 +1003,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   // SUVI defaults are channel-specific (195 / 304 / 131).
   const SUVI_DIFF_CONFIG_BY_SOURCE: Record<SuviWorkerSourceKey, { gain: number; noiseFloor: number; gamma: number }> = {
     suvi_195_primary:   { gain: 13.0, noiseFloor: 1, gamma: 0.30 },
-    suvi_284_primary:   { gain: 13.0, noiseFloor: 1, gamma: 0.30 },
+    suvi_284_primary:   { gain: 18.0, noiseFloor: 10, gamma: 0.55 },
     suvi_304_secondary: { gain: 9.0,  noiseFloor: 1, gamma: 0.30 },
     suvi_131_secondary: { gain: 15.5, noiseFloor: 7, gamma: 0.90 },
   };
