@@ -1001,11 +1001,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const CORONAGRAPH_DIFF_NOISE_FLOOR = 0;
   const CORONAGRAPH_DIFF_GAMMA = 0.8;
   // SUVI defaults are channel-specific (195 / 304 / 131).
-  const SUVI_DIFF_CONFIG_BY_SOURCE: Record<SuviWorkerSourceKey, { gain: number; noiseFloor: number; gamma: number }> = {
-    suvi_195_primary:   { gain: 13.0, noiseFloor: 1, gamma: 0.30 },
-    suvi_284_primary:   { gain: 28.0, noiseFloor: 3, gamma: 0.85 },
-    suvi_304_secondary: { gain: 9.0,  noiseFloor: 1, gamma: 0.30 },
-    suvi_131_secondary: { gain: 15.5, noiseFloor: 7, gamma: 0.90 },
+  const SUVI_DIFF_CONFIG_BY_SOURCE: Record<SuviWorkerSourceKey, { gain: number; noiseFloor: number; gamma: number; diffStep: number }> = {
+    suvi_195_primary:   { gain: 13.0, noiseFloor: 1, gamma: 0.30, diffStep: 1 },
+    suvi_284_primary:   { gain: 28.0, noiseFloor: 3, gamma: 0.85, diffStep: 3 },
+    suvi_304_secondary: { gain: 9.0,  noiseFloor: 1, gamma: 0.30, diffStep: 1 },
+    suvi_131_secondary: { gain: 15.5, noiseFloor: 7, gamma: 0.90, diffStep: 1 },
   };
 
   const colorizeCoronagraphDelta = useCallback((normalized: number): [number, number, number] => {
@@ -2303,7 +2303,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, [activeSuviSourceState?.frames, suviFrameWindowHours]);
   const clampedSuviFrameIndex = Math.min(suviFrameIndex, Math.max(0, suviFrames.length - 1));
   const activeSuviFrame = suviFrames[clampedSuviFrameIndex] ?? null;
-  const previousSuviFrame = suviFrames[Math.max(0, clampedSuviFrameIndex - 1)] ?? null;
+  const previousSuviFrame = suviFrames[Math.max(0, clampedSuviFrameIndex - (activeSuviDiffConfig?.diffStep ?? 1))] ?? null;
   const resolveSuviWorkerUrl = useCallback((url: string | null | undefined): string | null => {
     if (!url) return null;
     if (url.startsWith('http://') || url.startsWith('https://')) return url;
@@ -2709,8 +2709,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       for (let i = 0; i < resolvedUrls.length; i++) {
         const curr = await loadImageAsync(resolvedUrls[i]);
         let data: ImageData;
-        if (useDiff && i > 0) {
-          const prev = await loadImageAsync(resolvedUrls[i - 1]);
+        const step = cfg.diffStep ?? 1;
+        if (useDiff && i >= step) {
+          const prev = await loadImageAsync(resolvedUrls[i - step]);
+          data = renderDiffFrame(prev, curr, w, h, cfg.gain, cfg.noiseFloor, cfg.gamma);
+        } else if (useDiff && i > 0) {
+          const prev = await loadImageAsync(resolvedUrls[Math.max(0, i - 1)]);
           data = renderDiffFrame(prev, curr, w, h, cfg.gain, cfg.noiseFloor, cfg.gamma);
         } else {
           data = renderRawFrame(curr, w, h);
