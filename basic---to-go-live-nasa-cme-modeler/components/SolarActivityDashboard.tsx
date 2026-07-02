@@ -61,7 +61,7 @@ interface ActiveSunspotRegion {
 }
 
 type CoronagraphSourceKey = 'soho_c2' | 'soho_c3' | 'stereo_cor2' | 'ccor1';
-type SuviWorkerSourceKey = 'suvi_195_primary' | 'suvi_304_secondary' | 'suvi_131_secondary';
+type SuviWorkerSourceKey = 'suvi_195_primary' | 'suvi_304_secondary' | 'suvi_131_secondary' | 'suvi_284_primary';
 interface CoronagraphFrame {
   key: string;
   ts: string;
@@ -148,7 +148,7 @@ const normalizeSolarLongitude = (value: number | null): number | null => {
 };
 
 
-type SolarImageryMode = 'SUVI_131' | 'SUVI_195' | 'SUVI_304' | 'SDO_HMIBC_1024' | 'SDO_HMIIF_1024';
+type SolarImageryMode = 'SUVI_131' | 'SUVI_195' | 'SUVI_284' | 'SUVI_304' | 'SDO_HMIBC_1024' | 'SDO_HMIIF_1024';
 type SunspotImageryMode = 'colorized' | 'magnetogram' | 'intensity';
 type PlaybackSpeedOption = 0.5 | 1 | 2 | 5 | 10;
 
@@ -173,9 +173,11 @@ const NOAA_ACTIVE_REGIONS_URLS = [
 const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png';
 const SUVI_304_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/latest.png';
 const SUVI_195_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/195/latest.png';
+const SUVI_284_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/284/latest.png';
 const SUVI_131_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/';
 const SUVI_304_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/304/';
 const SUVI_195_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/195/';
+const SUVI_284_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/284/';
 const SUVI_FRAME_INTERVAL_MINUTES = 4;
 const CORONAGRAPHY_WORKER_BASE = 'https://coronagraphy-processing.thenamesrock.workers.dev';
 const SUVI_DIFF_WORKER_BASE = 'https://suvi-difference-imagery.thenamesrock.workers.dev';
@@ -960,6 +962,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [sdoHmiB4096, setSdoHmiB4096] = useState({ url: null as string | null, loading: 'Loading image...' });
   const [sdoHmiIf4096, setSdoHmiIf4096] = useState({ url: null as string | null, loading: 'Loading image...' });
   const [suvi195, setSuvi195] = useState({ url: null as string | null, loading: 'Loading image...' });
+  const [suvi284, setSuvi284] = useState({ url: null as string | null, loading: 'Loading image...' });
   const [suviWorkerState, setSuviWorkerState] = useState<SuviWorkerStateResponse | null>(null);
   const [suviWorkerLoading, setSuviWorkerLoading] = useState<string | null>('Loading SUVI timeline...');
   const [suviFrameIndex, setSuviFrameIndex] = useState<number>(0);
@@ -1000,6 +1003,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   // SUVI defaults are channel-specific (195 / 304 / 131).
   const SUVI_DIFF_CONFIG_BY_SOURCE: Record<SuviWorkerSourceKey, { gain: number; noiseFloor: number; gamma: number }> = {
     suvi_195_primary:   { gain: 13.0, noiseFloor: 1, gamma: 0.30 },
+    suvi_284_primary:   { gain: 13.0, noiseFloor: 1, gamma: 0.30 },
     suvi_304_secondary: { gain: 9.0,  noiseFloor: 1, gamma: 0.30 },
     suvi_131_secondary: { gain: 15.5, noiseFloor: 7, gamma: 0.90 },
   };
@@ -1114,9 +1118,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     return frames.sort((a, b) => a.t - b.t).map((f) => f.url);
   }, []);
 
-  const buildSuviFrameCandidateGroups = useCallback((mode: 'SUVI_131' | 'SUVI_195' | 'SUVI_304') => {
-    const channel = mode === 'SUVI_131' ? '131' : mode === 'SUVI_195' ? '195' : '304';
-    const root = mode === 'SUVI_131' ? SUVI_131_INDEX_URL : mode === 'SUVI_195' ? SUVI_195_INDEX_URL : SUVI_304_INDEX_URL;
+  const buildSuviFrameCandidateGroups = useCallback((mode: 'SUVI_131' | 'SUVI_195' | 'SUVI_284' | 'SUVI_304') => {
+    const channel = mode === 'SUVI_131' ? '131' : mode === 'SUVI_195' ? '195' : mode === 'SUVI_284' ? '284' : '304';
+    const root = mode === 'SUVI_131' ? SUVI_131_INDEX_URL : mode === 'SUVI_195' ? SUVI_195_INDEX_URL : mode === 'SUVI_284' ? SUVI_284_INDEX_URL : SUVI_304_INDEX_URL;
     const now = Date.now();
     const sixHoursAgo = now - (6 * 60 * 60 * 1000);
     const intervalMs = SUVI_FRAME_INTERVAL_MINUTES * 60 * 1000;
@@ -1175,7 +1179,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     })
   ), []);
 
-  const buildSuviFallbackUrls = useCallback((mode: 'SUVI_131' | 'SUVI_195' | 'SUVI_304') => {
+  const buildSuviFallbackUrls = useCallback((mode: 'SUVI_131' | 'SUVI_195' | 'SUVI_284' | 'SUVI_304') => {
     const groups = buildSuviFrameCandidateGroups(mode);
     // Use only the first candidate per group (exact timestamp, g19, v1-0-2)
     // as an immediate placeholder. The directory listing will replace this
@@ -1183,7 +1187,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     return groups.map((group) => group[0]).filter(Boolean);
   }, [buildSuviFrameCandidateGroups]);
 
-  const buildSuviFrameUrls = useCallback(async (mode: 'SUVI_131' | 'SUVI_195' | 'SUVI_304') => {
+  const buildSuviFrameUrls = useCallback(async (mode: 'SUVI_131' | 'SUVI_195' | 'SUVI_284' | 'SUVI_304') => {
     const groups = buildSuviFrameCandidateGroups(mode);
     const resolved = await Promise.all(groups.map(async (group) => {
       const attempts = await Promise.all(group.map((url) => probeImageUrl(url)));
@@ -1192,8 +1196,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     return resolved.filter((url): url is string => Boolean(url));
   }, [buildSuviFrameCandidateGroups, probeImageUrl]);
 
-  const fetchSuviAnimationFrames = useCallback(async (mode: 'SUVI_131' | 'SUVI_195' | 'SUVI_304') => {
-    const indexUrl = mode === 'SUVI_131' ? SUVI_131_INDEX_URL : mode === 'SUVI_195' ? SUVI_195_INDEX_URL : SUVI_304_INDEX_URL;
+  const fetchSuviAnimationFrames = useCallback(async (mode: 'SUVI_131' | 'SUVI_195' | 'SUVI_284' | 'SUVI_304') => {
+    const indexUrl = mode === 'SUVI_131' ? SUVI_131_INDEX_URL : mode === 'SUVI_195' ? SUVI_195_INDEX_URL : mode === 'SUVI_284' ? SUVI_284_INDEX_URL : SUVI_304_INDEX_URL;
 
     try {
       const controller = new AbortController();
@@ -1220,6 +1224,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     SUVI_131: SUVI_131_URL,
     SUVI_304: SUVI_304_URL,
     SUVI_195: SUVI_195_URL,
+    SUVI_284: SUVI_284_URL,
     SDO_HMIBC_1024: `${SDO_HMI_BC_1024_URL}?hours=6&format=gif`,
     SDO_HMIIF_1024: `${SDO_HMI_IF_1024_URL}?hours=6&format=gif`,
   }), []);
@@ -1228,6 +1233,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     SUVI_131: 'SUVI 131Å',
     SUVI_304: 'SUVI 304Å',
     SUVI_195: 'SUVI 195Å',
+    SUVI_284: 'SUVI 284Å',
     SDO_HMIBC_1024: 'SDO HMI Continuum',
     SDO_HMIIF_1024: 'SDO HMI Intensitygram',
   };
@@ -1236,7 +1242,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     const sourceUrl = solarAnimationSources[mode];
     if (!sourceUrl) return;
 
-    if (mode === 'SUVI_131' || mode === 'SUVI_195' || mode === 'SUVI_304') {
+    if (mode === 'SUVI_131' || mode === 'SUVI_195' || mode === 'SUVI_284' || mode === 'SUVI_304') {
       setViewerMedia({
         type: 'animation',
         urls: buildSuviFallbackUrls(mode),
@@ -1324,6 +1330,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       'Helpful for monitoring evolving coronal regions and disturbances that can precede space-weather changes.',
       '195 Å imagery is useful for tracking coronal morphology over time and identifying evolving active regions.'
     ),
+    'suvi-284': buildStatTooltip(
+      'SUVI 284Å',
+      'EUV view sensitive to quiet-corona and coronal-hole temperatures (~2 MK Fe XV emission).',
+      'Excellent for identifying coronal holes — dark regions in 284 Å that drive high-speed solar-wind streams and recurrent geomagnetic activity.',
+      '284 Å highlights the boundary between active-region and quiet-Sun plasma; coronal holes appear as persistent dark patches useful for CH area tracking.'
+    ),
     'coronagraphy': buildStatTooltip(
       'Multi-source Coronagraphy',
       'A 6-hour rolling stack of coronagraph frames from CCOR-1, SOHO LASCO, and STEREO-A COR2.',
@@ -1363,6 +1375,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       else if (id === 'sdo-hmibc-1024') title = 'About SDO HMI Continuum Imagery';
       else if (id === 'sdo-hmiif-1024') title = 'About SDO HMI Intensitygram Imagery';
       else if (id === 'suvi-195') title = 'About SUVI 195Å Imagery';
+      else if (id === 'suvi-284') title = 'About SUVI 284Å Imagery';
       else if (id === 'coronagraphy') title = 'About Multi-source Coronagraphy';
       else if (id === 'solar-flares') title = 'About Solar Flares';
       else if (id === 'solar-imagery') title = 'About Solar Imagery Types';
@@ -1399,6 +1412,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     else if (id === 'sdo-hmibc-1024') title = 'About SDO HMI Continuum Imagery';
     else if (id === 'sdo-hmiif-1024') title = 'About SDO HMI Intensitygram Imagery';
     else if (id === 'suvi-195') title = 'About SUVI 195Å Imagery';
+    else if (id === 'suvi-284') title = 'About SUVI 284Å Imagery';
     else if (id === 'coronagraphy') title = 'About Multi-source Coronagraphy';
     else if (id === 'solar-flares') title = 'About Solar Flares';
     else if (id === 'solar-imagery') title = 'About Solar Imagery Types';
@@ -1773,6 +1787,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     fetchImage(resolveSdoImageUrl(SDO_HMI_B_1024_URL, forceDirectSdoRef.current), setSdoHmiB1024, false, false, SDO_HMI_B_1024_FALLBACK);
     fetchImage(resolveSdoImageUrl(SDO_HMI_IF_1024_URL, forceDirectSdoRef.current), setSdoHmiIf1024, false, false, SDO_HMI_IF_1024_FALLBACK);
     fetchImage(SUVI_195_URL, setSuvi195);
+    fetchImage(SUVI_284_URL, setSuvi284);
     fetchXrayFlux();
     fetchProtonFlux();
     fetchFlares();
@@ -2265,16 +2280,19 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const activeCoronagraphUrl = resolveCoronagraphUrl(activeCoronagraphFrame?.url);
   const previousCoronagraphUrl = resolveCoronagraphUrl(previousCoronagraphFrame?.url);
 
-  const suviSourceKeyByMode: Record<'SUVI_131' | 'SUVI_195' | 'SUVI_304', SuviWorkerSourceKey> = {
+  const suviSourceKeyByMode: Record<'SUVI_131' | 'SUVI_195' | 'SUVI_284' | 'SUVI_304', SuviWorkerSourceKey> = {
     SUVI_131: 'suvi_131_secondary',
     SUVI_195: 'suvi_195_primary',
+    SUVI_284: 'suvi_284_primary',
     SUVI_304: 'suvi_304_secondary',
   };
   const activeSuviSourceKey: SuviWorkerSourceKey = activeSunImage === 'SUVI_195'
     ? suviSourceKeyByMode.SUVI_195
-    : activeSunImage === 'SUVI_304'
-      ? suviSourceKeyByMode.SUVI_304
-      : suviSourceKeyByMode.SUVI_131;
+    : activeSunImage === 'SUVI_284'
+      ? suviSourceKeyByMode.SUVI_284
+      : activeSunImage === 'SUVI_304'
+        ? suviSourceKeyByMode.SUVI_304
+        : suviSourceKeyByMode.SUVI_131;
   const activeSuviDiffConfig = SUVI_DIFF_CONFIG_BY_SOURCE[activeSuviSourceKey] ?? SUVI_DIFF_CONFIG_BY_SOURCE.suvi_131_secondary;
   const activeSuviSourceState = suviWorkerState?.sources?.[activeSuviSourceKey] ?? null;
   const suviFrames = useMemo(() => {
@@ -2995,6 +3013,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 <button onClick={() => setActiveSunImage('SUVI_131')} className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_131' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>SUVI 131Å</button>
                 <button onClick={() => setActiveSunImage('SUVI_304')} className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_304' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>SUVI 304Å</button>
                 <button onClick={() => setActiveSunImage('SUVI_195')} className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_195' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>SUVI 195Å</button>
+                <button onClick={() => setActiveSunImage('SUVI_284')} className={`px-3 py-1 text-xs rounded transition-colors ${activeSunImage === 'SUVI_284' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>SUVI 284Å</button>
               </div>
 
               {/* Controls row: time window + mobile diff toggle + source label */}
