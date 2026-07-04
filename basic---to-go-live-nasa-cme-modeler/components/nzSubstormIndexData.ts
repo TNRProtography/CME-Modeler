@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 const TILDE_BASE = 'https://tilde.geonet.org.nz/v4';
-const SOLAR_WIND_IMF_URL = 'https://imap-solar-data-test.thenamesrock.workers.dev/rtsw/merged-24h';
+const SOLAR_WIND_IMF_URL = 'https://imap-solar-data-test.thenamesrock.workers.dev/';
 const DOMAIN = 'geomag';
 const SCALE_FACTOR = 100;
 const DISPLAY_DIVISOR = 10;
@@ -1462,14 +1462,14 @@ export const useNzSubstormIndexData = () => {
         let bz = 0;
         let speed = 0;
         let solarWindSource = '—';
-        // Handle both flat array and { ok, data } response formats
+        // Handle both { ok, data } and flat array response formats
         const swRows = Array.isArray(solarWindData) ? solarWindData
           : (solarWindData?.ok && Array.isArray(solarWindData.data) ? solarWindData.data : []);
         if (swRows.length > 0) {
-          const latestEntry = [...swRows].reverse().find((entry: any) => entry && (entry.speed != null || entry?.rtsw?.speed != null) && (entry.bz != null || entry?.rtsw?.bz != null));
+          const latestEntry = [...swRows].reverse().find((entry: any) => entry && entry.speed != null && entry.bz != null);
           if (latestEntry) {
-            bz = Number(latestEntry.bz ?? latestEntry?.rtsw?.bz ?? latestEntry?.imap?.bz) || 0;
-            speed = Number(latestEntry.speed ?? latestEntry?.rtsw?.speed ?? latestEntry?.imap?.speed) || 0;
+            bz = Number(latestEntry.bz) || 0;
+            speed = Number(latestEntry.speed) || 0;
             solarWindSource = getSourceLabel(latestEntry?.src?.bz ?? latestEntry?.src?.speed);
           }
         }

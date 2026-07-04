@@ -875,7 +875,9 @@ export const useForecastData = (
         // Compute Newell coupling: requires speed + By + Bz
         const speedForNewell = speedReading.value;
         if (speedForNewell != null && speedForNewell > 0 && by != null && bz != null) {
-          const nc = newellCoupling(speedForNewell, by, bz);
+          // newellCoupling() returns val/1000 for the probability model;
+          // charts and gauges need the raw Wb/s scale (typical 0–30,000), so ×1000.
+          const nc = newellCoupling(speedForNewell, by, bz) * 1000;
           if (Number.isFinite(nc)) newellPoints.push({ x: t, y: nc });
         }
 
