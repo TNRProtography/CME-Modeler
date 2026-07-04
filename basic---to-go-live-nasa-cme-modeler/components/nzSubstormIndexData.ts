@@ -1270,6 +1270,9 @@ const parseJsonWithRowRecovery = (rawText: string) => {
 
 const fetchJsonWithRecovery = async (url: string) => {
   const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} from ${url}`);
+  }
   const raw = await response.text();
   const parsed = parseJsonWithRowRecovery(raw);
   if (parsed === null) {
@@ -1394,6 +1397,9 @@ export const useNzSubstormIndexData = () => {
         if (stationEntries.length === 0) throw new Error('No magnetometer stations found.');
 
         const aggregationParams = `aggregationPeriod=${AGGREGATION_MINUTES}m&aggregationFunction=mean`;
+        // Fetch GeoNet magnetometer data and solar wind independently.
+        // Solar wind is supplementary (outlook text only) — if it fails,
+        // the ground magnetometer chart must still render.
         const [stationSeries, solarWindRes] = await Promise.all([
           Promise.all(
             stationEntries.map(async (entry) => {
@@ -1402,7 +1408,10 @@ export const useNzSubstormIndexData = () => {
               return { station: entry.stationCode, seriesKey: entry.seriesKey, data: series };
             })
           ),
-          fetchJsonWithRecovery(SOLAR_WIND_IMF_URL),
+          fetchJsonWithRecovery(`${SOLAR_WIND_IMF_URL}?_=${Date.now()}`).catch((e) => {
+            console.warn('[substorm-index] Solar wind fetch failed (non-fatal):', e.message);
+            return null;
+          }),
         ]);
         const solarWindData = solarWindRes;
 
@@ -1462,15 +1471,18 @@ export const useNzSubstormIndexData = () => {
         let bz = 0;
         let speed = 0;
         let solarWindSource = '—';
-        // Handle both { ok, data } and flat array response formats
-        const swRows = Array.isArray(solarWindData) ? solarWindData
-          : (solarWindData?.ok && Array.isArray(solarWindData.data) ? solarWindData.data : []);
-        if (swRows.length > 0) {
-          const latestEntry = [...swRows].reverse().find((entry: any) => entry && entry.speed != null && entry.bz != null);
-          if (latestEntry) {
-            bz = Number(latestEntry.bz) || 0;
-            speed = Number(latestEntry.speed) || 0;
-            solarWindSource = getSourceLabel(latestEntry?.src?.bz ?? latestEntry?.src?.speed);
+        // Handle both { ok, data } and flat array response formats; solarWindData
+        // may be null if the fetch failed (non-fatal — chart still renders).
+        if (solarWindData != null) {
+          const swRows = Array.isArray(solarWindData) ? solarWindData
+            : (solarWindData?.ok && Array.isArray(solarWindData.data) ? solarWindData.data : []);
+          if (swRows.length > 0) {
+            const latestEntry = [...swRows].reverse().find((entry: any) => entry && entry.speed != null && entry.bz != null);
+            if (latestEntry) {
+              bz = Number(latestEntry.bz) || 0;
+              speed = Number(latestEntry.speed) || 0;
+              solarWindSource = getSourceLabel(latestEntry?.src?.bz ?? latestEntry?.src?.speed);
+            }
           }
         }
 
