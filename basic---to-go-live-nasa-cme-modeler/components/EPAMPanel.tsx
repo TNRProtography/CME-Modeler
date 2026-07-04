@@ -453,14 +453,35 @@ const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) =
       if (rCombined.status==='fulfilled' && rCombined.value?.cross_validation) setCombined(rCombined.value);
       if (rNm.status==='fulfilled' && rNm.value.length)                    setNmRaw(rNm.value);
       if (rSw.status==='fulfilled' && rSw.value) {
-        const s = Array.isArray((rSw.value as any).speed) ? (rSw.value as any).speed : [];
-        const d = Array.isArray((rSw.value as any).density) ? (rSw.value as any).density : [];
-        const t = Array.isArray((rSw.value as any).temp) ? (rSw.value as any).temp : [];
-        const m = Array.isArray((rSw.value as any).mag) ? (rSw.value as any).mag : [];
-        setSpeedRaw(s.filter((p: any) => Number.isFinite(p?.x) && Number.isFinite(p?.y)));
-        setDensityRaw(d.filter((p: any) => Number.isFinite(p?.x) && Number.isFinite(p?.y)));
-        setTempRaw(t.filter((p: any) => Number.isFinite(p?.x) && Number.isFinite(p?.y)));
-        setMagRaw(m.filter((p: any) => Number.isFinite(p?.time) && Number.isFinite(p?.bt) && Number.isFinite(p?.bz)));
+        // Parse the merged-24h response: either a flat array or { ok: true, data: [...] }
+        const swPayload = rSw.value;
+        const swRows: any[] = Array.isArray(swPayload)
+          ? swPayload
+          : (swPayload?.ok && Array.isArray(swPayload.data) ? swPayload.data : []);
+        const s: SolarWindPoint[] = [];
+        const d: SolarWindPoint[] = [];
+        const tp: SolarWindPoint[] = [];
+        const m: SolarMagPoint[] = [];
+        for (const entry of swRows) {
+          const timeValue = entry.time_utc ?? entry.time_nz;
+          const t = timeValue ? new Date(timeValue).getTime() : NaN;
+          if (!Number.isFinite(t)) continue;
+          const speed = Number(entry?.speed ?? entry?.rtsw?.speed ?? entry?.imap?.speed);
+          const density = Number(entry?.density ?? entry?.rtsw?.density ?? entry?.imap?.density);
+          const temp = Number(entry?.temp ?? entry?.rtsw?.temp ?? entry?.imap?.temp);
+          const bt = Number(entry?.bt ?? entry?.rtsw?.bt ?? entry?.imap?.bt);
+          const bz = Number(entry?.bz ?? entry?.rtsw?.bz ?? entry?.imap?.bz);
+          const by = Number(entry?.by ?? entry?.rtsw?.by ?? entry?.imap?.by);
+          if (Number.isFinite(speed) && speed >= 0) s.push({ x: t, y: speed });
+          if (Number.isFinite(density) && density >= 0) d.push({ x: t, y: density });
+          if (Number.isFinite(temp) && temp >= 0) tp.push({ x: t, y: temp });
+          const computedBt = Number.isFinite(bt) ? bt : (Number.isFinite(by) && Number.isFinite(bz) ? Math.sqrt(by**2 + bz**2) : NaN);
+          if (Number.isFinite(computedBt) && Number.isFinite(bz)) m.push({ time: t, bt: computedBt, bz });
+        }
+        setSpeedRaw(s);
+        setDensityRaw(d);
+        setTempRaw(tp);
+        setMagRaw(m);
       }
       setLastUpdated(new Date());
     } catch {}

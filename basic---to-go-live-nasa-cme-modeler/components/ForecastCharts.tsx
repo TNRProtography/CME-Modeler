@@ -1282,15 +1282,12 @@ export const SubstormIndexChart: React.FC<{ history: { timestamp_utc: string; sc
 // being pumped in. Typical range 0–15,000 Wb/s.
 // ─────────────────────────────────────────────────────────────
 
-export const NewellCouplingChart: React.FC<{ history: { timestamp_utc: string; metrics: { solar_wind: { newell_coupling_now: number } } }[] }> = ({ history }) => {
+export const NewellCouplingChart: React.FC<{ data: { x: number; y: number }[] }> = ({ data: rawData }) => {
     const [timeRange, setTimeRange] = useState(6 * 3600000);
 
     const data = useMemo(() =>
-        history.map(h => ({
-            x: new Date(h.timestamp_utc).getTime(),
-            y: h.metrics?.solar_wind?.newell_coupling_now ?? 0,
-        })).filter(p => Number.isFinite(p.x) && Number.isFinite(p.y)),
-        [history]
+        rawData.filter(p => Number.isFinite(p.x) && Number.isFinite(p.y)),
+        [rawData]
     );
 
     const latestVal = data.at(-1)?.y ?? 0;
@@ -1360,15 +1357,12 @@ export const NewellCouplingChart: React.FC<{ history: { timestamp_utc: string; m
 // the magnetopause and enhancing reconnection.
 // ─────────────────────────────────────────────────────────────
 
-export const DynamicPressureChart: React.FC<{ history: { timestamp_utc: string; metrics: { solar_wind: { dynamic_pressure_nPa: number } } }[] }> = ({ history }) => {
+export const DynamicPressureChart: React.FC<{ data: { x: number; y: number }[] }> = ({ data: rawData }) => {
     const [timeRange, setTimeRange] = useState(6 * 3600000);
 
     const data = useMemo(() =>
-        history.map(h => ({
-            x: new Date(h.timestamp_utc).getTime(),
-            y: h.metrics?.solar_wind?.dynamic_pressure_nPa ?? 0,
-        })).filter(p => Number.isFinite(p.x) && Number.isFinite(p.y) && p.y >= 0),
-        [history]
+        rawData.filter(p => Number.isFinite(p.x) && Number.isFinite(p.y) && p.y >= 0),
+        [rawData]
     );
 
     const latestVal = data.at(-1)?.y ?? 0;

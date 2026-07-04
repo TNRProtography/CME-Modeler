@@ -450,6 +450,8 @@ export const useForecastData = (
   const [allTempData, setAllTempData] = useState<any[]>([]);
   const [allImfClockData, setAllImfClockData] = useState<any[]>([]);
   const [allMagneticData, setAllMagneticData] = useState<any[]>([]);
+  const [allNewellData, setAllNewellData] = useState<{ x: number; y: number }[]>([]);
+  const [allPressureData, setAllPressureData] = useState<{ x: number; y: number }[]>([]);
   const [goes18Data, setGoes18Data] = useState<{ time: number; hp: number; }[]>([]);
   const [goes19Data, setGoes19Data] = useState<{ time: number; hp: number; }[]>([]);
   const [loadingMagnetometer, setLoadingMagnetometer] = useState<string | null>('Loading data...');
@@ -816,6 +818,8 @@ export const useForecastData = (
       const tempPoints: { time: number; value: number; source: string }[] = [];
       const clockPoints: { time: number; value: number; source: string }[] = [];
       const magneticPoints: { time: number; bt: number; bz: number; by: number; bx: number; clock: number | null }[] = [];
+      const newellPoints: { x: number; y: number }[] = [];
+      const pressurePoints: { x: number; y: number }[] = [];
 
       for (const entry of solarWindData) {
         const timeValue = entry.time_utc ?? entry.time_nz;
@@ -867,6 +871,21 @@ export const useForecastData = (
         if (computedBt != null && by != null && bz != null && computedBt >= 0) {
           magneticPoints.push({ time: t, bt: computedBt, by, bz, bx: bx ?? 0, clock });
         }
+
+        // Compute Newell coupling: requires speed + By + Bz
+        const speedForNewell = speedReading.value;
+        if (speedForNewell != null && speedForNewell > 0 && by != null && bz != null) {
+          const nc = newellCoupling(speedForNewell, by, bz);
+          if (Number.isFinite(nc)) newellPoints.push({ x: t, y: nc });
+        }
+
+        // Compute dynamic pressure: P = 1.6726e-6 · n · v²  (nPa)
+        const densityForPressure = densityReading.value;
+        const speedForPressure = speedReading.value;
+        if (densityForPressure != null && densityForPressure >= 0 && speedForPressure != null && speedForPressure > 0) {
+          const pdyn = 1.6726e-6 * densityForPressure * speedForPressure * speedForPressure;
+          if (Number.isFinite(pdyn)) pressurePoints.push({ x: t, y: pdyn });
+        }
       }
 
       speedPoints.sort((a, b) => a.time - b.time);
@@ -874,12 +893,16 @@ export const useForecastData = (
       tempPoints.sort((a, b) => a.time - b.time);
       clockPoints.sort((a, b) => a.time - b.time);
       magneticPoints.sort((a, b) => a.time - b.time);
+      newellPoints.sort((a, b) => a.x - b.x);
+      pressurePoints.sort((a, b) => a.x - b.x);
 
       setAllSpeedData(speedPoints.map(p => ({ x: p.time, y: p.value })));
       setAllDensityData(densityPoints.map(p => ({ x: p.time, y: p.value })));
       setAllTempData(tempPoints.map(p => ({ x: p.time, y: p.value })));
       setAllImfClockData(clockPoints.map(p => ({ x: p.time, y: p.value })));
       setAllMagneticData(magneticPoints);
+      setAllNewellData(newellPoints);
+      setAllPressureData(pressurePoints);
 
       const latestSpeed = speedPoints.at(-1);
       const latestDensity = densityPoints.at(-1);
@@ -1093,6 +1116,8 @@ export const useForecastData = (
     allTempData,
     allImfClockData,
     allMagneticData,
+    allNewellData,
+    allPressureData,
     goes18Data,
     goes19Data,
     loadingMagnetometer,

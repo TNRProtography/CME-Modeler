@@ -218,7 +218,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     // ... [Original Hooks & State] ...
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
-        owmDailyForecast, fetchAllData, allSpeedData, allDensityData, allTempData, allImfClockData, allMagneticData, hemisphericPowerHistory,
+        owmDailyForecast, fetchAllData, allSpeedData, allDensityData, allTempData, allImfClockData, allMagneticData, allNewellData, allPressureData, hemisphericPowerHistory,
         substormForecast, substormRiskData, activitySummary, interplanetaryShockData,
         userLatitude, userLongitude, locationFailed, isOutsideNZ
     } = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus, onInitialLoadProgress);
@@ -240,15 +240,17 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         const rawWorkerScore = substormRiskData?.current?.score ?? null;
         const base = rawWorkerScore ?? auroraScore ?? 0;
         const workerTrend = substormRiskData?.current?.risk_trend;
-        const newellNow = substormRiskData?.metrics?.solar_wind?.newell_coupling_now;
-        const newellAvg30 = substormRiskData?.metrics?.solar_wind?.newell_avg_30m;
+        const _pNewellNow = allNewellData.length > 0 ? allNewellData[allNewellData.length - 1].y : undefined;
+        const _pNewellAvg30 = (() => { const c = Date.now() - 30 * 60000; const pts = allNewellData.filter(p => p.x >= c); return pts.length > 0 ? pts.reduce((s, p) => s + p.y, 0) / pts.length : undefined; })();
+        const newellNow = _pNewellNow ?? substormRiskData?.metrics?.solar_wind?.newell_coupling_now;
+        const newellAvg30 = _pNewellAvg30 ?? substormRiskData?.metrics?.solar_wind?.newell_avg_30m;
         const workerConf = substormRiskData?.current?.confidence;
         const { score15, score30, score60 } = projectSubstormScores(
             base, substormForecast, workerTrend, newellNow, newellAvg30, workerConf
         );
         const score120 = auroraScore ?? 0;
         return { score15, score30, score60, score120 };
-    }, [substormRiskData, auroraScore, substormForecast]);
+    }, [substormRiskData, auroraScore, substormForecast, allNewellData]);
 
     // ... [Original UseEffects & Handlers] ...
     useEffect(() => {
@@ -525,8 +527,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
         const workerScore = substormRiskData?.current?.score ?? null;
         const workerTrend = substormRiskData?.current?.risk_trend;
-        const newellNow   = substormRiskData?.metrics?.solar_wind?.newell_coupling_now ?? 0;
-        const newellAvg30 = substormRiskData?.metrics?.solar_wind?.newell_avg_30m ?? 0;
+        const _proxyNewellNow   = allNewellData.length > 0 ? allNewellData[allNewellData.length - 1].y : 0;
+        const _proxyNewellAvg30 = (() => { const cutoff = Date.now() - 30 * 60000; const pts = allNewellData.filter(p => p.x >= cutoff); return pts.length > 0 ? pts.reduce((s, p) => s + p.y, 0) / pts.length : _proxyNewellNow; })();
+        const newellNow   = _proxyNewellNow || (substormRiskData?.metrics?.solar_wind?.newell_coupling_now ?? 0);
+        const newellAvg30 = _proxyNewellAvg30 || (substormRiskData?.metrics?.solar_wind?.newell_avg_30m ?? 0);
         const base        = workerScore ?? auroraScore ?? 0;
         const spotScore   = auroraScore ?? 0;
 
@@ -659,10 +663,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     moonSetMs={celestialTimes?.moon?.set ?? null}
                                     userLatitude={userLatitude}
                                     userLongitude={userLongitude}
+                                    allNewellData={allNewellData}
+                                    allMagneticData={allMagneticData}
                                 />
                             </div>
                             </div>
-                            <div id="aurora-sightings-section" className="col-span-12"><AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} auroraScore={auroraScore} rawScore15={ovalProjectedScores.score15} rawScore30={ovalProjectedScores.score30} rawScore60={ovalProjectedScores.score60} rawScore120={ovalProjectedScores.score120} /></div>
+                            <div id="aurora-sightings-section" className="col-span-12"><AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} allNewellData={allNewellData} auroraScore={auroraScore} rawScore15={ovalProjectedScores.score15} rawScore30={ovalProjectedScores.score30} rawScore60={ovalProjectedScores.score60} rawScore120={ovalProjectedScores.score120} /></div>
                             <div id="kp-forecast-section" className="col-span-12"><KpForecastTimeline
                                 moonIllumination={celestialTimes?.moon?.illumination ?? null}
                                 userLatitude={userLatitude}
@@ -704,6 +710,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     moonSetMs={celestialTimes?.moon?.set ?? null}
                                     userLatitude={userLatitude}
                                     userLongitude={userLongitude}
+                                    allNewellData={allNewellData}
+                                    allMagneticData={allMagneticData}
                                 />
                             </div>
                             </div>
@@ -717,14 +725,18 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 moonWaxing={celestialTimes?.moon?.waxing ?? null}
                             />
 {(() => {
-                                // Compute oval boundary for chart visibility probability
-                                const _newell60 = substormRiskData?.metrics?.solar_wind?.newell_avg_60m ?? 0;
-                                const _newell30 = substormRiskData?.metrics?.solar_wind?.newell_avg_30m ?? 0;
+                                // Compute oval boundary from proxy newell data (falling back to substorm worker)
+                                const _proxyN60 = (() => { const cutoff = Date.now() - 60 * 60000; const pts = allNewellData.filter(p => p.x >= cutoff); return pts.length > 0 ? pts.reduce((s, p) => s + p.y, 0) / pts.length : 0; })();
+                                const _proxyN30 = (() => { const cutoff = Date.now() - 30 * 60000; const pts = allNewellData.filter(p => p.x >= cutoff); return pts.length > 0 ? pts.reduce((s, p) => s + p.y, 0) / pts.length : 0; })();
+                                const _newell60 = _proxyN60 || (substormRiskData?.metrics?.solar_wind?.newell_avg_60m ?? 0);
+                                const _newell30 = _proxyN30 || (substormRiskData?.metrics?.solar_wind?.newell_avg_30m ?? 0);
                                 const _newell = Math.max(_newell60, _newell30 * 0.85);
                                 let _boundary = -( 65.5 - _newell / 1800);
                                 _boundary = Math.max(_boundary, -76);
                                 _boundary = Math.min(_boundary, -44);
                                 if (substormRiskData?.current?.bay_onset_flag) _boundary = Math.min(_boundary, -47.2);
+                                // Get latest Bz from proxy magnetic data
+                                const _proxyBz = allMagneticData.length > 0 ? allMagneticData[allMagneticData.length - 1].bz : null;
                                 return (
                                     <ForecastTrendChart
                                         auroraScoreHistory={auroraScoreHistory}
@@ -734,14 +746,14 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                         userLatitude={userLatitude}
                                         userLongitude={userLongitude}
                                         moonIllumination={gaugeData?.moon?.illumination ?? null}
-                                        substormBz={substormRiskData?.metrics?.solar_wind?.bz ?? null}
+                                        substormBz={_proxyBz ?? (substormRiskData?.metrics?.solar_wind?.bz ?? null)}
                                         substormScore={substormRiskData?.current?.score ?? null}
                                         ovalBoundaryGmag={_boundary}
                                         substormHistory={substormRiskData?.history_24h ?? null}
                                     />
                                 );
                             })()}
-                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} auroraScore={auroraScore} rawScore15={ovalProjectedScores.score15} rawScore30={ovalProjectedScores.score30} rawScore60={ovalProjectedScores.score60} rawScore120={ovalProjectedScores.score120} />
+                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} allNewellData={allNewellData} auroraScore={auroraScore} rawScore15={ovalProjectedScores.score15} rawScore30={ovalProjectedScores.score30} rawScore60={ovalProjectedScores.score60} rawScore120={ovalProjectedScores.score120} />
                             
                             <div id="imf-chart-section" className="col-span-12"><ForecastChartPanel
                                 title="Interplanetary Magnetic Field"
@@ -809,6 +821,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 substormRiskData={substormRiskData}
                                 substormForecast={substormForecast}
                                 onOpenModal={() => openModal('magnetotail')}
+                                proxyMagneticData={allMagneticData}
+                                proxyPressureData={allPressureData}
+                                proxyNewellData={allNewellData}
                             />
 
                             <RussellMcPherron
@@ -818,20 +833,35 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
                             <ForecastChartPanel
                                 title="Newell Coupling Function"
-                                currentValue={substormRiskData ? `${substormRiskData.metrics.solar_wind.newell_coupling_now.toFixed(0)} <span class='text-base'>Wb/s</span><span class='text-xs block text-neutral-400'>30m avg: ${substormRiskData.metrics.solar_wind.newell_avg_30m.toFixed(0)} · 60m avg: ${substormRiskData.metrics.solar_wind.newell_avg_60m.toFixed(0)}</span>` : '—'}
+                                currentValue={allNewellData.length > 0 ? (() => {
+                                    const latest = allNewellData[allNewellData.length - 1];
+                                    const now = Date.now();
+                                    const avg30 = allNewellData.filter(p => p.x >= now - 30 * 60000);
+                                    const avg60 = allNewellData.filter(p => p.x >= now - 60 * 60000);
+                                    const avg30Val = avg30.length > 0 ? avg30.reduce((s, p) => s + p.y, 0) / avg30.length : latest.y;
+                                    const avg60Val = avg60.length > 0 ? avg60.reduce((s, p) => s + p.y, 0) / avg60.length : latest.y;
+                                    return `${latest.y.toFixed(0)} <span class='text-base'>Wb/s</span><span class='text-xs block text-neutral-400'>30m avg: ${avg30Val.toFixed(0)} · 60m avg: ${avg60Val.toFixed(0)}</span>`;
+                                })() : '—'}
                                 emoji="🔗"
                                 onOpenModal={() => openModal('newell-coupling')}
                             >
-                                <NewellCouplingChart history={substormRiskData?.history_24h ?? []} />
+                                <NewellCouplingChart data={allNewellData} />
                             </ForecastChartPanel>
 
                             <ForecastChartPanel
                                 title="Dynamic Pressure"
-                                currentValue={substormRiskData ? `${substormRiskData.metrics.solar_wind.dynamic_pressure_nPa.toFixed(2)} <span class='text-base'>nPa</span><span class='text-xs block text-neutral-400'>30m avg: ${substormRiskData.metrics.solar_wind.avg_30m_pressure_nPa.toFixed(2)} nPa · density ${substormRiskData.metrics.solar_wind.density.toFixed(1)} p/cm³</span>` : '—'}
+                                currentValue={allPressureData.length > 0 ? (() => {
+                                    const latest = allPressureData[allPressureData.length - 1];
+                                    const now = Date.now();
+                                    const avg30 = allPressureData.filter(p => p.x >= now - 30 * 60000);
+                                    const avg30Val = avg30.length > 0 ? avg30.reduce((s, p) => s + p.y, 0) / avg30.length : latest.y;
+                                    const latestDen = allDensityData.length > 0 ? allDensityData[allDensityData.length - 1].y : 0;
+                                    return `${latest.y.toFixed(2)} <span class='text-base'>nPa</span><span class='text-xs block text-neutral-400'>30m avg: ${avg30Val.toFixed(2)} nPa · density ${latestDen.toFixed(1)} p/cm³</span>`;
+                                })() : '—'}
                                 emoji="💨"
                                 onOpenModal={() => openModal('dynamic-pressure')}
                             >
-                                <DynamicPressureChart history={substormRiskData?.history_24h ?? []} />
+                                <DynamicPressureChart data={allPressureData} />
                             </ForecastChartPanel>
 
                             <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3><div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div></div>

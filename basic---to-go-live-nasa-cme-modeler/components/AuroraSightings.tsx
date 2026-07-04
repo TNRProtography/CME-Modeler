@@ -73,6 +73,8 @@ interface AuroraSightingsProps {
   refreshSignal?: number;
   onSightingsLoaded?: (sightings: SightingReport[]) => void;
   substormRiskData?: SubstormRiskData | null;
+  /** Proxy-derived newell coupling history (from RTSW merged-24h) */
+  allNewellData?: { x: number; y: number }[];
   // Oval forecast timeline props
   auroraScore?: number | null;
   rawScore15?: number;
@@ -488,7 +490,7 @@ const ForecastOvalOverlay: React.FC<ForecastOvalOverlayProps> = ({ frame }) => {
   );
 };
 
-const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSignal, onSightingsLoaded, substormRiskData, auroraScore, rawScore15, rawScore30, rawScore60, rawScore120 }) => {
+const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSignal, onSightingsLoaded, substormRiskData, allNewellData, auroraScore, rawScore15, rawScore30, rawScore60, rawScore120 }) => {
     const [sightings, setSightings] = useState<SightingReport[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -856,6 +858,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                     {/* Oval forecast timeline slider */}
                     <OvalForecastTimeline
                         substormRiskData={substormRiskData}
+                        allNewellData={allNewellData}
                         auroraScore={auroraScore ?? null}
                         score15={rawScore15 ?? 0}
                         score30={rawScore30 ?? 0}

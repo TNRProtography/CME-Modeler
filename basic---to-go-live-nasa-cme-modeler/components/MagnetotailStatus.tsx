@@ -14,7 +14,15 @@ interface SubstormRiskDataLike {
   metrics: { solar_wind: { bz: number; bt: number; speed: number; density: number; dynamic_pressure_nPa: number; avg_30m_pressure_nPa: number; newell_coupling_now: number; newell_avg_30m: number; newell_avg_60m: number; southward_minutes_30m: number } };
 }
 interface SubstormForecastLike { status: 'QUIET' | 'WATCH' | 'LIKELY_60' | 'IMMINENT_30' | 'ONSET'; p30: number; p60: number }
-interface Props { substormRiskData: SubstormRiskDataLike | null | undefined; substormForecast: SubstormForecastLike; onOpenModal: () => void }
+interface Props {
+  substormRiskData: SubstormRiskDataLike | null | undefined;
+  substormForecast: SubstormForecastLike;
+  onOpenModal: () => void;
+  /** Proxy-derived data from RTSW merged-24h */
+  proxyMagneticData?: { time: number; bt: number; bz: number; by: number; bx: number }[];
+  proxyPressureData?: { x: number; y: number }[];
+  proxyNewellData?: { x: number; y: number }[];
+}
 
 // ---- State machine ----
 type MagState = 'QUIET' | 'LOADING' | 'STRETCHED' | 'SNAPPING';
@@ -28,14 +36,25 @@ function deriveMagState(risk: SubstormRiskDataLike | null | undefined, fc: Subst
 }
 
 // ---- Oval boundary (same as AuroraSightings) ----
-function computeOvalBoundary(risk: SubstormRiskDataLike | null | undefined): number {
-  if (!risk) return -65.5;
-  const n60 = risk.metrics.solar_wind.newell_avg_60m ?? 0;
-  const n30 = risk.metrics.solar_wind.newell_avg_30m ?? 0;
+function computeOvalBoundary(risk: SubstormRiskDataLike | null | undefined, proxyNewellData?: { x: number; y: number }[]): number {
+  // Compute newell from proxy data if available
+  let n60 = 0, n30 = 0;
+  if (proxyNewellData && proxyNewellData.length > 0) {
+    const now = Date.now();
+    const pts60 = proxyNewellData.filter(p => p.x >= now - 60 * 60000);
+    const pts30 = proxyNewellData.filter(p => p.x >= now - 30 * 60000);
+    n60 = pts60.length > 0 ? pts60.reduce((s, p) => s + p.y, 0) / pts60.length : 0;
+    n30 = pts30.length > 0 ? pts30.reduce((s, p) => s + p.y, 0) / pts30.length : 0;
+  }
+  if (!n60 && !n30 && !risk) return -65.5;
+  if (!n60 && !n30 && risk) {
+    n60 = risk.metrics.solar_wind.newell_avg_60m ?? 0;
+    n30 = risk.metrics.solar_wind.newell_avg_30m ?? 0;
+  }
   const newell = Math.max(n60, n30 * 0.85);
   let eq = -(65.5 - newell / 1800);
   eq = Math.max(eq, -76); eq = Math.min(eq, -44);
-  if (risk.current.bay_onset_flag) eq = Math.min(eq, -47.2);
+  if (risk?.current?.bay_onset_flag) eq = Math.min(eq, -47.2);
   return eq;
 }
 // ---- IGRF-13 (same as AuroraSightings) ----
@@ -233,12 +252,13 @@ function renderGlobe(
 }
 
 // ======================================================================
-const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast, onOpenModal }) => {
+const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast, onOpenModal, proxyMagneticData, proxyPressureData, proxyNewellData }) => {
   const magState = deriveMagState(substormRiskData, substormForecast);
   const score = substormRiskData?.current?.score ?? 0;
-  const bz = substormRiskData?.metrics?.solar_wind?.bz ?? 0;
-  const pressure = substormRiskData?.metrics?.solar_wind?.dynamic_pressure_nPa ?? 2;
-  const ovalBound = computeOvalBoundary(substormRiskData);
+  // Prefer proxy RTSW data, fall back to substorm worker
+  const bz = (proxyMagneticData && proxyMagneticData.length > 0 ? proxyMagneticData[proxyMagneticData.length - 1].bz : null) ?? substormRiskData?.metrics?.solar_wind?.bz ?? 0;
+  const pressure = (proxyPressureData && proxyPressureData.length > 0 ? proxyPressureData[proxyPressureData.length - 1].y : null) ?? substormRiskData?.metrics?.solar_wind?.dynamic_pressure_nPa ?? 2;
+  const ovalBound = computeOvalBoundary(substormRiskData, proxyNewellData);
   const comp = dayComp(pressure);
   const isSnapping = magState === 'SNAPPING';
   const tailEndX = isSnapping ? scoreToTailX(Math.max(score, 40)) : scoreToTailX(score);

@@ -40,6 +40,9 @@ export interface OvalForecastTimelineProps {
     } | null;
   } | null | undefined;
 
+  /** Proxy-derived newell coupling history (from RTSW merged-24h) */
+  allNewellData?: { x: number; y: number }[];
+
   // Projected scores from VisibilityForecastPanel (raw, before location adjustment)
   auroraScore: number | null;
   score15: number;
@@ -164,6 +167,7 @@ function buildFrames(
 
 export const OvalForecastTimeline: React.FC<OvalForecastTimelineProps> = ({
   substormRiskData,
+  allNewellData,
   auroraScore,
   score15,
   score30,
@@ -175,8 +179,11 @@ export const OvalForecastTimeline: React.FC<OvalForecastTimelineProps> = ({
   const [isPlaying, setIsPlaying] = useState(false);
   const playIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const newellNow = substormRiskData?.metrics?.solar_wind?.newell_coupling_now ?? 0;
-  const newellAvg30 = substormRiskData?.metrics?.solar_wind?.newell_avg_30m ?? 0;
+  // Prefer proxy RTSW data, fall back to substorm worker
+  const _pNewellNow = allNewellData && allNewellData.length > 0 ? allNewellData[allNewellData.length - 1].y : undefined;
+  const _pNewellAvg30 = (() => { if (!allNewellData || allNewellData.length === 0) return undefined; const c = Date.now() - 30 * 60000; const pts = allNewellData.filter(p => p.x >= c); return pts.length > 0 ? pts.reduce((s, p) => s + p.y, 0) / pts.length : undefined; })();
+  const newellNow = _pNewellNow ?? substormRiskData?.metrics?.solar_wind?.newell_coupling_now ?? 0;
+  const newellAvg30 = _pNewellAvg30 ?? substormRiskData?.metrics?.solar_wind?.newell_avg_30m ?? 0;
   const currentScore = substormRiskData?.current?.score ?? auroraScore ?? 0;
   const bayOnset = substormRiskData?.current?.bay_onset_flag ?? false;
 

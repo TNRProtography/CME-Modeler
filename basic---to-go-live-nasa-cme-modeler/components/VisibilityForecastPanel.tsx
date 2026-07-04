@@ -47,6 +47,9 @@ interface VisibilityForecastPanelProps {
   moonSetMs?: number | null;
   userLatitude?: number | null;
   userLongitude?: number | null;
+  /** Proxy-derived data from RTSW merged-24h */
+  allNewellData?: { x: number; y: number }[];
+  allMagneticData?: { time: number; bt: number; bz: number; by: number; bx: number }[];
 }
 
 type ConfidenceLevel = 'high' | 'medium' | 'low';
@@ -339,6 +342,8 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   moonSetMs,
   userLatitude,
   userLongitude,
+  allNewellData,
+  allMagneticData,
 }) => {
   const [modalState, setModalState] = useState<{ title: string; content: string } | null>(null);
 
@@ -445,11 +450,16 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   const workerLevel   = substormRiskData?.current?.level;
   const bayOnset      = substormRiskData?.current?.bay_onset_flag   ?? false;
   const cmeSheath     = substormRiskData?.current?.cme_sheath_flag  ?? false;
-  const newellNow     = substormRiskData?.metrics?.solar_wind?.newell_coupling_now;
-  const newellAvg30   = substormRiskData?.metrics?.solar_wind?.newell_avg_30m;
+  // Prefer proxy RTSW data for solar wind values, fall back to substorm worker
+  const _pNewellNow = allNewellData && allNewellData.length > 0 ? allNewellData[allNewellData.length - 1].y : undefined;
+  const _pNewellAvg30 = (() => { if (!allNewellData || allNewellData.length === 0) return undefined; const c = Date.now() - 30 * 60000; const pts = allNewellData.filter(p => p.x >= c); return pts.length > 0 ? pts.reduce((s, p) => s + p.y, 0) / pts.length : undefined; })();
+  const _pBz = allMagneticData && allMagneticData.length > 0 ? allMagneticData[allMagneticData.length - 1].bz : undefined;
+  const _pSouthMin30 = (() => { if (!allMagneticData || allMagneticData.length === 0) return undefined; const c = Date.now() - 30 * 60000; const pts = allMagneticData.filter(p => p.time >= c); if (pts.length === 0) return undefined; return pts.filter(p => p.bz < 0).length; })();
+  const newellNow     = _pNewellNow ?? substormRiskData?.metrics?.solar_wind?.newell_coupling_now;
+  const newellAvg30   = _pNewellAvg30 ?? substormRiskData?.metrics?.solar_wind?.newell_avg_30m;
   const workerConf    = substormRiskData?.current?.confidence;
-  const bz            = substormRiskData?.metrics?.solar_wind?.bz;
-  const southMin30    = substormRiskData?.metrics?.solar_wind?.southward_minutes_30m;
+  const bz            = _pBz ?? substormRiskData?.metrics?.solar_wind?.bz;
+  const southMin30    = _pSouthMin30 ?? substormRiskData?.metrics?.solar_wind?.southward_minutes_30m;
 
   // Now slot: anchored on auroraScore (the SpotTheAurora composite %) so it
   // always matches the big % gauge shown elsewhere on the page.
