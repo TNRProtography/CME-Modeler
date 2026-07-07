@@ -7,7 +7,7 @@
 // banner via App.tsx) and by EPAMPanel (the dashed shock markers on the
 // particle charts). Before this existed there were two near-duplicate
 // detectors with different thresholds, so the summary and the EPAM markers
-// could disagree — and did.
+// could disagree - and did.
 //
 // v2 TIGHTENING (false-positive reduction)
 // ----------------------------------------
@@ -28,9 +28,9 @@
 //
 // The four classic IPS classes are kept, with their spacecraft-frame
 // signatures:
-//   Fast Forward  (FF): V↑ N↑ T↑ B↑  — classic CME/SIR front. The big one.
+//   Fast Forward  (FF): V↑ N↑ T↑ B↑  - classic CME/SIR front. The big one.
 //   Slow Forward  (SF): V↑ N↑ T↑ B↓
-//   Fast Reverse  (FR): V↑ N↓ T↓ B↓  — trailing edge / rear of HSS
+//   Fast Reverse  (FR): V↑ N↓ T↓ B↓  - trailing edge / rear of HSS
 //   Slow Reverse  (SR): V↑ N↓ T↓ B↑
 
 export interface DetectedShock {
@@ -66,7 +66,7 @@ export const SHOCK_DETECT_CONFIG = {
   PDYN_FWD: 1.4,                  // forward shocks must compress
   PDYN_REV: 0.75,                 // reverse shocks must rarefy
 
-  SHARP_MIN_DV: 10,               // km/s — narrow-window jump floor
+  SHARP_MIN_DV: 10,               // km/s - narrow-window jump floor
   SHARP_FRACTION: 0.5,            // narrow jump must carry ≥ this × wide jump
 
   DEDUPE_MS: 30 * 60_000,

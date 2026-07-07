@@ -526,17 +526,17 @@ const UnifiedDashboardMode: React.FC<UnifiedDashboardModeProps> = ({ refreshSign
         <div className="col-span-6 md:col-span-3 row-span-2 rounded-xl bg-neutral-900/70 border border-neutral-700/60 p-3">
           <div className="text-[11px] uppercase tracking-wide text-neutral-400">Solar Wind</div>
           <div className="text-xs mt-2 space-y-1 text-neutral-200">
-            <div className="flex justify-between"><span>Speed</span><strong>{gaugeData.speed?.value ?? '—'}</strong></div>
-            <div className="flex justify-between"><span>Density</span><strong>{gaugeData.density?.value ?? '—'}</strong></div>
+            <div className="flex justify-between"><span>Speed</span><strong>{gaugeData.speed?.value ?? ' - '}</strong></div>
+            <div className="flex justify-between"><span>Density</span><strong>{gaugeData.density?.value ?? ' - '}</strong></div>
           </div>
         </div>
 
         <div className="col-span-6 md:col-span-3 row-span-2 rounded-xl bg-neutral-900/70 border border-neutral-700/60 p-3">
           <div className="text-[11px] uppercase tracking-wide text-neutral-400">IMF + HP</div>
           <div className="text-xs mt-2 space-y-1 text-neutral-200">
-            <div className="flex justify-between"><span>Bt</span><strong>{gaugeData.bt?.value ?? '—'}</strong></div>
-            <div className="flex justify-between"><span>Bz</span><strong>{gaugeData.bz?.value ?? '—'}</strong></div>
-            <div className="flex justify-between"><span>HP</span><strong>{gaugeData.power?.value ?? '—'}</strong></div>
+            <div className="flex justify-between"><span>Bt</span><strong>{gaugeData.bt?.value ?? ' - '}</strong></div>
+            <div className="flex justify-between"><span>Bz</span><strong>{gaugeData.bz?.value ?? ' - '}</strong></div>
+            <div className="flex justify-between"><span>HP</span><strong>{gaugeData.power?.value ?? ' - '}</strong></div>
           </div>
         </div>
 

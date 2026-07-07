@@ -30,8 +30,8 @@ const NOTIFICATION_GROUPS = [
         id: 'visibility-dslr',
         emoji: '📷',
         label: 'DSLR Camera Visible',
-        plain: 'The earliest warning — aurora is just becoming detectable using a DSLR camera on a tripod with a long exposure.',
-        auroraEffect: 'Perfect for maximum lead time — gives you time to grab your camera and drive somewhere dark before it peaks.',
+        plain: 'The earliest warning - aurora is just becoming detectable using a DSLR camera on a tripod with a long exposure.',
+        auroraEffect: 'Perfect for maximum lead time - gives you time to grab your camera and drive somewhere dark before it peaks.',
         advanced: 'Triggered when the aurora oval reaches your geomagnetic latitude at the lowest detectable threshold. Aurora may not yet be visible to the naked eye.',
       },
       {
@@ -39,14 +39,14 @@ const NOTIFICATION_GROUPS = [
         emoji: '📱',
         label: 'Phone Camera Visible',
         plain: 'Aurora is bright enough for your smartphone\'s night mode. Point your phone south and you\'ll catch it.',
-        auroraEffect: 'A practical middle-ground alert — conditions are real enough to capture, even if you can\'t see it directly yet.',
+        auroraEffect: 'A practical middle-ground alert - conditions are real enough to capture, even if you can\'t see it directly yet.',
         advanced: 'Corresponds to moderate oval expansion. The aurora oval boundary has moved close enough to your latitude that activity exceeds the phone camera threshold.',
       },
       {
         id: 'visibility-naked',
         emoji: '👁️',
         label: 'Naked Eye Visible',
-        plain: 'The big one — aurora should be visible to the naked eye from your location. Just go outside and look south.',
+        plain: 'The big one - aurora should be visible to the naked eye from your location. Just go outside and look south.',
         auroraEffect: 'This is the strongest visibility threshold and the most exciting alert. Conditions are genuinely significant for your location.',
         advanced: 'Requires substantial oval expansion equatorward. Combined with sufficient activity index, this is a high-confidence aurora event for your latitude.',
       },
@@ -61,7 +61,7 @@ const NOTIFICATION_GROUPS = [
         emoji: '🌌',
         label: 'Worth Watching Tonight',
         plain: 'Sent around sunset when conditions look elevated. Includes whether the moon will interfere.',
-        auroraEffect: 'Not sent on quiet nights — only when solar wind conditions are genuinely elevated enough to be worth staying up for.',
+        auroraEffect: 'Not sent on quiet nights - only when solar wind conditions are genuinely elevated enough to be worth staying up for.',
         advanced: 'Uses a composite of live Bz, solar wind speed, Newell coupling, and short-range forecast confidence. Sent once per evening window (6–9 PM NZST).',
       },
     ],
@@ -74,15 +74,15 @@ const NOTIFICATION_GROUPS = [
         id: 'flare-M1',
         emoji: '☀️',
         label: 'Solar Flare M1+',
-        plain: 'Broad flare alert sent from M1 and up — earliest notice when flare activity starts ramping.',
+        plain: 'Broad flare alert sent from M1 and up - earliest notice when flare activity starts ramping.',
         auroraEffect: 'M1+ flares signal increasing solar activity. While not all produce Earth-directed CMEs, frequent M-class activity raises aurora probability over the following 1–4 days.',
-        advanced: 'Flare class scales logarithmically — M1 is 10× a C1. Geoeffectiveness depends on CME association, source longitude, and CME speed.',
+        advanced: 'Flare class scales logarithmically - M1 is 10× a C1. Geoeffectiveness depends on CME association, source longitude, and CME speed.',
       },
       {
         id: 'flare-M5',
         emoji: '☀️',
         label: 'Solar Flare M5+',
-        plain: 'Stronger M-class flares only — fewer alerts, still catches meaningful events.',
+        plain: 'Stronger M-class flares only - fewer alerts, still catches meaningful events.',
         auroraEffect: 'M5+ flares have a stronger association with major CME launches. Fewer false alarms than M1+ while still providing useful lead time.',
         advanced: 'M5 is approximately 5× an M1 in X-ray flux. Often associated with type II/IV radio bursts and proton events that help confirm CME launches.',
       },
@@ -90,7 +90,7 @@ const NOTIFICATION_GROUPS = [
         id: 'flare-X1',
         emoji: '☀️',
         label: 'Solar Flare X1+',
-        plain: 'Major X-class flare alert — high threshold, focused on large events.',
+        plain: 'Major X-class flare alert - high threshold, focused on large events.',
         auroraEffect: 'X-class flares are major solar events with a high association with fast, geoeffective CMEs that drive significant aurora 1–4 days later.',
         advanced: 'X-class flares are 10× stronger than M-class. Source longitude on the solar disk strongly influences whether the associated CME is Earth-directed.',
       },
@@ -98,7 +98,7 @@ const NOTIFICATION_GROUPS = [
         id: 'flare-X5',
         emoji: '☀️',
         label: 'Solar Flare X5+',
-        plain: 'Very strong flare threshold — rare and high-impact events only.',
+        plain: 'Very strong flare threshold - rare and high-impact events only.',
         auroraEffect: 'X5+ flares represent extreme solar output and are often followed by the most significant geomagnetic storms and wide-latitude aurora events.',
         advanced: 'These events frequently trigger NOAA G3–G5 geomagnetic storm watches. CME speeds commonly exceed 1500 km/s with strong compressed IMF fields on arrival.',
       },
@@ -106,17 +106,41 @@ const NOTIFICATION_GROUPS = [
         id: 'flare-X10',
         emoji: '☀️',
         label: 'Solar Flare X10+',
-        plain: 'Extreme flare alert for exceptional events only — very rare.',
+        plain: 'Extreme flare alert for exceptional events only - very rare.',
         auroraEffect: 'Historically associated with the strongest geomagnetic storms on record. If Earth-directed, these events can produce aurora visible from the tropics.',
-        advanced: 'X10+ events are rare — typically a few per solar cycle. The X28 event in 2003 saturated monitoring instruments. These produce the most extreme space weather conditions.',
+        advanced: 'X10+ events are rare - typically a few per solar cycle. The X28 event in 2003 saturated monitoring instruments. These produce the most extreme space weather conditions.',
       },
       {
         id: 'shock-ff',
         emoji: '💥',
-        label: 'CME Arrival Alert',
-        plain: 'A fast forward shock — the classic CME arrival signature at L1. Speed, density, temperature, and magnetic field all jumped simultaneously.',
+        label: 'CME Hit the Satellites',
+        plain: 'A fast forward shock - the classic CME arrival signature at L1. Speed, density, temperature, and magnetic field all jumped simultaneously.',
         auroraEffect: 'One of the most actionable aurora alerts. Earth conditions can shift from quiet to active within 30–60 minutes. Watch for southward Bz in the Solar Wind panel.',
         advanced: 'Fast Forward shocks compress the entire solar wind structure ahead of them. Aurora strength depends on the sheath and magnetic cloud Bz that follows the shock front.',
+      },
+      {
+        id: 'shock-sf',
+        emoji: '💥',
+        label: 'Compression Wave Arriving',
+        plain: 'A slow forward shock - a gentler compression wave, often from a solar wind stream or weak CME edge.',
+        auroraEffect: 'Can enhance aurora conditions but typically less dramatically than a fast forward shock. Watch for Bz turning southward in the following hours.',
+        advanced: 'Often marks the leading edge of a stream interaction region (SIR). Lacks the strong magnetic cloud of a CME but can still drive moderate geomagnetic activity.',
+      },
+      {
+        id: 'shock-fr',
+        emoji: '💥',
+        label: 'CME Trailing Edge Passing',
+        plain: 'A fast reverse shock - the back end of a CME or high-speed stream is sweeping past.',
+        auroraEffect: 'The strongest part of the disturbance has typically already passed. Residual aurora may continue for hours, but activity is usually declining.',
+        advanced: 'Fast reverse shocks occur when fast solar wind outruns the slower wind behind it, creating a rarefaction at the trailing boundary.',
+      },
+      {
+        id: 'shock-sr',
+        emoji: '💥',
+        label: 'Trailing Rarefaction',
+        plain: 'A slow reverse shock - density and temperature falling as the tail end of a solar wind event sweeps past.',
+        auroraEffect: 'Aurora is usually winding down at this point. Confirms the full passage of a solar wind structure and that conditions are returning toward baseline.',
+        advanced: 'Slow reverse shocks are relatively uncommon. Density and temperature decrease while the magnetic field slightly increases across the boundary.',
       },
     ],
   },
@@ -128,9 +152,9 @@ const NOTIFICATION_GROUPS = [
         id: 'admin-broadcast',
         emoji: '📣',
         label: 'Spot The Aurora Announcements',
-        plain: 'Sent manually by the team only when something genuinely matters — a major aurora event, important app news, or a useful tip.',
-        auroraEffect: 'If you receive one of these during the night, it is worth checking conditions immediately — they are only sent when there is something real happening.',
-        advanced: 'These are not automated — a human sends them. Frequency is very low by design. If you are sensitive to notifications, this is the safest group to keep enabled.',
+        plain: 'Sent manually by the team only when something genuinely matters - a major aurora event, important app news, or a useful tip.',
+        auroraEffect: 'If you receive one of these during the night, it is worth checking conditions immediately - they are only sent when there is something real happening.',
+        advanced: 'These are not automated - a human sends them. Frequency is very low by design. If you are sensitive to notifications, this is the safest group to keep enabled.',
       },
     ],
   },
@@ -162,7 +186,7 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
   const [prefs, setPrefs] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
     NOTIFICATION_GROUPS.forEach(g => g.items.forEach(item => {
-      // Shocks are "coming soon" — always initialized off, ignoring any
+      // Shocks are "coming soon" - always initialized off, ignoring any
       // legacy stored value so the user never sees them pre-enabled.
       initial[item.id] = SHOCK_IDS.has(item.id) ? false : getNotificationPreference(item.id);
     }));
@@ -170,7 +194,7 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
   });
   const [selectedPreset, setSelectedPreset] = useState<PresetId | null>(() => {
     // If the user already has notifications granted, they're returning to edit
-    // existing preferences — skip the forced preset picker and show their
+    // existing preferences - skip the forced preset picker and show their
     // current settings under "Custom" so they can tweak directly.
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
       return 'custom';
@@ -195,7 +219,7 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
   `;
 
   const togglePref = useCallback((id: string) => {
-    if (SHOCK_IDS.has(id)) return; // shocks are locked off — coming soon
+    if (SHOCK_IDS.has(id)) return; // shocks are locked off - coming soon
     setPrefs(prev => ({ ...prev, [id]: !prev[id] }));
     // If the user manually tweaks a toggle, mark them as on the "custom" preset
     // so the detailed list stays visible and the "Enable" button stays active.
@@ -231,8 +255,8 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
       Object.entries(prefs).forEach(([id, enabled]) => setNotificationPreference(id, enabled));
       // Persist the chosen template so Settings → Push Notifications can show
       // the same preset selected next time the user visits it. `null` means
-      // "no preset chosen" (shouldn't happen at this point — the save button
-      // is disabled until one is picked — but be defensive).
+      // "no preset chosen" (shouldn't happen at this point - the save button
+      // is disabled until one is picked - but be defensive).
       if (selectedPreset) {
         recordPresetSelection(selectedPreset, 'onboarding_banner');
       }
@@ -538,7 +562,7 @@ const OnboardingBanner: React.FC<OnboardingBannerProps> = ({ deferredInstallProm
   const canInstall = !!deferredInstallPrompt && !isInstalled;
 
   // Determine what to show.
-  // Notifications button is only shown once the app is installed — no point
+  // Notifications button is only shown once the app is installed - no point
   // prompting for push notifications in a browser tab where they won't persist.
   const showInstall = canInstall;
   const showNotif = isInstalled && !notifGranted;

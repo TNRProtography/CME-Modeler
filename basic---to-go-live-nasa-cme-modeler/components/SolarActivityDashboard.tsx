@@ -6,7 +6,7 @@ import { Line } from 'react-chartjs-2';
 import { ChartOptions } from 'chart.js';
 import { enNZ } from 'date-fns/locale';
 import CloseIcon from './icons/CloseIcon';
-import '../utils/chartSetup'; // registers Chart.js scales/plugins — must run before any <Line> renders
+import '../utils/chartSetup'; // registers Chart.js scales/plugins - must run before any <Line> renders
 // Import only flare functions/types (IPS removed)
 import { 
   fetchFlareData, 
@@ -188,7 +188,7 @@ const CORONAGRAPH_SOURCES: { key: CoronagraphSourceKey; label: string }[] = [
   { key: 'soho_c3', label: 'SOHO LASCO C3' },
   { key: 'stereo_cor2', label: 'STEREO-A COR2' },
 ];
-// HMI images — JSOC primary, NASA SDO fallback
+// HMI images - JSOC primary, NASA SDO fallback
 const JSOC_HMI_BASE = 'https://jsoc1.stanford.edu/data/hmi/images/latest';
 const NASA_SDO_BASE = 'https://sdo.gsfc.nasa.gov/assets/img/latest';
 
@@ -200,7 +200,7 @@ const SDO_HMI_BC_4096_URL = `${JSOC_HMI_BASE}/HMI_latest_color_Mag_4096x4096.jpg
 const SDO_HMI_B_4096_URL  = `${JSOC_HMI_BASE}/HMI_latest_Mag_4096x4096.gif`;
 const SDO_HMI_IF_4096_URL = `${JSOC_HMI_BASE}/HMI_latest_colInt_4096x4096.jpg`;
 
-// Fallback URLs (NASA SDO direct — old version source that worked)
+// Fallback URLs (NASA SDO direct - old version source that worked)
 const SDO_HMI_BC_1024_FALLBACK = `${NASA_SDO_BASE}/latest_1024_HMIBC.jpg`;
 const SDO_HMI_B_1024_FALLBACK  = `${NASA_SDO_BASE}/latest_1024_HMIB.jpg`;
 const SDO_HMI_IF_1024_FALLBACK = `${NASA_SDO_BASE}/latest_1024_HMII.jpg`;
@@ -208,7 +208,7 @@ const SDO_HMI_BC_4096_FALLBACK = `${NASA_SDO_BASE}/latest_4096_HMIBC.jpg`;
 const SDO_HMI_B_4096_FALLBACK  = `${NASA_SDO_BASE}/latest_4096_HMIB.jpg`;
 const SDO_HMI_IF_4096_FALLBACK = `${NASA_SDO_BASE}/latest_4096_HMII.jpg`;
 
-// Load directly — no Worker dependency, no domain-matching issues.
+// Load directly - no Worker dependency, no domain-matching issues.
 const resolveSdoImageUrl = (rawUrl: string, _forceDirect?: boolean) => rawUrl;
 const REFRESH_INTERVAL_MS = 60 * 1000; // Refresh every minute
 const HMI_IMAGE_SIZE = 4096;
@@ -241,7 +241,7 @@ const devLog = (...args: unknown[]) => {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Thrown when a proxy request gets a definitive 404 — no point retrying.
+// Thrown when a proxy request gets a definitive 404 - no point retrying.
 class ProxyUnavailableError extends Error {
   constructor(url: string) {
     super(`Proxy unavailable (404) for ${url}`);
@@ -270,7 +270,7 @@ const fetchWithTimeoutAndRetry = async (
     try {
       const response = await fetch(url, { signal: controller.signal, cache: cacheMode });
       if (!response.ok) {
-        // 404 on a proxy URL means the Worker isn't deployed on this domain — skip retries.
+        // 404 on a proxy URL means the Worker isn't deployed on this domain - skip retries.
         if (response.status === 404 && url.includes('/api/proxy/')) {
           throw new ProxyUnavailableError(url);
         }
@@ -285,7 +285,7 @@ const fetchWithTimeoutAndRetry = async (
       } else {
         lastError = error instanceof Error ? error : new Error('Unknown fetch error');
       }
-      // Don't retry proxy 404s — fall through immediately to the direct-URL fallback.
+      // Don't retry proxy 404s - fall through immediately to the direct-URL fallback.
       if (lastError instanceof ProxyUnavailableError) break;
       if (attempt < maxRetries) await wait(350 * (attempt + 1));
     } finally {
@@ -794,7 +794,7 @@ const getSunspotDetailCompleteness = (entry: Omit<ActiveSunspotRegion, 'trend'>)
 // --- REUSABLE COMPONENTS ---
 
 // Time-window selector for imagery sections (SUVI + Coronagraph)
-// 12h and 24h are flagged BETA — they load many more frames and
+// 12h and 24h are flagged BETA - they load many more frames and
 // diff computation is slower on lower-end devices.
 const ImageryTimeRangeButtons: React.FC<{
   selected: number;
@@ -952,7 +952,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     reportedInitialTasks.current.add(task);
     onInitialLoadProgress?.(task);
   }, [onInitialLoadProgress]);
-  // Imagery state — url starts null (no placeholder); spinner shows until fetch completes.
+  // Imagery state - url starts null (no placeholder); spinner shows until fetch completes.
   const [suvi131, setSuvi131] = useState({ url: null as string | null, loading: 'Loading image...' });
   const [suvi304, setSuvi304] = useState({ url: null as string | null, loading: 'Loading image...' });
   const [sdoHmiBc1024, setSdoHmiBc1024] = useState({ url: null as string | null, loading: 'Loading image...' });
@@ -1201,7 +1201,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
     try {
       const controller = new AbortController();
-      // Increased from 1800ms — directory listing can be slow on first load
+      // Increased from 1800ms - directory listing can be slow on first load
       const timeout = window.setTimeout(() => controller.abort(), 8000);
       const response = await fetch(`${indexUrl}?_=${Date.now()}`, { signal: controller.signal });
       window.clearTimeout(timeout);
@@ -1333,7 +1333,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     'suvi-284': buildStatTooltip(
       'SUVI 284Å',
       'EUV view sensitive to quiet-corona and coronal-hole temperatures (~2 MK Fe XV emission).',
-      'Excellent for identifying coronal holes — dark regions in 284 Å that drive high-speed solar-wind streams and recurrent geomagnetic activity.',
+      'Excellent for identifying coronal holes - dark regions in 284 Å that drive high-speed solar-wind streams and recurrent geomagnetic activity.',
       '284 Å highlights the boundary between active-region and quiet-Sun plasma; coronal holes appear as persistent dark patches useful for CH area tracking.'
     ),
     'coronagraphy': buildStatTooltip(
@@ -1427,14 +1427,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     const cached = solarImageCache.get(cacheKey);
     const now = Date.now();
 
-    // Already cached and fresh — update state immediately.
+    // Already cached and fresh - update state immediately.
     if (cached && now - cached.fetchedAt < SOLAR_IMAGE_CACHE_TTL_MS) {
       setState({ url: cached.url, loading: null });
       setLastImagesUpdate(new Date(cached.fetchedAt).toLocaleTimeString('en-NZ'));
       return;
     }
 
-    // Mark as loading without wiping url — caller decides what to show while waiting.
+    // Mark as loading without wiping url - caller decides what to show while waiting.
     setState(prev => ({ url: prev.url, loading: `Loading ${isVideo ? 'video' : 'image'}...` }));
 
     const fetchUrl = addCacheBuster ? `${url}?_=${now}` : url;
@@ -1450,7 +1450,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       const loadAttempt = async (attempt: number) => {
         try {
           if (isLikelySameOriginOrProxy(fetchUrl)) {
-            // Same-origin or explicit proxy URL — fetch as blob to get an objectURL.
+            // Same-origin or explicit proxy URL - fetch as blob to get an objectURL.
             const blob = await fetchWithTimeoutAndRetry(fetchUrl, 'blob') as Blob;
             if (!blob.type.startsWith('image/')) {
               throw new Error(`Expected image blob but got ${blob.type || 'unknown'}`);
@@ -1459,7 +1459,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             solarImageCache.set(cacheKey, { url: objectUrl, fetchedAt: Date.now() });
             setState({ url: objectUrl, loading: null });
           } else {
-            // Cross-origin image (JSOC, NOAA SUVI, etc.) — set as img src directly.
+            // Cross-origin image (JSOC, NOAA SUVI, etc.) - set as img src directly.
             solarImageCache.set(cacheKey, { url: fetchUrl, fetchedAt: Date.now() });
             setState({ url: fetchUrl, loading: null });
           }
@@ -1468,7 +1468,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           releaseImageLoadSlot();
         } catch {
           if (attempt < MAX_FETCH_RETRIES) {
-            // Keep loading state, retry silently — don't flash an error to the user.
+            // Keep loading state, retry silently - don't flash an error to the user.
             setState(prev => ({ url: prev.url, loading: 'Retrying…' }));
             window.setTimeout(() => { void loadAttempt(attempt + 1); }, 350 * (attempt + 1));
             return;
@@ -1492,7 +1492,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             releaseImageLoadSlot();
             return;
           }
-          setState(prev => ({ url: prev.url, loading: 'Failed to load — tap to retry' }));
+          setState(prev => ({ url: prev.url, loading: 'Failed to load - tap to retry' }));
           releaseImageLoadSlot();
         }
       };
@@ -1686,7 +1686,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       // ── Step 1: TXT file is authoritative ──────────────────────────────────
       // solar-regions.txt defines which regions exist and provides:
       // region number, location (lat/lon), area, spot count, magnetic class.
-      // Only regions in this file are shown — JSON is supplementary only.
+      // Only regions in this file are shown - JSON is supplementary only.
       const rawText = await fetchFirstAvailableText([NOAA_ACTIVE_REGIONS_TEXT_URL]);
       const textRegions = parseNoaaSolarRegionsText(rawText);
 
@@ -1701,15 +1701,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       const txtByRegion = new Map<string, Omit<ActiveSunspotRegion, 'trend'>>();
       textRegions.forEach(r => txtByRegion.set(r.region, r));
 
-      // ── Step 2: JSON for supplementary data — one entry per region ─────────
+      // ── Step 2: JSON for supplementary data - one entry per region ─────────
       // sunspot_report.json: flare probabilities, spot count, magnetic class
-      // solar_regions.json:  same, different field names — both tried, latest wins
+      // solar_regions.json:  same, different field names - both tried, latest wins
       const [sunspotReportRaw, solarRegionsRaw] = await Promise.all([
         fetchFirstAvailableJson(['https://services.swpc.noaa.gov/json/sunspot_report.json']).catch(() => null),
         fetchFirstAvailableJson(['https://services.swpc.noaa.gov/json/solar_regions.json']).catch(() => null),
       ]);
 
-      // Extract JSON entries, keyed by region — keep only the LATEST entry per region
+      // Extract JSON entries, keyed by region - keep only the LATEST entry per region
       const jsonByRegion = new Map<string, any>();
       const processJsonSource = (raw: any, source: string) => {
         if (!raw) return;
@@ -1726,7 +1726,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       processJsonSource(sunspotReportRaw, 'sunspot_report.json');
       processJsonSource(solarRegionsRaw, 'solar_regions.json');
 
-      // ── Step 3: Merge — TXT is primary, JSON fills in extras ───────────────
+      // ── Step 3: Merge - TXT is primary, JSON fills in extras ───────────────
       const merged: ActiveSunspotRegion[] = textRegions.map(txt => {
         const json = jsonByRegion.get(txt.region) ?? null;
 
@@ -1890,7 +1890,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   useEffect(() => {
     if (!onInitialLoad || initialLoadNotifiedRef.current) return;
 
-    // Core data is sufficient — imagery is supplementary and can be slow/unavailable
+    // Core data is sufficient - imagery is supplementary and can be slow/unavailable
     const hasInitialCoreData = !!lastXrayUpdate && !!lastProtonUpdate && !!lastFlaresUpdate;
 
     if (hasInitialCoreData) {
@@ -2331,9 +2331,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   const stereoAlignmentLabel = useMemo(() => {
     if (stereoEarthSeparationDeg == null) return 'STEREO-A alignment unknown right now.';
-    if (stereoEarthSeparationDeg <= 25) return `STEREO-A is near Earth line (${stereoEarthSeparationDeg.toFixed(1)}°) — halo interpretation is more reliable.`;
-    if (stereoEarthSeparationDeg <= 60) return `STEREO-A is moderately off-axis (${stereoEarthSeparationDeg.toFixed(1)}°) — halo shape can be skewed.`;
-    return `STEREO-A is strongly off-axis (${stereoEarthSeparationDeg.toFixed(1)}°) — poor for Earth-directed halo signatures.`;
+    if (stereoEarthSeparationDeg <= 25) return `STEREO-A is near Earth line (${stereoEarthSeparationDeg.toFixed(1)}°) - halo interpretation is more reliable.`;
+    if (stereoEarthSeparationDeg <= 60) return `STEREO-A is moderately off-axis (${stereoEarthSeparationDeg.toFixed(1)}°) - halo shape can be skewed.`;
+    return `STEREO-A is strongly off-axis (${stereoEarthSeparationDeg.toFixed(1)}°) - poor for Earth-directed halo signatures.`;
   }, [stereoEarthSeparationDeg]);
 
   useEffect(() => {
@@ -2375,7 +2375,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     if (!suviPlaying || suviFrames.length < 2) return;
     const frameIntervalMs = Math.max(40, Math.round(200 / suviPlaybackSpeed));
     const timer = window.setInterval(() => {
-      // Don't advance until the current frame has finished loading — keeps
+      // Don't advance until the current frame has finished loading - keeps
       // the scrubber and the displayed frame in sync at all playback speeds.
       if (suviFrameLoadingRef.current) return;
       setSuviFrameIndex((prev) => (prev + 1) % suviFrames.length);
@@ -2530,7 +2530,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => { loadedFrameUrlsRef.current.add(url); resolve(); };
-      img.onerror = () => resolve(); // resilient — skip failures
+      img.onerror = () => resolve(); // resilient - skip failures
       img.src = url;
     });
 
@@ -2558,7 +2558,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => { loadedFrameUrlsRef.current.add(url); resolve(); };
-      img.onerror = () => resolve(); // resilient — skip failures
+      img.onerror = () => resolve(); // resilient - skip failures
       img.src = url;
     });
 
@@ -3025,7 +3025,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
                 <div className="flex flex-wrap items-center gap-3">
                   <ImageryTimeRangeButtons selected={suviFrameWindowHours} onSelect={setSuviFrameWindowHours} />
-                  {/* Slider toggle — hidden on desktop where both panels are always visible */}
+                  {/* Slider toggle - hidden on desktop where both panels are always visible */}
                   <label className="lg:hidden flex items-center gap-3 cursor-pointer select-none">
                     <div className="relative">
                       <input type="checkbox" className="sr-only" checked={suviDifference} onChange={(e) => setSuviDifference(e.target.checked)} />
@@ -3035,10 +3035,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                     <span className="text-sm font-medium text-neutral-300">Difference imagery</span>
                   </label>
                 </div>
-                <span className="text-xs text-neutral-500">{activeSuviSourceState?.label ?? '—'} · {suviFrames.length} frame(s)</span>
+                <span className="text-xs text-neutral-500">{activeSuviSourceState?.label ?? ' - '} · {suviFrames.length} frame(s)</span>
               </div>
 
-              {/* Viewer — flex-row on desktop (side by side), stacked on mobile */}
+              {/* Viewer - flex-row on desktop (side by side), stacked on mobile */}
               <div className="flex flex-col lg:flex-row gap-3 flex-grow">
                 {/* Raw panel: always visible on desktop; hidden on mobile when diff is active */}
                 <div className={`flex-1 flex flex-col min-h-[220px] sm:min-h-[260px] ${suviDifference ? 'hidden lg:flex' : 'flex'}`}>
@@ -3079,7 +3079,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 </div>
               </div>
 
-              {/* Diff legend — always shown on desktop, mobile only when toggle is on */}
+              {/* Diff legend - always shown on desktop, mobile only when toggle is on */}
               <div className={`mt-2 rounded border border-neutral-700/70 bg-neutral-900/70 px-3 py-2 ${suviDifference ? 'block' : 'hidden lg:block'}`}>
                 <div className="text-[11px] text-neutral-300 mb-1">Difference intensity (colour guide)</div>
                 <div className="mt-2 h-3 w-full rounded" style={{ background: DIFF_LEGEND_GRADIENT }} />
@@ -3171,7 +3171,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   className="w-full accent-sky-500"
                 />
                 <div className="mt-1 text-xs text-neutral-500 text-right">
-                  {activeSuviFrame ? `Frame: ${formatNZTimestamp(activeSuviFrame.ts)} · fetched ${activeSuviFrame.fetched_at ? formatNZTimestamp(activeSuviFrame.fetched_at) : '—'}` : 'No frame selected'}
+                  {activeSuviFrame ? `Frame: ${formatNZTimestamp(activeSuviFrame.ts)} · fetched ${activeSuviFrame.fetched_at ? formatNZTimestamp(activeSuviFrame.fetched_at) : ' - '}` : 'No frame selected'}
                 </div>
                 <div className="text-[11px] text-neutral-500 leading-relaxed">
                   Imagery source: NOAA SWPC SUVI. Difference imagery processing and visualization by TNR Protography.
@@ -3242,7 +3242,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       </div>
                     )}
                     {(!sunspotOverviewImage.url && !sunspotOverviewImage.loading) && (
-                      <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/60 text-amber-200 text-sm">Failed to load — tap to retry</div>
+                      <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/60 text-amber-200 text-sm">Failed to load - tap to retry</div>
                     )}
 
                     {plottedSunspots.map((region) => {
@@ -3379,13 +3379,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       </div>
 
                       <div className="space-y-1.5 text-xs">
-                        <div className="flex justify-between"><span className="text-neutral-500">Magnetic Class</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.magneticClass || '—'}</span></div>
-                        <div className="flex justify-between"><span className="text-neutral-500">Area</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.area ? `${selectedSunspotRegion.area} MSH` : '—'}</span></div>
-                        <div className="flex justify-between"><span className="text-neutral-500">Spot Count</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.spotCount ?? '—'}</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">Magnetic Class</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.magneticClass || ' - '}</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">Area</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.area ? `${selectedSunspotRegion.area} MSH` : ' - '}</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">Spot Count</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.spotCount ?? ' - '}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">Trend</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.trend}</span></div>
-                        <div className="flex justify-between"><span className="text-neutral-500">M-flare probability</span><span className="text-orange-300 font-semibold">{selectedSunspotRegion.mFlareProbability != null ? `${selectedSunspotRegion.mFlareProbability}%` : '—'}</span></div>
-                        <div className="flex justify-between"><span className="text-neutral-500">X-flare probability</span><span className="text-red-300 font-semibold">{selectedSunspotRegion.xFlareProbability != null ? `${selectedSunspotRegion.xFlareProbability}%` : '—'}</span></div>
-                        <div className="flex justify-between"><span className="text-neutral-500">Proton probability</span><span className="text-fuchsia-300 font-semibold">{selectedSunspotRegion.protonProbability != null ? `${selectedSunspotRegion.protonProbability}%` : '—'}</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">M-flare probability</span><span className="text-orange-300 font-semibold">{selectedSunspotRegion.mFlareProbability != null ? `${selectedSunspotRegion.mFlareProbability}%` : ' - '}</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">X-flare probability</span><span className="text-red-300 font-semibold">{selectedSunspotRegion.xFlareProbability != null ? `${selectedSunspotRegion.xFlareProbability}%` : ' - '}</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">Proton probability</span><span className="text-fuchsia-300 font-semibold">{selectedSunspotRegion.protonProbability != null ? `${selectedSunspotRegion.protonProbability}%` : ' - '}</span></div>
                         {(() => {
                           const regionKey = String(selectedSunspotRegion.region).slice(-4);
                           const matched = flaresByRegion.get(regionKey) ?? [];
@@ -3395,14 +3395,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                             <div className="flex justify-between">
                               <span className="text-neutral-500">7-day flare events</span>
                               <span className="text-neutral-100 font-semibold">
-                                M <span className={mCount > 0 ? 'text-orange-300' : ''}>{mCount > 0 ? mCount : '—'}</span>
+                                M <span className={mCount > 0 ? 'text-orange-300' : ''}>{mCount > 0 ? mCount : ' - '}</span>
                                 {' · '}
-                                X <span className={xCount > 0 ? 'text-red-300' : ''}>{xCount > 0 ? xCount : '—'}</span>
+                                X <span className={xCount > 0 ? 'text-red-300' : ''}>{xCount > 0 ? xCount : ' - '}</span>
                               </span>
                             </div>
                           );
                         })()}
-                        <div className="flex justify-between gap-3"><span className="text-neutral-500">Previous activity</span><span className="text-neutral-100 font-semibold text-right max-w-[65%]">{selectedSunspotRegion.previousActivity || '—'}</span></div>
+                        <div className="flex justify-between gap-3"><span className="text-neutral-500">Previous activity</span><span className="text-neutral-100 font-semibold text-right max-w-[65%]">{selectedSunspotRegion.previousActivity || ' - '}</span></div>
                       </div>
 
                       {/* ── Flares from NASA DONKI matched to this region ── */}
@@ -3426,7 +3426,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                                   const peakDate = flare.peakTime ? new Date(flare.peakTime) : null;
                                   const peakStr = peakDate
                                     ? `${peakDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${peakDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })} UTC`
-                                    : '—';
+                                    : ' - ';
                                   return (
                                     <div
                                       key={flare.flrID ?? i}
@@ -3524,7 +3524,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             <div id="coronagraph-section" className="col-span-12 card bg-neutral-950/80 p-4 min-h-[620px] flex flex-col">
               <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                 <div className="flex items-center gap-2">
-                  <h2 className="text-xl font-semibold text-white">Coronagraphy — Multi Source</h2>
+                  <h2 className="text-xl font-semibold text-white">Coronagraphy - Multi Source</h2>
                   <button onClick={() => openModal('coronagraphy')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Coronagraphy.">?</button>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
@@ -3559,7 +3559,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                     <span className="text-sm font-medium text-neutral-300">Difference imagery</span>
                   </label>
                 </div>
-                <span className="text-xs text-neutral-500">{coronagraphSourceState?.label ?? '—'} · {coronagraphFrames.length} frame(s)</span>
+                <span className="text-xs text-neutral-500">{coronagraphSourceState?.label ?? ' - '} · {coronagraphFrames.length} frame(s)</span>
               </div>
               {coronagraphStalenessNotice && (
                 <div className="mb-2 px-3 py-2 rounded border border-amber-700/50 bg-amber-900/20 text-xs text-amber-200">
@@ -3699,7 +3699,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   className="w-full accent-sky-500"
                 />
                 <div className="mt-1 text-xs text-neutral-500 text-right">
-                  {activeCoronagraphFrame ? `Frame: ${formatNZTimestamp(activeCoronagraphFrame.ts)} · fetched ${activeCoronagraphFrame.fetched_at ? formatNZTimestamp(activeCoronagraphFrame.fetched_at) : '—'}` : 'No frame selected'}
+                  {activeCoronagraphFrame ? `Frame: ${formatNZTimestamp(activeCoronagraphFrame.ts)} · fetched ${activeCoronagraphFrame.fetched_at ? formatNZTimestamp(activeCoronagraphFrame.fetched_at) : ' - '}` : 'No frame selected'}
                 </div>
                 <div className="text-[11px] text-neutral-500 leading-relaxed">
                   Imagery credits: NOAA SWPC (GOES-19 CCOR-1), NASA/ESA SOHO LASCO (C2/C3), and NASA STEREO-A SECCHI (COR2). Difference imagery processing and visualization by TNR Protography.

@@ -1,6 +1,6 @@
 // --- START OF FILE src/utils/logCapture.ts ---
 /**
- * Log capture — monkey-patches console methods at import time so logs
+ * Log capture - monkey-patches console methods at import time so logs
  * accumulate from the moment the app starts. The debug panel reads from
  * this buffer; nothing else in the app needs to change.
  */
@@ -36,7 +36,7 @@ function capture(level: LogEntry['level'], original: (...args: unknown[]) => voi
   };
 }
 
-// Patch once at module load — safe to call multiple times (guard below)
+// Patch once at module load - safe to call multiple times (guard below)
 let patched = false;
 export function initLogCapture() {
   if (patched || typeof window === 'undefined') return;

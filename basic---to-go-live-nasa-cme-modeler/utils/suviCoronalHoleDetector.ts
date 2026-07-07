@@ -1,6 +1,6 @@
 // --- START OF FILE utils/suviCoronalHoleDetector.ts ---
 //
-// SUVI 195Å Coronal Hole Detector — calibrated against real GOES-19 imagery
+// SUVI 195Å Coronal Hole Detector - calibrated against real GOES-19 imagery
 // ══════════════════════════════════════════════════════════════════════════
 //
 // CALIBRATION BASIS
@@ -29,11 +29,11 @@
 // 8.  Discard regions smaller than MIN_CH_PIXEL_FRAC × disk area.
 // 9.  Convert each region's centroid and bounding points to heliographic
 //     coordinates using the standard solar orthographic projection.
-// 10. Return CoronalHole[] (empty if none found — no simulated fallback).
+// 10. Return CoronalHole[] (empty if none found - no simulated fallback).
 //
 // ── TUNING GUIDE ──────────────────────────────────────────────────────────
 //
-//   ANALYSIS_SIZE          Canvas px — 300 is fast and accurate enough.
+//   ANALYSIS_SIZE          Canvas px - 300 is fast and accurate enough.
 //                          Increase to 512 for sharper polygon boundaries.
 //
 //   N_LIMB_ANGLES          Angular resolution of limb scan (360 = 1°/step).
@@ -60,7 +60,7 @@ import { CoronalHole }                 from './coronalHoleData';
 import { estimateHssSpeedFromChWidthAndDarkness } from './solarWindModel';
 
 // ── Tuning constants ──────────────────────────────────────────────────────────
-const ANALYSIS_SIZE           = 400;   // off-screen canvas resolution — 400 gives sharper polygon boundaries
+const ANALYSIS_SIZE           = 400;   // off-screen canvas resolution - 400 gives sharper polygon boundaries
 const N_LIMB_ANGLES           = 360;   // directions to scan for limb detection
 const LIMB_SCAN_START         = 0.35;  // start limb scan at this fraction of image half-size
 const LIMB_SCAN_END           = 0.99;  // end limb scan at this fraction of image half-size
@@ -78,7 +78,7 @@ const PROXY_TTL_SECONDS       = 90;    // edge cache TTL
 // 1. CIRCULARITY: 4π·area / perimeter²  (1.0 = perfect circle, lower = elongated)
 //    Real CHs are irregular and elongated; sunspots score close to 1.0.
 //    Reject any region with circularity > MAX_CH_CIRCULARITY.
-//    Note: only applied to SMALL regions — large CHs are exempt because
+//    Note: only applied to SMALL regions - large CHs are exempt because
 //    a high-threshold darkMask may only capture the most irregular cores.
 //
 // 2. ASPECT RATIO: bounding-box height / width (or width / height, whichever > 1)
@@ -165,7 +165,7 @@ function luma(d: Uint8ClampedArray, i: number): number {
 // ── Gradient-based limb detection ─────────────────────────────────────────────
 //
 // Scans outward from the disk centre along a given angle direction.
-// Finds the steepest negative gradient in brightness — this is the true
+// Finds the steepest negative gradient in brightness - this is the true
 // photosphere/corona limb, unaffected by the faint outer corona halo.
 //
 // Why this beats a simple brightness threshold:
@@ -360,13 +360,13 @@ function regionAspectRatio(region: PixelRegion): number {
 /**
  * Returns true if the region should be kept as a coronal hole candidate.
  * Rejects near-circular compact regions (sunspots / active-region cores).
- * Shape filters are ONLY applied to small regions — large CHs like CH31
+ * Shape filters are ONLY applied to small regions - large CHs like CH31
  * can be nearly square in their bounding box and still be genuine coronal holes.
  */
 function isCoronalHoleCandidate(region: PixelRegion, diskPixelCount: number): boolean {
   const areaFrac = region.pixels.length / diskPixelCount;
 
-  // Large regions pass unconditionally — they can't be sunspots
+  // Large regions pass unconditionally - they can't be sunspots
   if (areaFrac >= SUNSPOT_MAX_FRAC) return true;
 
   // Small regions: apply circularity and aspect ratio filters
@@ -409,7 +409,7 @@ function pixelToHG(
 // Uses Moore neighbourhood contour tracing (Jacob's stopping criterion) to
 // walk the TRUE boundary of the region in order.  This correctly represents
 // concave shapes (diagonal slashes, L-shapes, etc.) that angle-sort sampling
-// cannot reproduce — angle-sort forces a convex/radial ordering that loses
+// cannot reproduce - angle-sort forces a convex/radial ordering that loses
 // the actual morphology.
 //
 // After tracing, the ordered boundary is downsampled to ~nPoints vertices and
@@ -510,7 +510,7 @@ export interface SuviDetectionResult {
 
 /**
  * Fetch and analyse the latest SUVI 195Å image.
- * Returns CoronalHole[] — empty if none detected.  Never returns fake data.
+ * Returns CoronalHole[] - empty if none detected.  Never returns fake data.
  */
 export async function detectCoronalHolesFromSuvi195(
   imageUrl: string = SUVI_195_URL,
@@ -546,7 +546,7 @@ export async function detectCoronalHolesFromSuvi195(
     const diskR = medianLimbR * (1 - LIMB_EXCLUSION_FRAC);
 
     if (diskR < size * 0.15) {
-      throw new Error(`Disk too small (r=${diskR.toFixed(1)}) — image may not have loaded`);
+      throw new Error(`Disk too small (r=${diskR.toFixed(1)}) - image may not have loaded`);
     }
 
     // ── 5. Dark pixel mask ────────────────────────────────────────────────
@@ -573,7 +573,7 @@ export async function detectCoronalHolesFromSuvi195(
     const coronalHoles: CoronalHole[] = candidates.flatMap((region, idx) => {
       const hgCen  = pixelToHG(region.centroidX, region.centroidY, cx, cy, diskR);
 
-      // If the centroid maps outside the disk (null), this region is invalid — skip it.
+      // If the centroid maps outside the disk (null), this region is invalid - skip it.
       // This catches noise clusters whose centroid lands at the very edge or outside.
       if (!hgCen) return [];
 
@@ -656,7 +656,7 @@ export async function detectCoronalHolesFromSuvi195(
       errorMessage:  msg,
     };
   }
-  // Note: blobUrl is NOT revoked — the caller may display it for debug.
+  // Note: blobUrl is NOT revoked - the caller may display it for debug.
 }
 
 // --- END OF FILE utils/suviCoronalHoleDetector.ts ---

@@ -9,13 +9,13 @@ const DocOverview: React.FC = () => (
     title="System Overview"
     subtitle="Five architectural layers. Every arrow represents a confirmed, production data flow."
   >
-    <SubHeading color="text-sky-400">User Layer — Browser / PWA</SubHeading>
+    <SubHeading color="text-sky-400">User Layer - Browser / PWA</SubHeading>
     <CardGrid cols={2}>
       <Card icon="📱" title="Progressive Web App">
         <p>
           Installs to phone home screen with no app store. A service worker caches the UI shell for
           offline startup and handles push delivery when the app is closed. The install prompt is
-          deferred until you interact with the app — notifications are only offered after install.
+          deferred until you interact with the app - notifications are only offered after install.
         </p>
       </Card>
       <Card icon="📍" title="Optional GPS">
@@ -29,7 +29,7 @@ const DocOverview: React.FC = () => (
         <p>
           Browser generates a push endpoint and P-256 key pair via the Web Push API. Preferences
           (8 categories plus overnight mode) stored locally and sent to the Push Worker KV on
-          subscribe. Fully opt-in — nothing is sent before the user enables notifications.
+          subscribe. Fully opt-in - nothing is sent before the user enables notifications.
         </p>
       </Card>
       <Card icon="📌" title="Aurora Sightings">
@@ -41,7 +41,7 @@ const DocOverview: React.FC = () => (
       </Card>
     </CardGrid>
 
-    <SubHeading color="text-green-400">Client Layer — React 18 Browser App</SubHeading>
+    <SubHeading color="text-green-400">Client Layer - React 18 Browser App</SubHeading>
     <CardGrid cols={2}>
       <Card icon="🔄" title="Parallel Data Fetching">
         <p>
@@ -53,7 +53,7 @@ const DocOverview: React.FC = () => (
       <Card icon="🧮" title="Client-Side Calculations">
         <p>
           Newell coupling integral, P30/P60 substorm probabilities, location score adjustment,
-          visibility text selection, substorm status classification — all computed in the browser
+          visibility text selection, substorm status classification - all computed in the browser
           from raw API responses. No server round-trip needed for display logic.
         </p>
       </Card>
@@ -61,7 +61,7 @@ const DocOverview: React.FC = () => (
         <p>
           On the CME Visualization page: fetches GOES-19 SUVI 195 Å image via CORS proxy, draws
           to an off-screen 400×400 canvas, runs a 10-step coronal hole pipeline. Entirely
-          client-side — no server compute involved.
+          client-side - no server compute involved.
         </p>
       </Card>
       <Card icon="🌌" title="3D Scene (60 fps)">
@@ -74,7 +74,7 @@ const DocOverview: React.FC = () => (
       </Card>
     </CardGrid>
 
-    <SubHeading color="text-purple-400">Workers Layer — Cloudflare Edge</SubHeading>
+    <SubHeading color="text-purple-400">Workers Layer - Cloudflare Edge</SubHeading>
     <CardGrid cols={2}>
       <Card icon="⚡" title="Forecast API">
         <p>Cron every 5 min. Fetches solar wind, IMF, Hp, EY2M, IPS. Computes composite aurora score. Returns scored JSON + 24 h history. KV-cached 30 s.</p>
@@ -108,7 +108,7 @@ const DocOverview: React.FC = () => (
         <p>Real-time solar wind at L1 (~1.5M km from Earth). ~45–60 min travel time to Earth at typical speeds. IMAP primary, DSCOVR fallback.</p>
       </Card>
       <Card icon="🌏" title="GeoNet Tilde (EY2M)">
-        <p>Eyrewell Observatory, Canterbury — 1-min mean dH (rate of change of horizontal magnetic field). Direct NZ local geomagnetic measurement.</p>
+        <p>Eyrewell Observatory, Canterbury - 1-min mean dH (rate of change of horizontal magnetic field). Direct NZ local geomagnetic measurement.</p>
       </Card>
       <Card icon="☁️" title="OpenWeatherMap">
         <p>7-day cloud cover + moon phase + sunrise/sunset. Shown on score trend chart. Used for moon arc chart and overnight-watch notifications.</p>
@@ -118,10 +118,10 @@ const DocOverview: React.FC = () => (
       </Card>
     </CardGrid>
 
-    <SubHeading color="text-teal-400">KV Storage — Cloudflare Edge KV</SubHeading>
+    <SubHeading color="text-teal-400">KV Storage - Cloudflare Edge KV</SubHeading>
     <CardGrid cols={2}>
       <Card icon="🗄" title="Push Subscriptions">
-        <p>Key: SHA-256(endpoint). Value: subscription object, category preferences, GPS lat/lon, timezone, overnight_mode. No TTL — deleted on 410/404 from push service.</p>
+        <p>Key: SHA-256(endpoint). Value: subscription object, category preferences, GPS lat/lon, timezone, overnight_mode. No TTL - deleted on 410/404 from push service.</p>
       </Card>
       <Card icon="🗄" title="Notification State">
         <p><code className="font-mono text-xs bg-neutral-800 px-1 rounded text-purple-300">COOLDOWN_</code> per category, <code className="font-mono text-xs bg-neutral-800 px-1 rounded text-purple-300">STATE_xray</code> flare machine, <code className="font-mono text-xs bg-neutral-800 px-1 rounded text-purple-300">STATE_substorm</code>, <code className="font-mono text-xs bg-neutral-800 px-1 rounded text-purple-300">STATE_shock</code>, <code className="font-mono text-xs bg-neutral-800 px-1 rounded text-purple-300">STATE_cme_sheath</code>. TTLs aligned to cooldown windows.</p>

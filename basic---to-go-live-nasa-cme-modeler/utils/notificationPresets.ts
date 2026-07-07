@@ -5,7 +5,7 @@
 // Both the onboarding banner (shown to first-time users who haven't yet
 // granted notification permission) and the Settings → Push Notifications
 // screen use these. Keeping them in one file means the two surfaces can
-// never drift out of sync — if you add a new preset here, both UIs pick
+// never drift out of sync - if you add a new preset here, both UIs pick
 // it up automatically.
 
 import type { OvernightMode } from './notifications';
@@ -20,15 +20,16 @@ export interface NotificationPreset {
   tagline: string;
   description: string;
   /** Notification IDs that should be ENABLED when this preset is applied.
-   *  All other IDs (except coming-soon shocks, which are always off) are disabled. */
+   *  All other IDs (except shocks, which are always off) are disabled. */
   prefs: string[];
   /** Overnight-watch mode paired with this preset. */
   overnightMode: OvernightMode;
 }
 
-/** Shock types that are still "coming soon" — excluded from presets and
- *  forced off regardless of what's applied. shock-ff is now live. */
+/** Shock notifications are "coming soon" - always excluded from every
+ *  preset's prefs list and forced off regardless of what's applied. */
 export const SHOCK_IDS = new Set<string>([
+  'shock-ff',
   'shock-sf',
   'shock-fr',
   'shock-sr',
@@ -41,7 +42,7 @@ export const NOTIFICATION_PRESETS: NotificationPreset[] = [
     title: 'Naked-eye only',
     tagline: 'The big ones',
     description:
-      'Minimal alerts — only when aurora should be visible to the naked eye from your location, plus very strong flares and announcements.',
+      'Minimal alerts - only when aurora should be visible to the naked eye from your location, plus very strong flares and announcements.',
     prefs: ['visibility-naked', 'overnight-watch', 'flare-X1', 'flare-X5', 'flare-X10', 'admin-broadcast'],
     overnightMode: 'eye',
   },
@@ -62,7 +63,7 @@ export const NOTIFICATION_PRESETS: NotificationPreset[] = [
     tagline: 'Maximum lead time',
     description:
       'Catch aurora as soon as it becomes camera-detectable, with broader flare coverage (M1+). Best if you want time to drive somewhere dark.',
-    prefs: ['visibility-dslr', 'visibility-phone', 'visibility-naked', 'overnight-watch', 'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'shock-ff', 'admin-broadcast'],
+    prefs: ['visibility-dslr', 'visibility-phone', 'visibility-naked', 'overnight-watch', 'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'admin-broadcast'],
     overnightMode: 'camera',
   },
   {
@@ -71,8 +72,8 @@ export const NOTIFICATION_PRESETS: NotificationPreset[] = [
     title: 'Everything',
     tagline: 'Full firehose',
     description:
-      'Every alert we currently send — all visibility thresholds, all flare classes, CME arrival alerts, and announcements. Best for enthusiasts who want nothing missed.',
-    prefs: ['visibility-dslr', 'visibility-phone', 'visibility-naked', 'overnight-watch', 'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'shock-ff', 'admin-broadcast'],
+      'Every alert we currently send - all visibility thresholds, all flare classes, and announcements. Best for enthusiasts who want nothing missed.',
+    prefs: ['visibility-dslr', 'visibility-phone', 'visibility-naked', 'overnight-watch', 'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'admin-broadcast'],
     overnightMode: 'camera',
   },
   {
@@ -129,7 +130,7 @@ export function detectPresetFromPrefs(
  * Persist the user's chosen preset AND fire an analytics event.
  *
  * Call this anywhere you'd otherwise write to NOTIFICATION_TEMPLATE_KEY
- * directly — it keeps both the banner and settings modal reporting
+ * directly - it keeps both the banner and settings modal reporting
  * preset selections consistently. `is_first_setup` is derived from
  * whether a previous value exists, so the caller doesn't need to know.
  */

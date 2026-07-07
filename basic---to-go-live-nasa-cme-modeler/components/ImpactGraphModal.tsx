@@ -177,7 +177,7 @@ const ImpactGraphModal: React.FC<ImpactGraphModalProps> = ({ isOpen, onClose, da
           </div>
 
           <p className="text-xs text-neutral-600 text-center italic pb-2">
-            Drag-based model (Vršnak et al. 2013). Visual guide only — not an official forecast.
+            Drag-based model (Vršnak et al. 2013). Visual guide only - not an official forecast.
           </p>
         </div>
       </div>

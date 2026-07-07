@@ -7,7 +7,7 @@ const DocCoronalHoles: React.FC = () => (
     id="s07"
     number="07"
     title="Coronal Hole Detection Pipeline"
-    subtitle="Coronal holes are regions where the Sun's magnetic field is open to interplanetary space, allowing fast solar wind to escape. The app detects them automatically from the live GOES-19 SUVI 195 Å image, entirely in the browser. Every step runs as plain JavaScript — no server compute, no external detection service."
+    subtitle="Coronal holes are regions where the Sun's magnetic field is open to interplanetary space, allowing fast solar wind to escape. The app detects them automatically from the live GOES-19 SUVI 195 Å image, entirely in the browser. Every step runs as plain JavaScript - no server compute, no external detection service."
   >
     <SubHeading color="text-green-400">10-Step Pipeline</SubHeading>
     <CardGrid cols={2}>
@@ -30,7 +30,7 @@ const DocCoronalHoles: React.FC = () => (
         <p>
           Scans outward from the disk centre in <code className="font-mono text-xs bg-neutral-800 px-1 rounded text-purple-300">N_LIMB_ANGLES = 360</code> radial
           directions (one per degree). Finds the steepest negative brightness gradient in each
-          direction — this locates the sharp photosphere limb boundary rather than the outer faint
+          direction - this locates the sharp photosphere limb boundary rather than the outer faint
           coronal halo.
         </p>
       </Card>
@@ -74,7 +74,7 @@ keep if: region_pixels > 0.003 × disk_pixels`}
       </Card>
       <Card icon="9" title="Heliographic Projection">
         <p>Region centroid and boundary polygon converted from pixel to heliographic (Carrington) coordinates:</p>
-        <Formula note="No solar rotation correction is applied because SUVI 195 Å is in disk-centre coordinates — the Carrington system already rotates with the Sun.">
+        <Formula note="No solar rotation correction is applied because SUVI 195 Å is in disk-centre coordinates - the Carrington system already rotates with the Sun.">
 {`x_norm = (px - cx) / r_limb   [−1 to +1]
 y_norm = (py - cy) / r_limb   [−1 to +1]
 
@@ -86,14 +86,14 @@ lon = atan2(x_norm, cos(lat))[Carrington lon]`}
         <p>
           Returns <code className="font-mono text-xs bg-neutral-800 px-1 rounded text-purple-300">CoronalHole[]</code> with id, lat, lon, widthDeg, heightDeg, darkness
           (0–1 luma deficit fraction), estimated HSS speed, and polygon boundary. Empty array if
-          no holes detected — no simulated fallback. Result is posted to the CH History Worker
+          no holes detected - no simulated fallback. Result is posted to the CH History Worker
           for the 72 h archive and used to build Parker spiral arms in the 3D scene.
         </p>
       </Card>
     </CardGrid>
 
     <Callout kind="warn" icon="⚠️">
-      <strong>Known detection limitations:</strong> CHs near the solar limb are foreshortened —
+      <strong>Known detection limitations:</strong> CHs near the solar limb are foreshortened -
       their true area is underestimated. Polar holes are partially obscured by viewing geometry.
       Filament channels (dark elongated structures that are not open-field regions) can
       occasionally trigger false positives. CH boundaries should be treated as approximate
@@ -103,7 +103,7 @@ lon = atan2(x_norm, cos(lat))[Carrington lon]`}
     <SubHeading color="text-green-400">HSS Speed Estimation & Parker Spiral</SubHeading>
     <Card>
       <p>Each detected CH is assigned an estimated solar wind source speed, used for the DBM ambient wind model and Parker spiral geometry:</p>
-      <Formula note="Larger, darker CHs drive faster streams — consistent with empirical studies correlating CH area and peak HSS speed at 1 AU. The 18-hour SIR density lead reflects the known structure of a Stream Interaction Region: compressed slow-wind plasma piles up ahead of the arriving fast stream.">
+      <Formula note="Larger, darker CHs drive faster streams - consistent with empirical studies correlating CH area and peak HSS speed at 1 AU. The 18-hour SIR density lead reflects the known structure of a Stream Interaction Region: compressed slow-wind plasma piles up ahead of the arriving fast stream.">
 {`widthDeg  = clamp(CH_angular_width, 5, 60) °
 darkness  = clamp(luma_deficit_fraction, 0, 1)
 

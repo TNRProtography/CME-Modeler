@@ -75,21 +75,21 @@ const formatTime = (timestamp?: number | string): string => {
 const getOnsetTimingText = (level: string, score: number): string | null => {
   const now = Date.now();
   // level string from the worker matches these keywords
-  if (level.includes('ONSET') || level.includes('Onset') || level.includes('onset')) return null; // happening now — no estimate needed
+  if (level.includes('ONSET') || level.includes('Onset') || level.includes('onset')) return null; // happening now - no estimate needed
   if (level.includes('IMMINENT') || score >= 75) {
-    // IMMINENT_30 — within 30 min, midpoint ~15 min
+    // IMMINENT_30 - within 30 min, midpoint ~15 min
     const t = new Date(now + 15 * 60 * 1000);
     const hhmm = t.toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Pacific/Auckland' });
     return `~${hhmm} (within 30 min)`;
   }
   if (level.includes('LIKELY') || score >= 55) {
-    // LIKELY_60 — within 60 min, midpoint ~35 min
+    // LIKELY_60 - within 60 min, midpoint ~35 min
     const t = new Date(now + 35 * 60 * 1000);
     const hhmm = t.toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Pacific/Auckland' });
     return `~${hhmm} (within 60 min)`;
   }
   if (level.includes('WATCH') || score >= 30) {
-    // WATCH — 20–90 min window, midpoint ~55 min
+    // WATCH - 20–90 min window, midpoint ~55 min
     const t = new Date(now + 55 * 60 * 1000);
     const hhmm = t.toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Pacific/Auckland' });
     return `~${hhmm} (20–90 min)`;
@@ -345,7 +345,7 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
             <strong>{bayOnset ? 'Substorm Onset Detected' : `Substorm Risk: ${level}`}</strong>
             <span className="font-medium">Index {Math.round(score)} {trendArrow}{bz != null ? ` · Bz ${bz > 0 ? '+' : ''}${bz.toFixed(1)} nT` : ''}</span>
             <span className="opacity-80 text-xs">
-              {getVisibilityLevel(auroraScore)} estimated — aurora may be detectable
+              {getVisibilityLevel(auroraScore)} estimated - aurora may be detectable
               {!bayOnset && (() => { const t = getOnsetTimingText(level, score); return t ? ` · Onset expected ${t}` : null; })()}
             </span>
           </div>
@@ -376,7 +376,7 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
 
   return (
     <div className="w-full flex-shrink-0 relative z-50">
-      {/* Remote banner — always visible when active, dismissible */}
+      {/* Remote banner - always visible when active, dismissible */}
       {remoteBannerSlide && !isGlobalBannerDismissed && (
         <div
           className={`w-full text-sm font-semibold ${remoteBannerSlide.backgroundClass} ${remoteBannerSlide.textClass ?? 'text-white'}`}
@@ -393,7 +393,7 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
           </div>
         </div>
       )}
-      {/* Dynamic alert carousel — with counter, prev/next, and dismiss */}
+      {/* Dynamic alert carousel - with counter, prev/next, and dismiss */}
       {activeDynamic && !isDynamicDismissed && (
         <div
           className={`w-full text-sm font-semibold ${activeDynamic.backgroundClass} ${activeDynamic.textClass ?? 'text-white'}`}

@@ -10,15 +10,15 @@ export const DocWorkers: React.FC = () => (
   <Section
     id="s09"
     number="09"
-    title="Backend Workers — Detailed Reference"
-    subtitle="All backend logic runs on Cloudflare Workers — serverless JavaScript running at the edge globally. No persistent file system; all state is in Cloudflare KV."
+    title="Backend Workers - Detailed Reference"
+    subtitle="All backend logic runs on Cloudflare Workers - serverless JavaScript running at the edge globally. No persistent file system; all state is in Cloudflare KV."
   >
     <CardGrid cols={2}>
       <Card icon="⚡" title="Forecast API (Cron: 5 min)">
         <p>
           On cron: fetches IMAP solar wind, NOAA GOES-18/19 Hp, EY2M geomag, and IPS shock
           events. Runs the composite aurora score algorithm. Writes result to KV with a 30 s
-          client-facing TTL. Clients never hit external APIs directly — they read from KV only.
+          client-facing TTL. Clients never hit external APIs directly - they read from KV only.
           Score history (24 h array) accumulates in KV and is trimmed on each write.
         </p>
         <p className="mt-2">
@@ -38,7 +38,7 @@ export const DocWorkers: React.FC = () => (
         <p className="mt-2">
           <strong className="text-neutral-200">Why separate from the Forecast API?</strong> The
           substorm bay onset can develop in under 5 minutes. The Forecast Worker runs on a 5-min
-          cron — up to 5 minutes of lag is possible. The Substorm Risk Worker is per-request
+          cron - up to 5 minutes of lag is possible. The Substorm Risk Worker is per-request
           (60 s cache), so its status is always within 60 seconds of current conditions. This
           difference is meaningful for real-time bay detection.
         </p>
@@ -47,20 +47,20 @@ export const DocWorkers: React.FC = () => (
         <p>
           Attempts IMAP-Hi L1 data first. If unavailable or stale (IMAP is a newer NASA mission
           with occasional data gaps), falls back to NOAA DSCOVR RTSW. Each data point in the
-          returned 24 h time series is individually labelled with its source — shown on the IMF
+          returned 24 h time series is individually labelled with its source - shown on the IMF
           chart.
         </p>
         <p className="mt-2">
           <strong className="text-neutral-200">L1 travel time reminder:</strong> All L1
           measurements reflect conditions that are currently 45–60 minutes from arriving at Earth
           at typical solar wind speeds. A southward Bz in the IMF chart means aurora may develop
-          within the hour — not that it is happening right now.
+          within the hour - not that it is happening right now.
         </p>
       </Card>
       <Card icon="🔭" title="DONKI Proxy (Cron: hourly)">
         <p>
           Fetches CME catalog, FLR list, and GST shock events from NASA DONKI on an hourly cron.
-          Stores in KV. All client requests are served from KV — no browser ever calls NASA
+          Stores in KV. All client requests are served from KV - no browser ever calls NASA
           directly. This protects the shared NASA API key from being rate-limited by multiple
           concurrent users.
         </p>
@@ -87,11 +87,11 @@ export const DocWorkers: React.FC = () => (
         <p>
           Admin-controlled sitewide banner (BANNER_AUTH_TOKEN in Worker Secrets). Stores content
           in KV. Fetched on every page load. The dynamic substorm alert in the global header is
-          separate — generated entirely client-side from the Substorm Risk Worker response.
+          separate - generated entirely client-side from the Substorm Risk Worker response.
         </p>
         <p className="mt-2">
           <strong className="text-neutral-200">Push broadcast limitation:</strong> The admin
-          broadcast is sent by the admin's browser calling the Push Worker directly — not routed
+          broadcast is sent by the admin's browser calling the Push Worker directly - not routed
           through this API. This is because Cloudflare prohibits worker-to-worker subrequests on
           the same account via public URLs (error 1042).
         </p>
@@ -106,7 +106,7 @@ export const DocSightings: React.FC = () => (
     id="s10"
     number="10"
     title="Aurora Sightings"
-    subtitle='User-submitted reports provide real-world ground truth that solar wind models cannot. "Nothing" reports are explicitly valuable — they calibrate when the model over-predicts.'
+    subtitle='User-submitted reports provide real-world ground truth that solar wind models cannot. "Nothing" reports are explicitly valuable - they calibrate when the model over-predicts.'
   >
     <CardGrid cols={2}>
       <Card icon="📝" title="What you submit">
@@ -116,7 +116,7 @@ export const DocSightings: React.FC = () => (
         </p>
         <p>
           Negative sightings ("Nothing") explicitly confirm clear-sky absence of aurora when the
-          model predicts activity — this is calibration data, not noise. Cloudy reports confirm
+          model predicts activity - this is calibration data, not noise. Cloudy reports confirm
           obstructed sky rather than absent aurora.
         </p>
       </Card>
@@ -125,14 +125,14 @@ export const DocSightings: React.FC = () => (
           One report per 5 minutes via localStorage timestamp. This works offline-then-online
           correctly, unlike server-side IP limiting which fails for mobile users on carrier NAT.
           Name trimmed to 50 chars, HTML stripped. GPS coordinates are stored only in the sighting
-          record and used only to position the map dot — not linked to any persistent identity.
+          record and used only to position the map dot - not linked to any persistent identity.
         </p>
       </Card>
       <Card icon="🗄" title="Storage Design">
         <p>
           All reports in one JSON array under a single KV key. Each POST: read → append → prune
           entries older than 24 h → write back. This is exactly one KV read + one write per
-          submission — very cheap. GET responses served from Cloudflare edge cache with{' '}
+          submission - very cheap. GET responses served from Cloudflare edge cache with{' '}
           <code className="font-mono text-xs bg-neutral-800 px-1 rounded text-purple-300">Cache-Control: max-age=60</code>.
           Write invalidates the edge cache immediately so new reports appear globally within
           1–2 seconds.
@@ -143,7 +143,7 @@ export const DocSightings: React.FC = () => (
           Reports from the past 30 minutes within approximately 200 km of the user's location are
           counted. If ≥2 naked-eye reports exist nearby, the "Now" visibility slot shows a
           sightings-confirmed message alongside the model prediction. Model prediction and sightings
-          are displayed as separate, independent information — sightings never override or suppress
+          are displayed as separate, independent information - sightings never override or suppress
           the score.
         </p>
       </Card>
@@ -172,7 +172,7 @@ export const DocTransparency: React.FC = () => (
         <p>
           Identical solar wind conditions produce different aurora on different nights. Ionospheric
           conductivity, substorm phase, ring current state, and magnetospheric pre-conditioning all
-          affect the visible outcome. The score is a probability estimate — not a deterministic
+          affect the visible outcome. The score is a probability estimate - not a deterministic
           forecast. A score of 60% means significant aurora is more likely than not, not guaranteed.
         </p>
       </Card>
@@ -190,7 +190,7 @@ export const DocTransparency: React.FC = () => (
           the background solar wind, helmet streamer belts, and other CMEs. A CME modelled as
           Earth-directed from DONKI GCS parameters may still miss Earth. Conversely, a flank CME
           can produce aurora through its compressed sheath. The visualizer shows DONKI catalog
-          parameters as-is — no deflection model is included.
+          parameters as-is - no deflection model is included.
         </p>
       </Card>
       <Card icon="📊" title="Score ≠ Kp">
@@ -205,14 +205,14 @@ export const DocTransparency: React.FC = () => (
       <Card icon="🔔" title="5-Minute Notification Lag">
         <p>
           Notification checks run every 5 minutes on a cron. A rapid onset can go from quiet to
-          naked-eye visible in under 5 minutes — faster than the check cycle. The overnight-watch
+          naked-eye visible in under 5 minutes - faster than the check cycle. The overnight-watch
           notification around sunset is the practical hedge: it provides advance notice so users
           are already watching when conditions peak.
         </p>
       </Card>
       <Card icon="📐" title="DBM Model Uncertainty">
         <p>
-          The drag parameter γ is estimated from CME speed and half-angle — the actual value
+          The drag parameter γ is estimated from CME speed and half-angle - the actual value
           depends on CME mass, cross-section, and ambient density. The DBM arrival time
           uncertainty is typically ±6–12 hours at 1 AU. For confirmed Earth-directed events with
           a DONKI-supplied arrival time, the catalog value is used instead of the model estimate.
@@ -221,7 +221,7 @@ export const DocTransparency: React.FC = () => (
       <Card icon="🌐" title="Data Source Outages">
         <p>
           All data sources can become unavailable. IMAP is a relatively new mission with
-          occasional data gaps — DSCOVR fallback is automatic. NOAA SWPC occasionally has
+          occasional data gaps - DSCOVR fallback is automatic. NOAA SWPC occasionally has
           maintenance outages. The app is built to degrade gracefully: missing data shows stale
           values with timestamps rather than crashing.
         </p>

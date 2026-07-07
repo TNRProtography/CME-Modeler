@@ -222,7 +222,7 @@ const DisturbanceIndexPanel: React.FC = () => {
               <span className="text-sm text-neutral-300">No Dst data</span>
             )}
           </div>
-          <div className="text-xs text-neutral-400">Updated: {latestDst ? formatNzLabel(latestDst.timestamp) : '—'}</div>
+          <div className="text-xs text-neutral-400">Updated: {latestDst ? formatNzLabel(latestDst.timestamp) : ' - '}</div>
         </div>
       </div>
 

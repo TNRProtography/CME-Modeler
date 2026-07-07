@@ -9,7 +9,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspens
  * JS chunk. If a user still has the old HTML loaded in their tab, any subsequent
  * lazy import will try to fetch the old (now-deleted) filename and throw
  * "Failed to fetch dynamically imported module". This wrapper catches that error
- * and reloads the page once — which fetches the fresh HTML and correct new URLs.
+ * and reloads the page once - which fetches the fresh HTML and correct new URLs.
  * A sessionStorage flag prevents an infinite reload loop if the error persists
  * for an unrelated reason.
  */
@@ -55,19 +55,19 @@ function retryLazyLoad<T extends React.ComponentType<any>>(
           if (retryWindowExpired) {
             sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now()));
             reloadWithFreshHtml();
-            // Return a never-resolving promise — the reload will take over.
+            // Return a never-resolving promise - the reload will take over.
             return new Promise<{ default: T }>(() => {});
           }
         }
 
         // Not a chunk error, or it persisted immediately after a recovery
-        // attempt — re-throw so ErrorBoundary can display the real problem.
+        // attempt - re-throw so ErrorBoundary can display the real problem.
         throw err;
       })
   );
 }
 
-// Modeler-page-only components — lazy loaded so they never touch the initial bundle
+// Modeler-page-only components - lazy loaded so they never touch the initial bundle
 // for users landing on the forecast or solar activity pages.
 const SimulationCanvas = retryLazyLoad(() => import('./components/SimulationCanvas'));
 const ControlsPanel = retryLazyLoad(() => import('./components/ControlsPanel'));
@@ -92,7 +92,7 @@ import GlobeIcon from './components/icons/GlobeIcon';
 import CameraResetIcon from './components/icons/CameraResetIcon';
 import { AuroraBadgeIcon, SolarBadgeIcon, ModelerBadgeIcon } from './components/icons/NavBadgeIcons';
 
-// Dashboard and Banner Imports — heavy pages are lazy-loaded to avoid
+// Dashboard and Banner Imports - heavy pages are lazy-loaded to avoid
 // blocking the initial paint for users landing on any page.
 const ForecastDashboard = retryLazyLoad(() => import('./components/ForecastDashboard'));
 const SolarActivityDashboard = retryLazyLoad(() => import('./components/SolarActivityDashboard'));
@@ -102,7 +102,7 @@ import OnboardingBanner from './components/OnboardingBanner';
 import AppDocumentation from './components/AppDocumentation';
 import InitialLoadingScreen from './components/InitialLoadingScreen';
 
-// Modal Imports — also lazy to keep the initial bundle lean
+// Modal Imports - also lazy to keep the initial bundle lean
 const SettingsModal = retryLazyLoad(() => import('./components/SettingsModal'));
 const FirstVisitTutorial = retryLazyLoad(() => import('./components/FirstVisitTutorial'));
 const CmeModellerTutorial = retryLazyLoad(() => import('./components/CmeModellerTutorial'));
@@ -175,7 +175,7 @@ type SolarLoadPoint = 'solarXray' | 'solarProton' | 'solarFlares' | 'solarRegion
 
 // Only block the loader on the 4 APIs that feed the core aurora score and solar wind display.
 // forecastData is structurally redundant (it fires milliseconds after the last API anyway).
-// ipsApi (IPS shocks) and nzMagApi (NZ magnetometer) feed secondary widgets — they load
+// ipsApi (IPS shocks) and nzMagApi (NZ magnetometer) feed secondary widgets - they load
 // silently in the background so the user reaches the forecast as fast as possible.
 const FORECAST_INITIAL_TASKS: InitialLoadTaskKey[] = [
   'forecastApi',
@@ -198,7 +198,7 @@ const getInitialRequiredTasks = (page: 'forecast' | 'modeler' | 'solar-activity'
   // Only require the tasks that belong to the page the user actually landed on.
   // Previously this ignored `page` and required ALL tasks from all three pages,
   // which caused the loader to hang forever once ForecastDashboard and
-  // SolarActivityDashboard became lazy — their callbacks never fired for unvisited pages.
+  // SolarActivityDashboard became lazy - their callbacks never fired for unvisited pages.
   switch (page) {
     case 'forecast':      return new Set(FORECAST_INITIAL_TASKS);
     case 'solar-activity': return new Set(SOLAR_INITIAL_TASKS);
@@ -349,7 +349,7 @@ const App: React.FC = () => {
   }>>([]);
   /** Ticks once a minute so beta-shock freshness can re-evaluate without new data. */
   const [betaShockClock, setBetaShockClock] = useState(Date.now());
-  /** Latest measured solar wind speed at L1 (km/s) — fed to the propagation engine */
+  /** Latest measured solar wind speed at L1 (km/s) - fed to the propagation engine */
   const [measuredWindSpeedKms, setMeasuredWindSpeedKms] = useState<number | undefined>(undefined);
 
   const [showIabBanner, setShowIabBanner] = useState(false);
@@ -673,7 +673,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     // Show the loader for at least 600ms so the animation isn't a jarring flash,
-    // but don't hold it longer than needed — dismiss as soon as data is ready.
+    // but don't hold it longer than needed - dismiss as soon as data is ready.
     const minTimer = setTimeout(() => setIsMinTimeElapsed(true), 600);
     // Defer non-critical preloads until after first paint so they don't compete
     // with the initial render and inflate Total Blocking Time.
@@ -692,7 +692,7 @@ const App: React.FC = () => {
   }, [navigateToModelerOverlay]);
 
   // Silently refresh GPS location for push notification worker on every app load.
-  // Non-blocking — if GPS is denied or there's no subscription, this is a no-op.
+  // Non-blocking - if GPS is denied or there's no subscription, this is a no-op.
   useEffect(() => {
     const t = setTimeout(() => refreshLocationOnServer(), 3000);
     return () => clearTimeout(t);
@@ -752,7 +752,7 @@ const App: React.FC = () => {
     ) {
       const hasSeenCmeTutorial = localStorage.getItem(CME_TUTORIAL_KEY);
       if (!hasSeenCmeTutorial) {
-        // Tutorials removed — mark as seen so this block never fires
+        // Tutorials removed - mark as seen so this block never fires
         localStorage.setItem(CME_TUTORIAL_KEY, 'true');
       }
     }
@@ -1006,7 +1006,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (activePage !== 'modeler') return;
     // Load CME data when navigating TO the modeler page (first time only).
-    // There is NO auto-refresh ticker here — data only refreshes when:
+    // There is NO auto-refresh ticker here - data only refreshes when:
     //   1. The user navigates to this page from another page (cmePageLoadedOnce resets on page leave)
     //   2. The user presses the manual refresh button (top-right)
     // This prevents mid-playback data updates that would reset the timeline controls.
@@ -1067,7 +1067,7 @@ const App: React.FC = () => {
   // Auto-select CME from ?cme= URL param once data has loaded.
   // Uses a ref so the ID is never lost when navigation strips the URL param.
   // If not found in the current range, automatically expands to 7 days first
-  // by directly calling loadCMEData — setting activeTimeRange alone is not
+  // by directly calling loadCMEData - setting activeTimeRange alone is not
   // enough because the reload effects guard against re-running once done.
   useEffect(() => {
     const sharedId = initialSharedCmeIdRef.current;
@@ -1083,16 +1083,16 @@ const App: React.FC = () => {
       setSharedCmeExpired(null);
       setSharedCmeSearching(false);
       handleSelectCMEForModeling(found);
-      initialSharedCmeIdRef.current = null; // stop watching — user can change range freely now
+      initialSharedCmeIdRef.current = null; // stop watching - user can change range freely now
     } else if (!sharedCmeRangeExpandedRef.current && activeTimeRange < TimeRange.D7) {
-      // Not found in the current narrow window — expand to 7 days once only.
+      // Not found in the current narrow window - expand to 7 days once only.
       // After this point the ref is set so user range changes won't be overridden.
       sharedCmeRangeExpandedRef.current = true;
       setSharedCmeSearching(true);
       setActiveTimeRange(TimeRange.D7);
       loadCMEData(TimeRange.D7, { silent: true });
     } else {
-      // Already expanded or already at max range — genuinely expired or never existed
+      // Already expanded or already at max range - genuinely expired or never existed
       setSharedCmeExpired(sharedId);
       setSharedCmeSearching(false);
       initialSharedCmeIdRef.current = null; // stop retrying
@@ -1508,7 +1508,7 @@ const App: React.FC = () => {
                 </div>
 
                 <main id="simulation-canvas-main" className="flex-1 relative min-w-0 h-full">
-                    {/* Shared CME — searching or not found */}
+                    {/* Shared CME - searching or not found */}
                     {sharedCmeSearching && !sharedCmeExpired && (
                       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-md px-4">
                         <div className="bg-sky-900/90 border border-sky-600/60 rounded-xl p-4 shadow-2xl backdrop-blur-sm">
@@ -1700,7 +1700,7 @@ const App: React.FC = () => {
               )}
           </div>
 
-          {/* TimelineControls rendered at top-level — outside all Suspense boundaries and
+          {/* TimelineControls rendered at top-level - outside all Suspense boundaries and
               stacking contexts so position:fixed works correctly on desktop AND mobile. */}
           <Suspense fallback={null}>
             <TimelineControls

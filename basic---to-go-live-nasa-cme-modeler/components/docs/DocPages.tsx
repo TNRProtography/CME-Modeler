@@ -7,9 +7,9 @@ const DocPages: React.FC = () => (
     id="s05"
     number="05"
     title="Pages & Features"
-    subtitle="Three main pages targeting different user expertise levels. All navigation is URL-based and shareable — deep links work, including specific CME IDs. Last-visited page and view mode persist in localStorage and in the URL."
+    subtitle="Three main pages targeting different user expertise levels. All navigation is URL-based and shareable - deep links work, including specific CME IDs. Last-visited page and view mode persist in localStorage and in the URL."
   >
-    <SubHeading color="text-sky-400">Forecast Page — Primary Page</SubHeading>
+    <SubHeading color="text-sky-400">Forecast Page - Primary Page</SubHeading>
     <CardGrid cols={2}>
       <Card icon="🌿" title="Simple View">
         <p>
@@ -41,7 +41,7 @@ const DocPages: React.FC = () => (
         <p>
           A circular chart showing the By/Bz vector orientation. 12 o'clock = purely northward
           Bz (poor coupling). 6 o'clock = purely southward Bz (maximum coupling). Useful for
-          spotting rapid rotations during CME sheath/ejecta transitions — a full southward
+          spotting rapid rotations during CME sheath/ejecta transitions - a full southward
           rotation sustained for minutes is the strongest aurora signature.
         </p>
       </Card>
@@ -54,7 +54,7 @@ const DocPages: React.FC = () => (
           24 h real-time GOES flux. Flare class thresholds (B/C/M/X) marked. Each detected flare
           is clickable for a detail modal: begin/peak/end times in NZT, source location, active
           region number, direct NASA DONKI link. If the flare has a linked CME in DONKI, a button
-          navigates directly to that CME in the CME Visualization — the CME's activityID is
+          navigates directly to that CME in the CME Visualization - the CME's activityID is
           extracted from the linkedEvents array and matched to the 3D scene object.
         </p>
       </Card>
@@ -91,18 +91,18 @@ const DocPages: React.FC = () => (
         <p>
           Always shows 7 days past + however many days selected in controls (1/3/7 days). CMEs
           move along their propagation paths. Sun rotation is computed from a stable Unix epoch
-          reference — not from <code className="font-mono text-xs bg-neutral-800 px-1 rounded text-purple-300">Date.now()</code> each frame. Earth rotation is frozen when the timeline is paused.
+          reference - not from <code className="font-mono text-xs bg-neutral-800 px-1 rounded text-purple-300">Date.now()</code> each frame. Earth rotation is frozen when the timeline is paused.
         </p>
       </Card>
       <Card icon="🎨" title="CME Colour Scale">
         <div className="space-y-1.5 mt-1">
           {[
-            { color: '#808080', label: '≤350 km/s — grey (approaching wind speed)' },
-            { color: '#ffff00', label: '500 km/s — yellow' },
-            { color: '#ffa500', label: '800 km/s — orange' },
-            { color: '#ff4500', label: '1000 km/s — red-orange' },
-            { color: '#9370db', label: '1800 km/s — purple' },
-            { color: '#ff69b4', label: '≥2500 km/s — pink (extreme X-class events)' },
+            { color: '#808080', label: '≤350 km/s - grey (approaching wind speed)' },
+            { color: '#ffff00', label: '500 km/s - yellow' },
+            { color: '#ffa500', label: '800 km/s - orange' },
+            { color: '#ff4500', label: '1000 km/s - red-orange' },
+            { color: '#9370db', label: '1800 km/s - purple' },
+            { color: '#ff69b4', label: '≥2500 km/s - pink (extreme X-class events)' },
           ].map(({ color, label }) => (
             <div key={label} className="flex items-center gap-2.5">
               <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ background: color }} />
@@ -121,7 +121,7 @@ const DocPages: React.FC = () => (
       </Card>
       <Card icon="🌀" title="Coronal Hole Spirals (Beta)">
         <p>
-          Parker spiral arms from the current live SUVI detection. Static geometry — always the
+          Parker spiral arms from the current live SUVI detection. Static geometry - always the
           most recent CH position and estimated HSS source speed. Spiral reach: 1.65 AU (beyond
           Earth orbit). Beta because GPU cost of spiral geometry affects older devices. Toggle in
           Controls panel.

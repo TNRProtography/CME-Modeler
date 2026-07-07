@@ -214,17 +214,17 @@ const createDynamicChartOptions = (
             if (low < -20) min = low;
             break;
         case 'newell':
-            // Newell coupling — 0 baseline, auto-scale. Floor at 25000 so NZ threshold lines are visible
+            // Newell coupling - 0 baseline, auto-scale. Floor at 25000 so NZ threshold lines are visible
             min = 0;
             max = Math.ceil(Math.max(25000, ...allYValues) / 5000) * 5000;
             break;
         case 'pressure':
-            // Dynamic pressure in nPa — 0 baseline, auto-scale
+            // Dynamic pressure in nPa - 0 baseline, auto-scale
             min = 0;
             max = Math.ceil(Math.max(5, ...allYValues) / 1) * 1;
             break;
         case 'substorm_score':
-            // Substorm index — 0 baseline, NOT clamped to 100
+            // Substorm index - 0 baseline, NOT clamped to 100
             min = 0;
             max = Math.ceil(Math.max(20, ...allYValues) / 10) * 10;
             break;
@@ -535,22 +535,22 @@ export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[]; sp
                 <div className={`text-sm font-semibold ${status.color}`}>{status.title}</div>
                 <p className="text-xs text-neutral-400 mt-1 leading-relaxed">{status.summary}</p>
 
-                {/* Stat pills — uniform background, semantic label colours */}
+                {/* Stat pills - uniform background, semantic label colours */}
                 <div className="mt-3 grid grid-cols-2 md:grid-cols-5 gap-2 text-[11px]">
-                    <div className="rounded-lg border border-neutral-700/60 bg-neutral-800/60 px-2 py-1.5"><span className="text-neutral-400">Clock</span><div className="text-white font-semibold">{latestClock != null ? `${latestClock.toFixed(0)}°` : '—'}</div></div>
+                    <div className="rounded-lg border border-neutral-700/60 bg-neutral-800/60 px-2 py-1.5"><span className="text-neutral-400">Clock</span><div className="text-white font-semibold">{latestClock != null ? `${latestClock.toFixed(0)}°` : ' - '}</div></div>
                     <div className="rounded-lg border border-neutral-700/60 bg-neutral-800/60 px-2 py-1.5"><span className="text-neutral-400">Band</span><div className="text-white font-semibold">{clockBandLabel}</div></div>
-                    <div className="rounded-lg border border-neutral-700/60 bg-neutral-800/60 px-2 py-1.5"><span className="text-neutral-400">By</span><div className="text-white font-semibold">{by != null ? `${by.toFixed(1)} nT` : '—'}</div></div>
+                    <div className="rounded-lg border border-neutral-700/60 bg-neutral-800/60 px-2 py-1.5"><span className="text-neutral-400">By</span><div className="text-white font-semibold">{by != null ? `${by.toFixed(1)} nT` : ' - '}</div></div>
                     <div className="rounded-lg border border-neutral-700/60 bg-neutral-800/60 px-2 py-1.5">
                         <span className="text-neutral-400">Bz</span>
                         <div className="font-semibold" style={{ color: bz != null ? (bz <= -5 ? '#34d399' : bz >= 3 ? '#f87171' : '#e5e5e5') : '#e5e5e5' }}>
-                            {bz != null ? `${bz.toFixed(1)} nT` : '—'}
+                            {bz != null ? `${bz.toFixed(1)} nT` : ' - '}
                         </div>
                     </div>
-                    <div className="rounded-lg border border-neutral-700/60 bg-neutral-800/60 px-2 py-1.5"><span className="text-neutral-400">Bt</span><div className="text-white font-semibold">{bt != null ? `${bt.toFixed(1)} nT` : '—'}</div></div>
+                    <div className="rounded-lg border border-neutral-700/60 bg-neutral-800/60 px-2 py-1.5"><span className="text-neutral-400">Bt</span><div className="text-white font-semibold">{bt != null ? `${bt.toFixed(1)} nT` : ' - '}</div></div>
                 </div>
 
                 <div className="mt-4 flex flex-col md:flex-row items-center gap-4">
-                    {/* Clock dial — neutral palette matching app cards */}
+                    {/* Clock dial - neutral palette matching app cards */}
                     <div className="relative w-52 h-52 rounded-full border border-neutral-600/50 bg-neutral-950 overflow-hidden flex-shrink-0">
                         <div className="absolute top-1/2 left-0 right-0 border-t border-neutral-800" />
                         <div className="absolute left-1/2 top-0 bottom-0 border-l border-neutral-800" />
@@ -568,7 +568,7 @@ export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[]; sp
                         <div className="absolute left-1/2 top-1/2 h-[2px] w-16 bg-gradient-to-r from-neutral-500/50 to-transparent" style={{ transform: 'translate(10%, 20%)' }} />
                         <div className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-semibold text-neutral-400">By+</div>
 
-                        {/* IMF pointer — sky/emerald encodes direction semantically */}
+                        {/* IMF pointer - sky/emerald encodes direction semantically */}
                         <div className="absolute left-1/2 top-1/2 w-[3px] h-[4.9rem] origin-bottom bg-sky-400 rounded-full shadow-[0_0_8px_rgba(56,189,248,0.5)]" style={{ transform: `translate(-50%, -100%) rotate(${animatedAngle}deg)` }} />
                         <div className="absolute left-1/2 top-1/2 w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/90 border border-neutral-400" />
                         <div className="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] text-neutral-500">Bz+ North</div>
@@ -584,7 +584,7 @@ export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[]; sp
                     </div>
                 </div>
 
-                {/* Solar-wind phase — matches app's section divider style */}
+                {/* Solar-wind phase - matches app's section divider style */}
                 <div className="mt-4 rounded-lg border border-neutral-700/60 bg-neutral-800/40 p-3">
                     <div className="text-[11px] uppercase tracking-wide font-semibold text-neutral-500">Solar-wind phase estimate</div>
                     <div className="text-sm text-white mt-1 font-semibold">{stormPhase.phase}</div>
@@ -974,18 +974,18 @@ interface ForecastTrendChartProps {
 // Converts a substorm risk score (0–100) into a fractional multiplier that
 // scales how much of the aurora potential is actually being released.
 // Without a substorm, solar wind energy loads the magnetotail but doesn't
-// produce aurora at full potential — only steady-state convection occurs.
+// produce aurora at full potential - only steady-state convection occurs.
 //
 // NOTE: The multiplier values below are empirical estimates, not derived from
 // a specific published model. The concept is physically grounded (substorms as
 // the release mechanism for loaded magnetotail energy) but the exact fractions
 // are calibrated by observation rather than first principles.
 function substormReleaseMultiplier(substormScore: number, bayOnset: boolean): number {
-  if (bayOnset || substormScore >= 85) return 1.00; // ONSET — full release
+  if (bayOnset || substormScore >= 85) return 1.00; // ONSET - full release
   if (substormScore >= 70)             return 0.90; // IMMINENT_30
   if (substormScore >= 50)             return 0.75; // LIKELY_60
   if (substormScore >= 30)             return 0.55; // WATCH
-  return 0.38; // QUIET — keep a non-zero baseline for weak steady auroral arcs
+  return 0.38; // QUIET - keep a non-zero baseline for weak steady auroral arcs
 }
 
 // Take the PEAK substorm score within a ±10 minute window around a given timestamp.
@@ -1030,7 +1030,7 @@ function computeVisibilityPct(
   // geographic penalty here double-counts the location effect and crushes the
   // visibility line to near-zero for GPS users on quiet nights.
   // The substorm multiplier and moon penalty below are the correct modifiers
-  // for this chart — location is already handled upstream in the score itself.
+  // for this chart - location is already handled upstream in the score itself.
 
   // ── Moon penalty ──────────────────────────────────────────────────────────
   // Keep this gentle: moonlight can wash out faint structure, but should not
@@ -1040,7 +1040,7 @@ function computeVisibilityPct(
     pct = pct * (1 - moonPenalty);
   }
 
-  // Bz adjustment not applied — already incorporated in rawScore via Newell coupling.
+  // Bz adjustment not applied - already incorporated in rawScore via Newell coupling.
 
   return Math.max(0, Math.min(100, pct));
 }
@@ -1064,7 +1064,7 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({
 
         // Substorm activity highlighting
         if (substormHistory) {
-          // Vertical lines on confirmed bay onset events — sharp marker for the moment
+          // Vertical lines on confirmed bay onset events - sharp marker for the moment
           substormHistory.forEach((h, i) => {
             if (!h.bay_onset_flag) return;
             const ts = new Date(h.timestamp_utc).getTime();
@@ -1109,10 +1109,10 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({
               const visibleItem   = ctx.find(c => (c.dataset.label || '').includes('substorm-adjusted'));
               if (!potentialItem || !visibleItem) return [];
               const gap = potentialItem.parsed.y - visibleItem.parsed.y;
-              if (gap < 5)  return ['', '  Energy is being released — substorm active.'];
-              if (gap < 20) return ['', `  ${gap.toFixed(0)}pt gap — energy loading, not fully releasing. Aurora may be patchy.`];
-              if (gap < 40) return ['', `  ${gap.toFixed(0)}pt gap — primed but unreleased. A substorm could fire at any time.`];
-              return ['', `  ${gap.toFixed(0)}pt gap — heavily loaded, no substorm. Could be significant if one fires.`];
+              if (gap < 5)  return ['', '  Energy is being released - substorm active.'];
+              if (gap < 20) return ['', `  ${gap.toFixed(0)}pt gap - energy loading, not fully releasing. Aurora may be patchy.`];
+              if (gap < 40) return ['', `  ${gap.toFixed(0)}pt gap - primed but unreleased. A substorm could fire at any time.`];
+              return ['', `  ${gap.toFixed(0)}pt gap - heavily loaded, no substorm. Could be significant if one fires.`];
             },
           },
         },
@@ -1146,9 +1146,9 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({
         });
 
         return { datasets: [
-            // Aurora score potential ceiling — thin, neutral, shows what conditions allow
+            // Aurora score potential ceiling - thin, neutral, shows what conditions allow
             { label: 'Aurora Score (potential)', data: auroraScoreHistory.map(d => ({ x: d.timestamp, y: d.finalScore })), borderColor: 'rgba(148, 163, 184, 0.45)', backgroundColor: 'transparent', fill: false, tension: 0.2, pointRadius: 0, borderWidth: 1, borderDash: [2, 3], spanGaps: true, order: 3 },
-            // Substorm-released visibility — the score after accounting for whether a substorm
+            // Substorm-released visibility - the score after accounting for whether a substorm
             // is actually releasing the loaded energy. Gap between this and the score above = energy loading but not released.
             { label: 'Visibility (substorm-adjusted)', data: visData, borderColor: 'rgba(99, 202, 165, 0.9)', backgroundColor: getForecastGradient, fill: 'origin', tension: 0.2, pointRadius: 0, borderWidth: 2, spanGaps: true, order: 1 },
         ] };
@@ -1160,7 +1160,7 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({
                 <h2 className="text-xl font-semibold text-white text-center">Forecast Trend (Last {timeLabel})</h2>
                 <button onClick={onOpenModal} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors" title="About this chart">?</button>
                 {(userLatitude == null) && (
-                  <span className="text-xs text-neutral-500 ml-2">(visibility based on Greymouth — enable GPS for your location)</span>
+                  <span className="text-xs text-neutral-500 ml-2">(visibility based on Greymouth - enable GPS for your location)</span>
                 )}
             </div>
             <div className="flex justify-between items-center mb-2">
@@ -1176,7 +1176,7 @@ export const ForecastTrendChart: React.FC<ForecastTrendChartProps> = ({
 
 // ─────────────────────────────────────────────────────────────
 // SUBSTORM INDEX CHART
-// Score from the substorm worker — NOT clamped to 100.
+// Score from the substorm worker - NOT clamped to 100.
 // The Y axis auto-scales to the actual data max so extreme
 // events are shown in full without artificial ceiling.
 // ─────────────────────────────────────────────────────────────
@@ -1277,7 +1277,7 @@ export const SubstormIndexChart: React.FC<{ history: { timestamp_utc: string; sc
 
 // ─────────────────────────────────────────────────────────────
 // NEWELL COUPLING CHART
-// v^(4/3) · Bt^(2/3) · sin^(8/3)(θ/2) — the primary
+// v^(4/3) · Bt^(2/3) · sin^(8/3)(θ/2) - the primary
 // magnetosphere coupling function. Higher = more aurora energy
 // being pumped in. Typical range 0–15,000 Wb/s.
 // ─────────────────────────────────────────────────────────────

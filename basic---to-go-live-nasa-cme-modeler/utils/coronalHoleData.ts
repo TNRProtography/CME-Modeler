@@ -15,7 +15,7 @@ export { estimateHssSpeedFromChWidth };
 // ─── Data model ──────────────────────────────────────────────────────────────
 
 export interface CoronalHole {
-  /** Unique identifier — e.g. 'CH_SUVI_0' */
+  /** Unique identifier - e.g. 'CH_SUVI_0' */
   id: string;
 
   /** Heliographic latitude of centroid (degrees, +N) */
@@ -45,7 +45,7 @@ export interface CoronalHole {
   /** Source direction (same as centroid lat/lon) */
   sourceDirectionDeg: { lat: number; lon: number };
 
-  /** HSS expansion half-angle (degrees) — scales with CH width */
+  /** HSS expansion half-angle (degrees) - scales with CH width */
   expansionHalfAngleDeg: number;
 
   /** Base opacity of the HSS Parker spiral (0–1) */

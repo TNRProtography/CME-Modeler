@@ -76,7 +76,7 @@ function skyTypeFromMs(
     // Key insight: sunriseMs/sunsetMs are today's UTC timestamps, but NZ is
     // UTC+13 so a 6:30am NZT sunrise is 5:30pm UTC the *previous* day.
     // Extracting % DAY_MS in UTC gives the wrong hour entirely.
-    // Fix: work in NZT — extract the NZT time-of-day, anchor to the slot's
+    // Fix: work in NZT - extract the NZT time-of-day, anchor to the slot's
     // NZT calendar day, then convert back to UTC for comparison.
 
     // NZT time-of-day for today's rise/set
@@ -174,7 +174,7 @@ function auroraGrad(
   const g = ctx.createLinearGradient(x, topY, x, botY);
   const a = (v: number) => Math.min(1, v * op).toFixed(3);
 
-  if (kp >= 8) {                              // G4+ — all three bold
+  if (kp >= 8) {                              // G4+ - all three bold
     g.addColorStop(0,    `rgba(80,130,255,${a(0)})`);
     g.addColorStop(0.04, `rgba(80,130,255,${a(0.80)})`);
     g.addColorStop(0.28, `rgba(80,130,255,${a(0.85)})`);
@@ -183,7 +183,7 @@ function auroraGrad(
     g.addColorStop(0.72, `rgba(0,220,65,${a(0.90)})`);
     g.addColorStop(0.90, `rgba(0,220,65,${a(0.92)})`);
     g.addColorStop(1,    `rgba(0,220,65,${a(0.10)})`);
-  } else if (kp >= 7) {                       // G3 — blue cap, good pink, green main
+  } else if (kp >= 7) {                       // G3 - blue cap, good pink, green main
     g.addColorStop(0,    `rgba(80,125,255,${a(0)})`);
     g.addColorStop(0.08, `rgba(80,125,255,${a(0.65)})`);
     g.addColorStop(0.28, `rgba(80,125,255,${a(0.70)})`);
@@ -192,7 +192,7 @@ function auroraGrad(
     g.addColorStop(0.72, `rgba(0,218,62,${a(0.85)})`);
     g.addColorStop(0.90, `rgba(0,218,62,${a(0.88)})`);
     g.addColorStop(1,    `rgba(0,218,62,${a(0.10)})`);
-  } else if (kp >= 6) {                       // G2 — hint of blue, pink band, green main
+  } else if (kp >= 6) {                       // G2 - hint of blue, pink band, green main
     g.addColorStop(0,    `rgba(80,118,255,${a(0)})`);
     g.addColorStop(0.10, `rgba(80,118,255,${a(0.40)})`);
     g.addColorStop(0.25, `rgba(80,118,255,${a(0.42)})`);
@@ -201,7 +201,7 @@ function auroraGrad(
     g.addColorStop(0.70, `rgba(0,215,60,${a(0.82)})`);
     g.addColorStop(0.90, `rgba(0,215,60,${a(0.85)})`);
     g.addColorStop(1,    `rgba(0,215,60,${a(0.08)})`);
-  } else {                                    // G1 — green base, faint pink, no blue
+  } else {                                    // G1 - green base, faint pink, no blue
     g.addColorStop(0,    `rgba(230,60,140,${a(0)})`);
     g.addColorStop(0.15, `rgba(230,60,140,${a(0.38)})`);
     g.addColorStop(0.38, `rgba(230,60,140,${a(0.40)})`);
@@ -215,11 +215,11 @@ function auroraGrad(
 // ── Visibility info for popup ─────────────────────────────────────────────────
 
 function moonLabel(p: number) {
-  if (p > 85) return `Full moon (${Math.round(p)}%) — bright sky glow`;
-  if (p > 65) return `Gibbous moon (${Math.round(p)}%) — noticeable glow`;
-  if (p > 40) return `Quarter moon (${Math.round(p)}%) — some interference`;
-  if (p > 15) return `Crescent (${Math.round(p)}%) — minimal impact`;
-  return `Near new moon (${Math.round(p)}%) — ideal dark skies`;
+  if (p > 85) return `Full moon (${Math.round(p)}%) - bright sky glow`;
+  if (p > 65) return `Gibbous moon (${Math.round(p)}%) - noticeable glow`;
+  if (p > 40) return `Quarter moon (${Math.round(p)}%) - some interference`;
+  if (p > 15) return `Crescent (${Math.round(p)}%) - minimal impact`;
+  return `Near new moon (${Math.round(p)}%) - ideal dark skies`;
 }
 
 interface VisInfo {
@@ -235,18 +235,18 @@ function getVis(kp: number, moon: number, lat: number | null | undefined, sky: S
     ? Math.max(0, Math.min(100, moon + dayIndex * (waxing ? 4 : -4)))
     : moon;
   // Only report moon interference when the moon is actually above the horizon
-  const ml = isMoonUp ? moonLabel(moonAdj) : 'Moon is below the horizon — no interference';
+  const ml = isMoonUp ? moonLabel(moonAdj) : 'Moon is below the horizon - no interference';
 
-  // Sky brightness note — added to tip for daytime/twilight slots
+  // Sky brightness note - added to tip for daytime/twilight slots
   const skyNote =
-    sky === 'day'      ? ' Note: the sun is up — aurora is not visible in daylight regardless of activity level.' :
-    sky === 'golden'   ? ' Note: the sun is at or near the horizon — it will still be too bright to see aurora.' :
-    sky === 'civil'    ? ' Note: civil twilight — the sky is still quite bright. Aurora is unlikely to be visible yet.' :
-    sky === 'nautical' ? ' Note: nautical twilight — the sky is getting darker but faint aurora may still be washed out.' :
+    sky === 'day'      ? ' Note: the sun is up - aurora is not visible in daylight regardless of activity level.' :
+    sky === 'golden'   ? ' Note: the sun is at or near the horizon - it will still be too bright to see aurora.' :
+    sky === 'civil'    ? ' Note: civil twilight - the sky is still quite bright. Aurora is unlikely to be visible yet.' :
+    sky === 'nautical' ? ' Note: nautical twilight - the sky is getting darker but faint aurora may still be washed out.' :
     '';
 
   if (kp <= KP_THRESHOLD) return {
-    headline: sky === 'day' ? 'Daytime — aurora not visible' : 'Not visible from New Zealand',
+    headline: sky === 'day' ? 'Daytime - aurora not visible' : 'Not visible from New Zealand',
     detail:   sky === 'day'
       ? 'The sun is up. Aurora cannot be seen during daylight hours regardless of space weather conditions.'
       : sky === 'golden' || sky === 'civil'
@@ -254,26 +254,26 @@ function getVis(kp: number, moon: number, lat: number | null | undefined, sky: S
       : 'Activity is too low for aurora to reach New Zealand. The aurora oval sits well south of NZ at this level.',
     regions: [], moonNote: ml,
     tip: sky === 'day' || sky === 'golden' || sky === 'civil'
-      ? 'Check back after dark — aurora only becomes visible once the sky is fully dark.'
+      ? 'Check back after dark - aurora only becomes visible once the sky is fully dark.'
       : 'Check back when Kp reaches 5 or above.',
-    summary: sky === 'day' ? 'The sun is up — aurora cannot be seen in daylight.'
-      : sky === 'golden' || sky === 'civil' ? 'Too bright to see aurora — wait until fully dark.'
+    summary: sky === 'day' ? 'The sun is up - aurora cannot be seen in daylight.'
+      : sky === 'golden' || sky === 'civil' ? 'Too bright to see aurora - wait until fully dark.'
       : sky === 'nautical' ? 'Sky nearly dark but Kp too low for NZ aurora tonight.'
-      : 'Activity is too low — aurora not expected to reach New Zealand.',
+      : 'Activity is too low - aurora not expected to reach New Zealand.',
   };
 
   if (kp >= 8) return {
     headline: 'Visible across all of New Zealand',
-    detail:   'Major geomagnetic storm. Aurora visible nationwide — Northland to Invercargill — even from suburban areas. Expect greens, pinks, and vivid blue/purple higher in the sky.',
+    detail:   'Major geomagnetic storm. Aurora visible nationwide - Northland to Invercargill - even from suburban areas. Expect greens, pinks, and vivid blue/purple higher in the sky.',
     regions:  ['Northland','Auckland','Waikato','Bay of Plenty','Wellington','Nelson','Canterbury','Otago','Southland'],
-    moonNote: `${ml} — moon has no meaningful impact at this storm level.`,
-    tip: 'Go outside and look in any direction — at G4+ aurora can appear overhead. Face south for the most dramatic display.',
-    summary: 'Major storm — aurora visible across all of New Zealand, moon is no obstacle.',
+    moonNote: `${ml} - moon has no meaningful impact at this storm level.`,
+    tip: 'Go outside and look in any direction - at G4+ aurora can appear overhead. Face south for the most dramatic display.',
+    summary: 'Major storm - aurora visible across all of New Zealand, moon is no obstacle.',
   };
 
   if (kp >= 7) {
     const northNote = moon > 80
-      ? 'North Island: find a dark hilltop away from city lights — full moon may reduce visibility.'
+      ? 'North Island: find a dark hilltop away from city lights - full moon may reduce visibility.'
       : moon > 55
       ? 'North Island: head to a dark location for best viewing.'
       : 'North Island visible clearly, even from suburbs.';
@@ -282,72 +282,72 @@ function getVis(kp: number, moon: number, lat: number | null | undefined, sky: S
       detail:   `Strong storm. The entire South Island will see clear aurora. ${northNote}`,
       regions:  ['Southland','Otago','Canterbury','Marlborough','Nelson','Wellington','Manawatu',"Hawke's Bay",'Waikato','Auckland','Northland'],
       moonNote: moon > 80
-        ? `${ml} — may reduce North Island visibility slightly. South Island unaffected.`
+        ? `${ml} - may reduce North Island visibility slightly. South Island unaffected.`
         : ml,
       tip: 'Face south and look up. Green is most common; pink/red higher up indicates strong activity near you.',
-      summary: moon > 80 ? 'Strong storm — all NZ should see aurora; North Island: find dark skies to counter the full moon.'
-        : 'Strong storm — aurora visible the length of New Zealand tonight.',
+      summary: moon > 80 ? 'Strong storm - all NZ should see aurora; North Island: find dark skies to counter the full moon.'
+        : 'Strong storm - aurora visible the length of New Zealand tonight.',
     };
   }
 
   if (kp >= 6) {
     if (moon > 80) return {
       headline: 'South Island likely, North Island difficult',
-      detail:   'Moderate storm. South Island should see clear aurora. Full moon will wash out fainter aurora for North Island — very dark sites needed.',
+      detail:   'Moderate storm. South Island should see clear aurora. Full moon will wash out fainter aurora for North Island - very dark sites needed.',
       regions:  ['Southland','Otago','Canterbury','Marlborough','Nelson','Wellington (dark sites)'],
-      moonNote: `${ml} — significantly reduces North Island chances.`,
+      moonNote: `${ml} - significantly reduces North Island chances.`,
       tip:      'South Island: any dark spot works. North Island: coastal headlands or hilltops away from light pollution.',
-      summary:  'Moderate storm — South Island clear, North Island needs dark skies to beat the full moon.',
+      summary:  'Moderate storm - South Island clear, North Island needs dark skies to beat the full moon.',
     };
     return {
-      headline: moon > 55 ? 'South Island to Northland — dark sites help in North Island' : 'Visible South Island to Northland',
+      headline: moon > 55 ? 'South Island to Northland - dark sites help in North Island' : 'Visible South Island to Northland',
       detail:   moon > 55
-        ? 'Moderate storm. South Island clear. North Island (Auckland, Northland) has a good chance from dark locations — moon may reduce the faint edges.'
+        ? 'Moderate storm. South Island clear. North Island (Auckland, Northland) has a good chance from dark locations - moon may reduce the faint edges.'
         : 'Moderate storm. South Island and North Island including Auckland and Northland all have a strong chance. Find a dark spot and look south.',
       regions:  ['Southland','Otago','Canterbury','Nelson','Wellington','Manawatu','Auckland','Northland'],
-      moonNote: moon > 55 ? `${ml} — North Island: prioritise dark sites.` : ml,
-      tip:      "Point your phone camera south — it's more sensitive than your eyes and may reveal colours before you see them.",
-      summary:  moon > 55 ? 'Moderate storm — South Island to Northland; find dark spots in the North Island.'
-        : 'Moderate storm — good chance across South Island and up to Northland.',
+      moonNote: moon > 55 ? `${ml} - North Island: prioritise dark sites.` : ml,
+      tip:      "Point your phone camera south - it's more sensitive than your eyes and may reveal colours before you see them.",
+      summary:  moon > 55 ? 'Moderate storm - South Island to Northland; find dark spots in the North Island.'
+        : 'Moderate storm - good chance across South Island and up to Northland.',
     };
   }
 
   if (kp >= 5) {
     if (moon > 80) return {
-      headline: 'Southland and Otago — dark sites only',
+      headline: 'Southland and Otago - dark sites only',
       detail:   'Minor storm. Full moon makes conditions difficult. Only the very south of New Zealand is likely to see aurora, and only from truly dark locations.',
       regions:  ['Southland (dark sky sites)','Otago (dark sky sites)'],
-      moonNote: `${ml} — aurora is faint at G1 and the moon compounds this.`,
+      moonNote: `${ml} - aurora is faint at G1 and the moon compounds this.`,
       tip:      'Use a camera on a tripod, 10–15 second exposure pointed south. Your eyes may see nothing but the camera might.',
-      summary:  'Minor storm — only extreme south NZ in very dark sites; full moon makes conditions tough.',
+      summary:  'Minor storm - only extreme south NZ in very dark sites; full moon makes conditions tough.',
     };
     if (moon > 55) return {
       headline: 'South Island south of Christchurch',
       detail:   'Minor storm. Southern South Island (Southland, Otago, South Canterbury) should see aurora from dark locations. Partial moon reduces visibility further north.',
       regions:  ['Southland','Otago','South Canterbury'],
-      moonNote: `${ml} — reduces visibility in marginal locations.`,
+      moonNote: `${ml} - reduces visibility in marginal locations.`,
       tip:      'Look for a green or pink brightening on the southern horizon before distinct curtains develop.',
-      summary:  'Minor storm — southern South Island has a fair chance from dark locations tonight.',
+      summary:  'Minor storm - southern South Island has a fair chance from dark locations tonight.',
     };
     return {
       headline: 'South Island including Nelson',
       detail:   'Minor storm. From Invercargill up to Nelson has a good chance from dark locations. Dark skies are essential at this level.',
       regions:  ['Southland','Otago','Canterbury','Marlborough','Nelson'],
-      moonNote: moon > 25 ? `${ml} — aurora visible, but darker sites improve chances.` : ml,
-      tip:      'Find a spot with a clear southern horizon — coastal beaches and hilltops are ideal. Look low on the horizon first.',
-      summary:  moon > 25 ? 'Minor storm — South Island to Nelson likely; dark skies improve your chances.'
-        : 'Minor storm — South Island to Nelson has a good chance from dark locations.',
+      moonNote: moon > 25 ? `${ml} - aurora visible, but darker sites improve chances.` : ml,
+      tip:      'Find a spot with a clear southern horizon - coastal beaches and hilltops are ideal. Look low on the horizon first.',
+      summary:  moon > 25 ? 'Minor storm - South Island to Nelson likely; dark skies improve your chances.'
+        : 'Minor storm - South Island to Nelson has a good chance from dark locations.',
     };
   }
 
   // KP 4.34–4.99
   return {
-    headline: 'Marginal — very unlikely from New Zealand',
+    headline: 'Marginal - very unlikely from New Zealand',
     detail:   'Just above the minimum threshold but below what is needed to reach NZ latitudes. A faint glow might theoretically appear from extreme southern locations under perfect conditions, but is not expected.',
     regions:  [],
     moonNote: ml,
-    tip:      "Not worth going out specially. If Kp climbs to 5 the situation will improve quickly — keep the forecast open.",
-    summary:  'Marginal activity — aurora is not expected to be visible from New Zealand.',
+    tip:      "Not worth going out specially. If Kp climbs to 5 the situation will improve quickly - keep the forecast open.",
+    summary:  'Marginal activity - aurora is not expected to be visible from New Zealand.',
   };
 }
 
@@ -367,7 +367,7 @@ function drawCanvas(
   const COLS   = slots.length;
   if (COLS === 0) return;
   const DPR    = window.devicePixelRatio || 1;
-  const MIN_COL = 22; // minimum px per column — keeps slots tappable on mobile
+  const MIN_COL = 22; // minimum px per column - keeps slots tappable on mobile
   const COL_W  = Math.max(MIN_COL, W / COLS);
   const totalW = COL_W * COLS;
   const H      = Math.round(Math.min(220, Math.max(160, totalW * 0.18)));
@@ -466,13 +466,13 @@ function drawCanvas(
       ctx.fillRect(x, HOR_Y - ah, COL_W, ah);
     }
 
-    // Keep ARR_DAY/ARR_NZT/arSlotMid — used by moon arc below
+    // Keep ARR_DAY/ARR_NZT/arSlotMid - used by moon arc below
     const ARR_DAY   = 86400000;
     const ARR_NZT   = getNzOffsetMs(slot.utcMs);
     const arSlotNzt = slot.utcMs + ARR_NZT;
     const arSlotMid = arSlotNzt - (arSlotNzt % ARR_DAY);
 
-    // Moon arc — disc follows a sine arc from moonrise to moonset, like the sun.
+    // Moon arc - disc follows a sine arc from moonrise to moonset, like the sun.
     // Uses per-day +55min offset. Checks a ±1 day window to catch the overnight
     // case where the moon rose yesterday evening and sets this morning.
     // "Not when rise/set is next day": if adding 55min pushes the time past midnight
@@ -508,7 +508,7 @@ function drawCanvas(
       }
     }
 
-    // Past-observed dimming — slightly darken observed/estimated slots
+    // Past-observed dimming - slightly darken observed/estimated slots
     // so the eye naturally reads left=past, right=future
     if (slot.observed === 'observed') {
       ctx.fillStyle = 'rgba(0,0,0,0.35)';
@@ -532,7 +532,7 @@ function drawCanvas(
       ctx.stroke();
     }
 
-    // Column separator — only draw at 3h boundaries and day transitions
+    // Column separator - only draw at 3h boundaries and day transitions
     if (i > 0) {
       const isDayBound  = slots[i].dayIdx !== slots[i-1].dayIdx;
       const is3hBound   = slots[i].nztHour % 3 === 0;
@@ -571,7 +571,7 @@ function drawCanvas(
     }
   });
 
-  // Time labels — show every 3 hours so they don't crowd on 1h columns
+  // Time labels - show every 3 hours so they don't crowd on 1h columns
   for (let i=0; i<COLS; i++) {
     const h = slots[i].nztHour;
     // Show at midnight (day transition) and every 3h
@@ -649,14 +649,14 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
             : (row[0] ?? '');
           const kpVal = isObjects ? row.kp : row[1];
 
-          // time_tag has no Z suffix — append it to parse as UTC
+          // time_tag has no Z suffix - append it to parse as UTC
           const utcMs = new Date(String(utcStr).replace(' ', 'T') + (utcStr.includes('Z') ? '' : 'Z')).getTime();
           if (isNaN(utcMs) || utcMs < windowStart || utcMs > windowEnd) return;
 
           const kp = parseFloat(String(kpVal));
           if (isNaN(kp)) return;
 
-          // Slot type: observed/estimated/predicted — used for opacity later
+          // Slot type: observed/estimated/predicted - used for opacity later
           const observed: string = isObjects ? (row.observed ?? 'predicted') : 'predicted';
 
           const nztMs   = utcMs + getNzOffsetMs(utcMs);
@@ -761,7 +761,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
     const offM      = dayIdxM * 55 * 60000;
     const riseTodM  = (moonRiseMs + NZT_M) % DAY_MS_M;
     const setTodM   = (moonSetMs  + NZT_M) % DAY_MS_M;
-    // ±1 day window — same logic as canvas arc to handle overnight moon
+    // ±1 day window - same logic as canvas arc to handle overnight moon
     for (let d = -1; d <= 0; d++) {
       const chkMidM  = slotMidM + d * DAY_MS_M;
       const chkIdxM  = dayIdxM + d;
@@ -787,10 +787,10 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   const visRaw = sel ? getVis(sel.kp, moon, userLatitude, selSky, selIsMoonUp, selDayIndex, moonWaxing ?? null) : null;
   // For daytime/twilight slots with elevated KP, append the sun note to the tip
   const daySkyNote =
-    selSky === 'day'      ? 'The sun is currently up — aurora is not visible in daylight even during a storm.'
-    : selSky === 'golden' ? 'The sun is at the horizon — it will still be too bright to see aurora right now.'
-    : selSky === 'civil'  ? 'Civil twilight — the sky is still bright. Aurora will not be visible yet.'
-    : selSky === 'nautical' ? 'Nautical twilight — the sky is darkening but faint aurora may still be washed out by the remaining glow.'
+    selSky === 'day'      ? 'The sun is currently up - aurora is not visible in daylight even during a storm.'
+    : selSky === 'golden' ? 'The sun is at the horizon - it will still be too bright to see aurora right now.'
+    : selSky === 'civil'  ? 'Civil twilight - the sky is still bright. Aurora will not be visible yet.'
+    : selSky === 'nautical' ? 'Nautical twilight - the sky is darkening but faint aurora may still be washed out by the remaining glow.'
     : null;
   // For day/twilight slots, prepend the sun note to the tip so users understand
   // why they might not see aurora even during elevated activity
@@ -833,14 +833,14 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
         </span>
       </div>
 
-      {/* Canvas wrapper — horizontally scrollable for mobile */}
+      {/* Canvas wrapper - horizontally scrollable for mobile */}
       <div ref={wrapRef} style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', position: 'relative' }}>
         {loading && (
           <div className="h-40 bg-neutral-800/50 rounded-lg animate-pulse" />
         )}
         {error && (
           <div className="h-40 flex items-center justify-center text-neutral-500 text-sm bg-neutral-900/40 rounded-lg border border-neutral-800/50">
-            Could not load NOAA forecast — check back shortly
+            Could not load NOAA forecast - check back shortly
           </div>
         )}
         {!loading && !error && (
@@ -932,7 +932,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
             {l}
           </span>
         ))}
-        <span className="text-xs text-neutral-600 ml-auto">{userLatitude != null ? `Bar height calibrated to ${Math.abs(userLatitude).toFixed(1)}°${userLatitude < 0 ? 'S' : 'N'} — aurora threshold Kp ${minKpForLocation(userLatitude).toFixed(1)}` : 'No GPS — showing NZ-wide aurora threshold (Kp 4.67)'}</span>
+        <span className="text-xs text-neutral-600 ml-auto">{userLatitude != null ? `Bar height calibrated to ${Math.abs(userLatitude).toFixed(1)}°${userLatitude < 0 ? 'S' : 'N'} - aurora threshold Kp ${minKpForLocation(userLatitude).toFixed(1)}` : 'No GPS - showing NZ-wide aurora threshold (Kp 4.67)'}</span>
       </div>
 
     </div>

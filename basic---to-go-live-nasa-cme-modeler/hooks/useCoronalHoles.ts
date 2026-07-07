@@ -10,7 +10,7 @@
 //   4. Backfill any missing historical SWPC frames
 //   5. Build evolution tracks for each CH
 //
-// Policy: REAL DATA ONLY — no simulated fallback.
+// Policy: REAL DATA ONLY - no simulated fallback.
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { CoronalHole }                              from '../utils/coronalHoleData';
@@ -109,7 +109,7 @@ export function useCoronalHoles({ enabled = false, sourceImageUrl }: UseCoronalH
         setCoronalHoles(result.coronalHoles);
         setStatus('detected');
 
-        // POST to worker (debounced — max once per minute)
+        // POST to worker (debounced - max once per minute)
         const now = Date.now();
         if (now - lastPostTimeRef.current > POST_DEBOUNCE_MS) {
           lastPostTimeRef.current = now;
@@ -197,7 +197,7 @@ export function useCoronalHoles({ enabled = false, sourceImageUrl }: UseCoronalH
             setHistoryProgress(null);
 
             if (filled > 0) {
-              console.log(`[CH History] Backfilled ${filled} frames — refreshing history`);
+              console.log(`[CH History] Backfilled ${filled} frames - refreshing history`);
               // Re-fetch the now-enriched history
               const updated = await fetchHistoryFromWorker();
               if (updated && mountedRef.current) {

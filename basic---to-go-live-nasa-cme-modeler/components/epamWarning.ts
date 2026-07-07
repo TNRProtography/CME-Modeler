@@ -14,25 +14,25 @@
 // A CME approach is a story told in stages, and EPAM forecasting is about the
 // COMBINATION of behaviours, not isolated stats. The canonical sequence:
 //
-//   1. SEP onset with VELOCITY DISPERSION — high-energy channels (P7/P8) rise
+//   1. SEP onset with VELOCITY DISPERSION - high-energy channels (P7/P8) rise
 //      before low-energy ones (P1/P3): fastest particles from a fresh solar
 //      eruption arrive first. Earliest hint, hours to ~2 days out.
-//   2. SUSTAINED ELEVATION — the plateau while the CME is in transit.
-//   3. CHANNEL COMPRESSION — the spread between channels shrinks as the shock
+//   2. SUSTAINED ELEVATION - the plateau while the CME is in transit.
+//   3. CHANNEL COMPRESSION - the spread between channels shrinks as the shock
 //      approaches and accelerates low-energy particles locally ("the lines
 //      converge").
-//   4. PRE-ARRIVAL DEPRESSION — a temporary dip from the elevated plateau,
+//   4. PRE-ARRIVAL DEPRESSION - a temporary dip from the elevated plateau,
 //      tens of minutes to a couple of hours before arrival. A dip from quiet
 //      means nothing; a dip AFTER sustained elevation is a high-specificity
 //      "brace" signal. (This is the EPAM-visible cousin of a Forbush
 //      precursor; a TRUE Forbush decrease is a galactic-cosmic-ray drop and is
 //      detected separately from neutron-monitor data below.)
-//   5. ESP SPIKE — the sudden broadband jump at shock arrival.
+//   5. ESP SPIKE - the sudden broadband jump at shock arrival.
 //
 // The engine runs a detector for each signature, then a SEQUENCE layer
 // combines them: when earlier stages have fired, the thresholds for calling
 // the next stage are lowered (balanced boost, capped). That is how the system
-// gets EARLIER without more false positives — sensitivity is only granted
+// gets EARLIER without more false positives - sensitivity is only granted
 // when prior stages have earned it. The user's exact pattern (elevated → dip
 // → sudden rise) is additionally encoded as an explicit fast-path to
 // "Storm Arrival Incoming".
@@ -41,8 +41,8 @@
 // --------------------------------------------------
 // computeEpamWarning now optionally accepts raw samples from INDEPENDENT L1
 // particle sources (SOLAR-1 EPAM and IMAP EPAM via the worker's HAPI feeds).
-// Each confirmation source is judged against ITS OWN 7-day quiet baseline —
-// never against the primary source's — so a confirmation means two physically
+// Each confirmation source is judged against ITS OWN 7-day quiet baseline -
+// never against the primary source's - so a confirmation means two physically
 // separate instruments independently agree that particles are elevated.
 //
 //   • Each independently-elevated spacecraft adds context units to the
@@ -57,8 +57,8 @@
 // NEUTRON-MONITOR (FORBUSH) INPUT
 // -------------------------------
 // computeEpamWarning optionally accepts ground neutron-monitor count data
-// (e.g. OULU via NMDB). A genuine Forbush decrease onset — counts dropping
-// >~1.5% below their own 7-day baseline and still falling — confirms that a
+// (e.g. OULU via NMDB). A genuine Forbush decrease onset - counts dropping
+// >~1.5% below their own 7-day baseline and still falling - confirms that a
 // large magnetic structure is sweeping cosmic rays away near Earth, and feeds
 // the sequence booster. If the feed is unavailable, everything else still
 // works; the FD signature simply reports unavailable.
@@ -142,7 +142,7 @@ export interface EpamWarning {
     dipDepthLog: number | null;         // depth of pre-arrival depression
     fdPctNow: number | null;            // neutron monitor % vs its 7-day baseline
     nmAvailable: boolean;
-    thresholdBoost: number;             // 0..0.35 — how much the sequence lowered the bars
+    thresholdBoost: number;             // 0..0.35 - how much the sequence lowered the bars
     // v3 cross-spacecraft confirmation diagnostics
     confirmations: SourceConfirmation[];
     confirmedCount: number;             // sources that independently confirm elevation
@@ -152,7 +152,7 @@ export interface EpamWarning {
 // ── Tunables ────────────────────────────────────────────────────────────────
 
 export const EPAM_WARN_CONFIG = {
-  BASELINE_HOURS: 168,          // 7 days — the full week the analysis is built on
+  BASELINE_HOURS: 168,          // 7 days - the full week the analysis is built on
   RECENT_WINDOW_MIN: 45,
   BASELINE_QUANTILE: 0.6,
 
@@ -195,7 +195,7 @@ export const EPAM_WARN_CONFIG = {
   DIP_FLOOR_SIGMA: 1.5,               // dip must stay above quiet by this much
   DIP_MEMORY_H: 2.5,                  // a dip within this window still arms the fast-path
   // Slope required for the dip→rise fast-path. Lower than SLOPE_ONSET because
-  // a confirmed post-elevation dip already supplies the specificity — a climb
+  // a confirmed post-elevation dip already supplies the specificity - a climb
   // out of it does not need to be as steep as a cold-start spike to carry the
   // same meaning. ≈ +50% in 15 minutes.
   DIP_RISE_SLOPE: 0.18,
@@ -361,13 +361,13 @@ export function computeEpamWarning(
 
   // ════ v2 SIGNATURE DETECTORS ════════════════════════════════════════════════
 
-  // 1. Velocity dispersion — high-energy channels rose before low-energy ones.
+  // 1. Velocity dispersion - high-energy channels rose before low-energy ones.
   const dispersion = detectDispersion(samples, now);
 
-  // 3. Channel compression — inter-channel spread shrinking while elevated.
+  // 3. Channel compression - inter-channel spread shrinking while elevated.
   const compression = detectCompression(samples, now, sigmaAboveBaseline);
 
-  // 4. Pre-arrival depression — a dip from the elevated plateau (now, or
+  // 4. Pre-arrival depression - a dip from the elevated plateau (now, or
   //    recently enough that a rise out of it is still the user's dip→spike
   //    pattern).
   const dipNow = detectDepression(samples, now, baselineLogMedian, baselineLogMad);
@@ -382,12 +382,12 @@ export function computeEpamWarning(
     }
   }
 
-  // True Forbush decrease — neutron monitor counts vs their own 7-day baseline.
+  // True Forbush decrease - neutron monitor counts vs their own 7-day baseline.
   const fd = detectForbush(nm ?? null, now);
 
   // ════ v3: CROSS-SPACECRAFT CONFIRMATION (SOLAR-1 / IMAP) ════════════════════
   // Each confirmation source is judged against ITS OWN 7-day quiet baseline at
-  // the SAME reference time as the primary — simultaneous, independent
+  // the SAME reference time as the primary - simultaneous, independent
   // agreement is what makes a confirmation meaningful.
   const confirmations: SourceConfirmation[] = (confirmSources ?? []).map((src) =>
     assessConfirmationSource(src, now),
@@ -396,7 +396,7 @@ export function computeEpamWarning(
   const availableConfirmCount = confirmations.filter((c) => c.available).length;
 
   // ════ BALANCED SEQUENCE BOOST ═══════════════════════════════════════════════
-  // Earlier stages lower the bars for later ones — capped, and only granted
+  // Earlier stages lower the bars for later ones - capped, and only granted
   // when independent physics has actually fired.
   let contextUnits = 0;
   if (compression.detected) contextUnits += 1.0;
@@ -466,7 +466,7 @@ export function computeEpamWarning(
     },
   ];
 
-  // v3: one chip per confirmation spacecraft (SOLAR-1 / IMAP) — judged against
+  // v3: one chip per confirmation spacecraft (SOLAR-1 / IMAP) - judged against
   // its own baseline, so "active" here means a genuinely independent vote.
   for (const c of confirmations) {
     reasons.push({
@@ -481,7 +481,7 @@ export function computeEpamWarning(
     });
   }
 
-  // ── Decide level — coincidence plus sequence-armed fast paths ───────────────
+  // ── Decide level - coincidence plus sequence-armed fast paths ───────────────
   const sig = sigmaAboveBaseline ?? -Infinity;
   const slope = maxSlopePer15m ?? -Infinity;
   const sustained = sustainedMinutes >= cfg.SUSTAINED_MIN;
@@ -495,7 +495,7 @@ export function computeEpamWarning(
   else if (sig >= SIGMA_ONSET_EFF && slope >= SLOPE_ONSET_EFF && broadband) {
     level = 'ONSET';
   }
-  // FAST PATH — the elevated → dip → sudden rise pattern. Climbing out of a
+  // FAST PATH - the elevated → dip → sudden rise pattern. Climbing out of a
   // recent dip, sigma lags the physics (the recent-window median still
   // includes dip samples), so when a recent dip has armed the system, a
   // broadband climb of ≥ DIP_RISE_SLOPE from a previously-elevated state is
@@ -525,7 +525,7 @@ export function computeEpamWarning(
     if (names.length) {
       detail += ` Independently confirmed by ${names.join(' + ')}.`;
     } else if (LEVEL_RANK[level] >= LEVEL_RANK.ELEVATED) {
-      detail += ' Other spacecraft are quiet — single-source signal, treat with some caution.';
+      detail += ' Other spacecraft are quiet - single-source signal, treat with some caution.';
     }
   }
 
@@ -740,7 +740,7 @@ function detectForbush(
 // Judges one independent spacecraft (SOLAR-1 EPAM, IMAP, …) against ITS OWN
 // 7-day quiet-biased baseline at the primary feed's reference time `now`.
 // A source "confirms" when its recent flux sits ≥ SIGMA_WATCH above its own
-// baseline AND at least MIN_CHANNELS_RISING of its channels are rising — i.e.
+// baseline AND at least MIN_CHANNELS_RISING of its channels are rising - i.e.
 // the same physics, measured by different hardware. Sources with too little or
 // too stale data report unavailable and never count against confirmation.
 
@@ -838,13 +838,13 @@ function countChannelsRising(
 function buildHeadline(level: WarnLevel): string {
   switch (level) {
     case 'SHOCK':
-      return 'A solar storm shock is hitting now. The disturbance is passing the upstream satellite — Earth-side effects are expected within the hour. Watch the magnetic field (Bz) and get ready if you are aurora hunting.';
+      return 'A solar storm shock is hitting now. The disturbance is passing the upstream satellite - Earth-side effects are expected within the hour. Watch the magnetic field (Bz) and get ready if you are aurora hunting.';
     case 'ONSET':
-      return 'A solar storm looks to be arriving. Particle levels are climbing fast and together — the classic lead-in to a CME shock reaching Earth. This is the time to start watching closely.';
+      return 'A solar storm looks to be arriving. Particle levels are climbing fast and together - the classic lead-in to a CME shock reaching Earth. This is the time to start watching closely.';
     case 'ELEVATED':
       return 'Particle levels are up and staying up. Something real is happening upstream, but it has not turned into a sudden arrival yet. Worth keeping an eye on.';
     case 'WATCH':
-      return 'Early signs of activity. Particle levels are just starting to lift above their normal background. It may be the front edge of an event, or it may settle back down — too soon to tell.';
+      return 'Early signs of activity. Particle levels are just starting to lift above their normal background. It may be the front edge of an event, or it may settle back down - too soon to tell.';
     default:
       return 'All quiet. Particle levels are sitting at their normal background, with no sign of an incoming solar storm.';
   }
@@ -869,7 +869,7 @@ function buildDetail(
     case 'ELEVATED':
       return `Technical: ${sigTxt}, ${sustTxt}, ${chanTxt}${fdTxt}${seqTxt}.`;
     case 'WATCH':
-      return `Technical: ${sigTxt}, ${chanTxt} — not yet sustained or broadband enough to confirm${fdTxt}${seqTxt}.`;
+      return `Technical: ${sigTxt}, ${chanTxt} - not yet sustained or broadband enough to confirm${fdTxt}${seqTxt}.`;
     default:
       return `Technical: ${sigTxt}${fdTxt}.`;
   }

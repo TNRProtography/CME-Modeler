@@ -14,7 +14,7 @@ const DocSubstormModel: React.FC = () => (
         <p>
           The same Newell function computed in the client (see §03) is integrated over a rolling
           30-minute and 60-minute window using the L1 time series. This accumulated integral
-          quantifies total magnetospheric loading over recent minutes — a stronger predictor of
+          quantifies total magnetospheric loading over recent minutes - a stronger predictor of
           substorm onset than any instantaneous measurement.
         </p>
         <Formula note="Historical threshold for significant NZ aurora activity: ~5–10 sustained over 30 min at typical solar wind speeds.">
@@ -38,7 +38,7 @@ newell_avg_60m = mean over last 60 min`}
   in the recent EY2M data`}
         </Formula>
       </Card>
-      <Card icon="📊" title="Probability Model — Exact Formulas">
+      <Card icon="📊" title="Probability Model - Exact Formulas">
         <p>
           Probability of substorm onset in the next 30 and 60 minutes, computed client-side from
           Substorm Risk Worker metrics in{' '}
@@ -62,11 +62,11 @@ P30 = clamp(0.15 + 0.7×base + bzBoost,
       <Card icon="🚦" title="Status Classification">
         <div className="space-y-2.5 mt-1">
           {[
-            { pill: 'QUIET',      color: 'neutral' as const, desc: 'P30 <15% — solar wind coupling low, energy not loading' },
-            { pill: 'WATCH',      color: 'blue'    as const, desc: 'P30 ≥15% — energy loading, monitor closely' },
-            { pill: 'LIKELY_60',  color: 'amber'   as const, desc: 'P60 ≥50% — high probability within the hour' },
-            { pill: 'IMMINENT_30',color: 'red'     as const, desc: 'P30 ≥60% — very likely within 30 min' },
-            { pill: 'ONSET',      color: 'red'     as const, desc: 'Bay onset confirmed in EY2M — substorm in progress now' },
+            { pill: 'QUIET',      color: 'neutral' as const, desc: 'P30 <15% - solar wind coupling low, energy not loading' },
+            { pill: 'WATCH',      color: 'blue'    as const, desc: 'P30 ≥15% - energy loading, monitor closely' },
+            { pill: 'LIKELY_60',  color: 'amber'   as const, desc: 'P60 ≥50% - high probability within the hour' },
+            { pill: 'IMMINENT_30',color: 'red'     as const, desc: 'P30 ≥60% - very likely within 30 min' },
+            { pill: 'ONSET',      color: 'red'     as const, desc: 'Bay onset confirmed in EY2M - substorm in progress now' },
           ].map(({ pill, color, desc }) => (
             <div key={pill} className="flex items-center gap-3">
               <Pill color={color}>{pill}</Pill>
@@ -81,10 +81,10 @@ P30 = clamp(0.15 + 0.7×base + bzBoost,
     <DataTable
       headers={['Slot', 'Primary source', 'Secondary source', 'Confidence']}
       rows={[
-        ['Now',    'Substorm Risk current status + aurora score from Forecast Worker', 'Confirmed sighting reports from within ~200 km in the last 30 min', 'High — reflects current measured conditions'],
-        ['15 min', 'P30 probability + Newell coupling trend + Bay onset flag', 'L1 data reflects conditions ~45–60 min from Earth (partially overlaps)', 'High — primary window of reliable near-term forecasting'],
-        ['30 min', 'P30 and P60 interpolated + Bz persistence model', 'Sustained southward Bz extrapolation from current trend', 'Medium — conditions can change significantly in 30 min'],
-        ['60 min', 'P60 probability projection', 'Aurora score composite', 'Low — guidance only. Treat as "conditions are currently building" rather than a specific prediction'],
+        ['Now',    'Substorm Risk current status + aurora score from Forecast Worker', 'Confirmed sighting reports from within ~200 km in the last 30 min', 'High - reflects current measured conditions'],
+        ['15 min', 'P30 probability + Newell coupling trend + Bay onset flag', 'L1 data reflects conditions ~45–60 min from Earth (partially overlaps)', 'High - primary window of reliable near-term forecasting'],
+        ['30 min', 'P30 and P60 interpolated + Bz persistence model', 'Sustained southward Bz extrapolation from current trend', 'Medium - conditions can change significantly in 30 min'],
+        ['60 min', 'P60 probability projection', 'Aurora score composite', 'Low - guidance only. Treat as "conditions are currently building" rather than a specific prediction'],
       ]}
     />
   </Section>

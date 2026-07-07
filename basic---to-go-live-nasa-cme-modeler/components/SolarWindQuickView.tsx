@@ -1,12 +1,12 @@
 /**
- * SolarWindQuickView — ACE MAG & SWEPAM style quick-glance panel
+ * SolarWindQuickView - ACE MAG & SWEPAM style quick-glance panel
  *
  * Stacked dot plots with selectable time range (3h / 6h / 12h / 24h):
- *   1. Bz + Bt   — on the same panel; Bz colour-coded, Bt grey
- *   2. Phi (°)   — clock angle, cyan
- *   3. Density   — orange, log scale
- *   4. Speed     — yellow
- *   5. Temp (K)  — green, log scale
+ *   1. Bz + Bt   - on the same panel; Bz colour-coded, Bt grey
+ *   2. Phi (°)   - clock angle, cyan
+ *   3. Density   - orange, log scale
+ *   4. Speed     - yellow
+ *   5. Temp (K)  - green, log scale
  */
 
 import React, { useMemo, useState, useCallback, useEffect } from 'react';
@@ -17,7 +17,7 @@ import CloseIcon from './icons/CloseIcon';
 import { detectShocks, type DetectedShock } from '../utils/shockDetection';
 
 // ── Shape of a single detected shock, exposed to parent via onShocksDetected ──
-// (Defined in utils/shockDetection.ts — the single shared detector — and
+// (Defined in utils/shockDetection.ts - the single shared detector - and
 // re-exported here so existing `import { type DetectedShock } from
 // './SolarWindQuickView'` call sites keep working.)
 export type { DetectedShock } from '../utils/shockDetection';
@@ -53,7 +53,7 @@ interface SolarWindQuickViewProps {
   onShocksDetected?: (shocks: DetectedShock[]) => void;
 }
 
-// ── Time range options — matches app convention ───────────────────────────────
+// ── Time range options - matches app convention ───────────────────────────────
 const TIME_RANGES = [
   { label: '3 Hr',  ms:  3 * 3600000 },
   { label: '6 Hr',  ms:  6 * 3600000 },
@@ -208,8 +208,8 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
       content: buildStatTooltip(
         'Solar Wind Quick View',
         'Live upstream L1 solar wind data from ACE: IMF Bz/Bt, clock angle (Phi), density, speed, and temperature. Each dot is one instrument reading from the ACE MAG and SWEPAM sensors roughly 1.5 million km from Earth.',
-        'These parameters directly control aurora activity. Southward Bz (negative) opens the magnetosphere to energy input; high speed and density amplify that effect. Watching all five subplots together reveals whether conditions are building, stable, or declining — typically 30–60 minutes before they hit Earth.',
-        'Shock events are flagged automatically as dashed vertical markers. Shock types: Fast Forward (FF) — density↑ temp↑ IMF↑ speed↑, the classic CME arrival; Slow Forward (SF) — same but IMF↓; Fast Reverse (FR) — density↓ temp↓ IMF↓ speed↑; Slow Reverse (SR) — density↓ temp↓ IMF↑ speed↑. Detection requires the jump to be sharp (concentrated within minutes, not a gradual ramp) and confirmed by a matching dynamic-pressure change, which filters out slow stream interactions and magnetic sector boundaries. The same detections drive the shock markers on the Energetic Particle Monitor charts.'
+        'These parameters directly control aurora activity. Southward Bz (negative) opens the magnetosphere to energy input; high speed and density amplify that effect. Watching all five subplots together reveals whether conditions are building, stable, or declining - typically 30–60 minutes before they hit Earth.',
+        'Shock events are flagged automatically as dashed vertical markers. Shock types: Fast Forward (FF) - density↑ temp↑ IMF↑ speed↑, the classic CME arrival; Slow Forward (SF) - same but IMF↓; Fast Reverse (FR) - density↓ temp↓ IMF↓ speed↑; Slow Reverse (SR) - density↓ temp↓ IMF↑ speed↑. Detection requires the jump to be sharp (concentrated within minutes, not a gradual ramp) and confirmed by a matching dynamic-pressure change, which filters out slow stream interactions and magnetic sector boundaries. The same detections drive the shock markers on the Energetic Particle Monitor charts.'
       ),
     });
   }, []);
@@ -237,7 +237,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
   const hasData = mag.length > 0 || spd.length > 0;
 
   // ── Interplanetary shock detector ─────────────────────────────────────────
-  // Single shared detector (utils/shockDetection.ts) — also drives the EPAM
+  // Single shared detector (utils/shockDetection.ts) - also drives the EPAM
   // panel's chart markers, so the summary, banner, and EPAM graph always show
   // the SAME events. Tightened in v2: IMF enhancement/discontinuity removed,
   // sharpness gate added to reject gradual SIR ramps, dynamic-pressure
@@ -337,12 +337,12 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
         </div>
       </div>
 
-      {/* Interplanetary shock alert — carousel through all detected shocks */}
+      {/* Interplanetary shock alert - carousel through all detected shocks */}
       {currentShock && (
         <div className="mt-2 mb-1 flex items-start gap-2 px-3 py-2.5 rounded-lg border"
           style={{ background: 'rgba(220,38,38,0.12)', borderColor: 'rgba(220,38,38,0.45)' }}>
 
-          {/* Left arrow — previous (older) shock */}
+          {/* Left arrow - previous (older) shock */}
           {shockEvents.length > 1 && (
             <button
               type="button"
@@ -384,7 +384,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
             </p>
           </div>
 
-          {/* Right arrow — next (more recent) shock */}
+          {/* Right arrow - next (more recent) shock */}
           {shockEvents.length > 1 && (
             <button
               type="button"
@@ -401,7 +401,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
         </div>
       )}
 
-      {/* Time range — same style as rest of app */}
+      {/* Time range - same style as rest of app */}
       <div className="flex justify-center gap-2 my-2 flex-wrap">
         {TIME_RANGES.map(({ label, ms }) => (
           <button
@@ -423,7 +423,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
       ) : (
         <div className="space-y-0">
 
-          {/* 1 — Bz + Bt combined */}
+          {/* 1 - Bz + Bt combined */}
           <div className="h-[90px]">
             <Line
               data={{
@@ -458,7 +458,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
             />
           </div>
 
-          {/* 2 — Phi */}
+          {/* 2 - Phi */}
           <div className="h-[75px]">
             <Line
               data={{
@@ -479,7 +479,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
             />
           </div>
 
-          {/* 3 — Density */}
+          {/* 3 - Density */}
           <div className="h-[75px]">
             <Line
               data={{
@@ -500,7 +500,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
             />
           </div>
 
-          {/* 4 — Speed */}
+          {/* 4 - Speed */}
           <div className="h-[75px]">
             <Line
               data={{
@@ -521,7 +521,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
             />
           </div>
 
-          {/* 5 — Temperature */}
+          {/* 5 - Temperature */}
           <div className="h-[85px]">
             <Line
               data={{

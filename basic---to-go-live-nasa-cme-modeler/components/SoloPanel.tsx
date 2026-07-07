@@ -45,11 +45,11 @@ interface ImageryData {
 const SOLO_BASE = 'https://solo-worker.thenamesrock.workers.dev';
 
 const QUALITY_STYLES: Record<string, { dot: string; bg: string; border: string; text: string; label: string }> = {
-  excellent: { dot: 'bg-green-400',   bg: 'bg-green-950/50',    border: 'border-green-700/60',   text: 'text-green-300',   label: '✅ Excellent upstream alignment — <5° from Sun-Earth line' },
-  good:      { dot: 'bg-emerald-400', bg: 'bg-emerald-950/40',  border: 'border-emerald-700/50', text: 'text-emerald-300', label: '✅ Good upstream alignment — <10° from Sun-Earth line' },
-  marginal:  { dot: 'bg-yellow-400',  bg: 'bg-yellow-950/40',   border: 'border-yellow-700/50',  text: 'text-yellow-300',  label: '⚠️ Marginal upstream alignment — <15° from Sun-Earth line' },
-  watch:     { dot: 'bg-orange-400',  bg: 'bg-orange-950/30',   border: 'border-orange-700/40',  text: 'text-orange-300',  label: '📡 Off-axis — limited predictive value for Earth' },
-  'off-axis':{ dot: 'bg-neutral-500', bg: 'bg-neutral-900/60',  border: 'border-neutral-700/60', text: 'text-neutral-400', label: '📡 Off Sun-Earth line — in-situ data not directly predictive' },
+  excellent: { dot: 'bg-green-400',   bg: 'bg-green-950/50',    border: 'border-green-700/60',   text: 'text-green-300',   label: '✅ Excellent upstream alignment - <5° from Sun-Earth line' },
+  good:      { dot: 'bg-emerald-400', bg: 'bg-emerald-950/40',  border: 'border-emerald-700/50', text: 'text-emerald-300', label: '✅ Good upstream alignment - <10° from Sun-Earth line' },
+  marginal:  { dot: 'bg-yellow-400',  bg: 'bg-yellow-950/40',   border: 'border-yellow-700/50',  text: 'text-yellow-300',  label: '⚠️ Marginal upstream alignment - <15° from Sun-Earth line' },
+  watch:     { dot: 'bg-orange-400',  bg: 'bg-orange-950/30',   border: 'border-orange-700/40',  text: 'text-orange-300',  label: '📡 Off-axis - limited predictive value for Earth' },
+  'off-axis':{ dot: 'bg-neutral-500', bg: 'bg-neutral-900/60',  border: 'border-neutral-700/60', text: 'text-neutral-400', label: '📡 Off Sun-Earth line - in-situ data not directly predictive' },
 };
 
 // ─── Zoomable Heliocentric Map ────────────────────────────────────────────────
@@ -176,7 +176,7 @@ const HeliocentricMap: React.FC<{ data: PositionData }> = ({ data }) => {
     return { x: Math.cos(t), y: Math.sin(t) };
   }), []);
 
-  // GOES geostationary orbit — shown as tiny ring around Earth (massively exaggerated for visibility)
+  // GOES geostationary orbit - shown as tiny ring around Earth (massively exaggerated for visibility)
   // Real GEO radius ≈ 0.000282 AU, we'll show it as 12px radius around Earth for legibility
   const GOES_RING_PX = 14; // exaggerated visual radius
 
@@ -210,7 +210,7 @@ const HeliocentricMap: React.FC<{ data: PositionData }> = ({ data }) => {
   // In ecliptic frame, offset GOES slightly above/right of Earth for visual clarity
   const earthAngle = Math.atan2(positions.earth.y, positions.earth.x);
   const goesPerpAngle = earthAngle + Math.PI / 2; // 90° offset for visibility
-  // GOES rendered at fixed px offset from Earth centre (not AU — purely decorative)
+  // GOES rendered at fixed px offset from Earth centre (not AU - purely decorative)
   const goesOffsetX = Math.cos(goesPerpAngle) * GOES_RING_PX / AU_PX;
   const goesOffsetY = Math.sin(goesPerpAngle) * GOES_RING_PX / AU_PX;
   const gp = toSvg(positions.earth.x + goesOffsetX, positions.earth.y + goesOffsetY);
@@ -251,7 +251,7 @@ const HeliocentricMap: React.FC<{ data: PositionData }> = ({ data }) => {
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        {/* Starfield — fixed, not transformed */}
+        {/* Starfield - fixed, not transformed */}
         {Array.from({ length: 80 }, (_, i) => {
           const s = i * 6271;
           return <circle key={i} cx={(s * 1301) % SIZE} cy={(s * 1637) % SIZE}
@@ -331,7 +331,7 @@ const HeliocentricMap: React.FC<{ data: PositionData }> = ({ data }) => {
             {positions.earth.r_au.toFixed(3)} AU
           </text>
 
-          {/* ── GOES (geostationary — orbit exaggerated for visibility) ── */}
+          {/* ── GOES (geostationary - orbit exaggerated for visibility) ── */}
           <circle cx={ep.sx} cy={ep.sy} r={GOES_RING_PX * inv}
             fill="none" stroke="#fde047" strokeWidth={0.6 * inv}
             strokeDasharray={`${2 * inv} ${2 * inv}`} opacity="0.4"
@@ -361,7 +361,7 @@ const HeliocentricMap: React.FC<{ data: PositionData }> = ({ data }) => {
 
           {/* ── L1 Fleet: ACE, DSCOVR, IMAP, SWFO-L1 ─────────────────────── */}
           {/* All orbit ~0.01 AU sunward of Earth. At default zoom they overlap  */}
-          {/* L1 — when zoomed in (zoom > 3) they fan out for legibility.        */}
+          {/* L1 - when zoomed in (zoom > 3) they fan out for legibility.        */}
           {l1p && (() => {
             const fleet = [
               { key: 'ace',    label: 'ACE',    color: '#34d399', angleDeg: -30 },
@@ -540,7 +540,7 @@ const SoloPanel: React.FC = () => {
       )}
 
       {/* ════════════════════════════════════════════════════════════════════ */}
-      {/* SECTION 1 — HELIOCENTRIC MAP                                        */}
+      {/* SECTION 1 - HELIOCENTRIC MAP                                        */}
       {/* ════════════════════════════════════════════════════════════════════ */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-3">
@@ -558,7 +558,7 @@ const SoloPanel: React.FC = () => {
               <HeliocentricMap data={position} />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
-                <p className="text-neutral-500 text-sm italic">Position data unavailable — check back after first cron run</p>
+                <p className="text-neutral-500 text-sm italic">Position data unavailable - check back after first cron run</p>
               </div>
             )}
           </div>
@@ -600,10 +600,10 @@ const SoloPanel: React.FC = () => {
               </p>
               <div className="space-y-1.5">
                 {(position?.positions?.l1Fleet ?? [
-                  { key:'ace',    name:'ACE',     color:'#34d399', desc:'Advanced Composition Explorer (1997, NASA)',                positionSource:'—' },
-                  { key:'dscovr', name:'DSCOVR',  color:'#67e8f9', desc:'Deep Space Climate Observatory (2015, NOAA/NASA)',         positionSource:'—' },
-                  { key:'imap',   name:'IMAP',    color:'#f0abfc', desc:'Interstellar Mapping & Acceleration Probe (2025, NASA)',   positionSource:'—' },
-                  { key:'swfoL1', name:'SWFO-L1', color:'#fbbf24', desc:'Space Weather Follow-On L1 (2025, NOAA)',                  positionSource:'—' },
+                  { key:'ace',    name:'ACE',     color:'#34d399', desc:'Advanced Composition Explorer (1997, NASA)',                positionSource:' - ' },
+                  { key:'dscovr', name:'DSCOVR',  color:'#67e8f9', desc:'Deep Space Climate Observatory (2015, NOAA/NASA)',         positionSource:' - ' },
+                  { key:'imap',   name:'IMAP',    color:'#f0abfc', desc:'Interstellar Mapping & Acceleration Probe (2025, NASA)',   positionSource:' - ' },
+                  { key:'swfoL1', name:'SWFO-L1', color:'#fbbf24', desc:'Space Weather Follow-On L1 (2025, NOAA)',                  positionSource:' - ' },
                 ]).map(sc => (
                   <div key={sc.key} className="flex items-start gap-2">
                     <div className="w-2 h-2 rounded-full flex-shrink-0 mt-0.5" style={{ backgroundColor: sc.color }} />
@@ -623,7 +623,7 @@ const SoloPanel: React.FC = () => {
             <div className="bg-neutral-950/70 rounded p-2.5 border border-neutral-800">
               <div className="text-xs font-semibold mb-1" style={{ color: '#fde047' }}>GOES (Geostationary)</div>
               <p className="text-xs text-neutral-500 leading-relaxed">
-                GOES-East & GOES-West orbit at ~35,786 km altitude (~0.000282 AU). Their orbit is too small to show at heliocentric scale — the dashed ring and ◆ marker around Earth are exaggerated for visibility.
+                GOES-East & GOES-West orbit at ~35,786 km altitude (~0.000282 AU). Their orbit is too small to show at heliocentric scale - the dashed ring and ◆ marker around Earth are exaggerated for visibility.
               </p>
             </div>
 
@@ -675,7 +675,7 @@ const SoloPanel: React.FC = () => {
       </div>
 
       {/* ════════════════════════════════════════════════════════════════════ */}
-      {/* SECTION 2 — EUI IMAGERY                                             */}
+      {/* SECTION 2 - EUI IMAGERY                                             */}
       {/* ════════════════════════════════════════════════════════════════════ */}
       <div>
         <div className="flex items-center justify-between mb-3">
@@ -767,7 +767,7 @@ const SoloPanel: React.FC = () => {
 
             <div className="mt-3 pt-3 border-t border-neutral-800">
               <p className="text-xs text-neutral-500 leading-relaxed">
-                The <strong className="text-neutral-400">EUI Full Sun Imager</strong> observes the entire solar disk at 174 Å (hot corona) and 304 Å (chromosphere/transition region) — revealing active regions, filaments, coronal loops, and eruption sites invisible in white light. SolO's off-ecliptic orbit provides unique polar viewing angles unavailable from Earth-orbiting satellites.
+                The <strong className="text-neutral-400">EUI Full Sun Imager</strong> observes the entire solar disk at 174 Å (hot corona) and 304 Å (chromosphere/transition region) - revealing active regions, filaments, coronal loops, and eruption sites invisible in white light. SolO's off-ecliptic orbit provides unique polar viewing angles unavailable from Earth-orbiting satellites.
               </p>
             </div>
 

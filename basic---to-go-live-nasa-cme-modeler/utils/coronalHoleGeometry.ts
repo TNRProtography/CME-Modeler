@@ -9,14 +9,14 @@
 //
 //  1. CH SURFACE PATCHES  (buildChSurfaceMesh / buildChOutlineLine)
 //     ─────────────────────────────────────────────────────────────
-//     Live in *sunMesh local space* — chGroup is a child of sunMesh,
+//     Live in *sunMesh local space* - chGroup is a child of sunMesh,
 //     so patches rotate automatically as sunMesh.rotation.y is driven
 //     each frame. No per-frame update needed.
 //
 //     Heliographic coordinates from the SUVI detector are in
 //     *disk-centre-relative* space (what's facing Earth right now),
 //     NOT full Carrington longitude. We treat them as offsets from
-//     the Sun's current facing direction — which is correct because
+//     the Sun's current facing direction - which is correct because
 //     the SUVI image always shows the Earth-facing hemisphere.
 //
 //  2. PARKER SPIRAL HSS ARMS  (buildParkerSpiralMesh)
@@ -55,14 +55,14 @@ import { interpolateCHAtTimeMs, type CHEvolution } from './coronalHoleHistory';
 const SPIRAL_POINTS          = 220;
 const SPIRAL_TUBE_SIDES      = 8;
 const SPIRAL_TUBE_RADIUS_FAC = 0.032;  // boosted so streams read in full-system view
-const SPIRAL_TURNS           = 0.38;   // tighter winding — more pronounced spiral arc
+const SPIRAL_TURNS           = 0.38;   // tighter winding - more pronounced spiral arc
 // CH_OVEREMPHASIS: scaling factor for coronal hole visual patches on the Sun.
 //
 // Previously 1.22 (inflating CHs by 22%) to make them easier to see.
-// This caused the HSS spiral to appear offset — launching from the "gap"
+// This caused the HSS spiral to appear offset - launching from the "gap"
 // between the inflated CH edge rather than from the CH itself.
 //
-// Reduced from 1.0 to 0.72 — detected SUVI boundaries were visually
+// Reduced from 1.0 to 0.72 - detected SUVI boundaries were visually
 // oversized relative to the solar disk at typical zoom levels.  0.72
 // keeps them clearly visible while better matching SDO/AIA reference
 // imagery.  The HSS spiral root still aligns to the CH centroid.
@@ -103,7 +103,7 @@ export function buildChFootprintPoints(
   if (ch.polygon && ch.polygon.length >= 3) {
     const pts = ch.polygon.map((v: any) => {
       const p = hgToVec(THREE, ch.lat + v.lat, ch.lon + v.lon).normalize();
-      // Inflate each point slightly away from the CH centroid — do NOT re-sort.
+      // Inflate each point slightly away from the CH centroid - do NOT re-sort.
       // buildPolygon already sorts by angle in pixel space; re-sorting here from
       // a different origin destroys all concavities and produces a convex hull
       // that looks like a perfect circle for large irregular CHs.
@@ -148,7 +148,7 @@ function projectTo2D(
 /**
  * Ear-clipping triangulation of a 2D polygon (array of {x,y}).
  * Returns flat array of triangle indices into the original vertex array.
- * Handles concave polygons correctly — unlike a fan from centre.
+ * Handles concave polygons correctly - unlike a fan from centre.
  */
 function earClip(poly: Array<{ x: number; y: number }>): number[] {
   const n = poly.length;
@@ -479,7 +479,7 @@ const FRAG = /* glsl */`
     float edgeFade = 1.0 - smoothstep(0.30, 1.00, vEdge);
 
     // Soft fade-in: stream organises gradually as it leaves the CH surface.
-    // No hard edge at the sun — onset over first 12% of arm length.
+    // No hard edge at the sun - onset over first 12% of arm length.
     float fadeIn  = smoothstep(0.0, 0.12, vFlow);
 
     // Taper to nothing at arm tip
@@ -505,7 +505,7 @@ const FRAG = /* glsl */`
  * The vertex shader rotates the arm by (uChLon + uSunAngle) every frame,
  * so the arm root always tracks the CH's current rotated longitude.
  *
- * @param sunAngle0  Solar rotation angle at build time — used to initialise
+ * @param sunAngle0  Solar rotation angle at build time - used to initialise
  *                   uSunAngle so the arm starts at the correct position immediately.
  */
 export function buildParkerSpiralMesh(
@@ -530,7 +530,7 @@ export function buildParkerSpiralMesh(
   //
   // The CH patches are also children of sunMesh, built via hgToVec()
   // at the CH's longitude. So at t=0 (the sun surface), the backbone
-  // root and the CH centroid land at the same longitude — aligned.
+  // root and the CH centroid land at the same longitude - aligned.
   //
   // The spiral then trails BACKWARD (negative azimuth) as plasma
   // emitted earlier has been carried further by solar rotation.
@@ -540,7 +540,7 @@ export function buildParkerSpiralMesh(
   //
   // The CH's north-south extent (heightDeg) defines how tall the HSS
   // stream is. The stream should maintain this full vertical extent
-  // well beyond the Sun — HSS plasma doesn't collapse to the ecliptic
+  // well beyond the Sun - HSS plasma doesn't collapse to the ecliptic
   // plane quickly. Ulysses showed fast wind filling ±30° latitude from
   // polar CHs all the way to 5 AU.
   //
@@ -555,7 +555,7 @@ export function buildParkerSpiralMesh(
   // launches wind from BOTH hemispheres. The centroid might sit at -10°
   // or +8°, but the outflow fills the full latitude band from the CH's
   // southern to northern edge. The ecliptic plane (lat ≈ 0°) runs
-  // right through the middle of the outflow — which is exactly where
+  // right through the middle of the outflow - which is exactly where
   // Earth is.
   //
   // The backbone latitude should therefore be DAMPED toward zero:
@@ -579,7 +579,7 @@ export function buildParkerSpiralMesh(
   );
   // Blend: 0 = use full centroid lat, 1 = force to ecliptic (lat=0)
   const eclipticDamping = equatorCoverage * 0.85 + 0.15;
-  // Effective backbone latitude at the Sun — damped toward ecliptic
+  // Effective backbone latitude at the Sun - damped toward ecliptic
   const backboneLatDeg = centroidLatDeg * (1.0 - eclipticDamping);
   const backboneLatRad = THREE.MathUtils.degToRad(backboneLatDeg);
 
@@ -611,7 +611,7 @@ export function buildParkerSpiralMesh(
 
   const N = backbone.length;
   if (N < 2) {
-    // Degenerate case — quiet Sun, arm too short
+    // Degenerate case - quiet Sun, arm too short
     const dummy = new THREE.Points(
       new THREE.BufferGeometry(),
       new THREE.PointsMaterial({ visible: false })
@@ -634,11 +634,11 @@ export function buildParkerSpiralMesh(
   //      corona, then roughly radial beyond ~10 R☉).
   //
   //   2. The trailing edge of the stream interfaces with SLOW wind behind
-  //      it — this compression creates a broad transition region.
+  //      it - this compression creates a broad transition region.
   //
   //   3. At 1 AU, a single HSS passage lasts 2–4 DAYS in L1 data.
   //      At ~600 km/s that's a structure spanning ~0.7–1.4 AU in depth.
-  //      The cross-sectional width is comparable — it's a massive volume.
+  //      The cross-sectional width is comparable - it's a massive volume.
   //
   //   4. The SIR (Stream Interaction Region) at the leading edge is a
   //      broad compression front, not a thin wall.
@@ -662,7 +662,7 @@ export function buildParkerSpiralMesh(
   const edge: number[] = [];
   const idx: number[]  = [];
 
-  // Wider CHs produce wider streams — scale the flare with CH extent
+  // Wider CHs produce wider streams - scale the flare with CH extent
   const widthFactor = THREE.MathUtils.clamp(chMaxExtentDeg / 30, 0.6, 1.8);
 
   for (let i = 0; i < N; i++) {
@@ -685,7 +685,7 @@ export function buildParkerSpiralMesh(
       // Tube radius: starts at the CH angular width at the sun,
       // expands dramatically by Earth distance.
       //
-      // Uses a power curve (t^0.7) so the expansion accelerates —
+      // Uses a power curve (t^0.7) so the expansion accelerates -
       // the stream is still narrow near the Sun but really opens up
       // in the outer heliosphere, matching ENLIL visualizations.
       const tExpand = Math.pow(t, 0.7);
@@ -737,7 +737,7 @@ export function buildParkerSpiralMesh(
       uSunAngle:    { value: sunAngle0 },
       uTime:        { value: 0 },
       uOpacity:     { value: Math.min(0.85, ch.opacity + (ch.darkness ?? 0) * 0.22) },
-      uSourceSpeed: { value: ch.estimatedSpeedKms },  // km/s — drives gradient deceleration
+      uSourceSpeed: { value: ch.estimatedSpeedKms },  // km/s - drives gradient deceleration
     },
     transparent: true,
     side:        THREE.DoubleSide,
@@ -774,7 +774,7 @@ export function buildParkerSpiralMesh(
 //    - The tube DARKNESS/SPEED varies (affecting the colour gradient)
 //
 //  The result is a ribbon that carries the imprint of the CH's evolution
-//  as the wind travelled outward — exactly what a forecaster would want.
+//  as the wind travelled outward - exactly what a forecaster would want.
 
 export function buildTimeVaryingSpiralMesh(
   THREE: any,
@@ -816,7 +816,7 @@ export function buildTimeVaryingSpiralMesh(
   // (maxTravelHours × t) hours before the reference time.
   // We query the evolution data to find what the CH looked like then.
   //
-  // The backbone SHAPE is identical to the static Parker spiral —
+  // The backbone SHAPE is identical to the static Parker spiral -
   // the only difference is:
   //   - The tube WIDTH varies per-point (CH was wider/narrower)
   //   - The azimuth has a small OFFSET per-point (CH was at different lon)
@@ -842,7 +842,7 @@ export function buildTimeVaryingSpiralMesh(
       rawHeights.push(historical.heightDeg);
       rawAbsLon.push(historical.lon);
     } else {
-      // No history that far back — use current CH properties
+      // No history that far back - use current CH properties
       rawWidths.push(ch.widthDeg ?? 15);
       rawHeights.push(ch.heightDeg ?? ch.widthDeg ?? 15);
       rawAbsLon.push(ch.lon);
@@ -883,7 +883,7 @@ export function buildTimeVaryingSpiralMesh(
   // The root (t=0) sits at the current CH longitude.
   // Each subsequent point sits at the longitude where the CH was when
   // that parcel was emitted. The DIFFERENCE between each point's lon
-  // and the root lon creates the gradual curve — old parcels are offset
+  // and the root lon creates the gradual curve - old parcels are offset
   // from where the CH is now because the CH has moved since they left.
   // ═════════════════════════════════════════════════════════════════════
 

@@ -233,7 +233,7 @@ const parseNOAATime = (s: string): number => {
 };
 
 const getSourceLabel = (source?: unknown) => {
-  if (typeof source !== 'string' || !source) return '—';
+  if (typeof source !== 'string' || !source) return ' - ';
   // Pass through the satellite name from the worker (SOLAR1, ACE, IMAP, DSCOVR)
   return source;
 };
@@ -273,16 +273,16 @@ const pickSolarWindValue = (entry: any, key: string): { value: number | null; so
     return { value: mergedValue, source: getSourceLabel(entry?.src?.[key] ?? entry?.src) };
   }
 
-  return { value: null, source: '—' };
+  return { value: null, source: ' - ' };
 };
 
 const combineSources = (...sources: Array<unknown>): string => {
   const normalized = Array.from(new Set(
     sources
       .map((source) => (typeof source === 'string' ? source.trim() : ''))
-      .filter((source): source is string => !!source && source !== '—')
+      .filter((source): source is string => !!source && source !== ' - ')
   ));
-  if (!normalized.length) return '—';
+  if (!normalized.length) return ' - ';
   if (normalized.length === 1) return normalized[0];
   if (normalized.includes('NOAA RTSW') && normalized.includes('IMAP')) return 'NOAA RTSW + IMAP';
   return normalized.join(' + ');
@@ -435,13 +435,13 @@ export const useForecastData = (
   const [baseAuroraScore, setBaseAuroraScore] = useState<number | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>('Loading...');
   const [gaugeData, setGaugeData] = useState<Record<string, { value: string; unit: string; emoji: string; percentage: number; lastUpdated: string; color: string; source?: string }>>({
-    bt: { value: '...', unit: 'nT', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080', source: '—' },
-    bz: { value: '...', unit: 'nT', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080', source: '—' },
+    bt: { value: '...', unit: 'nT', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080', source: ' - ' },
+    bz: { value: '...', unit: 'nT', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080', source: ' - ' },
     power: { value: '...', unit: 'GW', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080' },
     moon: { value: '...', unit: '%', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080' },
-    speed: { value: '...', unit: 'km/s', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080', source: '—' },
-    density: { value: '...', unit: 'p/cm³', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080', source: '—' },
-    temp: { value: '...', unit: 'K', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080', source: '—' },
+    speed: { value: '...', unit: 'km/s', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080', source: ' - ' },
+    density: { value: '...', unit: 'p/cm³', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080', source: ' - ' },
+    temp: { value: '...', unit: 'K', emoji: '❓', percentage: 0, lastUpdated: '...', color: '#808080', source: ' - ' },
   });
   const [celestialTimes, setCelestialTimes] = useState<CelestialTimeData>({});
   const [isDaylight, setIsDaylight] = useState(false);
@@ -547,7 +547,7 @@ export const useForecastData = (
       const recentData = data.filter((p: any) => p.x >= thirtyMinsAgo);
       if (recentData.length < 5) return false;
       // Require at least 3 consecutive readings above 10 nT/min for a genuine bay onset.
-      // A single spike above 5 nT/min can be a sensor glitch or minor disturbance —
+      // A single spike above 5 nT/min can be a sensor glitch or minor disturbance -
       // real substorm bays are sustained rapid deflections.
       let consecutiveCount = 0;
       for (const p of recentData) {
@@ -693,7 +693,7 @@ export const useForecastData = (
       // hold the loader. Give them tighter timeouts since they feed secondary widgets only.
       withInitialProgress(fetchJsonWithRecovery(`${NASA_IPS_URL}?_=${Date.now()}`, 7000), 'ipsApi'),
       withInitialProgress(fetchJsonWithRecovery(nzMagUrl, 5000), 'nzMagApi'),
-      // Substorm risk worker — non-blocking, plain fetch to avoid the row-recovery
+      // Substorm risk worker - non-blocking, plain fetch to avoid the row-recovery
       // parser mangling the object-format JSON response from this worker.
       (async () => {
         try {
@@ -760,9 +760,9 @@ export const useForecastData = (
     }
 
     // ── Substorm Risk Worker ──────────────────────────────────────────────────
-    // Non-blocking — a failure here never breaks the rest of the app.
+    // Non-blocking - a failure here never breaks the rest of the app.
     // The fetch uses .catch(() => null) so substormRiskResult is always
-    // 'fulfilled' — the actual data or null is in .value directly.
+    // 'fulfilled' - the actual data or null is in .value directly.
     const substormRiskValue =
       substormRiskResult?.status === 'fulfilled'
         ? substormRiskResult.value
@@ -788,7 +788,7 @@ export const useForecastData = (
       console.log('[SubstormWorker] ✅ Setting substormRiskData');
       setSubstormRiskData(substormRiskValue as SubstormRiskData);
     } else {
-      console.warn('[SubstormWorker] ❌ Validation failed — substormRiskData NOT set');
+      console.warn('[SubstormWorker] ❌ Validation failed - substormRiskData NOT set');
     }
 
     if (solarWindResult.status === 'fulfilled') {
@@ -916,26 +916,26 @@ export const useForecastData = (
         const bz = pickSolarWindValue(entry, 'bz').value;
         return bt != null || by != null || bz != null;
       });
-      const latestBtSource = latestMagEntry ? pickSolarWindValue(latestMagEntry, 'bt').source : '—';
-      const latestBzSource = latestMagEntry ? pickSolarWindValue(latestMagEntry, 'bz').source : '—';
+      const latestBtSource = latestMagEntry ? pickSolarWindValue(latestMagEntry, 'bt').source : ' - ';
+      const latestBzSource = latestMagEntry ? pickSolarWindValue(latestMagEntry, 'bz').source : ' - ';
 
       setGaugeData(prev => ({
         ...prev,
         speed: latestSpeed
           ? { ...prev.speed, value: latestSpeed.value.toFixed(0), ...getGaugeStyle(latestSpeed.value, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(latestSpeed.time)}`, source: latestSpeed.source }
-          : { ...prev.speed, value: 'N/A', lastUpdated: 'Updated: N/A', source: '—' },
+          : { ...prev.speed, value: 'N/A', lastUpdated: 'Updated: N/A', source: ' - ' },
         density: latestDensity
           ? { ...prev.density, value: latestDensity.value.toFixed(1), ...getGaugeStyle(latestDensity.value, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(latestDensity.time)}`, source: latestDensity.source }
-          : { ...prev.density, value: 'N/A', lastUpdated: 'Updated: N/A', source: '—' },
+          : { ...prev.density, value: 'N/A', lastUpdated: 'Updated: N/A', source: ' - ' },
         temp: latestTemp
           ? { ...prev.temp, value: latestTemp.value.toFixed(0), emoji: latestTemp.value > 600000 ? '🔥' : latestTemp.value > 250000 ? '🌡️' : '🧊', percentage: 0, color: '#38bdf8', lastUpdated: `Updated: ${formatNZTimestamp(latestTemp.time)}`, source: latestTemp.source }
-          : { ...prev.temp, value: 'N/A', emoji: '❓', lastUpdated: 'Updated: N/A', source: '—' },
+          : { ...prev.temp, value: 'N/A', emoji: '❓', lastUpdated: 'Updated: N/A', source: ' - ' },
         bt: latestMagneticPoint
           ? { ...prev.bt, value: latestMagneticPoint.bt.toFixed(1), ...getGaugeStyle(latestMagneticPoint.bt, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(latestMagneticPoint.time)}`, source: latestBtSource }
-          : { ...prev.bt, value: 'N/A', lastUpdated: 'Updated: N/A', source: '—' },
+          : { ...prev.bt, value: 'N/A', lastUpdated: 'Updated: N/A', source: ' - ' },
         bz: latestMagneticPoint
           ? { ...prev.bz, value: latestMagneticPoint.bz.toFixed(1), ...getGaugeStyle(latestMagneticPoint.bz, 'bz'), lastUpdated: `Updated: ${formatNZTimestamp(latestMagneticPoint.time)}`, source: latestBzSource }
-          : { ...prev.bz, value: 'N/A', lastUpdated: 'Updated: N/A', source: '—' }
+          : { ...prev.bz, value: 'N/A', lastUpdated: 'Updated: N/A', source: ' - ' }
       }));
       }
     }
@@ -1024,7 +1024,7 @@ export const useForecastData = (
             const direction = adjustment >= 0 ? 'south' : 'north';
             const distance = Math.abs(adjustment / 3 * 150);
             setLocationBlurb(`Forecast adjusted by ${adjustment.toFixed(1)}% for your location (${distance.toFixed(0)}km ${direction} of Greymouth).`);
-            // Check if user is far outside NZ — approximate nearest point on NZ landmass
+            // Check if user is far outside NZ - approximate nearest point on NZ landmass
             // using a simple great-circle distance to Greymouth as proxy centre.
             const userLat = position.coords.latitude;
             const userLon = position.coords.longitude;
@@ -1060,7 +1060,7 @@ export const useForecastData = (
 
   useEffect(() => {
     if (baseAuroraScore !== null) {
-      // Zero the displayed score during daylight — solar conditions don't matter
+      // Zero the displayed score during daylight - solar conditions don't matter
       // if the sun is up. The baseAuroraScore is preserved so it recovers at sunset.
       const adjustedScore = isDaylight
         ? 0

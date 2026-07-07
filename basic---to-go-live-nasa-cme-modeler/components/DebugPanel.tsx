@@ -1,6 +1,6 @@
 // --- START OF FILE src/components/DebugPanel.tsx ---
 /**
- * Debug panel — accessible at /debug
+ * Debug panel - accessible at /debug
  * Shows push subscription state, server KV record, preferences,
  * worker health, device information, and captured app logs.
  */
@@ -128,7 +128,7 @@ const Badge: React.FC<{ status: StatusLevel }> = ({ status }) => {
     fail:    { bg: 'bg-red-500/20',     text: 'text-red-300',     label: 'FAIL' },
     warn:    { bg: 'bg-amber-500/20',   text: 'text-amber-300',   label: 'WARN' },
     loading: { bg: 'bg-sky-500/20',     text: 'text-sky-300',     label: '…' },
-    idle:    { bg: 'bg-neutral-700',    text: 'text-neutral-400', label: '—' },
+    idle:    { bg: 'bg-neutral-700',    text: 'text-neutral-400', label: ' - ' },
   };
   const { bg, text, label } = map[status];
   return <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${bg} ${text}`}>{label}</span>;
@@ -290,10 +290,10 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ isOpen, onClose }) => {
   const windowOpen = nzHour >= 17 && nzHour < 22;
 
   const overnightThresholdMap: Record<string, string> = {
-    'every-night': '0 — fires every night',
-    'camera':      '25 — fires when score >= 25',
-    'phone':       '40 — fires when score >= 40 (default)',
-    'eye':         '55 — fires when score >= 55',
+    'every-night': '0 - fires every night',
+    'camera':      '25 - fires when score >= 25',
+    'phone':       '40 - fires when score >= 40 (default)',
+    'eye':         '55 - fires when score >= 55',
   };
 
   const filteredLogs = logs.filter(e => {
@@ -452,7 +452,7 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ isOpen, onClose }) => {
             <p className="text-xs text-neutral-500">Checking…</p>
           ) : (
             <>
-              <BoolRow label="Cron healthy" value={workerHealth.ok} falseLabel="No — cron may have stopped" />
+              <BoolRow label="Cron healthy" value={workerHealth.ok} falseLabel="No - cron may have stopped" />
               <Row
                 label="Last cron run"
                 value={workerHealth.lastRun
@@ -478,7 +478,7 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ isOpen, onClose }) => {
           <div className="flex items-start justify-between gap-4 py-2 border-b border-neutral-800/60">
             <span className="text-xs text-neutral-500 w-40">Window open</span>
             <span className={`text-xs font-semibold ${windowOpen ? 'text-emerald-400' : 'text-amber-400'}`}>
-              {windowOpen ? 'Yes (5pm–10pm)' : `No — window is 5pm–10pm NZT (now ${nzHour}:xx)`}
+              {windowOpen ? 'Yes (5pm–10pm)' : `No - window is 5pm–10pm NZT (now ${nzHour}:xx)`}
             </span>
           </div>
           <Row label="Mode" value={overnightMode} mono />

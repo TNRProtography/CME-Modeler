@@ -145,7 +145,7 @@ const InfoModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen
                 <div className="overflow-y-auto p-5 styled-scrollbar pr-4 space-y-5 text-sm">
                     <section>
                         <h4 className="font-semibold text-base text-neutral-200 mb-2">Placing Your Pin</h4>
-                        <p>Your location is set automatically via GPS. GPS is required to submit a report — if location permission is denied or unavailable, please enable it in your device settings and tap "Try GPS again".</p>
+                        <p>Your location is set automatically via GPS. GPS is required to submit a report - if location permission is denied or unavailable, please enable it in your device settings and tap "Try GPS again".</p>
                     </section>
                      <section>
                         <h4 className="font-semibold text-base text-neutral-200 mb-2">What Should I Report?</h4>
@@ -176,7 +176,7 @@ const InfoModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen
 
 
 // ─────────────────────────────────────────────────────────────
-// Aurora Oval Overlay — IGRF-13 dipole geomagnetic projection
+// Aurora Oval Overlay - IGRF-13 dipole geomagnetic projection
 // ─────────────────────────────────────────────────────────────
 
 // IGRF-13 north magnetic dipole pole (geographic)
@@ -242,7 +242,7 @@ function computeOvalParams(metrics: SubstormRiskData['metrics'], bayOnset: boole
   const newell   = Math.max(newell60, newell30 * 0.85);
 
   // Holzworth-Meng parameterisation via Newell coupling.
-  // This drives the equatorward (northern) edge — moves toward NZ as activity rises.
+  // This drives the equatorward (northern) edge - moves toward NZ as activity rises.
   let equatorward = -(65.5 - newell / 1800);
   equatorward = Math.max(equatorward, -76);
   equatorward = Math.min(equatorward, -44);
@@ -284,7 +284,7 @@ const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ substormRiskData }) => 
   const eqRing = buildOvalRing(equatorward, 1.5);
   const pwRing = buildOvalRing(poleward, 1.5);
 
-  // Visibility horizon — linearly boosted by activity (higher emission altitude during storms)
+  // Visibility horizon - linearly boosted by activity (higher emission altitude during storms)
   const VISIBILITY_DEG = 9.0 + (Math.max(0, Math.min(score, 100)) / 100) * 16.0;
   const visRing    = buildOvalRing(equatorward + VISIBILITY_DEG, 1.5);
   const visOpacity = 0.3 + (score / 100) * 0.45;
@@ -337,7 +337,7 @@ const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ substormRiskData }) => 
     const g1   = poleward + t1 * halfWidth;
     const midT = (t0 + t1) / 2;
 
-    // Gaussian envelope — peaks at band centre
+    // Gaussian envelope - peaks at band centre
     const envelope = Math.exp(-Math.pow((midT - 0.5) / 0.28, 2));
 
     // Colour: interpolate EDGE→CORE→EDGE across the band width
@@ -379,7 +379,7 @@ const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ substormRiskData }) => 
         smoothFactor={2}
       />
 
-      {/* Visibility horizon — dotted sky blue, expands with activity */}
+      {/* Visibility horizon - dotted sky blue, expands with activity */}
       <Polyline
         positions={visRing}
         pathOptions={{ color: '#38bdf8', weight: visWeight, opacity: visOpacity, dashArray: '2 8' }}
@@ -784,7 +784,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 rounded-lg border border-neutral-700 overflow-hidden flex flex-col" style={{height: '540px'}}>
-                    {/* Legend bar — sits above the map, never obscures it */}
+                    {/* Legend bar - sits above the map, never obscures it */}
                     <div className="flex items-center gap-5 px-3 py-2 bg-neutral-900/90 border-b border-neutral-700 flex-shrink-0 flex-wrap">
                         <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-500 flex-shrink-0">Aurora Oval</span>
                         <div className="flex items-center gap-2">
@@ -798,11 +798,11 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                                 </defs>
                                 <rect x="0" y="0" width="36" height="10" fill="url(#ovalGrad)" rx="2"/>
                             </svg>
-                            <span className="text-[10px] text-neutral-400">Aurora oval — green (quiet) → red (storm)</span>
+                            <span className="text-[10px] text-neutral-400">Aurora oval - green (quiet) → red (storm)</span>
                         </div>
                         <div className="flex items-center gap-2">
                             <svg width="32" height="6"><line x1="0" y1="3" x2="32" y2="3" stroke="#38bdf8" strokeWidth="1.5" strokeDasharray="2 5" opacity="0.7"/></svg>
-                            <span className="text-[10px] text-neutral-400">Visibility horizon — expands during storms</span>
+                            <span className="text-[10px] text-neutral-400">Visibility horizon - expands during storms</span>
                         </div>
                     </div>
                     <div className="flex-1 min-h-0">

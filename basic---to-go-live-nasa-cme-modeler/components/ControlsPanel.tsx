@@ -246,7 +246,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
               </span>
             </div>
             <p className="text-xs text-neutral-500 -mt-1">
-              Experimental — may affect performance on older devices.
+              Experimental - may affect performance on older devices.
             </p>
             {/* CH detection status badge */}
             {chDetectionStatus && chDetectionStatus !== 'idle' && (
@@ -269,8 +269,8 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
                 )}
                 {chDetectionStatus === 'detected' && 'Live SUVI 195 data'}
                 {chDetectionStatus === 'loading'  && 'Loading SUVI 195 and extracting coronal holes…'}
-                {chDetectionStatus === 'empty'    && 'Quiet Sun — no CH detected'}
-                {chDetectionStatus === 'error'    && 'SUVI fetch failed — retrying'}
+                {chDetectionStatus === 'empty'    && 'Quiet Sun - no CH detected'}
+                {chDetectionStatus === 'error'    && 'SUVI fetch failed - retrying'}
               </div>
             )}
             {showHss && (

@@ -99,7 +99,7 @@ const AppDocumentation: React.FC<AppDocumentationProps> = ({ onClose }) => {
           <div className="flex-1 min-w-0">
             <div className="flex items-baseline gap-2.5">
               <span className="text-base font-bold text-white tracking-tight truncate">
-                Spot The Aurora — How It Works
+                Spot The Aurora - How It Works
               </span>
               <span className="hidden sm:inline text-xs text-neutral-500 flex-shrink-0">
                 Technical Architecture
@@ -152,7 +152,7 @@ const AppDocumentation: React.FC<AppDocumentationProps> = ({ onClose }) => {
                 How Spot The Aurora works
               </h1>
               <p className="text-neutral-400 text-sm leading-relaxed max-w-2xl">
-                A fully transparent account of every layer of this app — from raw NOAA and NASA data
+                A fully transparent account of every layer of this app - from raw NOAA and NASA data
                 through scoring algorithms, propagation physics, notification cryptography, and backend
                 workers. No hand-waving.
               </p>

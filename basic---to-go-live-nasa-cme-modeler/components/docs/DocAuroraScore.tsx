@@ -11,7 +11,7 @@ const DocAuroraScore: React.FC = () => (
   >
     <SubHeading color="text-purple-400">Primary Inputs</SubHeading>
     <CardGrid cols={2}>
-      <Card icon="🌀" title="IMF Bz — the critical driver">
+      <Card icon="🌀" title="IMF Bz - the critical driver">
         <p>
           The southward component of the Interplanetary Magnetic Field. When Bz is negative
           (pointing toward Earth's south magnetic pole) it drives magnetic reconnection at the
@@ -44,14 +44,14 @@ BT = sqrt(By² + Bz²)  [total transverse IMF, nT]
           over the auroral zones. GOES-18 (primary) and GOES-19 (secondary) values are averaged.
         </p>
         <p>
-          This is a direct measurement of how much aurora energy is being produced right now —
+          This is a direct measurement of how much aurora energy is being produced right now -
           not a model prediction from solar wind. &gt;20 GW: active. &gt;50 GW: significant.
           &gt;100 GW: major storm.
         </p>
       </Card>
       <Card icon="📡" title="NZ Geomagnetic dH (EY2M)">
         <p>
-          Eyrewell Observatory (Canterbury, NZ) 1-minute dH — rate of change of the horizontal
+          Eyrewell Observatory (Canterbury, NZ) 1-minute dH - rate of change of the horizontal
           magnetic field component. This is the only data source in the scoring system that is
           geographically specific to New Zealand.
         </p>
@@ -63,7 +63,7 @@ BT = sqrt(By² + Bz²)  [total transverse IMF, nT]
       </Card>
     </CardGrid>
 
-    <SubHeading color="text-purple-400">Location Adjustment — Exact Formula</SubHeading>
+    <SubHeading color="text-purple-400">Location Adjustment - Exact Formula</SubHeading>
     <Card icon="📍" title="GPS Latitude Correction">
       <p>
         The Forecast Worker produces a <strong className="text-neutral-200">baseScore</strong> referenced
@@ -86,14 +86,14 @@ user_lat < GREYMOUTH  →  finalScore = baseScore + adjustment`}
 
     <SubHeading color="text-purple-400">Visibility Scale</SubHeading>
     <div className="bg-neutral-900/70 border border-neutral-700/50 rounded-xl p-5">
-      <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-4">Score thresholds — South Island NZ reference point</p>
+      <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-4">Score thresholds - South Island NZ reference point</p>
       <div className="space-y-2.5">
-        <ScoreBar range="80–100%" color="#ef4444" width={100} label="Go outside now — significant display, possible curtains and colour overhead" />
-        <ScoreBar range="65–79%"  color="#f97316" width={80}  label="Visible naked eye — distinct glow or pillars to the south" />
+        <ScoreBar range="80–100%" color="#ef4444" width={100} label="Go outside now - significant display, possible curtains and colour overhead" />
+        <ScoreBar range="65–79%"  color="#f97316" width={80}  label="Visible naked eye - distinct glow or pillars to the south" />
         <ScoreBar range="50–64%"  color="#eab308" width={65}  label="Faint glow possible to the south in a very dark spot" />
-        <ScoreBar range="35–49%"  color="#84cc16" width={48}  label="Phone camera night mode will pick it up — not reliably naked-eye" />
-        <ScoreBar range="20–34%"  color="#22c55e" width={32}  label="Very faint — long-exposure DSLR on a tripod only" />
-        <ScoreBar range="0–19%"   color="#16a34a" width={18}  label="Conditions too quiet — nothing to see tonight" />
+        <ScoreBar range="35–49%"  color="#84cc16" width={48}  label="Phone camera night mode will pick it up - not reliably naked-eye" />
+        <ScoreBar range="20–34%"  color="#22c55e" width={32}  label="Very faint - long-exposure DSLR on a tripod only" />
+        <ScoreBar range="0–19%"   color="#16a34a" width={18}  label="Conditions too quiet - nothing to see tonight" />
       </div>
     </div>
   </Section>

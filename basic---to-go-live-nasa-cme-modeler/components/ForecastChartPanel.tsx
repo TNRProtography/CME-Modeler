@@ -54,7 +54,7 @@ const ForecastChartPanel: React.FC<ForecastChartPanelProps> = ({
   lastDataReceived,
 }) => {
   // Determine the active satellite key. Prefer the explicit prop; fall back to legacy isImap.
-  const satKey = satellite && satellite !== '—' ? satellite : (isImap ? 'IMAP' : null);
+  const satKey = satellite && satellite !== ' - ' ? satellite : (isImap ? 'IMAP' : null);
   const satConfig = satKey ? SATELLITE_DISPLAY[satKey] : null;
   const hasSatHighlight = !!satConfig;
 

@@ -1,6 +1,6 @@
 // --- START OF FILE src/components/docs/DocPrimitives.tsx ---
 // Shared layout primitives for the documentation sections.
-// All section files import from here — update styling once, reflects everywhere.
+// All section files import from here - update styling once, reflects everywhere.
 
 import React from 'react';
 

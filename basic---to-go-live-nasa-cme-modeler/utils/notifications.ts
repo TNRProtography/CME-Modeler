@@ -21,7 +21,7 @@ import {
   type PermissionState,
 } from './analytics';
 
-// Icon map — mirrors TOPIC_ICONS in sw.js so local test notifications
+// Icon map - mirrors TOPIC_ICONS in sw.js so local test notifications
 // also show the correct icon. Must be kept in sync with public/sw.js.
 const TOPIC_ICONS: Record<string, string> = {
   'visibility-dslr':   '/icons/icon-visibility-dslr.png',
@@ -36,6 +36,9 @@ const TOPIC_ICONS: Record<string, string> = {
   'flare-X5':          '/icons/icon-flare-event.png',
   'flare-X10':         '/icons/icon-flare-event.png',
   'shock-ff':          '/icons/icon-shock-detection.png',
+  'shock-sf':          '/icons/icon-shock-detection.png',
+  'shock-fr':          '/icons/icon-shock-detection.png',
+  'shock-sr':          '/icons/icon-shock-detection.png',
   'aurora-40percent':  '/icons/icon-aurora.png',
   'aurora-50percent':  '/icons/icon-aurora.png',
   'aurora-60percent':  '/icons/icon-aurora.png',
@@ -55,21 +58,25 @@ function getNotificationIcon(tag?: string): string {
   return DEFAULT_ICON;
 }
 
-// All notification topic keys — kept in sync with the worker.
+// All notification topic keys - kept in sync with the worker.
 // Existing topics are preserved for backwards compatibility.
 // New topics added here are opt-out by default (undefined = send).
 const NOTIFICATION_CATEGORIES = [
-  // Aurora visibility — new location-aware notifications
+  // Aurora visibility - new location-aware notifications
   'visibility-dslr',
   'visibility-phone',
   'visibility-naked',
   // Overnight watch
   'overnight-watch',
-  // Solar flare event (replaces flare-peak in UI — old topic still runs on worker)
+  // Solar flare event (replaces flare-peak in UI - old topic still runs on worker)
   'flare-event',
-  // Shock detection — CME arrival (fast forward shock)
+  // Shock detection - four IPS shock types (IMF enhancement removed: it was
+  // the main false-positive source in the client-side detector)
   'shock-ff',
-  // Legacy topics — kept for backwards compat, hidden from UI but still respected
+  'shock-sf',
+  'shock-fr',
+  'shock-sr',
+  // Legacy topics - kept for backwards compat, hidden from UI but still respected
   'aurora-40percent', 'aurora-50percent', 'aurora-60percent', 'aurora-80percent',
   'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'flare-peak',
   'substorm-forecast',
@@ -85,12 +92,12 @@ export const requestNotificationPermission = async (
     trackPermissionResult('unsupported', location);
     return 'unsupported';
   }
-  // Already answered previously — don't count as a new prompt
+  // Already answered previously - don't count as a new prompt
   if (Notification.permission === 'granted' || Notification.permission === 'denied') {
     return Notification.permission;
   }
   try {
-    // About to show a real, user-visible prompt — this is our denominator
+    // About to show a real, user-visible prompt - this is our denominator
     trackPermissionPromptShown(location);
     const permission = await Notification.requestPermission();
     trackPermissionResult(permission as PermissionState, location);
@@ -311,7 +318,7 @@ export const subscribeUserToPush = async (
     try { localStorage.setItem('push_subscription_id', id); } catch {}
     console.log('DIAGNOSTIC: Your subscription id is:', id);
 
-    // Full flow completed — record enablement timestamp and fire analytics
+    // Full flow completed - record enablement timestamp and fire analytics
     markNotificationsEnabled();
     trackSubscriptionCreated(location);
 
@@ -401,7 +408,7 @@ const PUSH_WORKER_URL = 'https://push-notification-worker.thenamesrock.workers.d
  * Called on every app load. If the user has an active push subscription,
  * silently refreshes their GPS location in the worker KV record so that
  * visibility-based notifications use their current precise location.
- * Completely non-blocking — failures are silent.
+ * Completely non-blocking - failures are silent.
  */
 export const refreshLocationOnServer = async (): Promise<void> => {
   try {
@@ -414,7 +421,7 @@ export const refreshLocationOnServer = async (): Promise<void> => {
       navigator.geolocation.getCurrentPosition(resolve, reject, {
         enableHighAccuracy: false,
         timeout: 8000,
-        maximumAge: 3600000, // use cached fix if <1hr old — no GPS hardware needed
+        maximumAge: 3600000, // use cached fix if <1hr old - no GPS hardware needed
       })
     );
 
@@ -428,7 +435,7 @@ export const refreshLocationOnServer = async (): Promise<void> => {
       }),
     });
   } catch {
-    // Silent — GPS denied, no subscription, or network failure. All fine.
+    // Silent - GPS denied, no subscription, or network failure. All fine.
   }
 };
 
@@ -467,7 +474,7 @@ const DEFAULT_ON_CATEGORIES = new Set([
   'visibility-phone',
   'visibility-dslr',
   'admin-broadcast',
-  // Legacy topics — controlled server-side, should appear ON in debug
+  // Legacy topics - controlled server-side, should appear ON in debug
   'flare-event',
   'flare-M1',
   'flare-M5',
@@ -516,7 +523,7 @@ export const setNotificationPreference = (categoryId: string, enabled: boolean) 
 
     // If this toggle turned something OFF that was previously ON, check whether
     // the user now has any categories left enabled. "All off" is effectively a
-    // full disable — track it as such and clear the enabled-at marker so the
+    // full disable - track it as such and clear the enabled-at marker so the
     // next re-enable starts a fresh days-since-enabled count.
     if (previous && !enabled) {
       const anyStillOn = NOTIFICATION_CATEGORIES.some(id => getNotificationPreference(id));
@@ -533,10 +540,10 @@ export const setNotificationPreference = (categoryId: string, enabled: boolean) 
 };
 
 // --- Overnight-watch mode (user-configurable, sent to server) ---
-// 'every-night' — always send a nightly summary regardless of conditions
-// 'camera'      — only when aurora may be detectable on a DSLR camera (score >= 25)
-// 'phone'       — only when aurora should show on a phone camera (score >= 40)
-// 'eye'         — only when aurora may be naked-eye visible (score >= 55)
+// 'every-night' - always send a nightly summary regardless of conditions
+// 'camera'      - only when aurora may be detectable on a DSLR camera (score >= 25)
+// 'phone'       - only when aurora should show on a phone camera (score >= 40)
+// 'eye'         - only when aurora may be naked-eye visible (score >= 55)
 export type OvernightMode = 'every-night' | 'camera' | 'phone' | 'eye';
 const OVERNIGHT_MODE_KEY = 'notification_overnight_mode';
 const DEFAULT_OVERNIGHT_MODE: OvernightMode = 'phone';
@@ -580,7 +587,7 @@ export const sendTestNotification = async (title?: string, body?: string, catego
     forceWhenVisible: true,
     stacking: true,
     tag,
-    // Skip the preference gate for test notifications — the user explicitly clicked Test
+    // Skip the preference gate for test notifications - the user explicitly clicked Test
     skipPreferenceCheck: true,
   });
 };

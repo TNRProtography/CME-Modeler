@@ -1,7 +1,7 @@
 //--- START OF FILE src/components/ForecastDashboard.tsx ---
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import '../utils/chartSetup'; // registers Chart.js scales/plugins — must run before any <Line> renders
+import '../utils/chartSetup'; // registers Chart.js scales/plugins - must run before any <Line> renders
 import EPAMPanel from './EPAMPanel';
 import StereoJPlotsPanel from './StereoJPlotsPanel';
 import SolarWindQuickView, { type DetectedShock } from './SolarWindQuickView';
@@ -185,10 +185,10 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
 };
 
 
-const getSatelliteSource = (source?: string) => source && source !== '—' ? source : undefined;
+const getSatelliteSource = (source?: string) => source && source !== ' - ' ? source : undefined;
 
 const formatTimeHHMM = (timestamp: number | null | undefined): string => {
-    if (!timestamp || !Number.isFinite(timestamp)) return '—';
+    if (!timestamp || !Number.isFinite(timestamp)) return ' - ';
     return new Date(timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', hour12: false });
 };
 
@@ -475,8 +475,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const tempLastReceived = useMemo(() => formatTimeHHMM(getLatestPointTime(allTempData)), [allTempData]);
 
     // ── Simple view timeline slots ────────────────────────────────────────────
-    // 15 / 30 / 60 min — same plain-english phrases as VisibilityForecastPanel
-    // 2 hr              — SpotTheAurora score, lower confidence phrasing
+    // 15 / 30 / 60 min - same plain-english phrases as VisibilityForecastPanel
+    // 2 hr              - SpotTheAurora score, lower confidence phrasing
     // ─────────────────────────────────────────────────────────────────────────
 
     const simpleTimelineSlots = useMemo(() => {
@@ -489,39 +489,39 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
             if (score >= 80) return {
                 icon: '👁️',
-                phrase: confidence === 'high' ? 'Go outside now — this could be one of the best displays in years'
-                      : confidence === 'medium' ? 'Conditions look exceptional — well worth heading out to have a look'
-                      : 'Could turn into something special — keep a close eye on this'
+                phrase: confidence === 'high' ? 'Go outside now - this could be one of the best displays in years'
+                      : confidence === 'medium' ? 'Conditions look exceptional - well worth heading out to have a look'
+                      : 'Could turn into something special - keep a close eye on this'
             };
             if (score >= 65) return {
                 icon: '👁️',
-                phrase: confidence === 'high' ? 'You should be able to see it with your own eyes — look south'
+                phrase: confidence === 'high' ? 'You should be able to see it with your own eyes - look south'
                       : confidence === 'medium' ? 'Good chance of seeing it with your own eyes in a dark spot'
                       : 'Might be visible with your own eyes if conditions stay this way'
             };
             if (score >= 50) return {
                 icon: '👁️',
-                phrase: confidence === 'high' ? 'A faint green glow should be visible to the south — find somewhere dark'
-                      : confidence === 'medium' ? 'A faint glow to the south is possible — get away from street lights'
+                phrase: confidence === 'high' ? 'A faint green glow should be visible to the south - find somewhere dark'
+                      : confidence === 'medium' ? 'A faint glow to the south is possible - get away from street lights'
                       : 'Might just be visible to the eye if you find somewhere dark enough'
             };
             if (score >= 35) return {
                 icon: '📱',
-                phrase: confidence === 'high' ? 'Your phone camera will pick it up — point it south and take a photo'
-                      : confidence === 'medium' ? 'Worth taking a photo to the south — your phone may surprise you'
+                phrase: confidence === 'high' ? 'Your phone camera will pick it up - point it south and take a photo'
+                      : confidence === 'medium' ? 'Worth taking a photo to the south - your phone may surprise you'
                       : 'Your phone camera might pick something up if conditions improve'
             };
             if (score >= 20) return {
                 icon: '📷',
-                phrase: confidence === 'high' ? 'Very faint — only a long-exposure camera shot would show anything'
-                      : confidence === 'medium' ? 'Very faint if anything — not worth going out specially'
+                phrase: confidence === 'high' ? 'Very faint - only a long-exposure camera shot would show anything'
+                      : confidence === 'medium' ? 'Very faint if anything - not worth going out specially'
                       : 'Unlikely to show up even on camera at this stage'
             };
             return {
                 icon: '😴',
-                phrase: confidence === 'high' ? `Nothing to see — the sky will look completely normal ${timeRef}`
-                      : confidence === 'medium' ? `Very quiet ${timeRef} — not worth going out`
-                      : `Quiet ${timeRef} — come back later`
+                phrase: confidence === 'high' ? `Nothing to see - the sky will look completely normal ${timeRef}`
+                      : confidence === 'medium' ? `Very quiet ${timeRef} - not worth going out`
+                      : `Quiet ${timeRef} - come back later`
             };
         };
 
@@ -592,10 +592,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                   <div className="text-4xl mb-4">🌏</div>
                   <h2 className="text-xl font-bold text-white mb-3">You appear to be outside New Zealand</h2>
                   <p className="text-sm text-neutral-300 leading-relaxed mb-4">
-                    Spot The Aurora is a New Zealand aurora and space weather forecasting app. The aurora score, substorm model, and visibility forecasts are all calibrated and optimised for viewing conditions from New Zealand — particularly the South Island.
+                    Spot The Aurora is a New Zealand aurora and space weather forecasting app. The aurora score, substorm model, and visibility forecasts are all calibrated and optimised for viewing conditions from New Zealand - particularly the South Island.
                   </p>
                   <p className="text-sm text-neutral-400 leading-relaxed mb-6">
-                    If you are aurora chasing from another location in the southern hemisphere, the solar wind and space weather data is still accurate and useful — but the visibility score, location adjustment, and notification thresholds will not reflect your actual viewing conditions.
+                    If you are aurora chasing from another location in the southern hemisphere, the solar wind and space weather data is still accurate and useful - but the visibility score, location adjustment, and notification thresholds will not reflect your actual viewing conditions.
                   </p>
                   <div className="flex gap-3 justify-center">
                     <button
@@ -649,7 +649,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     </div>
                                 </div>
                             )}
-                            {/* What to expect — full width */}
+                            {/* What to expect - full width */}
                             <div id="visibility-forecast-panel" className="col-span-12 grid grid-cols-12 gap-6 items-stretch">
                             <div className="col-span-12 flex flex-col">
                                 <VisibilityForecastPanel
@@ -696,7 +696,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     </div>
                                 </div>
                             )}
-                            {/* What to expect — full width */}
+                            {/* What to expect - full width */}
                             <div className="col-span-12 grid grid-cols-12 gap-6 items-stretch">
                             <div className="col-span-12 flex flex-col">
                                 <VisibilityForecastPanel
@@ -798,7 +798,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             </ForecastChartPanel>
                             <ForecastChartPanel
                                 title="Solar Wind Temperature"
-                                currentValue={`${gaugeData.temp?.value ?? 'N/A'} <span class='text-base'>K</span><span class='text-xs block text-neutral-400'>Source: ${gaugeData.temp?.source ?? '—'}</span>`}
+                                currentValue={`${gaugeData.temp?.value ?? 'N/A'} <span class='text-base'>K</span><span class='text-xs block text-neutral-400'>Source: ${gaugeData.temp?.source ?? ' - '}</span>`}
                                 emoji={gaugeData.temp?.emoji ?? '❓'}
                                 onOpenModal={() => openModal('temp')}
                                 satellite={getSatelliteSource(gaugeData.temp?.source)}
@@ -810,7 +810,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
                             <ForecastChartPanel
                                 title="Substorm Index"
-                                currentValue={substormRiskData ? `${substormRiskData.current.score} <span class='text-base'>${substormRiskData.current.level}</span><span class='text-xs block text-neutral-400'>${substormRiskData.current.risk_trend}${substormRiskData.current.confidence != null ? ` · ${substormRiskData.current.confidence}% confidence` : ''}</span>` : '—'}
+                                currentValue={substormRiskData ? `${substormRiskData.current.score} <span class='text-base'>${substormRiskData.current.level}</span><span class='text-xs block text-neutral-400'>${substormRiskData.current.risk_trend}${substormRiskData.current.confidence != null ? ` · ${substormRiskData.current.confidence}% confidence` : ''}</span>` : ' - '}
                                 emoji={substormRiskData?.current?.bay_onset_flag ? '⚡' : substormRiskData?.current && substormRiskData.current.score >= 50 ? '🌌' : '📊'}
                                 onOpenModal={() => openModal('substorm-index')}
                             >
@@ -841,7 +841,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     const avg30Val = avg30.length > 0 ? avg30.reduce((s, p) => s + p.y, 0) / avg30.length : latest.y;
                                     const avg60Val = avg60.length > 0 ? avg60.reduce((s, p) => s + p.y, 0) / avg60.length : latest.y;
                                     return `${latest.y.toFixed(0)} <span class='text-base'>Wb/s</span><span class='text-xs block text-neutral-400'>30m avg: ${avg30Val.toFixed(0)} · 60m avg: ${avg60Val.toFixed(0)}</span>`;
-                                })() : '—'}
+                                })() : ' - '}
                                 emoji="🔗"
                                 onOpenModal={() => openModal('newell-coupling')}
                             >
@@ -857,7 +857,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     const avg30Val = avg30.length > 0 ? avg30.reduce((s, p) => s + p.y, 0) / avg30.length : latest.y;
                                     const latestDen = allDensityData.length > 0 ? allDensityData[allDensityData.length - 1].y : 0;
                                     return `${latest.y.toFixed(2)} <span class='text-base'>nPa</span><span class='text-xs block text-neutral-400'>30m avg: ${avg30Val.toFixed(2)} nPa · density ${latestDen.toFixed(1)} p/cm³</span>`;
-                                })() : '—'}
+                                })() : ' - '}
                                 emoji="💨"
                                 onOpenModal={() => openModal('dynamic-pressure')}
                             >

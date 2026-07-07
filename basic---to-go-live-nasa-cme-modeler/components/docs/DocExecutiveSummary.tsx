@@ -23,10 +23,10 @@ const DocExecutiveSummary: React.FC = () => (
       <Card icon="📡" title="Where the data comes from">
         <p>
           Every number in the app traces to a real sensor. Solar wind speed, density, and magnetic
-          field direction (IMF Bz) come from NASA's IMAP spacecraft and NOAA's DSCOVR — both sitting
+          field direction (IMF Bz) come from NASA's IMAP spacecraft and NOAA's DSCOVR - both sitting
           at the L1 Lagrange point, about 1.5 million km from Earth. Auroral power comes from
-          GOES-18 and GOES-19 satellites. The most locally relevant measurement — a direct
-          Canterbury geomagnetic reading — comes from GeoNet's Eyrewell Observatory (EY2M). Solar
+          GOES-18 and GOES-19 satellites. The most locally relevant measurement - a direct
+          Canterbury geomagnetic reading - comes from GeoNet's Eyrewell Observatory (EY2M). Solar
           flare and CME data comes from NASA DONKI.
         </p>
       </Card>
@@ -36,7 +36,7 @@ const DocExecutiveSummary: React.FC = () => (
           energy input rate) drive it up when solar wind couples into the magnetosphere. GOES
           hemispheric power confirms that coupling is actually happening. The Canterbury EY2M
           geomagnetic reading adds local ground truth. GPS adjusts the score ±0.2% per 10 km of
-          latitude from Greymouth (−42.45°) — Invercargill sees a higher score, Northland lower.
+          latitude from Greymouth (−42.45°) - Invercargill sees a higher score, Northland lower.
         </p>
       </Card>
       <Card icon="⚡" title="The substorm model">
@@ -60,8 +60,8 @@ const DocExecutiveSummary: React.FC = () => (
       <Card icon="🔔" title="How notifications work">
         <p>
           All push notifications are sent from a Cloudflare Worker on a 5-minute cron. There is no
-          third-party push service. The full RFC 8291 Web Push stack — VAPID JWT signing, ECDH key
-          agreement, AES-128-GCM encryption — is implemented from scratch using the Web Crypto API.
+          third-party push service. The full RFC 8291 Web Push stack - VAPID JWT signing, ECDH key
+          agreement, AES-128-GCM encryption - is implemented from scratch using the Web Crypto API.
           Visibility alerts (DSLR / Phone / Naked Eye) are per-subscriber based on GPS location and
           the auroral oval boundary geometry.
         </p>
@@ -70,7 +70,7 @@ const DocExecutiveSummary: React.FC = () => (
         <p>
           Seven Cloudflare Workers handle all backend logic: Forecast API, Substorm Risk, IMAP
           Solar Wind merger, DONKI proxy, Push Notifications, CH History, and Banner. No persistent
-          file system — all state lives in Cloudflare KV. Clients never call external APIs directly;
+          file system - all state lives in Cloudflare KV. Clients never call external APIs directly;
           everything is served through KV caches to protect rate limits and ensure reliability even
           during NOAA/NASA outages.
         </p>
@@ -78,15 +78,15 @@ const DocExecutiveSummary: React.FC = () => (
     </CardGrid>
 
     <div className="bg-neutral-900/50 border border-neutral-700/40 rounded-xl p-5">
-      <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-4">Score thresholds — South Island NZ reference</p>
+      <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-4">Score thresholds - South Island NZ reference</p>
       <div className="space-y-1.5">
         {[
-          { range: '80–100%', label: 'Go outside now — significant display, possible curtains overhead', color: '#ef4444', w: 100 },
-          { range: '65–79%',  label: 'Visible naked eye — distinct glow or pillars to the south',       color: '#f97316', w: 80 },
+          { range: '80–100%', label: 'Go outside now - significant display, possible curtains overhead', color: '#ef4444', w: 100 },
+          { range: '65–79%',  label: 'Visible naked eye - distinct glow or pillars to the south',       color: '#f97316', w: 80 },
           { range: '50–64%',  label: 'Faint glow possible to the south in a very dark spot',             color: '#eab308', w: 65 },
-          { range: '35–49%',  label: 'Phone night mode will detect it — not reliably naked-eye',         color: '#84cc16', w: 48 },
-          { range: '20–34%',  label: 'Very faint — long-exposure DSLR on a tripod only',                 color: '#22c55e', w: 32 },
-          { range: '0–19%',   label: 'Conditions too quiet — nothing to see tonight',                    color: '#16a34a', w: 18 },
+          { range: '35–49%',  label: 'Phone night mode will detect it - not reliably naked-eye',         color: '#84cc16', w: 48 },
+          { range: '20–34%',  label: 'Very faint - long-exposure DSLR on a tripod only',                 color: '#22c55e', w: 32 },
+          { range: '0–19%',   label: 'Conditions too quiet - nothing to see tonight',                    color: '#16a34a', w: 18 },
         ].map(item => (
           <div key={item.range} className="flex items-center gap-3">
             <span className="font-mono text-xs w-16 text-neutral-300 flex-shrink-0">{item.range}</span>

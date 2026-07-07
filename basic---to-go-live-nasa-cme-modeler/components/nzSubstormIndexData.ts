@@ -1153,7 +1153,7 @@ const parseIso = (ts: string | number) => {
 const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
 
 const getSourceLabel = (source?: string | null) => {
-  if (!source) return '—';
+  if (!source) return ' - ';
   return source.includes('IMAP') ? 'IMAP' : 'NOAA RTSW';
 };
 
@@ -1398,7 +1398,7 @@ export const useNzSubstormIndexData = () => {
 
         const aggregationParams = `aggregationPeriod=${AGGREGATION_MINUTES}m&aggregationFunction=mean`;
         // Fetch GeoNet magnetometer data and solar wind independently.
-        // Solar wind is supplementary (outlook text only) — if it fails,
+        // Solar wind is supplementary (outlook text only) - if it fails,
         // the ground magnetometer chart must still render.
         const [stationSeries, solarWindRes] = await Promise.all([
           Promise.all(
@@ -1470,9 +1470,9 @@ export const useNzSubstormIndexData = () => {
 
         let bz = 0;
         let speed = 0;
-        let solarWindSource = '—';
+        let solarWindSource = ' - ';
         // Handle both { ok, data } and flat array response formats; solarWindData
-        // may be null if the fetch failed (non-fatal — chart still renders).
+        // may be null if the fetch failed (non-fatal - chart still renders).
         if (solarWindData != null) {
           const swRows = Array.isArray(solarWindData) ? solarWindData
             : (solarWindData?.ok && Array.isArray(solarWindData.data) ? solarWindData.data : []);

@@ -1,17 +1,17 @@
 // --- START OF FILE src/components/EPAMPanel.tsx ---
-// v3 — SWPC HAPI multi-spacecraft edition.
+// v3 - SWPC HAPI multi-spacecraft edition.
 //
 // The worker now serves the SWPC HAPI particle feeds:
-//   • active-ions-pt1m  — SWPC's blended "active" L1 ion feed (the default;
+//   • active-ions-pt1m  - SWPC's blended "active" L1 ion feed (the default;
 //     the worker silently falls back active → solar1 → ace → legacy ACE JSON)
-//   • solar1-ions-pt1m  — SOLAR-1 EPAM ions (independent L1 spacecraft)
-//   • imap-ions-pt1m    — IMAP ions (optional; may not exist yet — fails soft)
-//   • STEREO-A          — unchanged, ahead-of-Earth context
+//   • solar1-ions-pt1m  - SOLAR-1 EPAM ions (independent L1 spacecraft)
+//   • imap-ions-pt1m    - IMAP ions (optional; may not exist yet - fails soft)
+//   • STEREO-A          - unchanged, ahead-of-Earth context
 //
 // GOES has been removed from THIS panel (the worker still serves /epam/goes
 // for anything else that wants it; GOES X-ray/SUVI elsewhere in the app are
 // untouched). Storm confirmation now comes from genuinely independent L1
-// particle instruments — SOLAR-1 and IMAP — each judged against its OWN
+// particle instruments - SOLAR-1 and IMAP - each judged against its OWN
 // 7-day baseline by the client-side warning engine (epamWarning v3).
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
@@ -85,9 +85,9 @@ interface SolarMagPoint { time: number; bt: number; bz: number; }
 const EPAM_BASE = 'https://epam.thenamesrock.workers.dev';
 const SOLAR_WIND_IMF_URL = 'https://imap-solar-data-test.thenamesrock.workers.dev/rtsw/merged-24h';
 // Ground neutron-monitor counts (OULU, 5-min, efficiency-corrected, last 7
-// days) from NMDB NEST — used for genuine Forbush-decrease detection. NMDB
+// days) from NMDB NEST - used for genuine Forbush-decrease detection. NMDB
 // sends no CORS headers, so requests go through the site's data proxy
-// (/api/proxy/data, see worker/index.ts — the worker must be deployed with
+// (/api/proxy/data, see worker/index.ts - the worker must be deployed with
 // that route). NMDB's NEST interface has two known parameter styles for
 // "last N days", so we try candidates in order until one parses; the working
 // one is remembered for subsequent refreshes. If everything fails, the
@@ -112,7 +112,7 @@ const VIEWS: {key: ViewKey; label: string}[] = [
 ];
 
 // L1 proton channels used by the robust warning engine (same set as L1_CH).
-// Same keys across the active / SOLAR-1 / IMAP feeds — the worker normalises
+// Same keys across the active / SOLAR-1 / IMAP feeds - the worker normalises
 // every HAPI source to the legacy p1…p8 fields.
 const WARN_CHANNELS = ['p1', 'p3', 'p5', 'p7', 'p8'];
 
@@ -170,15 +170,15 @@ const baseOptions = (yType: 'logarithmic'|'linear', yLabel: string): ChartOption
  * Always parse a time_tag string as UTC, regardless of whether the source
  * includes a 'Z' suffix or not. Without this, browsers treat bare ISO strings
  * (e.g. "2025-03-27T10:00:00") as LOCAL time, shifting everything by the
- * local UTC offset — 13 hours wrong for NZ users.
+ * local UTC offset - 13 hours wrong for NZ users.
  */
 function parseUTC(s: string): number {
   if (!s) return NaN;
-  // Already has timezone info — parse as-is
+  // Already has timezone info - parse as-is
   if (s.endsWith('Z') || s.includes('+') || /[T ]\d{2}:\d{2}(:\d{2})?[-+]\d/.test(s)) {
     return new Date(s).getTime();
   }
-  // No timezone marker — force UTC by appending Z
+  // No timezone marker - force UTC by appending Z
   return new Date(s.replace(' ', 'T') + 'Z').getTime();
 }
 
@@ -198,7 +198,7 @@ function filterByTimeRange<T extends {time_tag: string}>(data: T[], hours: TimeR
 // ── Spike filter ─────────────────────────────────────────────────────────────
 // Removes 1–2 point data artifacts from a series before rendering.
 // On a log scale, a bad reading like 1e-20 (vs normal ~1e0) or a sudden
-// vertical spike that immediately returns to baseline is visually destructive —
+// vertical spike that immediately returns to baseline is visually destructive -
 // it collapses the entire Y axis range so the real signal is unreadable.
 //
 // For each point we look at the WINDOW_SIZE readings on each side. We compute
@@ -208,16 +208,16 @@ function filterByTimeRange<T extends {time_tag: string}>(data: T[], hours: TimeR
 // we replace it with null. Chart.js spans nulls smoothly on log scales.
 //
 // Using 2 readings (ISOLATION = 2) means genuine 3+-reading elevated periods
-// are never removed — only genuine single/double-point glitches are filtered.
+// are never removed - only genuine single/double-point glitches are filtered.
 function spikeFilter(
   data: { x: number; y: number | null }[],
-  threshold = 2.5,   // log10 units — 10^2.5 ≈ 316× deviation required to qualify
+  threshold = 2.5,   // log10 units - 10^2.5 ≈ 316× deviation required to qualify
   isolation = 2,     // max consecutive outlier points to remove
   windowSize = 5     // neighbours on each side used for median
 ): { x: number; y: number | null }[] {
   if (data.length < windowSize * 2 + 1) return data;
 
-  // Work in log10 space — EPAM data spans many decades
+  // Work in log10 space - EPAM data spans many decades
   const logY = data.map(d =>
     d.y !== null && d.y > 0 ? Math.log10(d.y) : null
   );
@@ -242,7 +242,7 @@ function spikeFilter(
     return Math.abs(v - (neighbourMedian[i] as number)) > threshold;
   });
 
-  // Walk runs of consecutive outliers — only suppress runs of ≤isolation length
+  // Walk runs of consecutive outliers - only suppress runs of ≤isolation length
   const suppressed = [...isOutlier];
   let runStart = -1;
   for (let i = 0; i <= isOutlier.length; i++) {
@@ -252,7 +252,7 @@ function spikeFilter(
       if (runStart !== -1) {
         const runLen = i - runStart;
         if (runLen > isolation) {
-          // Real sustained event — un-suppress the whole run
+          // Real sustained event - un-suppress the whole run
           for (let j = runStart; j < i; j++) suppressed[j] = false;
         }
         runStart = -1;
@@ -273,7 +273,7 @@ const mkDs = (pts: any[], timeKey: string, valueKey: string, color: string, labe
   ),
 });
 
-// L1 raw views: 5 proton channels (same keys across active / SOLAR-1 / IMAP —
+// L1 raw views: 5 proton channels (same keys across active / SOLAR-1 / IMAP -
 // the worker maps every HAPI ion feed onto these legacy fields).
 const L1_CH = [
   {k:'p1',c:'#60a5fa',l:'P1 47–68 keV'},
@@ -307,12 +307,12 @@ function shockMarkerDataset(t: number, yMin: number, yMax: number, color: string
 
 // ─── View metadata ────────────────────────────────────────────────────────────
 const VIEW_INFO: Record<ViewKey, {title: string; subtitle: string; note?: string}> = {
-  'ace-raw':  {title: 'Solar Storm Early Warning (ACE EPAM)', subtitle: 'Real-time particle readings from ACE EPAM — satellites parked 1.5 million km in front of Earth, about 45–60 minutes upstream of us. When the lines start rising together across all colours and converging on the graph, that is the pattern that often precedes a solar storm arriving at Earth. The earlier the lines rise, the more warning time you have.'},
-  'ace-roc':  {title: 'ACE — Rate of Change (15-min)', subtitle: 'How fast the averaged ACE particle flux is climbing or falling, expressed as the change in log-flux over a rolling 15-minute window. Flat near zero means steady. A sharp positive spike means the flux is jumping — the near-vertical climb that marks a CME shock front arriving. Sustained negative values mean a stream is decaying. This is the leading-edge view: it reacts before the raw flux looks dramatic.', note: 'Reads in log-units per 15 min: +0.30 ≈ a doubling, +0.60 ≈ a 4× jump in 15 minutes. Brief single-point spikes are noise; a real onset shows several rising steps in a row.'},
-  'solar1-raw': {title: 'SOLAR-1 EPAM — Independent Confirmation', subtitle: 'A second, fully independent spacecraft at the L1 point measuring the same particle environment with its own instrument. If SOLAR-1 is elevated at the same time as the primary feed, the storm signal is much more reliable — two different detectors agreeing is hard to fake with instrument noise.'},
-  'imap-raw': {title: 'IMAP — Independent Confirmation', subtitle: 'NASA\u2019s IMAP spacecraft at L1, providing a third independent particle measurement. Like SOLAR-1, simultaneous elevation here cross-confirms what the primary feed is seeing.', note: 'IMAP\u2019s real-time particle feed is new — gaps and outages are expected while SWPC brings it fully online. When no data is available the panel simply marks IMAP as unavailable.'},
-  'stereo-raw': {title: 'STEREO-A — Ahead-of-Earth Satellite', subtitle: 'Particle readings from a satellite that orbits slightly ahead of Earth, giving an early peek at what is coming along the Sun–Earth line.', note: '⚠ STEREO-A orbits about 10–15° ahead of Earth and sees the Sun from a different angle — so elevated readings here do not always mean the same storm will hit Earth. Think of it as a neighbour getting rain before you — useful context, but not a direct forecast for your location.'},
-  'combined': {title: 'All Spacecraft — Combined Overview', subtitle: 'One averaged trend line per spacecraft, making it easy to compare every source at a glance. If the independent L1 feeds are rising together, that is the strongest possible signal. Toggle individual spacecraft on or off with the buttons below.'},
+  'ace-raw':  {title: 'Solar Storm Early Warning (ACE EPAM)', subtitle: 'Real-time particle readings from ACE EPAM - satellites parked 1.5 million km in front of Earth, about 45–60 minutes upstream of us. When the lines start rising together across all colours and converging on the graph, that is the pattern that often precedes a solar storm arriving at Earth. The earlier the lines rise, the more warning time you have.'},
+  'ace-roc':  {title: 'ACE - Rate of Change (15-min)', subtitle: 'How fast the averaged ACE particle flux is climbing or falling, expressed as the change in log-flux over a rolling 15-minute window. Flat near zero means steady. A sharp positive spike means the flux is jumping - the near-vertical climb that marks a CME shock front arriving. Sustained negative values mean a stream is decaying. This is the leading-edge view: it reacts before the raw flux looks dramatic.', note: 'Reads in log-units per 15 min: +0.30 ≈ a doubling, +0.60 ≈ a 4× jump in 15 minutes. Brief single-point spikes are noise; a real onset shows several rising steps in a row.'},
+  'solar1-raw': {title: 'SOLAR-1 EPAM - Independent Confirmation', subtitle: 'A second, fully independent spacecraft at the L1 point measuring the same particle environment with its own instrument. If SOLAR-1 is elevated at the same time as the primary feed, the storm signal is much more reliable - two different detectors agreeing is hard to fake with instrument noise.'},
+  'imap-raw': {title: 'IMAP - Independent Confirmation', subtitle: 'NASA\u2019s IMAP spacecraft at L1, providing a third independent particle measurement. Like SOLAR-1, simultaneous elevation here cross-confirms what the primary feed is seeing.', note: 'IMAP\u2019s real-time particle feed is new - gaps and outages are expected while SWPC brings it fully online. When no data is available the panel simply marks IMAP as unavailable.'},
+  'stereo-raw': {title: 'STEREO-A - Ahead-of-Earth Satellite', subtitle: 'Particle readings from a satellite that orbits slightly ahead of Earth, giving an early peek at what is coming along the Sun–Earth line.', note: '⚠ STEREO-A orbits about 10–15° ahead of Earth and sees the Sun from a different angle - so elevated readings here do not always mean the same storm will hit Earth. Think of it as a neighbour getting rain before you - useful context, but not a direct forecast for your location.'},
+  'combined': {title: 'All Spacecraft - Combined Overview', subtitle: 'One averaged trend line per spacecraft, making it easy to compare every source at a glance. If the independent L1 feeds are rising together, that is the strongest possible signal. Toggle individual spacecraft on or off with the buttons below.'},
 };
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -337,7 +337,7 @@ const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) =
   const [combined,   setCombined]   = useState<CombinedData|null>(null);
   const [loading,    setLoading]    = useState(true);
   const [lastUpdated,setLastUpdated]= useState<Date|null>(null);
-  // Combined view toggles — STEREO off by default
+  // Combined view toggles - STEREO off by default
   const [showActive, setShowActive] = useState(true);
   const [showSolar1, setShowSolar1] = useState(true);
   const [showImap,   setShowImap]   = useState(true);
@@ -361,26 +361,26 @@ const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) =
       <p><strong>What this is:</strong> Real-time high-energy particle readings from spacecraft positioned upstream of Earth at the L1 point, about 1.5 million km sunward of us. Particles accelerated by solar eruptions reach these spacecraft before the storm itself reaches Earth, which is what makes this an early-warning instrument. The primary feed is NOAA SWPC\u2019s blended "active" L1 ion dataset, and it is independently cross-checked against the <strong>SOLAR-1 EPAM</strong> and <strong>IMAP</strong> spacecraft. The analysis compares the latest readings against a full <strong>7-day baseline</strong>, so "elevated" always means elevated relative to what has actually been normal this week.</p>
 
       <p><strong>The warning levels:</strong>
-      <span class='block mt-1'><strong class='text-green-400'>Quiet</strong> — at normal background. No storm signature.</span>
-      <span class='block'><strong class='text-yellow-300'>Watch</strong> — particle levels just starting to lift. Could be the front edge of something, could settle back down.</span>
-      <span class='block'><strong class='text-sky-300'>Elevated</strong> — clearly and persistently above background across multiple energy channels. Something real is upstream.</span>
-      <span class='block'><strong class='text-orange-300'>Storm Arrival Incoming</strong> — flux climbing fast and coherently: the classic lead-in to a CME shock. Typically 30–90 minutes of warning.</span>
-      <span class='block'><strong class='text-red-300'>Shock</strong> — the disturbance is passing the upstream spacecraft right now. Earth-side effects within the hour.</span></p>
+      <span class='block mt-1'><strong class='text-green-400'>Quiet</strong> - at normal background. No storm signature.</span>
+      <span class='block'><strong class='text-yellow-300'>Watch</strong> - particle levels just starting to lift. Could be the front edge of something, could settle back down.</span>
+      <span class='block'><strong class='text-sky-300'>Elevated</strong> - clearly and persistently above background across multiple energy channels. Something real is upstream.</span>
+      <span class='block'><strong class='text-orange-300'>Storm Arrival Incoming</strong> - flux climbing fast and coherently: the classic lead-in to a CME shock. Typically 30–90 minutes of warning.</span>
+      <span class='block'><strong class='text-red-300'>Shock</strong> - the disturbance is passing the upstream spacecraft right now. Earth-side effects within the hour.</span></p>
 
       <p><strong>The stats, and what each one means:</strong>
-      <span class='block mt-1'><strong>Above quiet baseline (σ)</strong> — how far current flux sits above this week's quiet conditions, in robust statistical units. ~2σ is everyday wobble; 5σ+ is a genuine event; 8σ+ with a fast climb is a storm arriving.</span>
-      <span class='block'><strong>Sustained, not a glitch</strong> — how long flux has stayed elevated. Single spikes are usually instrument noise; real events persist for 30+ minutes.</span>
-      <span class='block'><strong>Multiple channels rising</strong> — whether different particle energies (47 keV up to 1.9 MeV) are rising together. Real solar events are broadband; a single channel alone is usually an artifact.</span>
-      <span class='block'><strong>Sharp rate of climb</strong> — how fast flux is changing over 15 minutes, in log units: +0.30 means it doubled, +0.60 means it quadrupled. Shock fronts produce near-vertical climbs; slow solar-wind streams do not. The <strong>Rate of Change</strong> chart view plots exactly this.</span>
-      <span class='block'><strong>Fast particles arrived first</strong> — velocity dispersion: the highest-energy particles from a fresh eruption outrun the slower ones, so the MeV channels rise hours before the keV channels. Seeing this means an eruption's particles are connecting to Earth — the earliest hint, sometimes 1–2 days before arrival.</span>
-      <span class='block'><strong>Channels converging</strong> — as a shock gets close it accelerates lower-energy particles locally, so the gap between the channel lines shrinks. On the chart this is the lines visibly squeezing together — a sign the source is getting near.</span>
-      <span class='block'><strong>Dip after elevation</strong> — a temporary drop from an elevated plateau, often seen tens of minutes to a couple of hours before a shock arrives. A dip from quiet means nothing, but a dip <em>after</em> sustained elevation followed by a sudden climb is one of the highest-confidence "it's about to hit" patterns EPAM offers.</span>
-      <span class='block'><strong>Independent spacecraft confirm</strong> — SOLAR-1 and IMAP each get judged against their OWN 7-day quiet baseline. When one or both are independently elevated at the same time as the primary feed, the warning engine treats the signal as cross-confirmed — different hardware seeing the same physics is the strongest argument against instrument noise.</span>
-      <span class='block'><strong>Cosmic-ray decrease (Forbush)</strong> — measured by a ground neutron monitor (Oulu, Finland), not by the L1 spacecraft. When a large CME structure passes near Earth, its magnetic field sweeps away galactic cosmic rays and ground counts drop 1.5%+ below their weekly normal. This independently confirms a major structure is at our doorstep.</span></p>
+      <span class='block mt-1'><strong>Above quiet baseline (σ)</strong> - how far current flux sits above this week's quiet conditions, in robust statistical units. ~2σ is everyday wobble; 5σ+ is a genuine event; 8σ+ with a fast climb is a storm arriving.</span>
+      <span class='block'><strong>Sustained, not a glitch</strong> - how long flux has stayed elevated. Single spikes are usually instrument noise; real events persist for 30+ minutes.</span>
+      <span class='block'><strong>Multiple channels rising</strong> - whether different particle energies (47 keV up to 1.9 MeV) are rising together. Real solar events are broadband; a single channel alone is usually an artifact.</span>
+      <span class='block'><strong>Sharp rate of climb</strong> - how fast flux is changing over 15 minutes, in log units: +0.30 means it doubled, +0.60 means it quadrupled. Shock fronts produce near-vertical climbs; slow solar-wind streams do not. The <strong>Rate of Change</strong> chart view plots exactly this.</span>
+      <span class='block'><strong>Fast particles arrived first</strong> - velocity dispersion: the highest-energy particles from a fresh eruption outrun the slower ones, so the MeV channels rise hours before the keV channels. Seeing this means an eruption's particles are connecting to Earth - the earliest hint, sometimes 1–2 days before arrival.</span>
+      <span class='block'><strong>Channels converging</strong> - as a shock gets close it accelerates lower-energy particles locally, so the gap between the channel lines shrinks. On the chart this is the lines visibly squeezing together - a sign the source is getting near.</span>
+      <span class='block'><strong>Dip after elevation</strong> - a temporary drop from an elevated plateau, often seen tens of minutes to a couple of hours before a shock arrives. A dip from quiet means nothing, but a dip <em>after</em> sustained elevation followed by a sudden climb is one of the highest-confidence "it's about to hit" patterns EPAM offers.</span>
+      <span class='block'><strong>Independent spacecraft confirm</strong> - SOLAR-1 and IMAP each get judged against their OWN 7-day quiet baseline. When one or both are independently elevated at the same time as the primary feed, the warning engine treats the signal as cross-confirmed - different hardware seeing the same physics is the strongest argument against instrument noise.</span>
+      <span class='block'><strong>Cosmic-ray decrease (Forbush)</strong> - measured by a ground neutron monitor (Oulu, Finland), not by the L1 spacecraft. When a large CME structure passes near Earth, its magnetic field sweeps away galactic cosmic rays and ground counts drop 1.5%+ below their weekly normal. This independently confirms a major structure is at our doorstep.</span></p>
 
-      <p><strong>Why it matters for aurora:</strong> A CME shock arrival is the trigger event for the biggest aurora displays. When this panel reads <strong>Storm Arrival Incoming</strong> or <strong>Shock</strong>, you typically have 30–90 minutes before effects reach Earth — enough time to get out and get set up. After arrival, whether the aurora actually fires depends on the magnetic field orientation (Bz): strongly southward Bz means the storm couples into Earth's field and the show begins. So treat this panel as the "get ready" signal and Bz as the "go" signal. Elevated particles raise the <em>potential</em> for aurora; they are not a guarantee of one.</p>
+      <p><strong>Why it matters for aurora:</strong> A CME shock arrival is the trigger event for the biggest aurora displays. When this panel reads <strong>Storm Arrival Incoming</strong> or <strong>Shock</strong>, you typically have 30–90 minutes before effects reach Earth - enough time to get out and get set up. After arrival, whether the aurora actually fires depends on the magnetic field orientation (Bz): strongly southward Bz means the storm couples into Earth's field and the show begins. So treat this panel as the "get ready" signal and Bz as the "go" signal. Elevated particles raise the <em>potential</em> for aurora; they are not a guarantee of one.</p>
 
-      <p class='text-xs text-neutral-400'><strong>Advanced:</strong> The level is decided by the <em>combination</em> of signatures, never one number — magnitude, persistence, broadband agreement and rate of climb must coincide, which is what suppresses false alarms from glitches and slow stream interactions. When early-stage signatures fire (dispersion, convergence, a post-elevation dip, a Forbush decrease, or independent spacecraft confirmation), detection thresholds for the later stages are automatically lowered — the system earns extra sensitivity only when the storm sequence is genuinely under way. The score (0–100) is a continuous confidence measure behind the discrete levels.</p>
+      <p class='text-xs text-neutral-400'><strong>Advanced:</strong> The level is decided by the <em>combination</em> of signatures, never one number - magnitude, persistence, broadband agreement and rate of climb must coincide, which is what suppresses false alarms from glitches and slow stream interactions. When early-stage signatures fire (dispersion, convergence, a post-elevation dip, a Forbush decrease, or independent spacecraft confirmation), detection thresholds for the later stages are automatically lowered - the system earns extra sensitivity only when the storm sequence is genuinely under way. The score (0–100) is a continuous confidence measure behind the discrete levels.</p>
     </div>
   `,
     });
@@ -403,7 +403,7 @@ const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) =
   }, []);
 
   // Fetch a single /epam/raw source. The worker returns ok:false JSON (with
-  // CORS headers) when an explicit source has no data — treat that as "feed
+  // CORS headers) when an explicit source has no data - treat that as "feed
   // unavailable", not a hard error.
   const fetchRawSource = useCallback(async (source?: string): Promise<{points: EpamPoint[]; meta: RawMeta}|null> => {
     const url = source ? `${EPAM_BASE}/epam/raw?source=${source}` : `${EPAM_BASE}/epam/raw`;
@@ -425,9 +425,9 @@ const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) =
     if (!mountedRef.current) return;
     try {
       const [rActive,rSolar1,rImap,rStereo,rAnalysis,rCombined,rSw,rNm] = await Promise.allSettled([
-        fetchRawSource('ace'),         // explicit ACE — avoids blended "active" feed jumps
-        fetchRawSource('solar1'),  // explicit — no silent fallback
-        fetchRawSource('imap'),    // explicit, optional — fails soft
+        fetchRawSource('ace'),         // explicit ACE - avoids blended "active" feed jumps
+        fetchRawSource('solar1'),  // explicit - no silent fallback
+        fetchRawSource('imap'),    // explicit, optional - fails soft
         fetch(`${EPAM_BASE}/epam/stereo`).then(r=>r.ok?r.json():null),
         fetch(`${EPAM_BASE}/epam/analysis`).then(r=>r.ok?r.json():null),
         fetch(`${EPAM_BASE}/epam/combined`).then(r=>r.ok?r.json():null),
@@ -503,7 +503,7 @@ const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) =
 
   // Robust early-warning analysis. Built from the FULL primary L1 history
   // available (the whole week), independent of the chart's time-range
-  // selector — the baseline must always see the full week to know what
+  // selector - the baseline must always see the full week to know what
   // "quiet" looks like.
   const activeSamples = useMemo(
     () => toEpamSamples(activeRaw as any, WARN_CHANNELS, parseUTC),
@@ -521,7 +521,7 @@ const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) =
   // Independent confirmation inputs for the warning engine. Each source is
   // judged against its OWN 7-day baseline inside computeEpamWarning. If the
   // primary feed silently fell back to one of these spacecraft, that source
-  // is excluded — a spacecraft cannot confirm itself.
+  // is excluded - a spacecraft cannot confirm itself.
   const confirmInputs = useMemo((): EpamConfirmationInput[] => {
     const primaryKey = activeMeta?.sourceKey ?? 'active';
     const list: EpamConfirmationInput[] = [];
@@ -624,7 +624,7 @@ const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) =
           y: geoMeanRow([p.p1, p.p3, p.p5, p.p7, p.p8]),
         })).filter(d => d.y !== null && d.y > 0));
         const lbl = activeMeta?.fallbackUsed
-          ? `L1 primary — ${activeMeta.sourceLabel} fallback (avg)`
+          ? `L1 primary - ${activeMeta.sourceLabel} fallback (avg)`
           : `${activeMeta?.sourceLabel ?? 'L1 primary'} (avg all channels)`;
         datasets.push({ label: lbl, borderColor: '#60a5fa', backgroundColor: '#60a5fa20', borderWidth: 2, pointRadius: 0, tension: 0.2, spanGaps: true, data: pts });
       }
@@ -710,7 +710,7 @@ const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) =
   }, [view]);
 
   // Hide the IMAP view button when the feed is genuinely absent (the worker
-  // treats IMAP as optional — it may not exist in the HAPI catalog yet).
+  // treats IMAP as optional - it may not exist in the HAPI catalog yet).
   const visibleViews = useMemo(
     () => VIEWS.filter(v => v.key !== 'imap-raw' || imapAvailable || imapRaw.length > 0),
     [imapAvailable, imapRaw],
@@ -747,7 +747,7 @@ const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) =
         </div>
       </div>
 
-      {/* Early-warning banner — robust full-week L1 baseline (client-side),
+      {/* Early-warning banner - robust full-week L1 baseline (client-side),
           with independent SOLAR-1 / IMAP cross-spacecraft confirmation folded
           in by the warning engine itself. One combined box. */}
       {loading ? (
@@ -795,14 +795,14 @@ const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) =
                     <p key={c.key} className="text-xs text-neutral-500">
                       {c.label}:{' '}
                       {!c.available ? (
-                        <span className="text-neutral-600">no fresh data — cannot confirm</span>
+                        <span className="text-neutral-600">no fresh data - cannot confirm</span>
                       ) : c.elevated ? (
                         <span className="text-orange-400">
-                          also elevated — independently confirms activity
+                          also elevated - independently confirms activity
                           {c.sigma !== null && <span className="text-neutral-600 font-mono"> ({c.sigma.toFixed(1)}σ, {c.channelsRising} ch)</span>}
                         </span>
                       ) : (
-                        <span className="text-green-400">quiet — not yet confirmed</span>
+                        <span className="text-green-400">quiet - not yet confirmed</span>
                       )}
                     </p>
                   ))}
@@ -814,7 +814,7 @@ const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) =
 
               {d.usableHours < EPAM_WARN_CONFIG.BASELINE_HOURS * 0.5 && (
                 <p className="text-[11px] text-amber-400/80 mt-1.5">
-                  ⚠ Only {Math.round(d.usableHours)}h of history available — baseline still settling, treat levels as provisional.
+                  ⚠ Only {Math.round(d.usableHours)}h of history available - baseline still settling, treat levels as provisional.
                 </p>
               )}
             </div>
@@ -917,7 +917,7 @@ const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) =
 
       {/* Footer */}
       <p className="text-xs text-neutral-700 mt-4 pt-3 border-t border-neutral-800 leading-relaxed">
-        Rising particle levels are a heads-up, not a guarantee — aurora depends on the solar wind direction when the storm arrives. ·{' '}
+        Rising particle levels are a heads-up, not a guarantee - aurora depends on the solar wind direction when the storm arrives. ·{' '}
         <a href="https://www.swpc.noaa.gov" className="text-neutral-600 hover:text-sky-400" target="_blank" rel="noopener noreferrer">NOAA SWPC</a>
       </p>
     </div>

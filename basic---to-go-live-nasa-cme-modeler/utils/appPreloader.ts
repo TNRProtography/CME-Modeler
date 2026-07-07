@@ -1,4 +1,4 @@
-// Worker base URLs — must match SolarActivityDashboard constants exactly
+// Worker base URLs - must match SolarActivityDashboard constants exactly
 const CORONAGRAPHY_WORKER_BASE = 'https://coronagraphy-processing.thenamesrock.workers.dev';
 const SUVI_DIFF_WORKER_BASE = 'https://suvi-difference-imagery.thenamesrock.workers.dev';
 
@@ -17,7 +17,7 @@ const preloadBundles = [
   () => import('../components/ImpactGraphModal'),
 ];
 
-// Module-level cache for worker state — fetches start at app init (during the
+// Module-level cache for worker state - fetches start at app init (during the
 // loading screen) so SolarActivityDashboard can await an already-in-flight
 // promise instead of starting a cold fetch after the loader dismisses.
 export const workerStatePreload: {
@@ -38,7 +38,7 @@ export const startAppPreload = () => {
     fetch(url, { method: 'GET', cache: 'force-cache' }).catch(() => undefined);
   });
 
-  // Kick off worker state fetches immediately — fire and forget, but store the
+  // Kick off worker state fetches immediately - fire and forget, but store the
   // promise so SolarActivityDashboard can consume it without a duplicate request.
   // These do NOT block the loading screen; they run in parallel with everything else.
   workerStatePreload.coronagraph = fetch(`${CORONAGRAPHY_WORKER_BASE}/api/state`, { cache: 'no-store' })

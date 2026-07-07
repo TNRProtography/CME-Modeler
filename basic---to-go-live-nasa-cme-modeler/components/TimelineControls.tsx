@@ -57,7 +57,7 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
   isVisible, isPlaying, onPlayPause, onScrub, scrubberValue, onStepFrame,
   playbackSpeed, onSetSpeed, minDate, maxDate, onOpenImpactGraph
 }) => {
-  // useState lazy initializer runs synchronously on first render — unlike useEffect,
+  // useState lazy initializer runs synchronously on first render - unlike useEffect,
   // there is NO first-render null gap that can cause the component to stay hidden.
   // The DOM always has #timeline-portal available (defined in index.html before React boots).
   // Falls back to document.body if somehow not found.

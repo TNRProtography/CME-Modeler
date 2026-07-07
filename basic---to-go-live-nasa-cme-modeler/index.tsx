@@ -9,7 +9,7 @@ import './styles.css';
 // has a full session history available from the first page load.
 initLogCapture();
 
-// Chart.js is NOT registered here — it is registered lazily inside ForecastDashboard
+// Chart.js is NOT registered here - it is registered lazily inside ForecastDashboard
 // and SolarActivityDashboard via chartSetup.ts, so it never loads on the CME modeler
 // page or on initial boot before any charts are rendered.
 

@@ -1,6 +1,6 @@
 // utils/analytics.ts
 //
-// Thin wrapper around gtag.js — lives at the utility layer so analytics calls
+// Thin wrapper around gtag.js - lives at the utility layer so analytics calls
 // sit next to the business logic that owns them, not in UI components.
 //
 // Rules:
@@ -144,7 +144,7 @@ export const trackForecastViewSwitched = (
   trackEvent('forecast_view_switched', { from, to });
 };
 
-/** Modeler (CME viz) overlay opened — one event, slug param identifies which. */
+/** Modeler (CME viz) overlay opened - one event, slug param identifies which. */
 export const trackCmeVizOverlayOpened = (slug: string): void => {
   // Map common slugs to specific events for easier GA4 dashboards, fall back
   // to a generic event+slug for everything else.
@@ -161,7 +161,7 @@ export const trackCmeVizOverlayOpened = (slug: string): void => {
   trackEvent(eventName, eventName === 'cme_viz_overlay_opened' ? { slug } : undefined);
 };
 
-/** Solar dashboard modal opened — one event per session, slug varies. */
+/** Solar dashboard modal opened - one event per session, slug varies. */
 export const trackSolarDashboardModalOpened = (slug: string): void => {
   trackEvent('solar_dashboard_modal_opened', { slug });
 };
@@ -222,7 +222,7 @@ export const trackCmeVizFilterChanged = (filter: string): void => {
 };
 
 export const trackCmeSelected = (): void => {
-  // Don't pass CME id — they rotate quickly and add no value as a dimension.
+  // Don't pass CME id - they rotate quickly and add no value as a dimension.
   trackEvent('cme_viz_cme_selected');
 };
 
@@ -252,7 +252,7 @@ export const trackPwaInstalled = (): void => {
   trackEvent('pwa_installed');
 };
 
-// --- Settings changes (sparse — only things worth knowing) ----------------
+// --- Settings changes (sparse - only things worth knowing) ----------------
 
 export const trackDefaultPageChanged = (page: MainPage): void => {
   trackEvent('default_page_changed', { page });
@@ -264,7 +264,7 @@ const ENABLED_AT_KEY = 'sta_notifications_enabled_at';
 
 export const markNotificationsEnabled = (): void => {
   try {
-    // Only set if not already set — we want first-enable time, not last.
+    // Only set if not already set - we want first-enable time, not last.
     if (!localStorage.getItem(ENABLED_AT_KEY)) {
       localStorage.setItem(ENABLED_AT_KEY, String(Date.now()));
     }

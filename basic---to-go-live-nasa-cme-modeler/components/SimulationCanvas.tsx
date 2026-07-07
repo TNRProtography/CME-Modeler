@@ -69,7 +69,7 @@ const CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD = CH_HSS_LONGITUDE_VISUAL_OFFSET_DEG * 
 //  SOUTHWARD Bz (uBzSouth = 1.0):
 //    • Color: RED   (#ff4422)
 //    • Flow arrows travel DOWNWARD (toward Sun / anti-parallel to Earth's field)
-//    • HIGH storm potential — magnetic reconnection drives aurora
+//    • HIGH storm potential - magnetic reconnection drives aurora
 //
 //  Blue/red is standard heliophysics convention for Bz polarity.
 // ============================================================
@@ -111,8 +111,8 @@ const BZ_FIELD_LINE_FRAGMENT_SHADER = `
   varying float vArrow;
 
   void main() {
-    vec3 northColor = vec3(0.27, 0.53, 1.0);   // #4488ff — blue
-    vec3 southColor = vec3(1.0,  0.27, 0.13);   // #ff4422 — red
+    vec3 northColor = vec3(0.27, 0.53, 1.0);   // #4488ff - blue
+    vec3 southColor = vec3(1.0,  0.27, 0.13);   // #ff4422 - red
     vec3 col = mix(northColor, southColor, uBzSouth);
 
     // Boost brightness at the animated pulse peak
@@ -156,7 +156,7 @@ const BZ_INDICATOR_FRAGMENT_SHADER = `
     // Arrow shaft (vertical centre strip)
     float shaft = step(abs(p.x), 0.10) * step(abs(p.y), 0.58);
 
-    // Arrowhead — points UP for north (+Y), DOWN for south (-Y)
+    // Arrowhead - points UP for north (+Y), DOWN for south (-Y)
     float arrowDir  = uBzSouth > 0.5 ? -1.0 : 1.0;
     float headY     = arrowDir * 0.58;
     float headDist  = arrowDir * (p.y - headY);
@@ -166,7 +166,7 @@ const BZ_INDICATOR_FRAGMENT_SHADER = `
     float arrow = clamp(shaft + head, 0.0, 1.0);
     float pulse = 0.78 + 0.22 * sin(uTime * 2.5);
 
-    // NO dark disc background — arrow only, fully transparent elsewhere
+    // NO dark disc background - arrow only, fully transparent elsewhere
     // Soft glow halo just behind the arrow so it reads against the CME
     float glow = smoothstep(0.5, 0.0, dist) * 0.18 * arrow;
 
@@ -271,12 +271,12 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 //
 //  Creates one helical Points object for field line `lineIndex`.
 //  The helix wraps around the GCS croissant arc tube in normalised
-//  local space — the same space as the CME particle geometry.
+//  local space - the same space as the CME particle geometry.
 //
 //  Each point carries custom attributes used by the vertex shader:
-//    aAlong — normalised arc position [0..1] (drives animation travel)
-//    aAngle — current angle around the tube cross-section
-//    aPhase — per-line phase offset (staggers the animated pulses)
+//    aAlong - normalised arc position [0..1] (drives animation travel)
+//    aAngle - current angle around the tube cross-section
+//    aPhase - per-line phase offset (staggers the animated pulses)
 // ============================================================
 const buildBzFieldLineGeometry = (THREE: any, lineIndex: number) => {
   const positions: number[] = [];
@@ -296,7 +296,7 @@ const buildBzFieldLineGeometry = (THREE: any, lineIndex: number) => {
     const s = i / (BZ_FIELD_LINE_POINTS - 1);           // [0..1] along arc
     const t = (s * 2 - 1) * halfSpan;                   // arc parameter
 
-    // Arc centreline (identical formula to particle geometry — belly faces +Y)
+    // Arc centreline (identical formula to particle geometry - belly faces +Y)
     const cx = arcR * Math.sin(t);
     const cy = arcR * (Math.cos(t) - 1);
     const cz = 0;
@@ -356,16 +356,16 @@ interface SimulationCanvasProps {
   showExtraPlanets: boolean;
   showMoonL1: boolean;
   showFluxRope: boolean;
-  /** true = southward Bz (RED — high storm risk), false = northward (BLUE — low risk) */
+  /** true = southward Bz (RED - high storm risk), false = northward (BLUE - low risk) */
   bzSouth?: boolean;
   /** Whether the Parker-spiral HSS stream arms are visible */
   showHss: boolean;
-  /** Live coronal holes from SUVI detector — rebuilt whenever this changes */
+  /** Live coronal holes from SUVI detector - rebuilt whenever this changes */
   coronalHoles: CoronalHole[];
   /** SUVI analysis time for the current CH detections (ms since epoch) */
   chDetectedAtMs?: number | null;
   /** 72h CH evolution tracks from worker history */
-  chEvolutions?: CHEvolution[]; // kept for API compatibility — CH shape is now always current detection
+  chEvolutions?: CHEvolution[]; // kept for API compatibility - CH shape is now always current detection
   dataVersion: number;
   interactionMode: InteractionMode;
   onSunClick?: () => void;
@@ -405,8 +405,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const bzIndicatorRef  = useRef<any>(null);
 
   // ── Coronal Hole / HSS refs ───────────────────────────────────────────────
-  // chGroupRef  — parented to sunMesh; patches rotate with the sun for free
-  // hssGroupRef — world-space Parker spiral arms; vertex shader rotates per frame
+  // chGroupRef  - parented to sunMesh; patches rotate with the sun for free
+  // hssGroupRef - world-space Parker spiral arms; vertex shader rotates per frame
   const chGroupRef     = useRef<any>(null);
   const hssGroupRef    = useRef<any>(null);
   const hssAuRingsRef  = useRef<any>(null);
@@ -428,7 +428,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   // spacecraft (ACE, DSCOVR, SWFO-L1, IMAP) locked to the Sun–Earth line as the
   // user scrubs the timeline, instead of leaving them frozen in world space.
   // For heliocentric spacecraft (SolO, STEREO-A) this is an approximation that
-  // degrades slowly — far better than keeping them stationary.
+  // degrades slowly - far better than keeping them stationary.
   const spacecraftOffsetsRef = useRef<Record<string, { dx:number; dy:number; dz:number; snapEarthLon:number; meshName:string; isL1?:boolean; l1Lateral?:number; l1Vertical?:number }>>({});
 
   // ── CME–CME collision tracking ───────────────────────────────────────────
@@ -437,14 +437,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   // (Lugaz et al. 2017; Gopalswamy et al. 2001 cannibalism).
   // Reading from previous frame avoids order-dependent artefacts.
   const cmeFrameStatesRef = useRef<Map<string, {
-    position: any;      // THREE.Vector3 — world position
-    dir: any;           // THREE.Vector3 — propagation unit direction
+    position: any;      // THREE.Vector3 - world position
+    dir: any;           // THREE.Vector3 - propagation unit direction
     dist: number;       // scene-units distance from Sun centre
     speed: number;      // km/s eruption speed
     halfAngle: number;  // degrees
     latitude: number;
     longitude: number;
-    scale: any;         // THREE.Vector3 — current mesh scale
+    scale: any;         // THREE.Vector3 - current mesh scale
   }>>(new Map());
 
   const timelineValueRef    = useRef(timelineValue);
@@ -486,7 +486,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         document.head.appendChild(s);
       });
 
-    // OrbitControls must come after Three.js — load sequentially
+    // OrbitControls must come after Three.js - load sequentially
     return loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js')
       .then(() => loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js'))
       .then(() => loadScript('https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/gsap.min.js'))
@@ -542,7 +542,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       return ((u_kms * t_s) + (0.5 * a_kms2 * t_s * t_s)) / AU_IN_KM * SCENE_SCALE;
     }
 
-    // Decelerating CME — find when it hits the floor speed then coast
+    // Decelerating CME - find when it hits the floor speed then coast
     const time_to_floor_s = (MIN_CME_SPEED_KMS - u_kms) / a_kms2;
 
     if (t_s < time_to_floor_s) {
@@ -561,7 +561,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     return Math.min(1, timeSinceEventSeconds / total) * (PLANET_DATA_MAP.EARTH.radius / SCENE_SCALE) * SCENE_SCALE;
   }, []);
 
-  // ── updateCMEShape — angular GCS expansion + tail + live colour ───────────
+  // ── updateCMEShape - angular GCS expansion + tail + live colour ───────────
   const updateCMEShape = useCallback((cmeObject: any, distTraveledInSceneUnits: number, timeSinceEventSeconds?: number) => {
     const THREE = (window as any).THREE;
     if (!THREE) return;
@@ -622,7 +622,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const rebound = hssPressure > 0.08
       ? Math.max(0, Math.sin((timeSinceEventSeconds ?? 0) * 0.012)) * sunRadius * (rerunHssInteraction ? 0.18 : 0.10) * hssPressure
       : 0;
-    // In re-run mode, HSS acts as a hard barrier — much stronger holdback
+    // In re-run mode, HSS acts as a hard barrier - much stronger holdback
     const holdbackFactor = rerunHssInteraction ? 0.55 : 0.30;
     let heldDist = Math.max(0, dist * (1 - holdbackFactor * hssPressure) - rebound);
 
@@ -639,24 +639,24 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     //  When a fast CME overtakes a slower preceding CME, the interaction
     //  proceeds through several stages:
     //
-    //  1. SHEATH COMPRESSION — the fast CME's driven sheath compresses
+    //  1. SHEATH COMPRESSION - the fast CME's driven sheath compresses
     //     against the slow CME's trailing magnetic ejecta. Plasma piles up
     //     at the interface; neither structure can simply phase through the
     //     other because the magnetic pressure of the ejecta acts as a
     //     barrier (Manchester et al. 2017, Space Sci. Rev. 212:1159).
     //
-    //  2. MOMENTUM EXCHANGE — the interaction is approximately an inelastic
+    //  2. MOMENTUM EXCHANGE - the interaction is approximately an inelastic
     //     collision. The fast CME decelerates while the slow CME accelerates.
     //     Gopalswamy et al. (2001, ApJ 548:L91) showed merged speed follows:
     //       v_merged ≈ (m1·v1 + m2·v2) / (m1 + m2)
     //     Since mass ∝ v² (kinetic energy proxy), faster CMEs dominate.
     //
-    //  3. LATERAL DEFLECTION — when angular separation > 0 but < combined
+    //  3. LATERAL DEFLECTION - when angular separation > 0 but < combined
     //     half-widths, the CMEs deflect away from each other
     //     (Shen et al. 2012, Solar Phys. 269:389). The deflection angle
     //     depends on the relative momentum and angular overlap.
     //
-    //  4. CANNIBALIZATION — if a fast CME fully engulfs a slow one, the
+    //  4. CANNIBALIZATION - if a fast CME fully engulfs a slow one, the
     //     result is a "complex ejecta" with disordered Bz, enhanced density,
     //     and intermediate speed (Burlaga et al. 2002, J. Geophys. Res.).
     //     The consumed CME fades from view (handled by propagation engine).
@@ -691,7 +691,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const hav2 = sdLat * sdLat + Math.cos(lat1R) * Math.cos(lat2R) * sdLon * sdLon;
         const angSep = THREE.MathUtils.radToDeg(2 * Math.asin(Math.min(1, Math.sqrt(Math.max(0, hav2)))));
 
-        // Combined interaction cone — CMEs interact when their half-widths overlap
+        // Combined interaction cone - CMEs interact when their half-widths overlap
         const combinedCone = (thisHalfAngle + (other.halfAngle ?? 30)) * 0.7;
         if (angSep >= combinedCone) return;
 
@@ -806,7 +806,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const frontColor = getCmeCoreColor(Math.max(MIN_CME_SPEED_KMS, frontVisualSpeed));
       cmeObject.material.color.copy(frontColor);
       if (tailMesh?.material) {
-        // Tail is further decelerated — 40% ahead of the front on the curve
+        // Tail is further decelerated - 40% ahead of the front on the curve
         const tailFrac = Math.min(1, distFrac + 0.4);
         const tailVisualSpeed = cme.speed + (floorSpeed - cme.speed) * tailFrac;
         const tailColor = getCmeCoreColor(Math.max(MIN_CME_SPEED_KMS, tailVisualSpeed));
@@ -831,7 +831,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(75, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.001 * SCENE_SCALE, 120 * SCENE_SCALE);
-    // Initial camera — place directly behind Earth (Sun → Earth → Camera)
+    // Initial camera - place directly behind Earth (Sun → Earth → Camera)
     // using today's Earth longitude. This matches the SIDE+EARTH view that
     // moveCamera animates to, avoiding a first-frame flash from the old
     // hard-coded position which could put the camera on the opposite side
@@ -885,7 +885,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     cmeGroupRef.current = new THREE.Group(); scene.add(cmeGroupRef.current);
 
-    // Legacy torus — kept for import compatibility, hidden by default
+    // Legacy torus - kept for import compatibility, hidden by default
     const fluxRopeMat = new THREE.ShaderMaterial({
       vertexShader: FLUX_ROPE_VERTEX_SHADER, fragmentShader: FLUX_ROPE_FRAGMENT_SHADER,
       uniforms: { uTime: { value: 0 }, uTexture: { value: createArrowTexture(THREE) }, uColor: { value: new THREE.Color(0xffffff) } },
@@ -944,7 +944,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     sunMeshRef.current = sunMesh;
     celestialBodiesRef.current['SUN'] = { mesh: sunMesh, name: 'Sun', labelId: 'sun-label' };
 
-    // Photosphere overlay — child of sunMesh so it rotates with the sun
+    // Photosphere overlay - child of sunMesh so it rotates with the sun
     const sunPhoto = new THREE.Mesh(
       new THREE.SphereGeometry(PLANET_DATA_MAP.SUN.size * 1.001, 64, 64),
       new THREE.MeshBasicMaterial({ map: tex.sunPhoto, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })
@@ -1016,7 +1016,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       planetLabelInfos.push({ id: data.labelElementId, name: data.name, mesh: pm });
       if (name === 'EARTH') {
         pm.material = new THREE.MeshPhongMaterial({ map: tex.earthDay, normalMap: tex.earthNormal, specularMap: tex.earthSpec, specular: new THREE.Color(0x111111), shininess: 6 });
-        // Axial tilt — Earth's spin axis tilts 23.44° toward ecliptic north.
+        // Axial tilt - Earth's spin axis tilts 23.44° toward ecliptic north.
         // We tilt the mesh around the X axis so the poles point in the right direction.
         pm.rotation.z = EARTH_TILT_RAD;
         // Initial sidereal rotation so prime meridian faces the correct direction.
@@ -1049,7 +1049,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     });
 
     // ── Spacecraft markers ────────────────────────────────────────────────────
-    // SolO, STEREO-A, ACE, DSCOVR, IMAP, SWFO-L1 — small glowing tetrahedra.
+    // SolO, STEREO-A, ACE, DSCOVR, IMAP, SWFO-L1 - small glowing tetrahedra.
     // Positions are fetched from the solo-worker and updated in a useEffect.
     const scGroup = new THREE.Group(); scGroup.name = 'spacecraft'; scene.add(scGroup);
     spacecraftGroupRef.current = scGroup;
@@ -1060,7 +1060,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       .then(data => {
         if (!data?.ok || !data.positions) return;
         const { positions } = data;
-        // Snapshot time — when the worker computed these positions. If the
+        // Snapshot time - when the worker computed these positions. If the
         // worker returns a `time` field (ISO string or ms), use it; otherwise
         // fall back to now, which is what the worker normally computes for.
         const snapTimeMs = (() => {
@@ -1085,7 +1085,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         // L1 point; for those, we ignore the worker's absolute heliocentric
         // position and instead place them on the visual Earth-to-Sun line at
         // the same exaggerated distance used by the L1 POI marker (~15M km,
-        // about 10× true L1 — chosen by the app for visibility). Each L1
+        // about 10× true L1 - chosen by the app for visibility). Each L1
         // spacecraft also gets a tiny lateral + vertical offset so their
         // markers and labels don't all stack on top of each other.
         // `l1Lateral` is in scene units, perpendicular to the Earth-Sun line
@@ -1095,7 +1095,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const SPACECRAFT_DEF: Array<{key:string;name:string;color:number;size:number;isL1?:boolean;l1Lateral?:number;l1Vertical?:number}> = [
           { key:'solo',    name:'SolO',     color:0xf97316, size:0.018 * SCENE_SCALE },
           { key:'stereoA', name:'STEREO-A', color:0xa78bfa, size:0.014 * SCENE_SCALE },
-          // L1 cluster — spread them slightly so labels are readable.
+          // L1 cluster - spread them slightly so labels are readable.
           { key:'ace',     name:'ACE',      color:0x34d399, size:0.012 * SCENE_SCALE, isL1:true, l1Lateral: -0.018 * SCENE_SCALE, l1Vertical:  0.010 * SCENE_SCALE },
           { key:'dscovr',  name:'DSCOVR',   color:0x67e8f9, size:0.012 * SCENE_SCALE, isL1:true, l1Lateral:  0.018 * SCENE_SCALE, l1Vertical:  0.010 * SCENE_SCALE },
           { key:'imap',    name:'IMAP',     color:0xf0abfc, size:0.012 * SCENE_SCALE, isL1:true, l1Lateral: -0.018 * SCENE_SCALE, l1Vertical: -0.010 * SCENE_SCALE },
@@ -1104,13 +1104,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         // Clear any previously-placed markers
         while (scGroup.children.length > 0) scGroup.remove(scGroup.children[0]);
         spacecraftOffsetsRef.current = {};
-        planetLabelInfos.filter(l => l.id.startsWith('sc-')).length; // noop — labels added below
+        planetLabelInfos.filter(l => l.id.startsWith('sc-')).length; // noop - labels added below
         const scLabelInfos: PlanetLabelInfo[] = [];
         SPACECRAFT_DEF.forEach(({ key, name, color, size, isL1, l1Lateral, l1Vertical }) => {
           const meshName = `sc-${key}`;
 
           if (isL1) {
-            // L1 spacecraft — ignore worker absolute position. Place at the
+            // L1 spacecraft - ignore worker absolute position. Place at the
             // visual L1 distance sunward of Earth with small lateral/vertical
             // offsets so the cluster doesn't collapse into one pixel. The
             // animation loop will re-anchor to Earth each frame.
@@ -1155,7 +1155,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             return;
           }
 
-          // Non-L1 spacecraft (SolO, STEREO-A) — use the worker's heliocentric
+          // Non-L1 spacecraft (SolO, STEREO-A) - use the worker's heliocentric
           // position and rotate its Earth-relative offset with Earth's orbit
           // each frame.
           const pos = positions[key]; if (!pos?.x && pos?.x !== 0) return;
@@ -1182,7 +1182,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
         setPlanetMeshesForLabels([...planetLabelInfos, ...scLabelInfos]);
       })
-      .catch(() => {/* worker unavailable — spacecraft markers silently absent */});
+      .catch(() => {/* worker unavailable - spacecraft markers silently absent */});
 
     setPlanetMeshesForLabels(planetLabelInfos);
 
@@ -1279,7 +1279,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         chGroupRef.current.rotation.y = chHssPhase;
       }
 
-      // ── HSS Parker spiral — visibility + per-frame uniform updates ────────
+      // ── HSS Parker spiral - visibility + per-frame uniform updates ────────
       if (hssGroupRef.current) {
         hssGroupRef.current.visible = showHss;
         hssGroupRef.current.rotation.y = chHssPhase;
@@ -1303,7 +1303,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           0,
           earthData.radius * Math.cos(earthLon)
         );
-        // ── Real axial tilt (fixed — the tilt is baked into rotation.z at init)
+        // ── Real axial tilt (fixed - the tilt is baked into rotation.z at init)
         // ── Real sidereal rotation (GMST drives rotation.y) ─────────────────
         // Earth spins ~360° per sidereal day. GMST gives the absolute angle of
         // the prime meridian relative to the J2000 vernal equinox direction.
@@ -1315,7 +1315,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         }
         e.children.forEach((ch: any) => { if (ch.material?.uniforms?.uTime) ch.material.uniforms.uTime.value = elapsedTime; });
 
-        // ── Moon position — geocentric angle relative to Earth ───────────────
+        // ── Moon position - geocentric angle relative to Earth ───────────────
         const moon = celestialBodiesRef.current['MOON'];
         if (moon) {
           const moonAngle = computeMoonSceneAngle(simulationTimeMs);
@@ -1340,7 +1340,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       // Earth's longitude between snapshot time and simulation time, then
       // re-anchor it to Earth's current scene position.
       //
-      // For L1 spacecraft this is essentially exact — L1 is on the Sun–Earth
+      // For L1 spacecraft this is essentially exact - L1 is on the Sun–Earth
       // line by construction, so rotating the offset with Earth's orbit keeps
       // them locked in place relative to Earth. For heliocentric spacecraft
       // (SolO, STEREO-A) it's an approximation, but far better than leaving
@@ -1414,7 +1414,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         });
       }
 
-      // Legacy torus hidden — superseded by Bz field lines
+      // Legacy torus hidden - superseded by Bz field lines
       if (fluxRopeRef.current) { fluxRopeRef.current.visible = false; fluxRopeRef.current.material.uniforms.uTime.value = elapsedTime; }
 
       // ── Bz field lines ───────────────────────────────────────────────────────
@@ -1515,12 +1515,12 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       // 60% of lateral scale → backDepth = 0.60 * arcR in normalised units.
       // Density falls off toward the tail so it looks like a tear, not a box.
 
-      const backDepthFrac = 0.70; // tail extends only 70% of arcR behind the arc — prevents particles going through the sun
+      const backDepthFrac = 0.70; // tail extends only 70% of arcR behind the arc - prevents particles going through the sun
       // Split particles: ~65% in the main croissant arc, ~35% in the tail depth
       const mainCount = Math.floor(pCount * 0.65);
       const tailCount = pCount - mainCount;
 
-      // Main arc particles — stadium/pill profile: full thickness body with rounded caps at the tips.
+      // Main arc particles - stadium/pill profile: full thickness body with rounded caps at the tips.
       for (let i = 0; i < mainCount; i++) {
         const t  = (Math.random() * 2 - 1) * hs;
         const cx = arcR * Math.sin(t), cy = arcR * (Math.cos(t) - 1);
@@ -1535,7 +1535,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           // Slight front-to-back thickness gradient so it still reads as a CME
           taper = 1.0 - 0.18 * (tNorm / capStart);
         } else {
-          // Semicircular cap — radius follows sqrt(1 - u²) for a true round end
+          // Semicircular cap - radius follows sqrt(1 - u²) for a true round end
           const u = (tNorm - capStart) / (1.0 - capStart);
           taper = 0.82 * Math.sqrt(Math.max(0, 1 - u * u));
         }
@@ -1547,7 +1547,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         pos.push(cx + rho * Math.cos(phi) * Nx, cy + rho * Math.cos(phi) * Ny, rho * Math.sin(phi));
       }
 
-      // Tail particles — converge toward a single apex so whole CME reads teardrop.
+      // Tail particles - converge toward a single apex so whole CME reads teardrop.
       // Clamped so no particle travels back through the sun (local Y must stay >= 0).
       for (let i = 0; i < tailCount; i++) {
         const t  = (Math.random() * 2 - 1) * hs;
@@ -1573,7 +1573,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         const phi   = Math.random() * 2 * Math.PI;
 
         const py = tailCy + rho * Math.cos(phi) * Ny + depthY;
-        // Hard clamp — no particle goes behind the sun (local Y = 0 is the sun centre)
+        // Hard clamp - no particle goes behind the sun (local Y = 0 is the sun centre)
         if (py < 0) continue;
         pos.push(
           tailCx + rho * Math.cos(phi) * Nx,
@@ -1854,7 +1854,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       // ── Pre-compute HSS arrival windows ────────────────────────────────
       // Travel time from Sun to Earth at HSS speed.
-      // Density (SIR) peaks 18h BEFORE the speed rise — the compressed slow
+      // Density (SIR) peaks 18h BEFORE the speed rise - the compressed slow
       // wind piles up ahead of the fast stream.
       interface HSSWindow {
         speedStartMs:   number; // when fast wind arrives
@@ -1929,7 +1929,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         // Density peaks in the SIR ahead of the speed rise, then drops.
         // Speed rises as the fast stream arrives.
         hssWindows.forEach(hss => {
-          // SIR density — Gaussian-ish peak centred on densityPeakMs
+          // SIR density - Gaussian-ish peak centred on densityPeakMs
           if (ct >= hss.densityPeakMs - 24 * 3600 * 1000 && ct <= hss.densityEndMs) {
             let densProfile = 0;
             if (ct < hss.densityPeakMs) {

@@ -99,7 +99,7 @@ function locationAdjustedScore(
   //              negative = user is poleward (south) of vis line = can see
   const distFromVis = userGmag - visHorizon;
   if (distFromVis <= 0) {
-    // User is within or past the visibility horizon — no adjustment needed
+    // User is within or past the visibility horizon - no adjustment needed
     return rawScore;
   }
   // User is north of visibility line. Scale score down based on how far.
@@ -133,22 +133,22 @@ function getVisibilityPhrase(
   } else if (phoneConfirmed) {
     subtext = `${sightingContext!.phoneCount} ${sightingContext!.phoneCount === 1 ? 'person nearby has' : 'people nearby have'} spotted it on their phone camera`;
   } else if (nothingReported) {
-    subtext = `${sightingContext!.nothingCount} people nearby have checked — nothing visible yet`;
+    subtext = `${sightingContext!.nothingCount} people nearby have checked - nothing visible yet`;
   } else if (hasSightings && sightingContext!.total > 0) {
     subtext = `${sightingContext!.total} report${sightingContext!.total > 1 ? 's' : ''} coming in from people nearby`;
   }
 
   if (projectedScore >= 80) {
     const phrase = confidence === 'high'
-      ? 'Go outside now — this could be one of the best displays in years'
+      ? 'Go outside now - this could be one of the best displays in years'
       : confidence === 'medium'
-      ? 'Conditions look exceptional — well worth heading out to have a look'
-      : 'Could turn into something special — keep a close eye on this';
+      ? 'Conditions look exceptional - well worth heading out to have a look'
+      : 'Could turn into something special - keep a close eye on this';
     return { phrase, icon: '👁️', subtext };
   }
   if (projectedScore >= 65) {
     const phrase = confidence === 'high'
-      ? 'You should be able to see it with your own eyes — look south'
+      ? 'You should be able to see it with your own eyes - look south'
       : confidence === 'medium'
       ? 'Good chance of seeing it with your own eyes in a dark spot'
       : 'Might be visible with your own eyes if conditions stay this way';
@@ -156,42 +156,42 @@ function getVisibilityPhrase(
   }
   if (projectedScore >= 50) {
     const phrase = confidence === 'high'
-      ? 'A faint green glow should be visible to the south — find somewhere dark'
+      ? 'A faint green glow should be visible to the south - find somewhere dark'
       : confidence === 'medium'
-      ? 'A faint glow to the south is possible — get away from street lights'
+      ? 'A faint glow to the south is possible - get away from street lights'
       : 'Might just be visible to the eye if you find somewhere dark enough';
     return { phrase, icon: '👁️', subtext };
   }
   if (projectedScore >= 35) {
     const phrase = confidence === 'high'
-      ? 'Your phone camera will pick it up — point it south and take a photo'
+      ? 'Your phone camera will pick it up - point it south and take a photo'
       : confidence === 'medium'
-      ? 'Worth taking a photo to the south — your phone may surprise you'
+      ? 'Worth taking a photo to the south - your phone may surprise you'
       : 'Your phone camera might pick something up if conditions improve';
     return { phrase, icon: '📱', subtext };
   }
   if (projectedScore >= 20) {
     const phrase = confidence === 'high'
-      ? 'Very faint — only a long-exposure camera shot would show anything'
+      ? 'Very faint - only a long-exposure camera shot would show anything'
       : confidence === 'medium'
-      ? 'Very faint if anything — not worth going out specially'
+      ? 'Very faint if anything - not worth going out specially'
       : 'Unlikely to show up even on camera at this stage';
     return { phrase, icon: '📷', subtext };
   }
 
   const phrase = confidence === 'high'
-    ? 'Nothing to see — the sky will look completely normal right now'
+    ? 'Nothing to see - the sky will look completely normal right now'
     : confidence === 'medium'
-    ? 'Very quiet — not worth going out at the moment'
-    : 'Quiet — come back later';
+    ? 'Very quiet - not worth going out at the moment'
+    : 'Quiet - come back later';
   return { phrase, icon: '😴', subtext: nothingReported ? subtext : null };
 }
 
-// ─── Score projection — substorm worker only ─────────────────────────────────
+// ─── Score projection - substorm worker only ─────────────────────────────────
 //
 // All projected scores derive exclusively from the substorm worker's current
 // score and its own physics-based trend signals. The SpotTheAurora composite
-// is NOT used here — it's a visibility estimate, not a substorm measurement.
+// is NOT used here - it's a visibility estimate, not a substorm measurement.
 
 export function projectSubstormScores(
   workerScore: number,
@@ -210,11 +210,11 @@ export function projectSubstormScores(
     workerTrend === 'Decreasing'         ? 0.88 :
     workerTrend === 'Rapidly Decreasing' ? 0.72 : 1.0;
 
-  // Newell acceleration — if coupling is intensifying right now, boost near-term
+  // Newell acceleration - if coupling is intensifying right now, boost near-term
   const newellAccel = newellNow && newellAvg30 && newellNow > newellAvg30 * 1.2;
   const newellBoost = newellAccel ? 1.08 : 1.0;
 
-  // Confidence-based dampening — low confidence = wider uncertainty, cap projections
+  // Confidence-based dampening - low confidence = wider uncertainty, cap projections
   const confMult = confidence != null ? (0.7 + (confidence / 100) * 0.3) : 1.0;
 
   const boostFromP = (p: number, base: number) =>
@@ -224,13 +224,13 @@ export function projectSubstormScores(
 
   switch (status) {
     case 'ONSET':
-      // Already happening — near-term stays high, 60 min starts to decay
+      // Already happening - near-term stays high, 60 min starts to decay
       score15 = workerScore * 1.05;
       score30 = workerScore * 0.90;
       score60 = workerScore * 0.62;
       break;
     case 'IMMINENT_30':
-      // Substorm expected within 30 min — peaks around 30 min mark
+      // Substorm expected within 30 min - peaks around 30 min mark
       score15 = boostFromP(p30, workerScore);
       score30 = boostFromP(p30, workerScore) * 1.05;
       score60 = boostFromP(p60, workerScore) * 0.78;
@@ -259,7 +259,7 @@ export function projectSubstormScores(
   const applyAll = (s: number) =>
     Math.max(0, s * trendMult * newellBoost * confMult);
 
-  // 2-hour projection — substorm worker has no 2h probability so we use
+  // 2-hour projection - substorm worker has no 2h probability so we use
   // the SpotTheAurora composite score (auroraScore) for this slot.
   // Passed in as spotAuroraScore2h, already location-adjusted.
   // We apply a light trend dampening but keep it independent of substorm state.
@@ -267,7 +267,7 @@ export function projectSubstormScores(
     score15: applyAll(score15),
     score30: applyAll(score30),
     score60: applyAll(score60),
-    score120: 0, // placeholder — filled by caller using SpotTheAurora score
+    score120: 0, // placeholder - filled by caller using SpotTheAurora score
   };
 }
 
@@ -296,20 +296,20 @@ function summariseSightings(sightings: SightingReport[]) {
 // ─── Score colour helper ──────────────────────────────────────────────────────
 
 function scoreColour(score: number): string {
-  if (score >= 70) return '#34d399'; // green  — strong/NZ-visible conditions
-  if (score >= 50) return '#fbbf24'; // amber  — developing/active
-  if (score >= 30) return '#38bdf8'; // sky    — unsettled/disturbed
-  return '#525252';                  // grey   — quiet
+  if (score >= 70) return '#34d399'; // green  - strong/NZ-visible conditions
+  if (score >= 50) return '#fbbf24'; // amber  - developing/active
+  if (score >= 30) return '#38bdf8'; // sky    - unsettled/disturbed
+  return '#525252';                  // grey   - quiet
 }
 
 // ─── Confidence dot ───────────────────────────────────────────────────────────
 
 const ConfidenceDot: React.FC<{ level: SlotConfig['confidence'] }> = ({ level }) => {
   const map: Record<SlotConfig['confidence'], { color: string; title: string }> = {
-    ground: { color: 'bg-emerald-400', title: 'Ground truth — real sensor data' },
+    ground: { color: 'bg-emerald-400', title: 'Ground truth - real sensor data' },
     high:   { color: 'bg-emerald-400', title: 'High confidence forecast' },
     medium: { color: 'bg-amber-400',   title: 'Moderate confidence forecast' },
-    low:    { color: 'bg-neutral-500', title: 'Low confidence — treat as rough guide' },
+    low:    { color: 'bg-neutral-500', title: 'Low confidence - treat as rough guide' },
     hidden: { color: 'bg-transparent', title: '' },
   };
   const { color, title } = map[level];
@@ -464,7 +464,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   // Now slot: anchored on auroraScore (the SpotTheAurora composite %) so it
   // always matches the big % gauge shown elsewhere on the page.
   // The substorm worker score drives the PROJECTED slots (15/30/60m) where its
-  // real-time energy signal is genuinely forward-looking — but for "right now"
+  // real-time energy signal is genuinely forward-looking - but for "right now"
   // it measures magnetospheric loading, not aurora visibility directly, and can
   // diverge significantly from the composite score, causing contradictions.
   const nowScore    = auroraScore ?? workerScore ?? 0;
@@ -487,8 +487,8 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   const nowVisibility = useMemo(() => {
     const base = getVisibilityPhrase(nowScore, 'high', sightingContext);
     const extraNotes: string[] = [];
-    if (bayOnset)  extraNotes.push('Activity just picked up — aurora may be starting right now');
-    if (cmeSheath) extraNotes.push('A solar storm is passing Earth right now — conditions could change fast');
+    if (bayOnset)  extraNotes.push('Activity just picked up - aurora may be starting right now');
+    if (cmeSheath) extraNotes.push('A solar storm is passing Earth right now - conditions could change fast');
     if (workerConf != null && nowScore >= 30) {
       extraNotes.push(`${workerConf}% chance of a display based on current solar conditions`);
     }
@@ -501,7 +501,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   const score15 = useMemo(() => locationAdjustedScore(rawScore15, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset), [rawScore15, userLatitude, userLongitude, substormRiskData, bayOnset]);
   const score30 = useMemo(() => locationAdjustedScore(rawScore30, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset), [rawScore30, userLatitude, userLongitude, substormRiskData, bayOnset]);
   const score60 = useMemo(() => locationAdjustedScore(rawScore60, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset), [rawScore60, userLatitude, userLongitude, substormRiskData, bayOnset]);
-  // 2-hour slot uses SpotTheAurora score — it already incorporates longer-range
+  // 2-hour slot uses SpotTheAurora score - it already incorporates longer-range
   // solar wind coupling models. Apply location penalty the same way.
   const rawScore120 = auroraScore ?? 0;
   const score120 = useMemo(() => locationAdjustedScore(rawScore120, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset), [rawScore120, userLatitude, userLongitude, substormRiskData, bayOnset]);
@@ -526,11 +526,11 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
       ? now >= moonRiseMs && now <= moonSetMs
       : now >= moonRiseMs || now <= moonSetMs;
     return moonUp
-      ? `Moon is currently up (${illum}) — this may wash out faint aurora later.`
-      : `Moon is currently down (${illum}) — darker sky expected when night begins.`;
+      ? `Moon is currently up (${illum}) - this may wash out faint aurora later.`
+      : `Moon is currently down (${illum}) - darker sky expected when night begins.`;
   }, [moonIllumination, moonRiseMs, moonSetMs]);
 
-  // Always show forecast slots when it's dark — phrases reflect location.
+  // Always show forecast slots when it's dark - phrases reflect location.
   const showForecast = true;
 
   if (isDaylight) {
@@ -540,7 +540,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
         <div className="flex items-start gap-3 text-neutral-400 text-sm">
           <span className="text-2xl">☀️</span>
           <div className="space-y-1">
-            <p>It&apos;s still daylight — aurora is only visible after dark. Come back after sunset.</p>
+            <p>It&apos;s still daylight - aurora is only visible after dark. Come back after sunset.</p>
             <p className="text-xs text-neutral-500">{daylightNowLine}</p>
             <p className="text-xs text-neutral-500">{daylightMoonLine}</p>
           </div>
@@ -583,11 +583,11 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
       </div>
       {/* Accuracy note */}
       <p className="text-xs text-neutral-600 mb-3 leading-snug">
-        This forecast uses your GPS location and the aurora oval position — more accurate than the % score alone.
+        This forecast uses your GPS location and the aurora oval position - more accurate than the % score alone.
         {(!userLatitude) && <span className="text-amber-500/80"> Enable location for full accuracy.</span>}
       </p>
 
-      {/* Substorm context bar — just below the header */}
+      {/* Substorm context bar - just below the header */}
       {workerScore != null && (
         <div className="flex items-center gap-3 mb-4 py-2 border-b border-neutral-800/60">
           <div className="flex items-center gap-1.5">
@@ -623,7 +623,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
         {slots.map(({ time, vis, conf, substormScore }) => (
           <div key={time} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
 
-            {/* Time label — tap for info */}
+            {/* Time label - tap for info */}
             <div className="w-14 flex-shrink-0 pt-0.5">
               <button
                 onClick={() => openSlotTooltip(time)}

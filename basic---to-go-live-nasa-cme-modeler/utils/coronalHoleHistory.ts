@@ -1,7 +1,7 @@
 // --- START OF FILE utils/coronalHoleHistory.ts ---
 //
 // ═══════════════════════════════════════════════════════════════════════
-//  CORONAL HOLE HISTORY — Worker-backed 72h CH evolution tracker
+//  CORONAL HOLE HISTORY - Worker-backed 72h CH evolution tracker
 // ═══════════════════════════════════════════════════════════════════════
 //
 //  Uses the ch-history-worker on Cloudflare to store and retrieve
@@ -154,7 +154,7 @@ export async function fetchAvailableFrames(): Promise<SuviFrameInfo[]> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  BACKFILL — Analyse historical SWPC frames client-side
+//  BACKFILL - Analyse historical SWPC frames client-side
 // ═══════════════════════════════════════════════════════════════════════
 
 /**
@@ -331,7 +331,7 @@ export function buildEvolutionTracks(
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  INTERPOLATION — for time-varying HSS and CH animation
+//  INTERPOLATION - for time-varying HSS and CH animation
 // ═══════════════════════════════════════════════════════════════════════
 
 /**
@@ -368,7 +368,7 @@ export function interpolateCHAtTimeMs(
 
   for (let i = 0; i < snaps.length; i++) {
     if (snaps[i].timestampMs <= targetTimeMs) {
-      beforeIdx = i;  // Keep updating — we want the latest one before target
+      beforeIdx = i;  // Keep updating - we want the latest one before target
     }
     if (snaps[i].timestampMs >= targetTimeMs && afterIdx === -1) {
       afterIdx = i;   // First one after target
@@ -412,10 +412,10 @@ export function interpolateCHAtTimeMs(
     }
   }
 
-  // If no non-null data exists anywhere — nothing to show
+  // If no non-null data exists anywhere - nothing to show
   if (!resolvedBefore && !resolvedAfter) return null;
 
-  // Only one side has data — use it directly (pin to it)
+  // Only one side has data - use it directly (pin to it)
   if (!resolvedBefore || !resolvedAfter) {
     const single = resolvedBefore ?? resolvedAfter!;
     return {
@@ -428,7 +428,7 @@ export function interpolateCHAtTimeMs(
     };
   }
 
-  // Both sides have data — interpolate smoothly between them
+  // Both sides have data - interpolate smoothly between them
   // This spans across any null gaps, so motion is continuous
   const range = resolvedAfterMs - resolvedBeforeMs;
   const t = range > 0 ? (targetTimeMs - resolvedBeforeMs) / range : 0;
@@ -449,7 +449,7 @@ export function interpolateCHAtTimeMs(
 }
 
 /**
- * Legacy wrapper — converts hoursAgo to absolute timestamp and calls
+ * Legacy wrapper - converts hoursAgo to absolute timestamp and calls
  * interpolateCHAtTimeMs. Used by any code still passing hoursAgo.
  */
 export function interpolateCHAtTime(

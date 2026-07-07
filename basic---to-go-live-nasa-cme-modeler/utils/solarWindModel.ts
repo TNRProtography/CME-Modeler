@@ -2,12 +2,12 @@
 //
 // Solar wind / High-Speed Stream speed model derived from coronal hole width.
 //
-// Reference: Wang-Sheeley-Arge (WSA) model concept — wider open-field regions
+// Reference: Wang-Sheeley-Arge (WSA) model concept - wider open-field regions
 // (coronal holes) produce faster solar wind streams because the flux tubes
 // expand less and the wind accelerates more efficiently.
 //
 // ═══════════════════════════════════════════════════════════════════════
-// HSS SPEED PHYSICS — CORRECTED BASED ON PSP + L1 OBSERVATIONS
+// HSS SPEED PHYSICS - CORRECTED BASED ON PSP + L1 OBSERVATIONS
 // ═══════════════════════════════════════════════════════════════════════
 //
 // KEY INSIGHT: HSS plasma barely decelerates between 0.2 AU and 1 AU.
@@ -43,12 +43,12 @@
 //  HSS_CH_WIDTH_MIN_DEG  : CH width → speed floor
 //  HSS_CH_WIDTH_MAX_DEG  : CH width → speed ceiling
 
-const HSS_SPEED_MIN_1AU    = 450;   // km/s — tiny equatorial CH at 1 AU
-const HSS_SPEED_MAX_1AU    = 900;   // km/s — very large/dark CH at 1 AU
+const HSS_SPEED_MIN_1AU    = 450;   // km/s - tiny equatorial CH at 1 AU
+const HSS_SPEED_MAX_1AU    = 900;   // km/s - very large/dark CH at 1 AU
 const HSS_CH_WIDTH_MIN_DEG = 5;     // degrees CH width -> speed floor
 const HSS_CH_WIDTH_MAX_DEG = 60;    // degrees CH width -> speed ceiling
 
-// Coronal source speed range — used ONLY by the propagation engine
+// Coronal source speed range - used ONLY by the propagation engine
 // for the inner boundary condition at 21.5 R☉. These are higher
 // because the wind is still accelerating in the low corona.
 // PSP data shows fast wind at 500–1000+ km/s inside 0.1 AU,

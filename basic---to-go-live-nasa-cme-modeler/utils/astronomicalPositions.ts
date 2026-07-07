@@ -1,7 +1,7 @@
 /**
  * utils/astronomicalPositions.ts
  *
- * Analytical heliocentric ephemeris — planets, Earth rotation, Moon.
+ * Analytical heliocentric ephemeris - planets, Earth rotation, Moon.
  *
  * Accuracy:
  *   Planets  : < 1° (1900–2100), Meeus "Astronomical Algorithms" 2nd ed. Table 31.a
@@ -16,7 +16,7 @@
 /** Earth's axial obliquity at J2000 in radians (23.4392811°) */
 export const EARTH_TILT_RAD = 23.4392811 * (Math.PI / 180);
 
-// J2000.0 epoch as Unix timestamp (ms) — 2000-Jan-1 12:00 UTC
+// J2000.0 epoch as Unix timestamp (ms) - 2000-Jan-1 12:00 UTC
 const J2000_MS = 946728000000;
 const DEG = Math.PI / 180;
 const TWO_PI = 2 * Math.PI;
@@ -57,7 +57,7 @@ const ELEMENTS: Record<string, OrbitalElements> = {
 /**
  * Heliocentric ecliptic longitude of a planet in radians [0, 2pi).
  *
- * Includes equation of center (3-term series, Meeus §25) — corrects
+ * Includes equation of center (3-term series, Meeus §25) - corrects
  * for eccentricity. Adds up to +/-2.4° for Mars, +/-1.3° for Earth.
  */
 export function computeEclipticLongitude(planetKey: string, dateMs: number): number {
@@ -68,7 +68,7 @@ export function computeEclipticLongitude(planetKey: string, dateMs: number): num
   const L_deg = normDeg(el.L0 + el.n * D);        // mean longitude
   const M_rad = normDeg(L_deg - el.omega) * DEG;   // mean anomaly (rad)
 
-  // Equation of center — Meeus §25
+  // Equation of center - Meeus §25
   const e = el.e;
   const C_deg =
     (2 * e - e * e * e / 4) * (180 / Math.PI) * Math.sin(M_rad) +
@@ -80,7 +80,7 @@ export function computeEclipticLongitude(planetKey: string, dateMs: number): num
 
 /**
  * Greenwich Mean Sidereal Time in radians [0, 2pi).
- * IAU 1982 formula — drives Earth rotation.y so prime meridian
+ * IAU 1982 formula - drives Earth rotation.y so prime meridian
  * faces the correct heliocentric direction at any timestamp.
  */
 export function computeGMST(dateMs: number): number {

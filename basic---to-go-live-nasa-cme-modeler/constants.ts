@@ -14,7 +14,7 @@ export const SUN_ANGULAR_VELOCITY = 2.61799e-6; // rad/sec (approx for 27.27 day
 
 // Angles are vestigial (kept for PlanetData type compatibility).
 // Actual positions are computed per-frame in SimulationCanvas using
-// astronomicalPositions.ts — Keplerian elements referenced to J2000.
+// astronomicalPositions.ts - Keplerian elements referenced to J2000.
 export const PLANET_DATA_MAP: Record<string, PlanetData> = {
   MERCURY: { name: 'Mercury', radius: 0.387 * SCENE_SCALE, size: 0.008 * SCENE_SCALE, color: 0x8c8c8c, angle: 0, labelElementId: 'mercury-label', orbitalPeriodDays: 88 },
   VENUS:   { name: 'Venus',   radius: 0.723 * SCENE_SCALE, size: 0.015 * SCENE_SCALE, color: 0xe6e6e6, angle: 0, labelElementId: 'venus-label',   orbitalPeriodDays: 225 },
@@ -260,7 +260,7 @@ float snoise(vec2 v) {
 void main() {
   float t = uTime * 0.04;
   float lat = vUv.y;
-  // Banded base — alternating warm/cool bands
+  // Banded base - alternating warm/cool bands
   float band = sin(lat * 18.0) * 0.5 + 0.5;
   float turbulence = snoise(vec2(vUv.x * 4.0 + t * (0.5 + lat), lat * 6.0)) * 0.18;
   float b = clamp(band + turbulence, 0.0, 1.0);

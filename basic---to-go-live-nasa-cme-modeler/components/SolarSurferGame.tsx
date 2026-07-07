@@ -1,5 +1,5 @@
 // --- START OF FILE src/components/SolarSurferGame.tsx ---
-// "Spot The Aurora" — forecaster training game
+// "Spot The Aurora" - forecaster training game
 // Players read auto-generated space weather stats and decide
 // what aurora should be visible in the NZ landscape above.
 
@@ -68,14 +68,14 @@ function generateBzTrend(finalBz: number): number[] {
 }
 
 const EXPLANATIONS: Record<ScenarioType, (s: Scenario) => string> = {
-  quiet: (s) => `Bz was ${s.bz > 0 ? 'northward' : 'near flat'} at ${s.bz.toFixed(1)} nT with hemispheric power only ${s.hp.toFixed(0)} GW. No meaningful coupling to the magnetosphere — quiet skies.`,
+  quiet: (s) => `Bz was ${s.bz > 0 ? 'northward' : 'near flat'} at ${s.bz.toFixed(1)} nT with hemispheric power only ${s.hp.toFixed(0)} GW. No meaningful coupling to the magnetosphere - quiet skies.`,
   building: (s) => `Bz trending south to ${s.bz.toFixed(1)} nT, speed at ${s.speed.toFixed(0)} km/s. Conditions building but not yet sustained. A faint camera glow was just starting.`,
-  active: (s) => `Bz sustained at ${s.bz.toFixed(1)} nT for ${s.southwardMinutes} minutes with speed ${s.speed.toFixed(0)} km/s. The longer Bz stays south, the brighter the aurora — this is a clear active display.`,
-  substorm: () => `Bay onset detected — a substorm erupted at Eyrewell. Energy released from the magnetotail in a sudden burst. The sky lights up fast and bright.`,
-  trick_moon: (s) => `The solar wind was decent but the moon was ${s.moonIllumination.toFixed(0)}% illuminated and above the horizon. Moonlight washes out faint aurora — the glow you saw was lunar, not auroral.`,
-  trick_northward: (s) => `Speed was ${s.speed.toFixed(0)} km/s which looks impressive, but Bz was ${s.bz.toFixed(1)} nT — northward. The solar wind wasn't coupling to the magnetosphere. Fast wind alone does nothing.`,
+  active: (s) => `Bz sustained at ${s.bz.toFixed(1)} nT for ${s.southwardMinutes} minutes with speed ${s.speed.toFixed(0)} km/s. The longer Bz stays south, the brighter the aurora - this is a clear active display.`,
+  substorm: () => `Bay onset detected - a substorm erupted at Eyrewell. Energy released from the magnetotail in a sudden burst. The sky lights up fast and bright.`,
+  trick_moon: (s) => `The solar wind was decent but the moon was ${s.moonIllumination.toFixed(0)}% illuminated and above the horizon. Moonlight washes out faint aurora - the glow you saw was lunar, not auroral.`,
+  trick_northward: (s) => `Speed was ${s.speed.toFixed(0)} km/s which looks impressive, but Bz was ${s.bz.toFixed(1)} nT - northward. The solar wind wasn't coupling to the magnetosphere. Fast wind alone does nothing.`,
   trick_speed_no_bz: (s) => `High speed (${s.speed.toFixed(0)} km/s) and good pressure (${s.pressure.toFixed(1)} nPa) but Bz was nearly flat at ${s.bz.toFixed(1)} nT. Speed without southward Bz means no aurora.`,
-  trick_sheath: () => `CME sheath passage — temperature was anomalous and Bz fluctuated unpredictably. Sheath intervals look chaotic on instruments. Conditions were marginal at best.`,
+  trick_sheath: () => `CME sheath passage - temperature was anomalous and Bz fluctuated unpredictably. Sheath intervals look chaotic on instruments. Conditions were marginal at best.`,
 };
 
 function generateScenario(difficulty: number, roundIndex: number): Scenario {
@@ -329,7 +329,7 @@ const SpotTheAuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       const showMoon = phase !== 'menu';
 
       if (!s) {
-        // Menu — demo quiet sky
+        // Menu - demo quiet sky
         ctx.fillStyle = '#060c1a'; ctx.fillRect(0, 0, width, height);
         if (!starsRef.current.length) starsRef.current = initStars(width, height);
         starsRef.current.forEach(star => {
@@ -468,7 +468,7 @@ const SpotTheAuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     <button key={i} onClick={() => startGame(i)}
                       className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95 border"
                       style={{ background: `${colours[i]}15`, borderColor: `${colours[i]}30`, color: colours[i] }}>
-                      {name} <span className="opacity-50 text-xs">— {subs[i]}</span>
+                      {name} <span className="opacity-50 text-xs">- {subs[i]}</span>
                     </button>
                   );
                 })}
@@ -481,7 +481,7 @@ const SpotTheAuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           </div>
         )}
 
-        {/* ── OBSERVE — top HUD ── */}
+        {/* ── OBSERVE - top HUD ── */}
         {phase === 'observing' && (
           <div className="absolute top-3 left-3 right-12 z-10 flex items-center gap-2 flex-wrap">
             <div className="bg-black/70 backdrop-blur-sm border border-white/10 rounded-full px-3 py-1 flex items-center gap-2">
@@ -621,7 +621,7 @@ const SpotTheAuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               <Stat label="Bz Southward For" value={`${scenario.southwardMinutes} min`}
                 accent={scenario.southwardMinutes > 20 ? '#34d399' : scenario.southwardMinutes > 8 ? '#fbbf24' : '#737373'} />
               <Stat label="Alerts"
-                value={scenario.bayOnset ? '⚡ Bay onset' : scenario.cmeSheath ? '💥 CME sheath' : '— None'}
+                value={scenario.bayOnset ? '⚡ Bay onset' : scenario.cmeSheath ? '💥 CME sheath' : '- None'}
                 accent={scenario.bayOnset ? '#fbbf24' : scenario.cmeSheath ? '#f87171' : '#525252'} />
             </div>
           </div>

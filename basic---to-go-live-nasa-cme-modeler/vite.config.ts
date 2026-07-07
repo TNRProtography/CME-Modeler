@@ -5,12 +5,12 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   build: {
-    // Raise the chunk size warning threshold — we split intentionally
+    // Raise the chunk size warning threshold - we split intentionally
     chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
         manualChunks: (id) => {
-          // Chart.js and related — only needed by forecast + solar activity pages
+          // Chart.js and related - only needed by forecast + solar activity pages
           if (
             id.includes('chart.js') ||
             id.includes('react-chartjs-2') ||
@@ -21,12 +21,12 @@ export default defineConfig({
             return 'charts';
           }
 
-          // Three.js — only needed by CME modeler (lazy-loaded at runtime)
+          // Three.js - only needed by CME modeler (lazy-loaded at runtime)
           if (id.includes('three') || id.includes('gsap')) {
             return 'three';
           }
 
-          // React core — keep stable for long-term caching
+          // React core - keep stable for long-term caching
           if (
             id.includes('node_modules/react/') ||
             id.includes('node_modules/react-dom/')
@@ -34,7 +34,7 @@ export default defineConfig({
             return 'react-vendor';
           }
 
-          // Leaflet — only needed by the aurora sightings map
+          // Leaflet - only needed by the aurora sightings map
           if (id.includes('leaflet')) {
             return 'leaflet';
           }

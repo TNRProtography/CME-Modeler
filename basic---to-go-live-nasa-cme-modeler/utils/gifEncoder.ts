@@ -26,7 +26,7 @@ function quantise(pixels: Uint8ClampedArray, maxColors: number): { palette: Uint
   }
 
   if (allColors.length <= maxColors) {
-    // Fewer unique colours than the palette — use them directly
+    // Fewer unique colours than the palette - use them directly
     const palette = new Uint8Array(maxColors * 3);
     for (let i = 0; i < allColors.length; i++) {
       palette[i * 3] = allColors[i].r;

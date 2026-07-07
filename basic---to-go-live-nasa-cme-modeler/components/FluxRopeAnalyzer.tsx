@@ -34,7 +34,7 @@ interface RopeResult {
   estDurMin:        number;
   remainingMin:     number;
   coldFraction:     number;   // temperature-based rope confidence (0–1)
-  inPlaneRatio:     number;   // sqrt(By²+Bz²) / Bt — rope field planarity
+  inPlaneRatio:     number;   // sqrt(By²+Bz²) / Bt - rope field planarity
 }
 
 interface SlinkySeg {
@@ -104,7 +104,7 @@ function segColor(cosTheta: number, alpha: number): string {
   return `rgba(135,138,158,${alpha})`;
 }
 
-// Weighted linear regression — weights decay exponentially so recent data dominates.
+// Weighted linear regression - weights decay exponentially so recent data dominates.
 // This handles the non-stationary ω that characterises real flux rope rotation.
 function weightedLinReg(xs: number[], ys: number[], halfLifeMin = 45) {
   const n = xs.length;
@@ -212,7 +212,7 @@ function analyzeRope(mag: MagPt[], spd: XYPt[], den: XYPt[], tmp: XYPt[]) {
   // When Bx is significant the total Bt over-estimates Bz magnitude.
   const inPlaneArr = ropeMag.map(p => Math.sqrt(p.by ** 2 + p.bz ** 2));
   const btMean     = medArr(inPlaneArr);
-  // Planarity ratio — how much of |B| lives in the By-Bz plane (1 = perfect rope)
+  // Planarity ratio - how much of |B| lives in the By-Bz plane (1 = perfect rope)
   const totalBtMean = medArr(ropeMag.map(p => p.bt));
   const inPlaneRatio = totalBtMean > 0 ? btMean / totalBtMean : 1;
 
@@ -225,7 +225,7 @@ function analyzeRope(mag: MagPt[], spd: XYPt[], den: XYPt[], tmp: XYPt[]) {
   const chiralityCode: RopeResult['chiralityCode'] =
     chirality === 'right-handed' ? 'R' : chirality === 'left-handed' ? 'L' : '?';
 
-  // ── FIX 4: Temperature cold-fraction — genuine flux ropes are cold plasma ─
+  // ── FIX 4: Temperature cold-fraction - genuine flux ropes are cold plasma ─
   // Cross-match rope interval with proton temperature data.
   let coldFraction = 0.5;  // neutral prior when no data
   if (tmpS.length > 4 && spdS.length > 4) {
@@ -264,7 +264,7 @@ function analyzeRope(mag: MagPt[], spd: XYPt[], den: XYPt[], tmp: XYPt[]) {
   // ── FIX 7: Forecast capped at rope exit; damped ω beyond current time ───
   // Damped angular velocity: ω(dt) = ω · exp(–λ·dt), λ = ln2 / 60 min half-life.
   // This reflects that rotation slows near the rope axis.
-  const OMEGA_HALFLIFE = 60; // minutes — rotation rate halves every 60 min
+  const OMEGA_HALFLIFE = 60; // minutes - rotation rate halves every 60 min
   const bzForecast: number[] = [];
   const bzUncertainty: number[] = [];
 
@@ -590,7 +590,7 @@ const OrientationDiagram: React.FC<{ result: RopeResult }> = ({ result }) => {
     return <circle key={i} cx={px} cy={py} r={1.5} fill={`rgba(100,180,255,${alpha})`} />;
   });
 
-  // Earth dot (fixed in centre — rope is passing OVER Earth)
+  // Earth dot (fixed in centre - rope is passing OVER Earth)
   // The position indicator on the rope edge showing where field now points
   const edgeX = cx + byNow * R, edgeY = cy - bzNow * R;
 
@@ -720,7 +720,7 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
   if (!result) return null;
 
   const confPct   = Math.round(result.confidence * 100);
-  const confLabel = confPct < 40 ? 'Early estimate — building'
+  const confLabel = confPct < 40 ? 'Early estimate - building'
     : confPct < 68 ? 'Reasonable forecast'
     : 'Reliable forecast';
   const confCls = confPct < 40 ? 'text-amber-400' : confPct < 68 ? 'text-sky-400' : 'text-emerald-400';
@@ -733,7 +733,7 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
     : 'exiting';
 
   const rotDesc = Math.abs(result.omega) < 0.004
-    ? 'stable orientation — minimal rotation detected'
+    ? 'stable orientation - minimal rotation detected'
     : result.omega > 0
     ? 'rotating counterclockwise (eastward)'
     : 'rotating clockwise (westward)';
@@ -744,14 +744,14 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
 
   const coldLabel = result.coldFraction > 0.65
     ? '❄ Cold plasma confirmed' : result.coldFraction > 0.35
-    ? '~ Mixed temperature' : '⚠ Warm plasma — check for sheath';
+    ? '~ Mixed temperature' : '⚠ Warm plasma - check for sheath';
   const coldColor = result.coldFraction > 0.65
     ? 'text-cyan-400' : result.coldFraction > 0.35
     ? 'text-amber-400' : 'text-rose-400';
 
   const planeLabel = result.inPlaneRatio > 0.85
     ? 'High planarity' : result.inPlaneRatio > 0.65
-    ? 'Moderate planarity' : 'Low planarity — Bx significant';
+    ? 'Moderate planarity' : 'Low planarity - Bx significant';
   const planeColor = result.inPlaneRatio > 0.85
     ? 'text-emerald-400' : result.inPlaneRatio > 0.65
     ? 'text-amber-400' : 'text-rose-400';
@@ -760,13 +760,13 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
     const chiralNote = result.chirality !== 'indeterminate'
       ? ` This is a ${result.chirality} rope (${result.chiralityCode}).` : '';
     if (result.leading === 'S') {
-      return `The southward-pointing (Bz−) field arrived first. Aurora conditions may be strongest right now. As the rope continues sweeping past Earth, the field will rotate and Bz is expected to turn northward — storm intensity will fade over the coming hours.${chiralNote}`;
+      return `The southward-pointing (Bz−) field arrived first. Aurora conditions may be strongest right now. As the rope continues sweeping past Earth, the field will rotate and Bz is expected to turn northward - storm intensity will fade over the coming hours.${chiralNote}`;
     }
     if (result.trailing === 'S') {
       return `Northward field (Bz+) arrived first, meaning the best aurora conditions are still coming. The southward-pointing portion of the rope is in its trailing half and has not yet reached Earth.${chiralNote}`;
     }
     if (result.leading === 'E' || result.leading === 'W') {
-      return `The rope arrived with the field pointing ${result.leading === 'E' ? 'eastward' : 'westward'}. Southward Bz may develop through the middle of the passage — watch Bz closely for a sudden aurora opportunity.${chiralNote}`;
+      return `The rope arrived with the field pointing ${result.leading === 'E' ? 'eastward' : 'westward'}. Southward Bz may develop through the middle of the passage - watch Bz closely for a sudden aurora opportunity.${chiralNote}`;
     }
     return `The field is mainly northward throughout this rope passage. Significant aurora is unlikely unless the rope is distorted from its forecast orientation.${chiralNote}`;
   })();
@@ -799,7 +799,7 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
             {/* What is a flux rope */}
             <section>
               <h4 className="font-semibold text-neutral-100 mb-1.5">What is a CME flux rope?</h4>
-              <p className="text-neutral-400">A coronal mass ejection arrives as a magnetised plasma cloud with its magnetic field wound into a helical coil — a <em>flux rope</em>. As it sweeps past Earth, each part of the coil passes in sequence, causing the measured magnetic field direction to rotate smoothly. The key aurora driver is <strong className="text-white">Bz</strong>: when it points southward (negative), it reconnects with Earth's northward magnetosphere and injects energy into the magnetotail — triggering geomagnetic storms and aurora.</p>
+              <p className="text-neutral-400">A coronal mass ejection arrives as a magnetised plasma cloud with its magnetic field wound into a helical coil - a <em>flux rope</em>. As it sweeps past Earth, each part of the coil passes in sequence, causing the measured magnetic field direction to rotate smoothly. The key aurora driver is <strong className="text-white">Bz</strong>: when it points southward (negative), it reconnects with Earth's northward magnetosphere and injects energy into the magnetotail - triggering geomagnetic storms and aurora.</p>
             </section>
 
             {/* Orientation diagram */}
@@ -832,7 +832,7 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
                   </div>
                 ))}
               </div>
-              <p className="text-neutral-500 text-xs mt-2">The chirality suffix — <span className="font-mono text-violet-400">R</span> (right-handed) or <span className="font-mono text-orange-400">L</span> (left-handed) — describes which way the field twists around the rope axis. Right-handed ropes (from the northern solar hemisphere) tend to produce eastward By; left-handed (southern hemisphere) tend westward.</p>
+              <p className="text-neutral-500 text-xs mt-2">The chirality suffix - <span className="font-mono text-violet-400">R</span> (right-handed) or <span className="font-mono text-orange-400">L</span> (left-handed) - describes which way the field twists around the rope axis. Right-handed ropes (from the northern solar hemisphere) tend to produce eastward By; left-handed (southern hemisphere) tend westward.</p>
             </section>
 
             {/* Confidence */}
@@ -841,10 +841,10 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
               <div className="space-y-1.5 text-neutral-400">
                 <p>Confidence is built from four independent signals:</p>
                 <ul className="list-disc list-inside space-y-1 text-xs pl-2">
-                  <li><strong className="text-neutral-200">Rotation quality (R²)</strong> — how cleanly the field rotates versus noise. Current: <span className="text-sky-300">{result.r2.toFixed(2)}</span></li>
-                  <li><strong className="text-neutral-200">Field planarity</strong> — what fraction of the field lies in the By–Bz plane (a perfect rope is 100% planar). Current: <span className={planeColor}>{Math.round(result.inPlaneRatio * 100)}%</span></li>
-                  <li><strong className="text-neutral-200">Cold plasma fraction</strong> — real flux rope cores contain cold, dense plasma. Higher cold fraction → more confident we're inside a rope. Current: <span className={coldColor}>{Math.round(result.coldFraction * 100)}%</span></li>
-                  <li><strong className="text-neutral-200">Data history</strong> — confidence builds over the first ~3 hours as more rotation is observed.</li>
+                  <li><strong className="text-neutral-200">Rotation quality (R²)</strong> - how cleanly the field rotates versus noise. Current: <span className="text-sky-300">{result.r2.toFixed(2)}</span></li>
+                  <li><strong className="text-neutral-200">Field planarity</strong> - what fraction of the field lies in the By–Bz plane (a perfect rope is 100% planar). Current: <span className={planeColor}>{Math.round(result.inPlaneRatio * 100)}%</span></li>
+                  <li><strong className="text-neutral-200">Cold plasma fraction</strong> - real flux rope cores contain cold, dense plasma. Higher cold fraction → more confident we're inside a rope. Current: <span className={coldColor}>{Math.round(result.coldFraction * 100)}%</span></li>
+                  <li><strong className="text-neutral-200">Data history</strong> - confidence builds over the first ~3 hours as more rotation is observed.</li>
                 </ul>
                 <p className="text-xs text-neutral-500 mt-1.5">Forecast uncertainty grows rapidly with time. The ±nT bands shown on Bz tiles widen with each step. Treat +3h and +6h as directional only until confidence exceeds ~65%.</p>
               </div>
@@ -853,7 +853,7 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
             {/* Chirality */}
             <section className="bg-neutral-900/60 rounded-lg p-3">
               <h4 className="font-semibold text-neutral-100 mb-1">Chirality: <span className={chiralityColor}>{result.chirality === 'right-handed' ? '↻ Right-handed' : result.chirality === 'left-handed' ? '↺ Left-handed' : '~ Indeterminate'}</span></h4>
-              <p className="text-neutral-400 text-sm">The twist direction of the magnetic field around the rope axis. Determined from whether the axial field (Bx) is aligned or anti-aligned with the rotation direction. {result.chirality !== 'indeterminate' ? 'A confirmed chirality improves the reliability of the field-rotation forecast.' : 'Chirality is still unclear — this typically resolves after more rotation is observed.'}</p>
+              <p className="text-neutral-400 text-sm">The twist direction of the magnetic field around the rope axis. Determined from whether the axial field (Bx) is aligned or anti-aligned with the rotation direction. {result.chirality !== 'indeterminate' ? 'A confirmed chirality improves the reliability of the field-rotation forecast.' : 'Chirality is still unclear - this typically resolves after more rotation is observed.'}</p>
             </section>
 
             {/* Technical footer */}
@@ -937,10 +937,10 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
         <span className="font-semibold text-neutral-200 mr-1">{result.orientCode}-{result.chiralityCode}:</span>
         {orientPlain}
         {confPct < 55 && (
-          <span className="ml-1 text-amber-400/80"> Forecast confidence is still building — treat +3h and +6h as directional only.</span>
+          <span className="ml-1 text-amber-400/80"> Forecast confidence is still building - treat +3h and +6h as directional only.</span>
         )}
         {result.inPlaneRatio < 0.70 && (
-          <span className="ml-1 text-rose-400/80"> Bx component is significant ({Math.round((1 - result.inPlaneRatio) * 100)}% out-of-plane) — Bz amplitude may be lower than shown.</span>
+          <span className="ml-1 text-rose-400/80"> Bx component is significant ({Math.round((1 - result.inPlaneRatio) * 100)}% out-of-plane) - Bz amplitude may be lower than shown.</span>
         )}
       </div>
 
@@ -961,7 +961,7 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
               <div className="text-xs text-neutral-500 mb-1">{label}</div>
               {isPastExit ? (
                 <>
-                  <div className="text-sm font-semibold text-neutral-600">—</div>
+                  <div className="text-sm font-semibold text-neutral-600"> - </div>
                   <div className="text-xs mt-0.5 text-neutral-700">post-rope</div>
                 </>
               ) : (
@@ -988,7 +988,7 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
       {/* ── Footer metadata ── */}
       <div className="pt-2 border-t border-neutral-800/60 flex flex-wrap gap-x-4 gap-y-1 items-center">
         <span className="text-xs text-neutral-600">
-          Left: slinky physically oriented to rope orientation — coil position in canvas matches real By–Bz direction · green = Bz south · red = north · tap ? for detail
+          Left: slinky physically oriented to rope orientation - coil position in canvas matches real By–Bz direction · green = Bz south · red = north · tap ? for detail
         </span>
         <span className="text-xs text-neutral-600">
           Right: IMF rotating in By–Bz plane · blue trail = measured · coloured dots = forecast (grey = post-rope)

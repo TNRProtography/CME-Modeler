@@ -2,7 +2,7 @@
 //
 // Astronomy night vision mode.
 // Applies a red filter overlay to preserve dark adaptation.
-// No brightness dimming — reminds user to dim their screen manually.
+// No brightness dimming - reminds user to dim their screen manually.
 // Can auto-activate 2 hours after sunset if enabled in settings.
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
@@ -193,7 +193,7 @@ const NightModeToggle: React.FC<NightModeToggleProps> = ({ sunsetMs }) => {
             }`} />
           </div>
         </button>
-        {/* Info button — matches the ? button above for simple/advanced view */}
+        {/* Info button - matches the ? button above for simple/advanced view */}
         <button
           onClick={handleLongPress}
           className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700"

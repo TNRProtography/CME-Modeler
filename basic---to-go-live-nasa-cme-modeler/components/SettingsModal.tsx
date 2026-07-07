@@ -138,6 +138,9 @@ const CATEGORY_EMOJI: Record<string, string> = {
   'flare-X10':         '☀️',
   'flare-peak':        '☀️',
   'shock-ff':          '💥',
+  'shock-sf':          '💥',
+  'shock-fr':          '💥',
+  'shock-sr':          '💥',
   'substorm-forecast': '⚡',
   'admin-broadcast':   '📢',
 };
@@ -157,13 +160,11 @@ interface SettingsModalProps {
   pageViewStorageMode: 'server' | 'local';
 }
 
-// Shock types that are still "coming soon" — forced off in UI.
-// shock-ff is now live and user-controllable.
-const SHOCK_NOTIFICATION_IDS = new Set(['shock-sf', 'shock-fr', 'shock-sr']);
+const SHOCK_NOTIFICATION_IDS = new Set(['shock-ff', 'shock-sf', 'shock-fr', 'shock-sr']);
 
-// Notification categories shown in the UI — grouped for clarity.
+// Notification categories shown in the UI - grouped for clarity.
 // Legacy topic IDs (aurora-Xpercent, substorm-forecast etc) are intentionally
-// NOT shown here — they still run on the worker but users manage them by
+// NOT shown here - they still run on the worker but users manage them by
 // turning off the new equivalent notifications instead.
 const NOTIFICATION_GROUPS = [
   {
@@ -173,8 +174,8 @@ const NOTIFICATION_GROUPS = [
       {
         id: 'visibility-dslr',
         label: 'DSLR camera visible',
-        description: 'Aurora detectable with a DSLR on a tripod — furthest early warning.',
-        tooltip: 'The earliest warning — sent when aurora is just becoming detectable from your location using a DSLR camera on a tripod with a long exposure (5–15 seconds). This is the first sign conditions are developing toward something worth watching. Great if you want maximum lead time to get to a dark spot.',
+        description: 'Aurora detectable with a DSLR on a tripod - furthest early warning.',
+        tooltip: 'The earliest warning - sent when aurora is just becoming detectable from your location using a DSLR camera on a tripod with a long exposure (5–15 seconds). This is the first sign conditions are developing toward something worth watching. Great if you want maximum lead time to get to a dark spot.',
       },
       {
         id: 'visibility-phone',
@@ -186,7 +187,7 @@ const NOTIFICATION_GROUPS = [
         id: 'visibility-naked',
         label: 'Naked eye visible',
         description: 'Aurora visible to the naked eye from your location.',
-        tooltip: 'Sent when aurora should be visible to the naked eye from your location — no camera needed. Go outside, look south, and you should see it directly. This is the strongest visibility threshold and the most exciting alert.',
+        tooltip: 'Sent when aurora should be visible to the naked eye from your location - no camera needed. Go outside, look south, and you should see it directly. This is the strongest visibility threshold and the most exciting alert.',
       },
     ],
   },
@@ -238,17 +239,35 @@ const NOTIFICATION_GROUPS = [
       },
       {
         id: 'shock-ff',
-        label: 'CME arrival — fast forward shock',
+        label: 'Fast forward shock - CME hit the satellites',
         description: 'A CME or solar wind stream has slammed into the L1 satellites. Aurora conditions may change within 45–60 minutes.',
-        tooltip: 'A fast forward shock (FF) is the most common and impactful type of interplanetary shock. It happens when a fast-moving CME or solar wind stream ploughs into slower wind ahead of it, compressing everything — speed, density, temperature, and magnetic field all jump up simultaneously. This is the classic "CME has arrived" signature and is one of the most actionable alerts. Conditions on Earth can shift from quiet to active within an hour.',
+        tooltip: 'A fast forward shock (FF) is the most common and impactful type of interplanetary shock. It happens when a fast-moving CME or solar wind stream ploughs into slower wind ahead of it, compressing everything - speed, density, temperature, and magnetic field all jump up simultaneously. This is the classic "CME has arrived" signature and is one of the most actionable alerts. Conditions on Earth can shift from quiet to active within an hour.',
+      },
+      {
+        id: 'shock-sf',
+        label: 'Slow forward shock - compression wave arriving',
+        description: 'A gentler compression wave has been detected. Speed and density are rising but the magnetic field dipped - often a SIR or weak CME edge.',
+        tooltip: 'A slow forward shock (SF) is a compression where speed, density, and temperature all increase, but the magnetic field strength drops across the shock boundary. This often marks the leading edge of a stream interaction region (SIR) or a weak CME flank. It can still enhance aurora conditions, but usually less dramatically than a fast forward shock.',
+      },
+      {
+        id: 'shock-fr',
+        label: 'Fast reverse shock - CME trailing edge passing',
+        description: 'The back end of a CME or high-speed stream is sweeping past. Density and temperature are dropping while speed is still elevated.',
+        tooltip: 'A fast reverse shock (FR) occurs at the trailing edge of a CME or high-speed solar wind stream as it outruns the slower wind behind it. Density, temperature, and magnetic field all drop, but speed remains elevated. This usually means the strongest part of the event has passed, but residual aurora activity can continue for hours.',
+      },
+      {
+        id: 'shock-sr',
+        label: 'Slow reverse shock - trailing rarefaction',
+        description: 'A rarefaction wave is passing - density and temperature falling with a magnetic field uptick. The tail end of a solar wind event.',
+        tooltip: 'A slow reverse shock (SR) is a rarefaction where density and temperature decrease, speed stays up, but the magnetic field actually increases across the boundary. This is relatively uncommon and typically marks the very tail end of a complex solar wind structure. Aurora activity is usually winding down by this point.',
       },
     ],
   },
   {
     group: 'Announcements',
-    description: 'Direct messages from Spot The Aurora — aurora event alerts, tips, and important updates.',
+    description: 'Direct messages from Spot The Aurora - aurora event alerts, tips, and important updates.',
     items: [
-      { id: 'admin-broadcast', label: 'Announcements', description: 'Occasional messages sent directly by Spot The Aurora about aurora events, tips, or updates.', tooltip: 'Occasional direct messages from the Spot The Aurora team — sent manually when there is something genuinely worth knowing. This might be a heads-up about an active aurora event happening right now, a tip about upcoming conditions, or an important app update. We send these sparingly, only when it matters.' },
+      { id: 'admin-broadcast', label: 'Announcements', description: 'Occasional messages sent directly by Spot The Aurora about aurora events, tips, or updates.', tooltip: 'Occasional direct messages from the Spot The Aurora team - sent manually when there is something genuinely worth knowing. This might be a heads-up about an active aurora event happening right now, a tip about upcoming conditions, or an important app update. We send these sparingly, only when it matters.' },
     ],
   },
 ];
@@ -283,7 +302,7 @@ const HeartIcon: React.FC<{ className?: string }> = ({ className }) => (
     </svg>
 );
 
-// ── Tooltip helpers (module scope — avoids TypeScript inference stall inside component) ─
+// ── Tooltip helpers (module scope - avoids TypeScript inference stall inside component) ─
 function buildStatTooltip(title: string, whatItIs: string, auroraEffect: string, advanced: string): string {
   return `<div class='space-y-3 text-left'><p><strong>${title}</strong></p><p><strong>What this is:</strong> ${whatItIs}</p><p><strong>Why it matters for aurora:</strong> ${auroraEffect}</p><p class='text-xs text-neutral-400'><strong>Advanced:</strong> ${advanced}</p></div>`;
 }
@@ -293,9 +312,9 @@ interface NotifTooltipEntry { title: string; whatItIs: string; auroraEffect: str
 const NOTIF_TOOLTIP_CONTENT: Record<string, NotifTooltipEntry> = {
   'visibility-dslr': {
     title: 'DSLR Camera Visible Alert',
-    whatItIs: 'The earliest aurora alert — sent when conditions are just sufficient for a DSLR camera on a tripod with a long exposure (5–15 seconds) to capture aurora from your location.',
+    whatItIs: 'The earliest aurora alert - sent when conditions are just sufficient for a DSLR camera on a tripod with a long exposure (5–15 seconds) to capture aurora from your location.',
     auroraEffect: 'This is the first signal that aurora activity is developing toward something worth heading out for. Great for maximum lead time to reach a dark sky site.',
-    advanced: 'Triggered by the aurora oval reaching your geomagnetic latitude at low-activity threshold. May not be visible to the naked eye — a camera will show it before you can see it directly.',
+    advanced: 'Triggered by the aurora oval reaching your geomagnetic latitude at low-activity threshold. May not be visible to the naked eye - a camera will show it before you can see it directly.',
   },
   'visibility-phone': {
     title: 'Phone Camera Visible Alert',
@@ -305,31 +324,31 @@ const NOTIF_TOOLTIP_CONTENT: Record<string, NotifTooltipEntry> = {
   },
   'visibility-naked': {
     title: 'Naked Eye Visible Alert',
-    whatItIs: 'Sent when aurora should be directly visible to the naked eye from your location — no camera needed.',
-    auroraEffect: 'Go outside, look south, and you should see it directly. This is the strongest visibility threshold and the most exciting alert — conditions are genuinely significant.',
+    whatItIs: 'Sent when aurora should be directly visible to the naked eye from your location - no camera needed.',
+    auroraEffect: 'Go outside, look south, and you should see it directly. This is the strongest visibility threshold and the most exciting alert - conditions are genuinely significant.',
     advanced: 'Requires the oval to have expanded substantially equatorward. Combined with sufficient Kp or substorm index, this represents a high-confidence aurora event for your latitude.',
   },
   'overnight-watch': {
     title: 'Worth Watching Tonight Alert',
     whatItIs: 'A once-daily alert sent around sunset (6–9 PM NZST) when solar wind conditions are elevated enough to be worth monitoring tonight.',
-    auroraEffect: 'Includes Bz direction, solar wind speed, and moon illumination so you can decide whether to head out to a dark location. Not sent on quiet nights — only when there is something worth watching.',
+    auroraEffect: 'Includes Bz direction, solar wind speed, and moon illumination so you can decide whether to head out to a dark location. Not sent on quiet nights - only when there is something worth watching.',
     advanced: 'Uses a composite of live Bz, solar wind speed, Newell coupling, and short-range forecast confidence to decide whether conditions justify an alert. Sent once per evening window.',
   },
   'flare-M1': {
     title: 'Solar Flare M1+ Alert',
-    whatItIs: 'Sent when a solar flare reaches at least M1.0 class — the earliest and broadest flare warning threshold.',
+    whatItIs: 'Sent when a solar flare reaches at least M1.0 class - the earliest and broadest flare warning threshold.',
     auroraEffect: 'M1+ flares signal ramping solar activity. While not all flares produce Earth-directed CMEs, frequent M-class activity raises the probability of aurora-supporting disturbances in the 1–4 days following.',
     advanced: 'Flare class scales logarithmically: M1 = 10× a C1. Geoeffectiveness depends on whether the flare is associated with a CME, the CME speed, and source longitude on the solar disk.',
   },
   'flare-M5': {
     title: 'Solar Flare M5+ Alert',
-    whatItIs: 'A higher threshold flare alert — only sent for M5.0 and above.',
+    whatItIs: 'A higher threshold flare alert - only sent for M5.0 and above.',
     auroraEffect: 'M5+ flares have a stronger association with major CME launches and elevated space weather. Fewer false alarms than M1+ while still providing useful lead time.',
     advanced: 'M5 is approximately 5× an M1 in X-ray flux. These events often have associated type II/IV radio bursts and proton events that support CME confirmation.',
   },
   'flare-X1': {
     title: 'Solar Flare X1+ Alert',
-    whatItIs: 'Sent only for major X-class flares (X1.0 and above) — the strongest category of solar flare.',
+    whatItIs: 'Sent only for major X-class flares (X1.0 and above) - the strongest category of solar flare.',
     auroraEffect: 'X-class flares are major solar events with a high association with fast, geoeffective CMEs. An X1+ alert often precedes significant space weather and aurora activity within 1–4 days.',
     advanced: 'X-class flares are 10× stronger than M-class. Above X5, radio blackouts and SEP events are common. Source longitude on the disk strongly influences whether the associated CME is Earth-directed.',
   },
@@ -341,21 +360,39 @@ const NOTIF_TOOLTIP_CONTENT: Record<string, NotifTooltipEntry> = {
   },
   'flare-X10': {
     title: 'Solar Flare X10+ Alert',
-    whatItIs: 'Reserved for rare, exceptional X10+ flares — the most extreme solar eruption threshold.',
+    whatItIs: 'Reserved for rare, exceptional X10+ flares - the most extreme solar eruption threshold.',
     auroraEffect: 'X10+ flares are historically associated with the strongest geomagnetic storms on record. If you only want one flare alert, this is the highest-confidence aurora trigger available.',
-    advanced: 'X10+ events are rare — typically a few per solar cycle. The X28 event in 2003 saturated monitoring instruments. These events can cause aurora visible from the tropics.',
+    advanced: 'X10+ events are rare - typically a few per solar cycle. The X28 event in 2003 saturated monitoring instruments. These events can cause aurora visible from the tropics.',
   },
   'shock-ff': {
     title: 'Fast Forward Shock Alert',
-    whatItIs: 'A fast-moving CME or solar wind stream has slammed into the L1 satellites. Speed, density, temperature, and magnetic field all jump simultaneously — the classic CME arrival signature.',
+    whatItIs: 'A fast-moving CME or solar wind stream has slammed into the L1 satellites. Speed, density, temperature, and magnetic field all jump simultaneously - the classic CME arrival signature.',
     auroraEffect: 'The most actionable aurora alert. Conditions on Earth can shift from quiet to active within 30–60 minutes. If the following IMF orientation is southward (Bz negative), significant aurora is likely.',
-    advanced: 'Fast Forward shocks compress the entire solar wind structure. Aurora strength depends on the sheath and magnetic cloud Bz that follows — check the Solar Wind Quick View panel immediately.',
+    advanced: 'Fast Forward shocks compress the entire solar wind structure. Aurora strength depends on the sheath and magnetic cloud Bz that follows - check the Solar Wind Quick View panel immediately.',
+  },
+  'shock-sf': {
+    title: 'Slow Forward Shock Alert',
+    whatItIs: 'A compression wave where speed, density, and temperature rise but the magnetic field drops - often the leading edge of a stream interaction region (SIR) or a weak CME flank.',
+    auroraEffect: 'Can enhance aurora conditions but typically less dramatically than a fast forward shock. Watch for Bz turning southward in the following hours for the best aurora window.',
+    advanced: 'SIR-driven slow forward shocks are recurring events tied to fast solar wind streams from coronal holes. They lack strong magnetic cloud structures but can still drive moderate geomagnetic activity.',
+  },
+  'shock-fr': {
+    title: 'Fast Reverse Shock Alert',
+    whatItIs: 'The trailing edge of a CME or high-speed stream is sweeping past. Density and temperature drop but speed stays elevated - the event is winding down.',
+    auroraEffect: 'The strongest part of the solar wind disturbance has typically already passed. Residual aurora activity may continue for hours but is usually declining.',
+    advanced: 'Fast reverse shocks occur when fast solar wind outruns the slower wind behind it, creating a rarefaction region at the trailing boundary.',
+  },
+  'shock-sr': {
+    title: 'Slow Reverse Shock Alert',
+    whatItIs: 'A rarefaction wave at the tail end of a solar wind structure - density and temperature decrease while the magnetic field slightly increases.',
+    auroraEffect: 'Aurora activity is usually winding down at this point. This alert marks the very end of a complex solar wind event and confirms conditions are returning to baseline.',
+    advanced: 'Slow reverse shocks are relatively uncommon and typically low-impact from an aurora perspective.',
   },
   'admin-broadcast': {
     title: 'Spot The Aurora Announcements',
-    whatItIs: 'Occasional direct messages sent manually by the Spot The Aurora team — aurora event alerts, tips about upcoming conditions, or important app updates.',
-    auroraEffect: 'Sent sparingly and only when there is something genuinely worth knowing — an active aurora event right now, an unusually strong incoming CME, or a significant app update.',
-    advanced: 'These are not automated — a human decides to send them. Frequency is low by design. If you receive one during the night, it is worth checking conditions immediately.',
+    whatItIs: 'Occasional direct messages sent manually by the Spot The Aurora team - aurora event alerts, tips about upcoming conditions, or important app updates.',
+    auroraEffect: 'Sent sparingly and only when there is something genuinely worth knowing - an active aurora event right now, an unusually strong incoming CME, or a significant app update.',
+    advanced: 'These are not automated - a human decides to send them. Frequency is low by design. If you receive one during the night, it is worth checking conditions immediately.',
   },
 };
 
@@ -444,7 +481,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       let shockPrefChanged = false;
       ALL_NOTIFICATION_IDS.forEach(id => {
         if (SHOCK_NOTIFICATION_IDS.has(id)) {
-          // Shock notifications are "coming soon" — always force off in the UI,
+          // Shock notifications are "coming soon" - always force off in the UI,
           // and persist false locally so any previously-enabled subscribers get
           // cleared out. We also sync with the server below.
           loadedNotificationSettings[id] = false;
@@ -463,9 +500,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       }
       // Pick an initial template for the selector. Priority order:
       //   1. Whatever the user explicitly saved (from onboarding or a previous
-      //      settings visit) — this honours their declared intent.
+      //      settings visit) - this honours their declared intent.
       //   2. Otherwise, see if their current prefs happen to match one of the
-      //      presets exactly — handy for returning users who onboarded before
+      //      presets exactly - handy for returning users who onboarded before
       //      we started persisting the template choice.
       //   3. Fallback: 'custom' so the full list is visible and nothing's hidden.
       let initialTemplate: PresetId = 'custom';
@@ -477,7 +514,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           const detected = detectPresetFromPrefs(loadedNotificationSettings);
           if (detected) initialTemplate = detected;
         }
-      } catch { /* localStorage blocked — stick with 'custom' */ }
+      } catch { /* localStorage blocked - stick with 'custom' */ }
       setSelectedTemplate(initialTemplate);
       const storedGpsPref = localStorage.getItem(LOCATION_PREF_KEY);
       setUseGpsAutoDetect(storedGpsPref === null ? true : JSON.parse(storedGpsPref));
@@ -523,7 +560,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       if (!hasAnyPref) {
         const defaultOn: Record<string, boolean> = {};
         ALL_NOTIFICATION_IDS.forEach(id => {
-          // Shock notifications are "coming soon" — always default them OFF,
+          // Shock notifications are "coming soon" - always default them OFF,
           // even on first-time subscribe, because the user can't turn them off.
           const enabled = !SHOCK_NOTIFICATION_IDS.has(id);
           setNotificationPreference(id, enabled);
@@ -531,7 +568,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         });
         setNotificationSettings(defaultOn);
         // "Everything on (except shocks)" matches the 'everything' preset
-        // exactly — surface that to the user so the picker reflects their
+        // exactly - surface that to the user so the picker reflects their
         // actual state rather than falling back to 'custom'.
         setSelectedTemplate('everything');
         recordPresetSelection('everything', 'settings_modal');
@@ -572,7 +609,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       setDiagResults([...results]);
     };
 
-    // Step 1 — Service worker registered?
+    // Step 1 - Service worker registered?
     push('Service worker', 'running', 'Checking...');
     if (!('serviceWorker' in navigator)) {
       results[results.length-1] = { step: 'Service worker', status: 'fail', detail: 'Service workers not supported by this browser.' };
@@ -583,10 +620,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       results[results.length-1] = { step: 'Service worker', status: 'fail', detail: 'Service worker not ready. Try reloading the app.' };
       setDiagResults([...results]); setDiagRunning(false); return;
     }
-    results[results.length-1] = { step: 'Service worker', status: 'pass', detail: `Active — scope: ${reg.scope}` };
+    results[results.length-1] = { step: 'Service worker', status: 'pass', detail: `Active - scope: ${reg.scope}` };
     setDiagResults([...results]);
 
-    // Step 2 — Push subscription exists in browser?
+    // Step 2 - Push subscription exists in browser?
     push('Push subscription', 'running', 'Checking...');
     const sub = await reg.pushManager.getSubscription().catch(() => null);
     if (!sub) {
@@ -594,10 +631,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       setDiagResults([...results]); setDiagRunning(false); return;
     }
     const endpointShort = sub.endpoint.slice(-28);
-    results[results.length-1] = { step: 'Push subscription', status: 'pass', detail: `Found — endpoint: ...${endpointShort}` };
+    results[results.length-1] = { step: 'Push subscription', status: 'pass', detail: `Found - endpoint: ...${endpointShort}` };
     setDiagResults([...results]);
 
-    // Step 3 — Subscription saved in worker KV?
+    // Step 3 - Subscription saved in worker KV?
     push('Saved on server', 'running', 'Checking worker KV...');
     try {
       const checkResp = await fetch('https://push-notification-worker.thenamesrock.workers.dev/check-subscription', {
@@ -612,21 +649,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           : checkData.locationSource === 'ip' ? 'IP geolocation' : 'Unknown';
         results[results.length-1] = { step: 'Saved on server', status: 'pass', detail: `Subscription found in KV · Location: ${loc} · ${checkData.preferenceCount} preferences stored` };
       } else {
-        results[results.length-1] = { step: 'Saved on server', status: 'fail', detail: 'Subscription NOT found in worker KV. The save request may have failed — try re-enabling notifications.' };
+        results[results.length-1] = { step: 'Saved on server', status: 'fail', detail: 'Subscription NOT found in worker KV. The save request may have failed - try re-enabling notifications.' };
       }
     } catch (e: any) {
       results[results.length-1] = { step: 'Saved on server', status: 'fail', detail: `Could not reach worker: ${e.message}` };
     }
     setDiagResults([...results]);
 
-    // Step 4 — Worker health
+    // Step 4 - Worker health
     push('Worker health', 'running', 'Checking...');
     try {
       const healthResp = await fetch('https://push-notification-worker.thenamesrock.workers.dev/health');
       const health = await healthResp.json();
       if (health.ok) {
         const ageMin = health.ageMs ? Math.round(health.ageMs / 60000) : null;
-        results[results.length-1] = { step: 'Worker health', status: 'pass', detail: `Cron running — last run ${ageMin != null ? `${ageMin} min ago` : 'recently'}` };
+        results[results.length-1] = { step: 'Worker health', status: 'pass', detail: `Cron running - last run ${ageMin != null ? `${ageMin} min ago` : 'recently'}` };
       } else {
         results[results.length-1] = { step: 'Worker health', status: 'warn', detail: `Worker cron hasn't run recently (last: ${health.lastRun ? new Date(health.lastRun).toLocaleTimeString() : 'never'})` };
       }
@@ -643,7 +680,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     try {
       const reg = await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.getSubscription();
-      if (!sub) { setServerTestResult('❌ No push subscription found — enable notifications first.'); setServerTestRunning(false); return; }
+      if (!sub) { setServerTestResult('❌ No push subscription found - enable notifications first.'); setServerTestRunning(false); return; }
       const resp = await fetch('https://push-notification-worker.thenamesrock.workers.dev/trigger-test-push-for-me', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -722,7 +759,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
    * User picked a template card. For non-custom presets, rewrite all the
    * per-notification prefs and the overnight-watch mode in one go so the
    * full preset takes effect immediately. For 'custom', we just reveal the
-   * list — the user's current selections are left alone so they can start
+   * list - the user's current selections are left alone so they can start
    * tweaking without losing what they had.
    */
   const handleTemplateSelect = useCallback(async (id: PresetId) => {
@@ -939,7 +976,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     <p className="text-green-300">Push notifications are enabled! You can now customize your alerts below.</p>
                 </div>
 
-                {/* Template picker — pick a preset or "Custom" to choose individually. */}
+                {/* Template picker - pick a preset or "Custom" to choose individually. */}
                 <div className="bg-neutral-900/50 border border-neutral-700/60 rounded-lg p-4">
                   <h4 className="text-sm font-semibold text-neutral-300 mb-1">Alert template</h4>
                   <p className="text-xs text-neutral-500 mb-3">
@@ -979,7 +1016,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                   )}
                 </div>
 
-                {/* Per-alert list — only shown when the user has chosen to customise.
+                {/* Per-alert list - only shown when the user has chosen to customise.
                     Any manual toggle automatically flips selectedTemplate to 'custom',
                     which is also why this stays visible after the first edit. */}
                 {selectedTemplate === 'custom' && (
@@ -1025,7 +1062,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                               )}
                             </div>
                             <p className={`text-xs mt-1 ml-1 ${isShock ? 'text-neutral-700' : 'text-neutral-600'}`}>{item.description}</p>
-                            {/* Mode selector — only for overnight-watch */}
+                            {/* Mode selector - only for overnight-watch */}
                             {item.id === 'overnight-watch' && notificationSettings[item.id] && (
                               <div className="mt-3 ml-1 p-3 bg-neutral-800/60 border border-neutral-700/50 rounded-lg">
                                 <p className="text-xs font-semibold text-neutral-300 mb-2">Send when…</p>
@@ -1034,7 +1071,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                     { value: 'every-night', label: 'Every night', desc: 'Always send a nightly summary at sunset, even if conditions are quiet.' },
                                     { value: 'camera',      label: 'Camera may detect aurora', desc: 'Only when conditions are elevated enough for a DSLR to capture aurora.' },
                                     { value: 'phone',       label: 'Phone camera may show aurora', desc: 'Only when aurora should be visible on a smartphone camera.' },
-                                    { value: 'eye',         label: 'Naked eye aurora likely', desc: 'Only when aurora may be visible to the naked eye — significant events only.' },
+                                    { value: 'eye',         label: 'Naked eye aurora likely', desc: 'Only when aurora may be visible to the naked eye - significant events only.' },
                                   ] as { value: OvernightMode; label: string; desc: string }[]).map(opt => (
                                     <label key={opt.value} className={`flex items-start gap-2.5 cursor-pointer p-2 rounded-lg transition-colors ${overnightMode === opt.value ? 'bg-sky-500/15 border border-sky-500/30' : 'hover:bg-neutral-700/40'}`}>
                                       <input
@@ -1083,7 +1120,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             </span>
                             <div>
                               <span className="font-semibold text-neutral-300">{r.step}</span>
-                              <span className="text-neutral-500 ml-1">— {r.detail}</span>
+                              <span className="text-neutral-500 ml-1">- {r.detail}</span>
                             </div>
                           </div>
                         ))}
@@ -1165,7 +1202,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 )}
               </div>
             </div>
-            <p className="text-sm text-neutral-500 mb-3">Every notification sent to this device is saved here. Stored locally — cleared only if you clear the app cache or delete entries manually.</p>
+            <p className="text-sm text-neutral-500 mb-3">Every notification sent to this device is saved here. Stored locally - cleared only if you clear the app cache or delete entries manually.</p>
             {showHistory && (
               <div className="space-y-2 max-h-80 overflow-y-auto styled-scrollbar pr-1">
                 {historyLoading ? (

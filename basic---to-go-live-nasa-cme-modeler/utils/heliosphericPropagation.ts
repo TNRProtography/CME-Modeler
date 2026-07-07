@@ -7,15 +7,15 @@
 //
 //  PHYSICS REFERENCES
 //  ──────────────────
-//  • Vršnak et al. 2013, Solar Phys. 285:295  — Quadratic drag-based model
-//  • Vršnak & Žic 2007, A&A 472:937           — DBM foundations
-//  • Cargill 2004, Solar Phys. 221:135        — Aerodynamic drag in MHD
-//  • Temmer et al. 2017, ApJ 835:141          — Preconditioning by prior CMEs
-//  • Werner et al. 2019, Space Weather 17:1    — CME–CME Sept 2017 event
-//  • Gopalswamy et al. 2001, ApJ 548:L91      — CME cannibalism
-//  • Skov & Nitta 2016, AGU SH13B-2294M       — Stealth CME–CH interaction
-//  • Dumbović et al. 2018, ApJ 854:180        — DBEM ensemble approach
-//  • Napoletano et al. 2018, SWSC 8:A19       — Probabilistic DBM
+//  • Vršnak et al. 2013, Solar Phys. 285:295  - Quadratic drag-based model
+//  • Vršnak & Žic 2007, A&A 472:937           - DBM foundations
+//  • Cargill 2004, Solar Phys. 221:135        - Aerodynamic drag in MHD
+//  • Temmer et al. 2017, ApJ 835:141          - Preconditioning by prior CMEs
+//  • Werner et al. 2019, Space Weather 17:1    - CME–CME Sept 2017 event
+//  • Gopalswamy et al. 2001, ApJ 548:L91      - CME cannibalism
+//  • Skov & Nitta 2016, AGU SH13B-2294M       - Stealth CME–CH interaction
+//  • Dumbović et al. 2018, ApJ 854:180        - DBEM ensemble approach
+//  • Napoletano et al. 2018, SWSC 8:A19       - Probabilistic DBM
 //
 //  The engine runs client-side in <0.5ms per timestep, enabling real-time
 //  animation at 60fps.  It uses the Vršnak quadratic drag formulation:
@@ -24,8 +24,8 @@
 //
 //  where:
 //    v  = CME radial speed (km/s)
-//    w  = ambient solar wind speed (km/s) — spatially & temporally varying
-//    γ  = drag parameter (km⁻¹) — depends on CME cross-section, mass, SW density
+//    w  = ambient solar wind speed (km/s) - spatially & temporally varying
+//    γ  = drag parameter (km⁻¹) - depends on CME cross-section, mass, SW density
 //
 //  The analytical solution (constant γ, constant w) is:
 //
@@ -102,7 +102,7 @@ export interface HSSInput {
   peakSpeedKms: number;
   /** CH angular width (deg) */
   widthDeg: number;
-  /** Emission start time (ms since epoch) — when the CH first faces Earth */
+  /** Emission start time (ms since epoch) - when the CH first faces Earth */
   emissionStartMs: number;
 }
 
@@ -129,7 +129,7 @@ export interface ImpactProfilePoint {
   speedKms: number;
   /** Proton density (cm⁻³) */
   densityCm3: number;
-  /** Estimated Bz component (nT) — negative = southward */
+  /** Estimated Bz component (nT) - negative = southward */
   bzNt: number;
   /** Dominant disturbance at this time */
   disturbanceType: 'ambient' | 'CME_sheath' | 'CME_ejecta' | 'HSS' | 'SIR' | 'complex_ejecta';
@@ -145,7 +145,7 @@ export interface ImpactProfilePoint {
 //
 //  Where:
 //    C_d   ≈ 1 (dimensionless drag coefficient for MHD case)
-//    A     = π · (R_cme)² — cross-sectional area (self-similar expansion)
+//    A     = π · (R_cme)² - cross-sectional area (self-similar expansion)
 //    ρ_sw  = solar wind density (falls as r⁻²)
 //    M     = CME mass (estimated from flare class / speed)
 //    M_v   = virtual mass ≈ ρ_sw · V_cme / 2
@@ -183,9 +183,9 @@ function estimateGamma(speedKms: number, halfAngleDeg: number): number {
 //  The ambient solar wind speed w determines the equilibrium speed
 //  a CME asymptotically approaches. It varies with:
 //
-//  1. Ecliptic longitude — slow wind from streamer belt, fast from CHs
-//  2. Time — solar rotation sweeps different structures past Earth
-//  3. Prior disturbances — preconditioning by earlier CMEs/HSSs
+//  1. Ecliptic longitude - slow wind from streamer belt, fast from CHs
+//  2. Time - solar rotation sweeps different structures past Earth
+//  3. Prior disturbances - preconditioning by earlier CMEs/HSSs
 //
 //  We combine:
 //  (a) A measured baseline from L1 data (DSCOVR/ACE) when available
@@ -246,16 +246,16 @@ function getAmbientWindSpeed(
 //
 //  Three interaction modes (Werner et al. 2019, Lugaz et al. 2017):
 //
-//  1. PRECONDITIONING — a prior CME has swept through the same corridor,
+//  1. PRECONDITIONING - a prior CME has swept through the same corridor,
 //     leaving a rarefied wake (lower ρ_sw → reduced γ). The following
 //     CME experiences 30–60% less drag and arrives earlier than expected.
 //     (Temmer et al. 2017: preconditioning lasts 2–5 days)
 //
-//  2. COMPRESSION — the following CME's sheath compresses against the
+//  2. COMPRESSION - the following CME's sheath compresses against the
 //     preceding CME's trailing edge. Enhanced density at the interface.
 //     Not yet a full merger; distinct structures still identifiable.
 //
-//  3. CANNIBALISM — the fast CME overtakes and engulfs the slow one.
+//  3. CANNIBALISM - the fast CME overtakes and engulfs the slow one.
 //     The result is a "complex ejecta" with disordered magnetic field,
 //     enhanced density, and a speed intermediate between the two.
 //     (Burlaga et al. 2002: weak/disordered Bz, higher plasma beta)
@@ -265,7 +265,7 @@ interface CMETrajectory {
   cme: CMEInput;
   gamma: number;
   ambientW: number;
-  /** distance(t) in km, speed(t) in km/s — precomputed at coarse timesteps */
+  /** distance(t) in km, speed(t) in km/s - precomputed at coarse timesteps */
   trajectory: { tSec: number; distKm: number; speedKms: number }[];
   /** Flags set by interaction analysis */
   preconditioningFactor: number;  // 1.0 = normal, 0.4–0.7 = reduced drag
@@ -292,7 +292,7 @@ function computeTrajectory(
   const dv = v0 - w;
 
   if (Math.abs(dv) < 1.0) {
-    // CME speed ≈ ambient wind — no significant drag, linear propagation
+    // CME speed ≈ ambient wind - no significant drag, linear propagation
     for (let t = 0; t <= maxTimeSec; t += dtSec) {
       points.push({
         tSec: t,
@@ -444,7 +444,7 @@ function resolveInteractions(
         // Follower is close behind leader but hasn't caught up yet
         const gapKm = leaderState.distKm - followerState.distKm;
         if (gapKm > 0 && gapKm < 0.05 * AU_KM) {
-          // Within 0.05 AU — significant compression of intervening plasma
+          // Within 0.05 AU - significant compression of intervening plasma
           const compressionIntensity = 1.0 - gapKm / (0.05 * AU_KM);
           follower.compressionDensityBoost = Math.max(
             follower.compressionDensityBoost,
@@ -665,7 +665,7 @@ export function createPropagationEngine(
             dominantContribution = speedProfile - speed;
             speed = speedProfile;
             density = hssDensity;
-            // HSS Bz: Alfvénic fluctuations — alternating N/S, moderate amplitude
+            // HSS Bz: Alfvénic fluctuations - alternating N/S, moderate amplitude
             bz = 3.0 * Math.sin(hoursSinceArrival * 0.4) * (1 - hssPhase);
             distType = 'HSS';
           }
@@ -701,7 +701,7 @@ export function createPropagationEngine(
           // Sheath speed: moderately elevated (compressed slow wind)
           const sheathSpeed = speed + (speedKms - speed) * 0.25 * Math.sin(sheathPhase * Math.PI);
 
-          // Sheath Bz: draped IMF — can be strongly southward
+          // Sheath Bz: draped IMF - can be strongly southward
           // This is often MORE geoeffective than the ejecta itself!
           const sheathBz = -4.0 * Math.sin(sheathPhase * Math.PI) * (speedKms / 800);
 
@@ -737,13 +737,13 @@ export function createPropagationEngine(
           // Apply Bothmer-Schwenn chirality
           let ejectaBz: number;
           if (cme.sourceHemisphere === 'N') {
-            // Northern: SEN type — Bz starts south, rotates to north
+            // Northern: SEN type - Bz starts south, rotates to north
             ejectaBz = -bzAmplitude * Math.cos(rotationAngle);
           } else if (cme.sourceHemisphere === 'S') {
-            // Southern: NES type — Bz starts north, rotates to south
+            // Southern: NES type - Bz starts north, rotates to south
             ejectaBz = bzAmplitude * Math.cos(rotationAngle);
           } else {
-            // Unknown hemisphere — assume worst case (50% south)
+            // Unknown hemisphere - assume worst case (50% south)
             ejectaBz = -bzAmplitude * 0.5 * Math.cos(rotationAngle);
           }
 
