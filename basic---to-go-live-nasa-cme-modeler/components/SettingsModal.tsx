@@ -138,9 +138,6 @@ const CATEGORY_EMOJI: Record<string, string> = {
   'flare-X10':         '☀️',
   'flare-peak':        '☀️',
   'shock-ff':          '💥',
-  'shock-sf':          '💥',
-  'shock-fr':          '💥',
-  'shock-sr':          '💥',
   'substorm-forecast': '⚡',
   'admin-broadcast':   '📢',
 };
@@ -160,7 +157,9 @@ interface SettingsModalProps {
   pageViewStorageMode: 'server' | 'local';
 }
 
-const SHOCK_NOTIFICATION_IDS = new Set(['shock-ff', 'shock-sf', 'shock-fr', 'shock-sr']);
+// Shock types that are still "coming soon" - forced off in UI.
+// shock-ff is now live and user-controllable.
+const SHOCK_NOTIFICATION_IDS = new Set(['shock-sf', 'shock-fr', 'shock-sr']);
 
 // Notification categories shown in the UI - grouped for clarity.
 // Legacy topic IDs (aurora-Xpercent, substorm-forecast etc) are intentionally
@@ -239,27 +238,9 @@ const NOTIFICATION_GROUPS = [
       },
       {
         id: 'shock-ff',
-        label: 'Fast forward shock - CME hit the satellites',
+        label: 'CME arrival - fast forward shock',
         description: 'A CME or solar wind stream has slammed into the L1 satellites. Aurora conditions may change within 45–60 minutes.',
         tooltip: 'A fast forward shock (FF) is the most common and impactful type of interplanetary shock. It happens when a fast-moving CME or solar wind stream ploughs into slower wind ahead of it, compressing everything - speed, density, temperature, and magnetic field all jump up simultaneously. This is the classic "CME has arrived" signature and is one of the most actionable alerts. Conditions on Earth can shift from quiet to active within an hour.',
-      },
-      {
-        id: 'shock-sf',
-        label: 'Slow forward shock - compression wave arriving',
-        description: 'A gentler compression wave has been detected. Speed and density are rising but the magnetic field dipped - often a SIR or weak CME edge.',
-        tooltip: 'A slow forward shock (SF) is a compression where speed, density, and temperature all increase, but the magnetic field strength drops across the shock boundary. This often marks the leading edge of a stream interaction region (SIR) or a weak CME flank. It can still enhance aurora conditions, but usually less dramatically than a fast forward shock.',
-      },
-      {
-        id: 'shock-fr',
-        label: 'Fast reverse shock - CME trailing edge passing',
-        description: 'The back end of a CME or high-speed stream is sweeping past. Density and temperature are dropping while speed is still elevated.',
-        tooltip: 'A fast reverse shock (FR) occurs at the trailing edge of a CME or high-speed solar wind stream as it outruns the slower wind behind it. Density, temperature, and magnetic field all drop, but speed remains elevated. This usually means the strongest part of the event has passed, but residual aurora activity can continue for hours.',
-      },
-      {
-        id: 'shock-sr',
-        label: 'Slow reverse shock - trailing rarefaction',
-        description: 'A rarefaction wave is passing - density and temperature falling with a magnetic field uptick. The tail end of a solar wind event.',
-        tooltip: 'A slow reverse shock (SR) is a rarefaction where density and temperature decrease, speed stays up, but the magnetic field actually increases across the boundary. This is relatively uncommon and typically marks the very tail end of a complex solar wind structure. Aurora activity is usually winding down by this point.',
       },
     ],
   },
@@ -369,24 +350,6 @@ const NOTIF_TOOLTIP_CONTENT: Record<string, NotifTooltipEntry> = {
     whatItIs: 'A fast-moving CME or solar wind stream has slammed into the L1 satellites. Speed, density, temperature, and magnetic field all jump simultaneously - the classic CME arrival signature.',
     auroraEffect: 'The most actionable aurora alert. Conditions on Earth can shift from quiet to active within 30–60 minutes. If the following IMF orientation is southward (Bz negative), significant aurora is likely.',
     advanced: 'Fast Forward shocks compress the entire solar wind structure. Aurora strength depends on the sheath and magnetic cloud Bz that follows - check the Solar Wind Quick View panel immediately.',
-  },
-  'shock-sf': {
-    title: 'Slow Forward Shock Alert',
-    whatItIs: 'A compression wave where speed, density, and temperature rise but the magnetic field drops - often the leading edge of a stream interaction region (SIR) or a weak CME flank.',
-    auroraEffect: 'Can enhance aurora conditions but typically less dramatically than a fast forward shock. Watch for Bz turning southward in the following hours for the best aurora window.',
-    advanced: 'SIR-driven slow forward shocks are recurring events tied to fast solar wind streams from coronal holes. They lack strong magnetic cloud structures but can still drive moderate geomagnetic activity.',
-  },
-  'shock-fr': {
-    title: 'Fast Reverse Shock Alert',
-    whatItIs: 'The trailing edge of a CME or high-speed stream is sweeping past. Density and temperature drop but speed stays elevated - the event is winding down.',
-    auroraEffect: 'The strongest part of the solar wind disturbance has typically already passed. Residual aurora activity may continue for hours but is usually declining.',
-    advanced: 'Fast reverse shocks occur when fast solar wind outruns the slower wind behind it, creating a rarefaction region at the trailing boundary.',
-  },
-  'shock-sr': {
-    title: 'Slow Reverse Shock Alert',
-    whatItIs: 'A rarefaction wave at the tail end of a solar wind structure - density and temperature decrease while the magnetic field slightly increases.',
-    auroraEffect: 'Aurora activity is usually winding down at this point. This alert marks the very end of a complex solar wind event and confirms conditions are returning to baseline.',
-    advanced: 'Slow reverse shocks are relatively uncommon and typically low-impact from an aurora perspective.',
   },
   'admin-broadcast': {
     title: 'Spot The Aurora Announcements',
