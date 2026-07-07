@@ -36,9 +36,6 @@ const TOPIC_ICONS: Record<string, string> = {
   'flare-X5':          '/icons/icon-flare-event.png',
   'flare-X10':         '/icons/icon-flare-event.png',
   'shock-ff':          '/icons/icon-shock-detection.png',
-  'shock-sf':          '/icons/icon-shock-detection.png',
-  'shock-fr':          '/icons/icon-shock-detection.png',
-  'shock-sr':          '/icons/icon-shock-detection.png',
   'aurora-40percent':  '/icons/icon-aurora.png',
   'aurora-50percent':  '/icons/icon-aurora.png',
   'aurora-60percent':  '/icons/icon-aurora.png',
@@ -70,12 +67,8 @@ const NOTIFICATION_CATEGORIES = [
   'overnight-watch',
   // Solar flare event (replaces flare-peak in UI — old topic still runs on worker)
   'flare-event',
-  // Shock detection — four IPS shock types (IMF enhancement removed: it was
-  // the main false-positive source in the client-side detector)
+  // Shock detection — CME arrival (fast forward shock)
   'shock-ff',
-  'shock-sf',
-  'shock-fr',
-  'shock-sr',
   // Legacy topics — kept for backwards compat, hidden from UI but still respected
   'aurora-40percent', 'aurora-50percent', 'aurora-60percent', 'aurora-80percent',
   'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'flare-peak',
