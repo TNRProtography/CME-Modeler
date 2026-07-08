@@ -453,11 +453,22 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
     openSlotTooltip('about');
   }, [openSlotTooltip]);
   const rawWorkerScore = substormRiskData?.current?.score   ?? null;
-  // Latest IMF By from RTSW mag data - feeds the Russell-McPherron
-  // seasonal projection in the oval boundary. Null = RM factor of 1.
-  const latestBy = allMagneticData && allMagneticData.length > 0
-    ? allMagneticData[allMagneticData.length - 1].by ?? null
-    : null;
+  // 30-min average IMF By from RTSW mag data - feeds the Russell-McPherron
+  // seasonal projection in the oval boundary. Averaged to match the Newell
+  // 30/60m windows it multiplies (a single sample jitters with By flips).
+  // Null = RM factor of 1.
+  const latestBy = useMemo(() => {
+    if (!allMagneticData || allMagneticData.length === 0) return null;
+    const cutoff = Date.now() - 30 * 60000;
+    const vals = allMagneticData
+      .filter(p => p.time >= cutoff && p.by != null && Number.isFinite(p.by))
+      .map(p => p.by);
+    if (vals.length === 0) {
+      const last = allMagneticData[allMagneticData.length - 1].by;
+      return last != null && Number.isFinite(last) ? last : null;
+    }
+    return vals.reduce((s, v) => s + v, 0) / vals.length;
+  }, [allMagneticData]);
   const workerScore    = rawWorkerScore != null
     ? locationAdjustedScore(
         rawWorkerScore,
