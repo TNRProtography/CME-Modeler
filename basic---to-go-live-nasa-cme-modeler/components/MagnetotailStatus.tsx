@@ -102,10 +102,10 @@ function buildTiers(): Tier[] {
   return [
     { label: 'Minor',    score: 15,  colour: '#38bdf8', x: t(0.0),  nzNote: 'Camera only, deep south' },
     { label: 'Moderate', score: 30,  colour: '#34d399', x: t(0.17), nzNote: 'Camera aurora, South Island' },
-    { label: 'Active',   score: 45,  colour: '#a3e635', x: t(0.34), nzNote: 'Naked eye, South Island' },
-    { label: 'Strong',   score: 60,  colour: '#fbbf24', x: t(0.51), nzNote: 'Naked eye, most of NZ' },
+    { label: 'Active',   score: 45,  colour: '#a3e635', x: t(0.34), nzNote: 'Phone camera, South Island' },
+    { label: 'Strong',   score: 60,  colour: '#fbbf24', x: t(0.51), nzNote: 'Naked eye, South Island' },
     { label: 'Major',    score: 75,  colour: '#fb923c', x: t(0.68), nzNote: 'Bright display, overhead SI' },
-    { label: 'Extreme',  score: 90,  colour: '#f87171', x: t(0.85), nzNote: 'Vivid overhead, all of NZ' },
+    { label: 'Extreme',  score: 90,  colour: '#f87171', x: t(0.85), nzNote: 'Vivid overhead, a lot of NZ' },
   ];
 }
 const TIERS = buildTiers();
@@ -330,7 +330,15 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
   const tailLabel = isSnapping ? 'Reconnection' : score >= 60 ? 'Highly stretched' : score >= 30 ? 'Stretching' : 'Relaxed';
   const currentTierIdx = useMemo(() => { for (let i = TIERS.length - 1; i >= 0; i--) { if (score >= TIERS[i].score) return i; } return -1; }, [score]);
 
-  const loadingSuffix = loadingMinutes >= 20 ? ` Coupling has been elevated for ${loadingMinutes} minutes${loadingMinutes >= 45 ? ' - inside the typical substorm release window' : ''}.` : '';
+  const loadingSuffix = (() => {
+    if (loadingMinutes < 20) return '';
+    if (loadingMinutes >= 180) {
+      const hrs = (loadingMinutes / 60).toFixed(loadingMinutes >= 600 ? 0 : 1);
+      return ` Coupling has been elevated for over ${hrs} hours - under sustained driving like this, substorms typically recur every 1 to 3 hours.`;
+    }
+    if (loadingMinutes >= 45) return ` Coupling has been elevated for ${loadingMinutes} minutes - inside the typical substorm release window.`;
+    return ` Coupling has been elevated for ${loadingMinutes} minutes.`;
+  })();
   const stateDesc: Record<MagState, string> = {
     QUIET: 'Magnetosphere relaxed. No substorm activity expected.',
     LOADING: `Southward Bz is feeding energy into the magnetotail. The night-side field is starting to stretch.${loadingSuffix}`,
