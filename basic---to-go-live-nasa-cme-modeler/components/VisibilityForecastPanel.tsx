@@ -25,6 +25,7 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
 };
 import { SubstormForecast, SightingReport } from '../types';
 import type { SubstormRiskData } from '../hooks/useForecastData';
+import { computeOvalBoundary as computeOvalBoundaryPhysics } from '../utils/ovalPhysics';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -66,15 +67,29 @@ function geoToGmagLat(latDeg: number, lonDeg: number): number {
   return Math.asin(Math.max(-1, Math.min(1, sin))) * 180 / Math.PI;
 }
 
-function computeOvalBoundary(metrics: SubstormRiskData['metrics'], bayOnset: boolean): number {
-  const newell60 = metrics?.solar_wind?.newell_avg_60m ?? 0;
-  const newell30 = metrics?.solar_wind?.newell_avg_30m ?? 0;
-  const newell   = Math.max(newell60, newell30 * 0.85);
-  let boundary   = -(65.5 - newell / 1800);
-  boundary       = Math.max(boundary, -76);
-  boundary       = Math.min(boundary, -44);
-  if (bayOnset) boundary = Math.min(boundary, -47.2);
-  return boundary;
+/**
+ * Oval boundary with pressure expansion + Russell-McPherron weighting.
+ * Thin wrapper over utils/ovalPhysics so the panel and the push worker
+ * share identical physics. latestBy is the most recent IMF By (nT) from
+ * the RTSW mag data, used for the RM seasonal projection; null disables
+ * the RM term (factor = 1).
+ */
+function computeOvalBoundary(
+  metrics: SubstormRiskData['metrics'],
+  bayOnset: boolean,
+  latestBy: number | null = null,
+): number {
+  return computeOvalBoundaryPhysics(
+    {
+      newell_avg_60m: metrics?.solar_wind?.newell_avg_60m,
+      newell_avg_30m: metrics?.solar_wind?.newell_avg_30m,
+      dynamic_pressure_nPa: metrics?.solar_wind?.dynamic_pressure_nPa,
+      avg_30m_pressure_nPa: metrics?.solar_wind?.avg_30m_pressure_nPa,
+      by: latestBy,
+      bz: metrics?.solar_wind?.bz,
+    },
+    bayOnset,
+  );
 }
 
 /**
@@ -89,10 +104,11 @@ function locationAdjustedScore(
   userLon: number | null | undefined,
   metrics: SubstormRiskData['metrics'],
   bayOnset: boolean,
+  latestBy: number | null = null,
 ): number {
   if (userLat == null || userLon == null) return rawScore;
   const userGmag   = geoToGmagLat(userLat, userLon);
-  const boundary   = computeOvalBoundary(metrics, bayOnset);
+  const boundary   = computeOvalBoundary(metrics, bayOnset, latestBy);
   const visDeg     = 9.0 + (Math.max(0, Math.min(rawScore, 100)) / 100) * 16.0;
   const visHorizon = boundary + visDeg; // geomagnetic lat of visibility line (negative)
   // distFromVis: positive = user is equatorward (north) of vis line = can't see
@@ -437,6 +453,11 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
     openSlotTooltip('about');
   }, [openSlotTooltip]);
   const rawWorkerScore = substormRiskData?.current?.score   ?? null;
+  // Latest IMF By from RTSW mag data - feeds the Russell-McPherron
+  // seasonal projection in the oval boundary. Null = RM factor of 1.
+  const latestBy = allMagneticData && allMagneticData.length > 0
+    ? allMagneticData[allMagneticData.length - 1].by ?? null
+    : null;
   const workerScore    = rawWorkerScore != null
     ? locationAdjustedScore(
         rawWorkerScore,
@@ -444,6 +465,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
         userLongitude,
         substormRiskData?.metrics,
         substormRiskData?.current?.bay_onset_flag ?? false,
+        latestBy,
       )
     : null;
   const workerTrend   = substormRiskData?.current?.risk_trend;
@@ -498,13 +520,13 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
     };
   }, [nowScore, sightingContext, bayOnset, cmeSheath, workerConf]);
 
-  const score15 = useMemo(() => locationAdjustedScore(rawScore15, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset), [rawScore15, userLatitude, userLongitude, substormRiskData, bayOnset]);
-  const score30 = useMemo(() => locationAdjustedScore(rawScore30, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset), [rawScore30, userLatitude, userLongitude, substormRiskData, bayOnset]);
-  const score60 = useMemo(() => locationAdjustedScore(rawScore60, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset), [rawScore60, userLatitude, userLongitude, substormRiskData, bayOnset]);
+  const score15 = useMemo(() => locationAdjustedScore(rawScore15, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset, latestBy), [rawScore15, userLatitude, userLongitude, substormRiskData, bayOnset, latestBy]);
+  const score30 = useMemo(() => locationAdjustedScore(rawScore30, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset, latestBy), [rawScore30, userLatitude, userLongitude, substormRiskData, bayOnset, latestBy]);
+  const score60 = useMemo(() => locationAdjustedScore(rawScore60, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset, latestBy), [rawScore60, userLatitude, userLongitude, substormRiskData, bayOnset, latestBy]);
   // 2-hour slot uses SpotTheAurora score - it already incorporates longer-range
   // solar wind coupling models. Apply location penalty the same way.
   const rawScore120 = auroraScore ?? 0;
-  const score120 = useMemo(() => locationAdjustedScore(rawScore120, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset), [rawScore120, userLatitude, userLongitude, substormRiskData, bayOnset]);
+  const score120 = useMemo(() => locationAdjustedScore(rawScore120, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset, latestBy), [rawScore120, userLatitude, userLongitude, substormRiskData, bayOnset, latestBy]);
   const vis15 = useMemo(() => getVisibilityPhrase(score15, conf15), [score15, conf15]);
   const vis30 = useMemo(() => getVisibilityPhrase(score30, conf30), [score30, conf30]);
   const vis60 = useMemo(() => getVisibilityPhrase(score60, conf60), [score60, conf60]);
