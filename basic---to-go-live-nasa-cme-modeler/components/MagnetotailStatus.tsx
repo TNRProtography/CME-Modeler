@@ -298,14 +298,6 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
     }
   }, [ovalBound, score, isSnapping]);
 
-  // Snap tick
-  const [snapTick, setSnapTick] = useState(0);
-  useEffect(() => {
-    if (!isSnapping) { setSnapTick(0); return; }
-    const id = setInterval(() => setSnapTick(t => t + 1), 3000);
-    return () => clearInterval(id);
-  }, [isSnapping]);
-
   // Tooltip (tap-friendly: tap toggles, hover works on desktop)
   const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -384,19 +376,34 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
         <svg ref={svgRef} viewBox={`0 0 ${VB_W} ${VB_H}`} className="absolute inset-0 w-full h-full" preserveAspectRatio="xMidYMid meet">
           <style>{`
             @keyframes mtFlow { to { stroke-dashoffset: -160; } }
-            @keyframes mtSnap { 0% { opacity:0; transform:scale(.5); } 35% { opacity:1; transform:scale(1.1); } 60% { opacity:0; transform:scale(1.6); } 100% { opacity:0; } }
-            @keyframes mtEject { 0%,28% { transform:translateX(0); opacity:0; } 40% { opacity:.8; } 100% { transform:translateX(100px); opacity:0; } }
-            @keyframes mtPrecip { 0%,30% { opacity:0; } 42% { opacity:.75; } 72% { opacity:.2; } 100% { opacity:0; } }
-            @keyframes mtAtmo { 0%,100% { opacity:.06; } 50% { opacity:.22; } }
+            /* ── Reconnection master cycle: every snap animation runs on the
+               same 3.6s clock so the causal order always reads correctly:
+               stretch/pinch (0-30%) -> SNAP (30-38%) -> field line recoils
+               earthward + plasmoid ejects (36-72%) -> particles rain down
+               (44-78%) -> aurora flares at the poles (52-92%) -> reset. */
+            @keyframes mtPinchT { 0% { transform:translateY(0); opacity:.72; } 26% { transform:translateY(4.5px); opacity:.8; } 31% { transform:translateY(6px); opacity:.9; } 34% { opacity:0; } 100% { opacity:0; } }
+            @keyframes mtPinchB { 0% { transform:translateY(0); opacity:.72; } 26% { transform:translateY(-4.5px); opacity:.8; } 31% { transform:translateY(-6px); opacity:.9; } 34% { opacity:0; } 100% { opacity:0; } }
+            @keyframes mtSnap { 0%,26% { opacity:0; transform:scale(.5); } 31% { opacity:1; transform:scale(1.15); } 42% { opacity:0; transform:scale(1.7); } 100% { opacity:0; } }
+            @keyframes mtRecoil { 0%,31% { opacity:0; transform:scaleX(1); } 36% { opacity:1; transform:scaleX(1); } 58% { transform:scaleX(.52); opacity:.95; } 70% { transform:scaleX(.42); opacity:.85; } 88% { transform:scaleX(.42); opacity:0; } 100% { opacity:0; } }
+            @keyframes mtEject { 0%,32% { transform:translateX(0); opacity:0; } 38% { opacity:.85; } 100% { transform:translateX(115px); opacity:0; } }
+            @keyframes mtPrecip { 0%,40% { opacity:0; } 50% { opacity:.85; } 70% { opacity:.4; } 80%,100% { opacity:0; } }
+            @keyframes mtAurora { 0%,48% { opacity:0; } 60% { opacity:1; } 80% { opacity:.55; } 94%,100% { opacity:0; } }
+            @keyframes mtAtmo { 0%,46% { opacity:.06; } 62% { opacity:.3; } 86% { opacity:.12; } 100% { opacity:.06; } }
             @keyframes mtGlow { 0%,100% { opacity:.25; } 50% { opacity:1; } }
             @keyframes mtTP { 0%,100% { opacity:.5; } 50% { opacity:1; } }
+            @keyframes mtBreathe { 0%,100% { transform:scaleX(1); } 50% { transform:scaleX(1.018); } }
             .mt-flow{animation:mtFlow 6s linear infinite}
-            .mt-snap{animation:mtSnap 3s ease-out infinite;transform-box:fill-box;transform-origin:center}
-            .mt-eject{animation:mtEject 3s ease-in infinite;transform-box:view-box;transform-origin:0 0}
-            .mt-precip{animation:mtPrecip 3s ease-in-out infinite}
-            .mt-atmo{animation:mtAtmo 3s ease-in-out infinite}
+            .mt-pinch-t{animation:mtPinchT 3.6s ease-in infinite}
+            .mt-pinch-b{animation:mtPinchB 3.6s ease-in infinite}
+            .mt-snap{animation:mtSnap 3.6s ease-out infinite;transform-box:fill-box;transform-origin:center}
+            .mt-recoil{animation:mtRecoil 3.6s cubic-bezier(.2,.9,.3,1) infinite}
+            .mt-eject{animation:mtEject 3.6s cubic-bezier(.5,0,.8,.6) infinite;transform-box:view-box;transform-origin:0 0}
+            .mt-precip{animation:mtPrecip 3.6s ease-in-out infinite}
+            .mt-aurora{animation:mtAurora 3.6s ease-in-out infinite}
+            .mt-atmo{animation:mtAtmo 3.6s ease-in-out infinite}
             .mt-glow{animation:mtGlow 3s ease-in-out infinite}
             .mt-tp{animation:mtTP 2s ease-in-out infinite}
+            .mt-breathe{animation:mtBreathe 4.5s ease-in-out infinite}
             .mt-h{pointer-events:all;cursor:help}
             @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important}}
           `}</style>
@@ -472,33 +479,73 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
           <path d={`M ${CX-R*0.34} ${CY-R*0.34} C ${CX-R*0.75} ${CY-R*0.14}, ${CX-R*0.75} ${CY+R*0.14}, ${CX-R*0.34} ${CY+R*0.34}`} fill="none" stroke="#aeb7c6" strokeWidth="1.1" opacity="0.5"/>
           <path d={`M ${CX+R*0.34} ${CY-R*0.34} C ${CX+R*0.75} ${CY-R*0.14}, ${CX+R*0.75} ${CY+R*0.14}, ${CX+R*0.34} ${CY+R*0.34}`} fill="none" stroke="#aeb7c6" strokeWidth="1.1" opacity="0.5"/>
 
-          {/* Night-side field */}
-          <g className="mt-h"
-            onClick={e => showTip(e, isSnapping ? 'Reconnection! Stored energy released, particles heading for the poles.' : magState === 'STRETCHED' ? 'Tail highly stretched, snap imminent.' : magState === 'LOADING' ? `Bz ${bz.toFixed(1)} nT driving energy into the tail.` : 'Tail relaxed, no loading.')}
-            onMouseMove={e => showTip(e, isSnapping ? 'Reconnection! Stored energy released, particles heading for the poles.' : magState === 'STRETCHED' ? 'Tail highly stretched, snap imminent.' : magState === 'LOADING' ? `Bz ${bz.toFixed(1)} nT driving energy into the tail.` : 'Tail relaxed, no loading.')}
+          {/* Night-side field. During a snap the innermost line pair is the
+              one that pinches into the X-point and breaks; the outer lines
+              hold their shape. During STRETCHED the whole tail breathes
+              slightly as energy loads. */}
+          <g className={`mt-h${magState === 'STRETCHED' && !isSnapping ? ' mt-breathe' : ''}`}
+            style={magState === 'STRETCHED' && !isSnapping ? { transformOrigin: `${CX}px ${CY}px` } : undefined}
+            onClick={e => showTip(e, isSnapping ? 'Reconnection in progress: the innermost stretched line pinches together, snaps, and the earthward half recoils toward Earth carrying particles with it.' : magState === 'STRETCHED' ? 'Tail highly stretched and thinning. The innermost lines are being squeezed toward the centre - a snap is imminent.' : magState === 'LOADING' ? `Bz ${bz.toFixed(1)} nT driving energy into the tail. Field lines are being dragged tailward and stretched.` : 'Tail relaxed, no loading.')}
+            onMouseMove={e => showTip(e, isSnapping ? 'Reconnection in progress: the innermost stretched line pinches together, snaps, and the earthward half recoils toward Earth carrying particles with it.' : magState === 'STRETCHED' ? 'Tail highly stretched and thinning. The innermost lines are being squeezed toward the centre - a snap is imminent.' : magState === 'LOADING' ? `Bz ${bz.toFixed(1)} nT driving energy into the tail. Field lines are being dragged tailward and stretched.` : 'Tail relaxed, no loading.')}
             onMouseLeave={hideTip}>
-            {nightTop.map((d,i)=><path key={`t${i}`} d={d} fill="none" stroke="#aeb7c6" strokeWidth="1.2" opacity={0.65-i*0.12}/>)}
-            {nightBot.map((d,i)=><path key={`b${i}`} d={d} fill="none" stroke="#aeb7c6" strokeWidth="1.2" opacity={0.65-i*0.12}/>)}
+            {nightTop.map((d,i)=> (isSnapping && i===0) ? null : <path key={`t${i}`} d={d} fill="none" stroke="#aeb7c6" strokeWidth="1.2" opacity={0.65-i*0.12}/>)}
+            {nightBot.map((d,i)=> (isSnapping && i===0) ? null : <path key={`b${i}`} d={d} fill="none" stroke="#aeb7c6" strokeWidth="1.2" opacity={0.65-i*0.12}/>)}
+            {isSnapping && (
+              <g>
+                {/* Pinching pair: converges into the X-point, then vanishes at the snap */}
+                <path d={nightTop[0]} fill="none" stroke="#dbe2ee" strokeWidth="1.35" className="mt-pinch-t"/>
+                <path d={nightBot[0]} fill="none" stroke="#dbe2ee" strokeWidth="1.35" className="mt-pinch-b"/>
+              </g>
+            )}
           </g>
 
           {/* Neutral sheet */}
           <line x1={CX+R*0.5} y1={CY} x2={tailEndX+8} y2={CY} stroke="#aeb7c6" strokeWidth="0.5" strokeDasharray="2 4" opacity="0.18"/>
 
-          {/* Reconnection X */}
+          {/* Reconnection X - flashes at the moment the pinched pair breaks */}
           {isSnapping && (()=>{ const xx=tailEndX-16; return (
-            <g className="mt-snap" style={{transformOrigin:`${xx}px ${CY}px`}}>
+            <g className="mt-snap mt-h" style={{transformOrigin:`${xx}px ${CY}px`}}
+              onClick={e => showTip(e, 'The X-point: oppositely directed field lines touch here and reconnect, releasing the stored magnetic energy in an instant.')}
+              onMouseMove={e => showTip(e, 'The X-point: oppositely directed field lines touch here and reconnect, releasing the stored magnetic energy in an instant.')}
+              onMouseLeave={hideTip}>
               <line x1={xx-8} y1={CY-8} x2={xx+8} y2={CY+8} stroke="#d2664a" strokeWidth="2.2" strokeLinecap="round"/>
               <line x1={xx+8} y1={CY-8} x2={xx-8} y2={CY+8} stroke="#d2664a" strokeWidth="2.2" strokeLinecap="round"/>
             </g>); })()}
 
-          {/* Plasmoid */}
-          {isSnapping && <ellipse cx={tailEndX+8} cy={CY} rx={10} ry={15} fill="none" stroke="#aeb7c6" strokeWidth="1.2" className="mt-eject"/>}
+          {/* Recoiling earthward loop: the freshly reconnected field line
+              contracts back toward Earth (dipolarization) - this is the
+              slingshot that fires particles down onto the poles. */}
+          {isSnapping && (()=>{ const xLoop = tailEndX - 22; return (
+            <path
+              d={`M ${CX+2} ${CY-R*0.42} C ${CX+R*0.9} ${CY-R*0.52}, ${xLoop-14} ${CY-R*0.34}, ${xLoop} ${CY} C ${xLoop-14} ${CY+R*0.34}, ${CX+R*0.9} ${CY+R*0.52}, ${CX+2} ${CY+R*0.42}`}
+              fill="none" stroke="#dbe2ee" strokeWidth="1.5" filter="url(#mt-gl)"
+              className="mt-recoil" style={{transformOrigin:`${CX}px ${CY}px`}}/>
+          ); })()}
 
-          {/* Precipitation */}
+          {/* Plasmoid: the tailward half of the broken line, pinched off and
+              flung away down the tail */}
+          {isSnapping && <ellipse cx={tailEndX+8} cy={CY} rx={10} ry={15} fill="none" stroke="#aeb7c6" strokeWidth="1.2" className="mt-eject mt-h"
+            onClick={e => showTip(e, 'Plasmoid: the tailward half of the snapped field line, pinched into a closed bubble and ejected away from Earth.')}
+            onMouseMove={e => showTip(e, 'Plasmoid: the tailward half of the snapped field line, pinched into a closed bubble and ejected away from Earth.')}
+            onMouseLeave={hideTip}/>}
+
+          {/* Pre-snap foreshadow: when STRETCHED, chevrons show where the
+              field is being squeezed toward the future X-point */}
+          {magState === 'STRETCHED' && !isSnapping && (()=>{ const xx=tailEndX-16; return (
+            <g className="mt-tp" opacity="0.7">
+              <path d={`M ${xx-6} ${CY-12} L ${xx} ${CY-5} L ${xx+6} ${CY-12}`} fill="none" stroke="#fb923c" strokeWidth="1.3" strokeLinecap="round"/>
+              <path d={`M ${xx-6} ${CY+12} L ${xx} ${CY+5} L ${xx+6} ${CY+12}`} fill="none" stroke="#fb923c" strokeWidth="1.3" strokeLinecap="round"/>
+            </g>); })()}
+
+          {/* Precipitation: particles ride the recoiling line down to the
+              polar atmosphere - they arrive just before the aurora ignites */}
           {isSnapping && (
-            <g className="mt-precip" filter="url(#mt-gl)">
-              <path d={`M ${tailEndX-35} ${CY-6} C ${CX+R*0.8} ${CY-R*0.6}, ${CX+R*0.3} ${CY-R*0.8}, ${CX+3} ${CY-R*0.65}`} fill="none" stroke="#5fb47a" strokeWidth="1.2" strokeDasharray="2 4"/>
-              <path d={`M ${tailEndX-35} ${CY+6} C ${CX+R*0.8} ${CY+R*0.6}, ${CX+R*0.3} ${CY+R*0.8}, ${CX+3} ${CY+R*0.65}`} fill="none" stroke="#5fb47a" strokeWidth="1.2" strokeDasharray="2 4"/>
+            <g className="mt-precip mt-h" filter="url(#mt-gl)"
+              onClick={e => showTip(e, 'Accelerated particles streaming along the recoiling field line, down into the polar atmosphere.')}
+              onMouseMove={e => showTip(e, 'Accelerated particles streaming along the recoiling field line, down into the polar atmosphere.')}
+              onMouseLeave={hideTip}>
+              <path d={`M ${tailEndX-35} ${CY-6} C ${CX+R*0.8} ${CY-R*0.55}, ${CX+R*0.35} ${CY-R*0.85}, ${CX+2} ${CY-R*0.82}`} fill="none" stroke="#5fb47a" strokeWidth="1.2" strokeDasharray="2 4"/>
+              <path d={`M ${tailEndX-35} ${CY+6} C ${CX+R*0.8} ${CY+R*0.55}, ${CX+R*0.35} ${CY+R*0.85}, ${CX+2} ${CY+R*0.82}`} fill="none" stroke="#5fb47a" strokeWidth="1.2" strokeDasharray="2 4"/>
             </g>
           )}
 
@@ -518,6 +565,23 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
             <circle cx={CX} cy={CY} r={R+8} fill="url(#mt-aG)" className={isSnapping?'mt-atmo':''} style={isSnapping?undefined:{opacity:0.06}}/>
             {earthUrl ? <image href={earthUrl} x={CX-R} y={CY-R} width={R*2} height={R*2} clipPath="url(#mt-ec)" style={{imageRendering:'auto'}}/> : <circle cx={CX} cy={CY} r={R} fill="#1a3a5c"/>}
           </g>
+
+          {/* Aurora ignition: polar arcs flare AFTER the snap, once the
+              recoiling line has delivered its particles - the payoff of the
+              whole sequence. */}
+          {isSnapping && (
+            <g className="mt-aurora mt-h" filter="url(#mt-gl)"
+              onClick={e => showTip(e, 'Aurora! The particles flung down by the recoiling field line crash into the upper atmosphere at both poles, making it glow.')}
+              onMouseMove={e => showTip(e, 'Aurora! The particles flung down by the recoiling field line crash into the upper atmosphere at both poles, making it glow.')}
+              onMouseLeave={hideTip}>
+              <circle cx={CX} cy={CY-R*0.86} r={R*0.34} fill="#5fb47a" opacity="0.14"/>
+              <circle cx={CX} cy={CY+R*0.86} r={R*0.34} fill="#5fb47a" opacity="0.14"/>
+              <path d={`M ${CX-R*0.46} ${CY-R*0.8} Q ${CX} ${CY-R*1.0} ${CX+R*0.46} ${CY-R*0.8}`} fill="none" stroke="#5fb47a" strokeWidth="2.4" strokeLinecap="round"/>
+              <path d={`M ${CX-R*0.34} ${CY-R*0.9} Q ${CX} ${CY-R*1.06} ${CX+R*0.34} ${CY-R*0.9}`} fill="none" stroke="#8fe0a8" strokeWidth="1.2" strokeLinecap="round" opacity="0.7"/>
+              <path d={`M ${CX-R*0.46} ${CY+R*0.8} Q ${CX} ${CY+R*1.0} ${CX+R*0.46} ${CY+R*0.8}`} fill="none" stroke="#5fb47a" strokeWidth="2.4" strokeLinecap="round"/>
+              <path d={`M ${CX-R*0.34} ${CY+R*0.9} Q ${CX} ${CY+R*1.06} ${CX+R*0.34} ${CY+R*0.9}`} fill="none" stroke="#8fe0a8" strokeWidth="1.2" strokeLinecap="round" opacity="0.7"/>
+            </g>
+          )}
 
           {/* Labels */}
           <text x={SUN_X} y={CY-SUN_R-8} textAnchor="middle" fill="#9aa2b1" fontSize="8" fontWeight="500" letterSpacing="0.1em" style={{textTransform:'uppercase' as const,fontFamily:'system-ui,sans-serif'}}>Sun</text>
