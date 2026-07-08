@@ -5,6 +5,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { SightingReport, SightingStatus } from '../types';
 import type { SubstormRiskData } from '../hooks/useForecastData';
+import { computeOvalBoundary as computeOvalBoundaryPhysics, avgBy30m } from '../utils/ovalPhysics';
 import LoadingSpinner from './icons/LoadingSpinner';
 import GuideIcon from './icons/GuideIcon';
 import CloseIcon from './icons/CloseIcon';
@@ -75,6 +76,8 @@ interface AuroraSightingsProps {
   substormRiskData?: SubstormRiskData | null;
   /** Proxy-derived newell coupling history (from RTSW merged-24h) */
   allNewellData?: { x: number; y: number }[];
+  /** Proxy-derived mag history - used for the RM By average in the oval physics */
+  allMagneticData?: { time: number; by?: number | null }[];
   // Oval forecast timeline props
   auroraScore?: number | null;
   rawScore15?: number;
@@ -236,17 +239,26 @@ function ovalColour(score: number): { line: string; fill: string; fillOpacity: n
   return             { line: '#38bdf8', fill: '#38bdf8', fillOpacity: 0.08 };
 }
 
-function computeOvalParams(metrics: SubstormRiskData['metrics'], bayOnset: boolean, score: number) {
-  const newell60 = metrics?.solar_wind?.newell_avg_60m ?? 0;
-  const newell30 = metrics?.solar_wind?.newell_avg_30m ?? 0;
-  const newell   = Math.max(newell60, newell30 * 0.85);
-
-  // Holzworth-Meng parameterisation via Newell coupling.
-  // This drives the equatorward (northern) edge - moves toward NZ as activity rises.
-  let equatorward = -(65.5 - newell / 1800);
-  equatorward = Math.max(equatorward, -76);
-  equatorward = Math.min(equatorward, -44);
-  if (bayOnset) equatorward = Math.min(equatorward, -47.2);
+function computeOvalParams(
+  metrics: SubstormRiskData['metrics'],
+  bayOnset: boolean,
+  score: number,
+  latestBy: number | null = null,
+) {
+  // Equatorward edge via shared oval physics (Newell base + dynamic
+  // pressure expansion + Russell-McPherron weighting) - identical to the
+  // What to Expect panel and the push worker so every surface agrees.
+  const equatorward = computeOvalBoundaryPhysics(
+    {
+      newell_avg_60m: metrics?.solar_wind?.newell_avg_60m,
+      newell_avg_30m: metrics?.solar_wind?.newell_avg_30m,
+      dynamic_pressure_nPa: (metrics?.solar_wind as any)?.dynamic_pressure_nPa,
+      avg_30m_pressure_nPa: (metrics?.solar_wind as any)?.avg_30m_pressure_nPa,
+      by: latestBy,
+      bz: metrics?.solar_wind?.bz,
+    },
+    bayOnset,
+  );
 
   // The poleward (southern) edge is anchored at its quiet-time position and never moves.
   // Only the equatorward edge expands northward during storms, making the oval thicker.
@@ -264,16 +276,17 @@ function computeOvalParams(metrics: SubstormRiskData['metrics'], bayOnset: boole
 // ── React overlay component ───────────────────────────────────
 interface OvalOverlayProps {
   substormRiskData: SubstormRiskData | null | undefined;
+  latestBy?: number | null;
 }
 
-const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ substormRiskData }) => {
+const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ substormRiskData, latestBy = null }) => {
   const score    = substormRiskData?.current?.score     ?? 0;
   const bayOnset = substormRiskData?.current?.bay_onset_flag ?? false;
   const metrics  = substormRiskData?.metrics;
 
   if (!metrics) return null;
 
-  const { boundary, halfWidth } = computeOvalParams(metrics, bayOnset, score);
+  const { boundary, halfWidth } = computeOvalParams(metrics, bayOnset, score, latestBy);
   const poleward    = boundary - halfWidth;
   const equatorward = boundary;
 
@@ -396,9 +409,13 @@ const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ substormRiskData }) => 
 
 interface ForecastOvalOverlayProps {
   frame: OvalForecastFrame;
+  latestBy?: number | null;
+  /** Current pressure/Bz carried into projected frames (persistence assumption) */
+  currentPdynNPa?: number | null;
+  currentBz?: number | null;
 }
 
-const ForecastOvalOverlay: React.FC<ForecastOvalOverlayProps> = ({ frame }) => {
+const ForecastOvalOverlay: React.FC<ForecastOvalOverlayProps> = ({ frame, latestBy = null, currentPdynNPa = null, currentBz = null }) => {
   const { newellProjected, scoreProjected, bayOnset, confidence } = frame;
 
   // Build projected metrics so we can reuse computeOvalParams unchanged
@@ -406,10 +423,12 @@ const ForecastOvalOverlay: React.FC<ForecastOvalOverlayProps> = ({ frame }) => {
     solar_wind: {
       newell_avg_60m: newellProjected,
       newell_avg_30m: newellProjected,
+      avg_30m_pressure_nPa: currentPdynNPa,
+      bz: currentBz,
     },
   } as SubstormRiskData['metrics'];
 
-  const { boundary, halfWidth } = computeOvalParams(projectedMetrics, bayOnset, scoreProjected);
+  const { boundary, halfWidth } = computeOvalParams(projectedMetrics, bayOnset, scoreProjected, latestBy);
   const poleward    = boundary - halfWidth;
   const equatorward = boundary;
 
@@ -490,7 +509,9 @@ const ForecastOvalOverlay: React.FC<ForecastOvalOverlayProps> = ({ frame }) => {
   );
 };
 
-const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSignal, onSightingsLoaded, substormRiskData, allNewellData, auroraScore, rawScore15, rawScore30, rawScore60, rawScore120 }) => {
+const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSignal, onSightingsLoaded, substormRiskData, allNewellData, allMagneticData, auroraScore, rawScore15, rawScore30, rawScore60, rawScore120 }) => {
+  // 30-min average IMF By for the Russell-McPherron term in the oval physics
+  const latestBy = useMemo(() => avgBy30m(allMagneticData), [allMagneticData]);
     const [sightings, setSightings] = useState<SightingReport[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -824,7 +845,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                         />
 
                         <TileLayer attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>' url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"/>
-        {isForecastMode ? <ForecastOvalOverlay frame={forecastFrame} /> : <AuroraOvalOverlay substormRiskData={substormRiskData} />}
+        {isForecastMode ? <ForecastOvalOverlay frame={forecastFrame} latestBy={latestBy} currentPdynNPa={substormRiskData?.metrics?.solar_wind?.avg_30m_pressure_nPa ?? substormRiskData?.metrics?.solar_wind?.dynamic_pressure_nPa ?? null} currentBz={substormRiskData?.metrics?.solar_wind?.bz ?? null} /> : <AuroraOvalOverlay substormRiskData={substormRiskData} latestBy={latestBy} />}
                         <LocationFinder onLocationSelect={() => {}} />
                         {userPosition && <Marker position={userPosition} icon={userMarkerIcon} draggable={false}><Popup>Your GPS location.</Popup></Marker>}
                         <>

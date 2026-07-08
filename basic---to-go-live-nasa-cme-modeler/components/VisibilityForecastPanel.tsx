@@ -25,7 +25,7 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
 };
 import { SubstormForecast, SightingReport } from '../types';
 import type { SubstormRiskData } from '../hooks/useForecastData';
-import { computeOvalBoundary as computeOvalBoundaryPhysics } from '../utils/ovalPhysics';
+import { computeOvalBoundary as computeOvalBoundaryPhysics, avgBy30m } from '../utils/ovalPhysics';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -454,21 +454,8 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   }, [openSlotTooltip]);
   const rawWorkerScore = substormRiskData?.current?.score   ?? null;
   // 30-min average IMF By from RTSW mag data - feeds the Russell-McPherron
-  // seasonal projection in the oval boundary. Averaged to match the Newell
-  // 30/60m windows it multiplies (a single sample jitters with By flips).
-  // Null = RM factor of 1.
-  const latestBy = useMemo(() => {
-    if (!allMagneticData || allMagneticData.length === 0) return null;
-    const cutoff = Date.now() - 30 * 60000;
-    const vals = allMagneticData
-      .filter(p => p.time >= cutoff && p.by != null && Number.isFinite(p.by))
-      .map(p => p.by);
-    if (vals.length === 0) {
-      const last = allMagneticData[allMagneticData.length - 1].by;
-      return last != null && Number.isFinite(last) ? last : null;
-    }
-    return vals.reduce((s, v) => s + v, 0) / vals.length;
-  }, [allMagneticData]);
+  // seasonal projection in the oval boundary (see utils/ovalPhysics).
+  const latestBy = useMemo(() => avgBy30m(allMagneticData), [allMagneticData]);
   const workerScore    = rawWorkerScore != null
     ? locationAdjustedScore(
         rawWorkerScore,

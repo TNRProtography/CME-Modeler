@@ -5,6 +5,7 @@
 // animated field lines, and tier markers for snap intensity.
 
 import React, { useMemo, useEffect, useRef, useState, useCallback } from 'react';
+import { computeOvalBoundary as computeOvalBoundaryPhysics, avgBy30m, loadingMinutesFromSeries } from '../utils/ovalPhysics';
 
 const EARTH_TEX = 'https://upload.wikimedia.org/wikipedia/commons/c/c3/Solarsystemscope_texture_2k_earth_daymap.jpg';
 
@@ -35,8 +36,13 @@ function deriveMagState(risk: SubstormRiskDataLike | null | undefined, fc: Subst
   return 'QUIET';
 }
 
-// ---- Oval boundary (same as AuroraSightings) ----
-function computeOvalBoundary(risk: SubstormRiskDataLike | null | undefined, proxyNewellData?: { x: number; y: number }[]): number {
+// ---- Oval boundary (shared physics - same as AuroraSightings / What to Expect / push worker) ----
+function computeOvalBoundary(
+  risk: SubstormRiskDataLike | null | undefined,
+  proxyNewellData?: { x: number; y: number }[],
+  latestBy: number | null = null,
+  pdynNPa: number | null = null,
+): number {
   // Compute newell from proxy data if available
   let n60 = 0, n30 = 0;
   if (proxyNewellData && proxyNewellData.length > 0) {
@@ -51,11 +57,17 @@ function computeOvalBoundary(risk: SubstormRiskDataLike | null | undefined, prox
     n60 = risk.metrics.solar_wind.newell_avg_60m ?? 0;
     n30 = risk.metrics.solar_wind.newell_avg_30m ?? 0;
   }
-  const newell = Math.max(n60, n30 * 0.85);
-  let eq = -(65.5 - newell / 1800);
-  eq = Math.max(eq, -76); eq = Math.min(eq, -44);
-  if (risk?.current?.bay_onset_flag) eq = Math.min(eq, -47.2);
-  return eq;
+  return computeOvalBoundaryPhysics(
+    {
+      newell_avg_60m: n60,
+      newell_avg_30m: n30,
+      avg_30m_pressure_nPa: pdynNPa ?? risk?.metrics?.solar_wind?.avg_30m_pressure_nPa,
+      dynamic_pressure_nPa: risk?.metrics?.solar_wind?.dynamic_pressure_nPa,
+      by: latestBy,
+      bz: risk?.metrics?.solar_wind?.bz,
+    },
+    risk?.current?.bay_onset_flag ?? false,
+  );
 }
 // ---- IGRF-13 (same as AuroraSightings) ----
 const POLE_LAT_RAD = 80.65 * Math.PI / 180;
@@ -258,7 +270,11 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
   // Prefer proxy RTSW data, fall back to substorm worker
   const bz = (proxyMagneticData && proxyMagneticData.length > 0 ? proxyMagneticData[proxyMagneticData.length - 1].bz : null) ?? substormRiskData?.metrics?.solar_wind?.bz ?? 0;
   const pressure = (proxyPressureData && proxyPressureData.length > 0 ? proxyPressureData[proxyPressureData.length - 1].y : null) ?? substormRiskData?.metrics?.solar_wind?.dynamic_pressure_nPa ?? 2;
-  const ovalBound = computeOvalBoundary(substormRiskData, proxyNewellData);
+  const latestByRM = useMemo(() => avgBy30m(proxyMagneticData), [proxyMagneticData]);
+  // Deterministic loading duration - same scan as the push worker, so the
+  // panel and notifications always quote the same number of minutes.
+  const loadingMinutes = useMemo(() => loadingMinutesFromSeries(proxyNewellData), [proxyNewellData]);
+  const ovalBound = computeOvalBoundary(substormRiskData, proxyNewellData, latestByRM, pressure);
   const comp = dayComp(pressure);
   const isSnapping = magState === 'SNAPPING';
   const tailEndX = isSnapping ? scoreToTailX(Math.max(score, 40)) : scoreToTailX(score);
@@ -322,10 +338,11 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
   const tailLabel = isSnapping ? 'Reconnection' : score >= 60 ? 'Highly stretched' : score >= 30 ? 'Stretching' : 'Relaxed';
   const currentTierIdx = useMemo(() => { for (let i = TIERS.length - 1; i >= 0; i--) { if (score >= TIERS[i].score) return i; } return -1; }, [score]);
 
+  const loadingSuffix = loadingMinutes >= 20 ? ` Coupling has been elevated for ${loadingMinutes} minutes${loadingMinutes >= 45 ? ' - inside the typical substorm release window' : ''}.` : '';
   const stateDesc: Record<MagState, string> = {
     QUIET: 'Magnetosphere relaxed. No substorm activity expected.',
-    LOADING: 'Southward Bz is feeding energy into the magnetotail. The night-side field is starting to stretch.',
-    STRETCHED: 'Tail is highly stretched. A reconnection event could fire in the next 15 to 30 minutes.',
+    LOADING: `Southward Bz is feeding energy into the magnetotail. The night-side field is starting to stretch.${loadingSuffix}`,
+    STRETCHED: `Tail is highly stretched. A reconnection event could fire in the next 15 to 30 minutes.${loadingSuffix}`,
     SNAPPING: 'Reconnection in progress! Particles funnelling onto the poles, lighting the aurora.',
   };
 
