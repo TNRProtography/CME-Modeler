@@ -459,7 +459,7 @@ export const useForecastData = (
   const [nzMagData, setNzMagData] = useState<any[]>([]);
   const [loadingNzMag, setLoadingNzMag] = useState<string | null>('Loading data...');
   const [auroraScoreHistory, setAuroraScoreHistory] = useState<{ timestamp: number; baseScore: number; finalScore: number; }[]>([]);
-  const [hemisphericPowerHistory, setHemisphericPowerHistory] = useState<{ timestamp: number; hemisphericPower: number; hemisphericPowerNoRm?: number | null; rmBoost?: number | null; source?: string; }[]>([]);
+  const [hemisphericPowerHistory, setHemisphericPowerHistory] = useState<{ timestamp: number; hemisphericPower: number; hemisphericPowerNoRm?: number | null; source?: string; }[]>([]);
   const [dailyCelestialHistory, setDailyCelestialHistory] = useState<DailyHistoryEntry[]>([]);
   const [owmDailyForecast, setOwmDailyForecast] = useState<OwmDailyForecastEntry[]>([]);
   const [interplanetaryShockData, setInterplanetaryShockData] = useState<InterplanetaryShock[]>([]);
@@ -775,12 +775,10 @@ export const useForecastData = (
 
     // ── RM-aware Hemispheric Power Worker ─────────────────────────────────────
     // Prefer the RM-aware worker for the HP chart and gauge when available. It
-    // provides true GSM HP, an RM-free counterfactual, and the signed RM boost.
+    // provides true GSM HP and an RM-free counterfactual.
     const hpRmValue = hpRmResult?.status === 'fulfilled' ? hpRmResult.value : null;
     if (hpRmValue?.ok) {
-      const currentSouth = hpRmValue.hemispheric_power?.south;
-      const currentHp = Number(currentSouth?.hp_gw);
-      const currentBoost = Number(currentSouth?.rm_boost_gw);
+      const currentHp = Number(hpRmValue.hemispheric_power?.south?.hp_gw);
 
       if (Number.isFinite(currentHp)) {
         setGaugeData((prev) => ({
@@ -790,7 +788,7 @@ export const useForecastData = (
             value: currentHp.toFixed(1),
             ...getGaugeStyle(currentHp, 'power'),
             lastUpdated: `Updated: ${formatNZTimestamp(Date.parse(hpRmValue.valid_at_utc) || Date.now())}`,
-            source: `RM-aware HP${Number.isFinite(currentBoost) ? ` (${currentBoost >= 0 ? '+' : ''}${currentBoost.toFixed(1)} GW RM)` : ''}`,
+            source: 'RM-aware HP',
           }
         }));
       }
@@ -805,7 +803,6 @@ export const useForecastData = (
               timestamp,
               hemisphericPower: hpSouth,
               hemisphericPowerNoRm: Number.isFinite(hpSouth) && Number.isFinite(boostSouth) ? hpSouth - boostSouth : null,
-              rmBoost: Number.isFinite(boostSouth) ? boostSouth : null,
               source: 'rm-worker',
             };
           })

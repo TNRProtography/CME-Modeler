@@ -684,25 +684,24 @@ export const MagneticFieldChart: React.FC<{ data: any[] }> = ({ data }) => {
 
 export const HemisphericPowerChart: React.FC<{ data: any[] }> = ({ data }) => {
     const [timeRange, setTimeRange] = useState(6 * 3600000);
-    const [useRmBoost, setUseRmBoost] = useState(true);
-    const hasRmData = useMemo(() => data.some((p) => p.rmBoost != null || p.hemisphericPowerNoRm != null), [data]);
+    const [includeRm, setIncludeRm] = useState(true);
+    const hasRmData = useMemo(() => data.some((p) => p.hemisphericPowerNoRm != null), [data]);
     const plottedData = useMemo(() => data.map((p) => {
         const boosted = p.y ?? p.hemisphericPower;
-        const noRm = p.hemisphericPowerNoRm ?? (p.rmBoost != null && boosted != null ? boosted - p.rmBoost : null);
+        const noRm = p.hemisphericPowerNoRm;
         return {
             x: p.x ?? p.timestamp,
             boosted,
             noRm,
-            boost: p.rmBoost,
         };
     }).filter((p) => p.x != null), [data]);
-    const primarySeries = plottedData.map((p) => ({ x: p.x, y: useRmBoost ? p.boosted : (p.noRm ?? p.boosted) })).filter((p) => p.y != null);
+    const primarySeries = plottedData.map((p) => ({ x: p.x, y: includeRm ? p.boosted : (p.noRm ?? p.boosted) })).filter((p) => p.y != null);
     const latestValue = primarySeries.length ? (primarySeries[primarySeries.length - 1]?.y ?? 0) : 0;
     const lineColor = getSmoothPositiveActivityColor(latestValue, GAUGE_THRESHOLDS.power);
     const chartData = useMemo(() => ({
         datasets: [
             {
-                label: useRmBoost ? 'Southern HP + RM (default)' : 'Southern HP (no RM)',
+                label: includeRm ? 'Hemispheric Power + RM (default)' : 'Hemispheric Power (no RM)',
                 data: primarySeries,
                 borderColor: lineColor,
                 backgroundColor: (ctx: ScriptableContext<'line'>) => createVerticalThresholdGradient(ctx, GAUGE_THRESHOLDS.power, false),
@@ -713,8 +712,8 @@ export const HemisphericPowerChart: React.FC<{ data: any[] }> = ({ data }) => {
                 spanGaps: true,
             },
             ...(hasRmData ? [{
-                label: useRmBoost ? 'Southern HP (no RM baseline)' : 'Southern HP + RM',
-                data: plottedData.map((p) => ({ x: p.x, y: useRmBoost ? p.noRm : p.boosted })).filter((p) => p.y != null),
+                label: includeRm ? 'Hemispheric Power (no RM baseline)' : 'Hemispheric Power + RM',
+                data: plottedData.map((p) => ({ x: p.x, y: includeRm ? p.noRm : p.boosted })).filter((p) => p.y != null),
                 borderColor: '#94a3b8',
                 backgroundColor: 'transparent',
                 fill: false,
@@ -723,28 +722,17 @@ export const HemisphericPowerChart: React.FC<{ data: any[] }> = ({ data }) => {
                 borderWidth: 1.3,
                 borderDash: [5, 4],
                 spanGaps: true,
-            }, {
-                label: 'RM boost (GW)',
-                data: plottedData.map((p) => ({ x: p.x, y: p.boost })).filter((p) => p.y != null),
-                borderColor: '#22d3ee',
-                backgroundColor: 'transparent',
-                fill: false,
-                tension: 0.2,
-                pointRadius: 0,
-                borderWidth: 1.2,
-                borderDash: [2, 3],
-                spanGaps: true,
             }] : [])
         ]
-    }), [hasRmData, lineColor, plottedData, primarySeries, useRmBoost]);
+    }), [hasRmData, lineColor, plottedData, primarySeries, includeRm]);
     const chartOptions = useMemo(() => createDynamicChartOptions(timeRange, 'Hemispheric Power (GW)', chartData.datasets, { type: 'power' }), [timeRange, chartData]);
 
     return (
         <div className="h-full flex flex-col">
             {hasRmData && (
                 <div className="bg-neutral-900/60 border border-neutral-700/60 rounded-lg p-2 mb-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                    <ToggleSwitch label="RM boost" checked={useRmBoost} onChange={setUseRmBoost} />
-                    <p className="text-[11px] text-neutral-400">Default shows southern GSM HP with Russell-McPherron By→Bz included; toggle off for the RM-free baseline.</p>
+                    <ToggleSwitch label="Include RM" checked={includeRm} onChange={setIncludeRm} />
+                    <p className="text-[11px] text-neutral-400">Default shows hemispheric power with Russell-McPherron geometry included; toggle off for the RM-free baseline.</p>
                 </div>
             )}
             <TimeRangeButtons onSelect={setTimeRange} selected={timeRange} />
