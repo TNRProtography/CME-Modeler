@@ -459,7 +459,7 @@ export const useForecastData = (
   const [nzMagData, setNzMagData] = useState<any[]>([]);
   const [loadingNzMag, setLoadingNzMag] = useState<string | null>('Loading data...');
   const [auroraScoreHistory, setAuroraScoreHistory] = useState<{ timestamp: number; baseScore: number; finalScore: number; }[]>([]);
-  const [hemisphericPowerHistory, setHemisphericPowerHistory] = useState<{ timestamp: number; hemisphericPower: number; hemisphericPowerNoRm?: number | null; rmBoost?: number | null; hemisphericPowerNorth?: number | null; hemisphericPowerSouth?: number | null; rmBoostNorth?: number | null; rmBoostSouth?: number | null; source?: string; }[]>([]);
+  const [hemisphericPowerHistory, setHemisphericPowerHistory] = useState<{ timestamp: number; hemisphericPower: number; hemisphericPowerNoRm?: number | null; rmBoost?: number | null; source?: string; }[]>([]);
   const [dailyCelestialHistory, setDailyCelestialHistory] = useState<DailyHistoryEntry[]>([]);
   const [owmDailyForecast, setOwmDailyForecast] = useState<OwmDailyForecastEntry[]>([]);
   const [interplanetaryShockData, setInterplanetaryShockData] = useState<InterplanetaryShock[]>([]);
@@ -800,18 +800,12 @@ export const useForecastData = (
           .map((d: any) => {
             const timestamp = Date.parse(d.time_utc);
             const hpSouth = Number(d.hp_south);
-            const hpNorth = Number(d.hp_north);
             const boostSouth = Number(d.rm_boost_south_gw);
-            const boostNorth = Number(d.rm_boost_north_gw);
             return {
               timestamp,
               hemisphericPower: hpSouth,
               hemisphericPowerNoRm: Number.isFinite(hpSouth) && Number.isFinite(boostSouth) ? hpSouth - boostSouth : null,
               rmBoost: Number.isFinite(boostSouth) ? boostSouth : null,
-              hemisphericPowerNorth: Number.isFinite(hpNorth) ? hpNorth : null,
-              hemisphericPowerSouth: Number.isFinite(hpSouth) ? hpSouth : null,
-              rmBoostNorth: Number.isFinite(boostNorth) ? boostNorth : null,
-              rmBoostSouth: Number.isFinite(boostSouth) ? boostSouth : null,
               source: 'rm-worker',
             };
           })

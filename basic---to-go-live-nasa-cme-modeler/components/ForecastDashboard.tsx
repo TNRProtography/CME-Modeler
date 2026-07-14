@@ -775,7 +775,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             >
                                 <IMFClockChart magneticData={allMagneticData} clockData={allImfClockData} speedData={allSpeedData} densityData={allDensityData} tempData={allTempData} />
                             </ForecastChartPanel>
-                            <ForecastChartPanel title="Hemispheric Power" currentValue={`${gaugeData.power.value} <span class='text-base'>GW</span>`} emoji={gaugeData.power.emoji} onOpenModal={() => openModal('power')} lastDataReceived={powerLastReceived}><HemisphericPowerChart data={hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower, hemisphericPowerNoRm: d.hemisphericPowerNoRm, rmBoost: d.rmBoost, hemisphericPowerNorth: d.hemisphericPowerNorth, hemisphericPowerSouth: d.hemisphericPowerSouth, rmBoostNorth: d.rmBoostNorth, rmBoostSouth: d.rmBoostSouth, source: d.source }))} /></ForecastChartPanel>
+                            <ForecastChartPanel title="Hemispheric Power" currentValue={`${gaugeData.power.value} <span class='text-base'>GW</span>`} emoji={gaugeData.power.emoji} onOpenModal={() => openModal('power')} lastDataReceived={powerLastReceived}><HemisphericPowerChart data={hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower, hemisphericPowerNoRm: d.hemisphericPowerNoRm, rmBoost: d.rmBoost, source: d.source }))} /></ForecastChartPanel>
                             <ForecastChartPanel
                                 title="Solar Wind Speed"
                                 currentValue={`${gaugeData.speed.value} <span class='text-base'>km/s</span><span class='text-xs block text-neutral-400'>Source: ${gaugeData.speed.source}</span>`}
