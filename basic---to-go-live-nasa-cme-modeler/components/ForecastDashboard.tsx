@@ -622,7 +622,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                  <div className="container mx-auto">
                     <header className="text-center mb-4">
                         <div className="flex justify-center mb-3">
-                            <SouthernCross size={64} />
+                            <SouthernCross size={80} />
                         </div>
                         <h1 className="text-3xl font-bold text-neutral-100">Spot The Aurora</h1>
                         <p className="text-sm text-neutral-400 mt-1">New Zealand Aurora &amp; Space Weather App</p>

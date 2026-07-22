@@ -23,15 +23,20 @@ type Props = {
 };
 
 const SouthernCross: React.FC<Props> = ({ size = 68, className }) => {
-  // ViewBox is 100 wide x 130 tall (kite is slightly taller than wide).
-  // Star positions in viewBox units:
+  // ViewBox is 100 wide x 130 tall. Star positions match the "Spot The
+  // Aurora" logo layout (a stylised arrangement, NOT the real Crux):
+  //   - three stars descending diagonally in the upper area
+  //     (largest top-right, medium below-left, small below-left again)
+  //   - two smaller stars sitting in the middle-left region
+  //   - one prominent brighter star lower-center-left
   const stars = [
     // { cx, cy, r (core), glow (outer soft), delay (seconds) }
-    { name: 'Gacrux',  cx: 50, cy: 12,  r: 3.0, glow: 9,  delay: 0   },  // top
-    { name: 'Mimosa',  cx: 22, cy: 62,  r: 2.8, glow: 8,  delay: 1.3 },  // left arm
-    { name: 'Delta',   cx: 78, cy: 55,  r: 2.2, glow: 7,  delay: 2.7 },  // right arm (dimmer)
-    { name: 'Acrux',   cx: 52, cy: 112, r: 3.4, glow: 11, delay: 0.8 },  // bottom (brightest)
-    { name: 'Epsilon', cx: 40, cy: 96,  r: 1.6, glow: 5,  delay: 2.0 },  // small, off-center
+    { name: 'top-right',    cx: 66, cy: 14,  r: 5.0, glow: 15, delay: 0   },
+    { name: 'upper-mid',    cx: 50, cy: 32,  r: 4.0, glow: 12, delay: 1.3 },
+    { name: 'upper-small',  cx: 38, cy: 46,  r: 2.6, glow: 8,  delay: 2.7 },
+    { name: 'mid-small-a',  cx: 24, cy: 60,  r: 2.0, glow: 7,  delay: 0.6 },
+    { name: 'mid-small-b',  cx: 30, cy: 78,  r: 2.2, glow: 7,  delay: 2.1 },
+    { name: 'prominent',    cx: 44, cy: 96,  r: 5.4, glow: 17, delay: 0.9 },
   ];
 
   return (
