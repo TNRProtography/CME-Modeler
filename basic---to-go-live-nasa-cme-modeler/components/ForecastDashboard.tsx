@@ -583,7 +583,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const faqContent = ''; // FAQ content now handled by FaqModal component
 
     return (
-        <div className="w-full h-full bg-neutral-900 text-neutral-300 relative" style={{ backgroundImage: `url('/background-aurora.jpg')`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}>
+        <div className="w-full h-full bg-neutral-900 text-neutral-300 relative" style={{ backgroundImage: `url('https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/Rapahoe%20Blue%20Aurora%20-%20Full%20Pano.jpg')`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}>
 
             {/* Outside NZ warning modal */}
             {isOutsideNZ && !outsideNZDismissed && (

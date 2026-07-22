@@ -3016,7 +3016,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   return (
     <div
       className="w-full h-full bg-neutral-900 text-neutral-300 relative"
-      style={{ backgroundImage: `url('/background-solar.jpg')`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}
+      style={{ backgroundImage: `url('https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/Rapahoe%20Blue%20Aurora%20-%20Full%20Pano.jpg')`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}
     >
       <div className="absolute inset-0 bg-black/50 z-0"></div>
       <div className="w-full h-full overflow-y-auto p-5 relative z-10 styled-scrollbar">
