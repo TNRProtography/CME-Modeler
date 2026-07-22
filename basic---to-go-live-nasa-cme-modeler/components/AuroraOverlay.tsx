@@ -11,16 +11,23 @@ import React from 'react';
  * Layering (bottom to top on the page):
  *   photo -> bg-black/50 darkener -> THIS overlay -> content (z-10+)
  *
- * Design notes:
- *  - Uses `mix-blend-mode: screen` so layers ADD light to the photo
- *    instead of covering it - keeps the photo readable.
- *  - `pointer-events: none` so it never blocks clicks.
- *  - Every layer has a soft-edge mask (radial or linear alpha fade)
- *    on ALL sides so nothing terminates in a hard line - critical
- *    with screen-blend, which amplifies any sharp edge.
- *  - Sized in `vh` so it scales sensibly on tall mobile viewports
- *    instead of collapsing to a thin sliver.
- *  - Only transform/opacity/filter animate, so it stays GPU-only.
+ * Design principles for eliminating hard edges:
+ *  - Every gradient fades to zero alpha well BEFORE its own boundary
+ *    (target: gradient stops carry the alpha to 0 by ~70% radius).
+ *    A radial gradient in a box always has an elliptical iso-alpha
+ *    contour; if we let ANY alpha reach the container edge, screen
+ *    blend will show it as a shape.
+ *  - Every layer overshoots the viewport by 40-60% on the axes where
+ *    its light is meant to bleed offscreen, so its zero-alpha tail
+ *    ends outside what the user can see.
+ *  - Large blurs (60-90px) further smear any residual boundary.
+ *  - No CSS masks - they were creating a second visible falloff
+ *    curve that stacked with the gradient's own. The gradient IS
+ *    the mask.
+ *  - `mix-blend-mode: screen` so layers add light rather than paint
+ *    over the photo.
+ *  - `pointer-events: none` so nothing under is blocked.
+ *  - Only transform/opacity/filter animate - GPU only.
  */
 const AuroraOverlay: React.FC = () => {
   return (
@@ -43,33 +50,8 @@ const AuroraOverlay: React.FC = () => {
           100% { transform: translate3d(-1.5%, 0, 0) skewX(-2deg); opacity: 0.7;  }
         }
         @keyframes aurora-shimmer {
-          0%,100% { filter: blur(34px) hue-rotate(0deg); }
-          50%     { filter: blur(44px) hue-rotate(14deg); }
-        }
-
-        /* Soft-edge fades used to mask every layer on ALL sides so no
-           hard cut ever appears against the photo. */
-        .aurora-mask-horizon {
-          -webkit-mask-image:
-            radial-gradient(ellipse 70% 100% at 50% 60%, #000 40%, transparent 90%);
-          mask-image:
-            radial-gradient(ellipse 70% 100% at 50% 60%, #000 40%, transparent 90%);
-        }
-        .aurora-mask-pillars {
-          -webkit-mask-image:
-            linear-gradient(to right,  transparent 0%, #000 22%, #000 78%, transparent 100%),
-            linear-gradient(to top,    #000 0%, rgba(0,0,0,0.85) 40%, rgba(0,0,0,0.35) 75%, transparent 100%);
-          -webkit-mask-composite: source-in;
-                  mask-image:
-            linear-gradient(to right,  transparent 0%, #000 22%, #000 78%, transparent 100%),
-            linear-gradient(to top,    #000 0%, rgba(0,0,0,0.85) 40%, rgba(0,0,0,0.35) 75%, transparent 100%);
-                  mask-composite: intersect;
-        }
-        .aurora-mask-glow {
-          -webkit-mask-image:
-            radial-gradient(ellipse 80% 90% at 50% 60%, #000 30%, transparent 95%);
-          mask-image:
-            radial-gradient(ellipse 80% 90% at 50% 60%, #000 30%, transparent 95%);
+          0%,100% { filter: blur(60px) hue-rotate(0deg); }
+          50%     { filter: blur(78px) hue-rotate(14deg); }
         }
       `}</style>
 
@@ -77,19 +59,20 @@ const AuroraOverlay: React.FC = () => {
         aria-hidden="true"
         className="absolute inset-0 z-0 overflow-hidden pointer-events-none"
       >
-        {/* Bright green low band - the main aurora arc, matches horizon of pano. */}
+        {/* Bright green low band. Overshoots viewport by 60% each side;
+            gradient fades to 0 alpha by 68% of its radius so no edge
+            contour ever reaches an actual boundary. */}
         <div
-          className="aurora-mask-horizon"
           style={{
             position: 'absolute',
-            left: '-20%',
-            right: '-20%',
-            bottom: '22%',
-            height: 'clamp(180px, 28vh, 360px)',
+            left: '-60%',
+            right: '-60%',
+            bottom: '18%',
+            height: 'clamp(220px, 34vh, 420px)',
             background:
-              'radial-gradient(ellipse at 50% 100%, rgba(120,255,180,0.9) 0%, rgba(80,220,150,0.6) 25%, rgba(60,180,140,0.25) 55%, rgba(0,0,0,0) 78%)',
+              'radial-gradient(ellipse at 50% 100%, rgba(120,255,180,0.9) 0%, rgba(100,240,170,0.55) 18%, rgba(80,220,150,0.28) 34%, rgba(60,180,140,0.10) 50%, rgba(0,0,0,0) 68%)',
             mixBlendMode: 'screen',
-            filter: 'blur(30px)',
+            filter: 'blur(60px)',
             animation:
               'aurora-drift-a 14s ease-in-out infinite, aurora-shimmer 9s ease-in-out infinite',
             willChange: 'transform, opacity, filter',
@@ -98,53 +81,56 @@ const AuroraOverlay: React.FC = () => {
 
         {/* Secondary softer green wash slightly higher - adds depth. */}
         <div
-          className="aurora-mask-horizon"
           style={{
             position: 'absolute',
-            left: '-25%',
-            right: '-25%',
-            bottom: '32%',
-            height: 'clamp(160px, 24vh, 320px)',
+            left: '-70%',
+            right: '-70%',
+            bottom: '30%',
+            height: 'clamp(200px, 30vh, 400px)',
             background:
-              'radial-gradient(ellipse at 55% 100%, rgba(140,255,200,0.55) 0%, rgba(90,200,150,0.32) 40%, rgba(0,0,0,0) 80%)',
+              'radial-gradient(ellipse at 55% 100%, rgba(140,255,200,0.55) 0%, rgba(110,230,180,0.30) 22%, rgba(90,200,150,0.14) 42%, rgba(0,0,0,0) 65%)',
             mixBlendMode: 'screen',
-            filter: 'blur(42px)',
+            filter: 'blur(75px)',
             animation: 'aurora-drift-b 22s ease-in-out infinite',
             willChange: 'transform, opacity',
           }}
         />
 
-        {/* Magenta/pink pillars - column beams rising from the green band. */}
+        {/* Magenta/pink pillar wash. Instead of hard column beams that
+            need masking on top/bottom/sides, this is a broad diffuse
+            wash with faint column texture. The whole layer fades on
+            every axis via its own gradient, so no mask required. */}
         <div
-          className="aurora-mask-pillars"
           style={{
             position: 'absolute',
-            left: '0%',
-            right: '0%',
-            bottom: '28%',
-            height: 'clamp(260px, 55vh, 700px)',
-            background:
-              'repeating-linear-gradient(92deg, rgba(0,0,0,0) 0px, rgba(0,0,0,0) 60px, rgba(230,110,200,0.35) 90px, rgba(180,90,220,0.42) 120px, rgba(0,0,0,0) 180px, rgba(0,0,0,0) 260px, rgba(255,120,190,0.30) 300px, rgba(0,0,0,0) 360px)',
+            left: '-40%',
+            right: '-40%',
+            bottom: '25%',
+            height: 'clamp(320px, 62vh, 780px)',
+            background: `
+              radial-gradient(ellipse 55% 80% at 50% 90%, rgba(230,110,200,0.42) 0%, rgba(200,100,220,0.24) 25%, rgba(180,90,220,0.10) 50%, rgba(0,0,0,0) 72%),
+              repeating-linear-gradient(92deg, rgba(0,0,0,0) 0px, rgba(0,0,0,0) 80px, rgba(230,110,200,0.10) 110px, rgba(180,90,220,0.14) 150px, rgba(0,0,0,0) 220px, rgba(0,0,0,0) 320px, rgba(255,120,190,0.09) 360px, rgba(0,0,0,0) 420px)
+            `,
+            backgroundBlendMode: 'screen',
             mixBlendMode: 'screen',
-            filter: 'blur(20px)',
+            filter: 'blur(45px)',
             animation: 'aurora-pillars 18s ease-in-out infinite',
             willChange: 'transform, opacity',
           }}
         />
 
-        {/* Broad magenta glow behind pillars - matches the photo's pink sky. */}
+        {/* Broad magenta sky glow - matches the photo's pink upper sky. */}
         <div
-          className="aurora-mask-glow"
           style={{
             position: 'absolute',
-            left: '-15%',
-            right: '-15%',
-            top: '10%',
-            height: 'clamp(280px, 55vh, 720px)',
+            left: '-50%',
+            right: '-50%',
+            top: '0%',
+            height: 'clamp(340px, 65vh, 820px)',
             background:
-              'radial-gradient(ellipse at 50% 90%, rgba(220,120,180,0.32) 0%, rgba(160,80,200,0.20) 40%, rgba(0,0,0,0) 80%)',
+              'radial-gradient(ellipse at 50% 90%, rgba(220,120,180,0.32) 0%, rgba(190,100,200,0.16) 25%, rgba(160,80,200,0.06) 50%, rgba(0,0,0,0) 72%)',
             mixBlendMode: 'screen',
-            filter: 'blur(55px)',
+            filter: 'blur(90px)',
             animation: 'aurora-drift-b 26s ease-in-out infinite',
             willChange: 'transform, opacity',
           }}
