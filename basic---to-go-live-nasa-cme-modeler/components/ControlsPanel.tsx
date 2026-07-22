@@ -117,7 +117,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
       <div className="absolute top-4 right-4 flex items-center space-x-1 z-10 lg:static lg:mb-3">
         <div className="flex-grow flex items-center">
             <img
-              src="/icons/android-chrome-192x192.png"
+              src="https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/SpotTheAuroraLogo.png"
               alt="Spot The Aurora"
               className="w-7 h-7 rounded-lg mr-2 hidden lg:block"
               width="28"
@@ -144,7 +144,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
 
       <div className="flex flex-col items-center border-b border-neutral-700/80 pb-3 text-center lg:hidden">
         <img
-          src="/icons/android-chrome-192x192.png"
+          src="https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/SpotTheAuroraLogo.png"
           alt="Spot The Aurora"
           className="w-14 h-14 rounded-2xl mb-3 shadow-lg"
           width="56"

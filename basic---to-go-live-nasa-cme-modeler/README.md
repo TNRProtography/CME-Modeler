@@ -1,6 +1,6 @@
 # TNR Protography - Spot The Aurora: A Real-Time Space Weather Dashboard & CME Modeler
 
-![TNR Protography Logo](https://www.tnrprotography.co.nz/uploads/1/3/6/6/136682089/white-tnr-protography-w_orig.png)
+![Spot The Aurora Logo](https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/SpotTheAuroraLogo.png)
 
 A comprehensive web application designed to help users track and visualize space weather phenomena affecting Earth. It features a 3D Coronal Mass Ejection (CME) modeler, a live aurora forecast dashboard with real-time solar wind data, and a solar activity monitor. A unique community-driven aurora sighting map allows users to report and view local aurora visibility.
 

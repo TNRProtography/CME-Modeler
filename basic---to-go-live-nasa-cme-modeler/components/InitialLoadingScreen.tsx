@@ -207,7 +207,7 @@ const InitialLoadingScreen: React.FC<InitialLoadingScreenProps> = ({ isFadingOut
       
       <div className="absolute top-1/4 flex flex-col items-center px-6">
         <img 
-          src="/icons/android-chrome-192x192.png" 
+          src="https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/SpotTheAuroraLogo.png" 
           alt="Spot The Aurora"
           className="w-28 h-28 rounded-3xl mb-8 shadow-2xl"
           style={{ animation: 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}
