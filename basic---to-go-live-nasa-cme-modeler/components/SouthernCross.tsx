@@ -31,11 +31,11 @@ const SouthernCross: React.FC<Props> = ({ size = 80, className }) => {
   //   fifth small star tucked in below-left of the bottom star
   const stars = [
     // { cx, cy, r (core), glow, delay }
-    { name: 'Gacrux',   cx: 55, cy: 18,  r: 4.8, glow: 15, delay: 0   },
-    { name: 'Mimosa',   cx: 22, cy: 58,  r: 4.4, glow: 14, delay: 1.3 },
-    { name: 'Delta',    cx: 82, cy: 68,  r: 3.6, glow: 12, delay: 2.7 },
-    { name: 'Acrux',    cx: 52, cy: 108, r: 5.4, glow: 17, delay: 0.8 },
-    { name: 'Epsilon',  cx: 34, cy: 92,  r: 2.4, glow: 8,  delay: 2.0 },
+    { name: 'Gacrux',   cx: 55, cy: 18,  r: 6.6, glow: 20, delay: 0   },
+    { name: 'Mimosa',   cx: 22, cy: 58,  r: 6.0, glow: 19, delay: 1.3 },
+    { name: 'Delta',    cx: 82, cy: 68,  r: 5.0, glow: 16, delay: 2.7 },
+    { name: 'Acrux',    cx: 52, cy: 108, r: 7.4, glow: 23, delay: 0.8 },
+    { name: 'Epsilon',  cx: 34, cy: 92,  r: 3.4, glow: 11, delay: 2.0 },
   ];
 
   return (
@@ -57,7 +57,7 @@ const SouthernCross: React.FC<Props> = ({ size = 80, className }) => {
         width={size}
         height={size * 1.3}
         viewBox="0 0 100 130"
-        style={{ overflow: 'visible' }}
+        style={{ overflow: 'visible', transform: 'rotate(180deg)' }}
       >
         <defs>
           <radialGradient id="crux-star-core" cx="50%" cy="50%" r="50%">
