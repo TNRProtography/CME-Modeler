@@ -19,6 +19,7 @@ import DisturbanceIndexPanel from './DisturbanceIndexPanel';
 import MagnetotailStatus from './MagnetotailStatus';
 import RussellMcPherron from './RussellMcPherron';
 import AuroraOverlay from './AuroraOverlay';
+import SouthernCross from './SouthernCross';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
 
 import {
@@ -620,6 +621,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             <div className="w-full h-full overflow-y-auto p-5 relative z-10 styled-scrollbar">
                  <div className="container mx-auto">
                     <header className="text-center mb-4">
+                        <div className="flex justify-center mb-3">
+                            <SouthernCross size={64} />
+                        </div>
                         <h1 className="text-3xl font-bold text-neutral-100">Spot The Aurora</h1>
                         <p className="text-sm text-neutral-400 mt-1">New Zealand Aurora &amp; Space Weather App</p>
                     </header>
