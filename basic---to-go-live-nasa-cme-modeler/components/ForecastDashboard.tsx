@@ -18,6 +18,7 @@ import NightModeToggle from './NightModeToggle';
 import DisturbanceIndexPanel from './DisturbanceIndexPanel';
 import MagnetotailStatus from './MagnetotailStatus';
 import RussellMcPherron from './RussellMcPherron';
+import AuroraOverlay from './AuroraOverlay';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
 
 import {
@@ -615,6 +616,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
               </div>
             )}
             <div className="absolute inset-0 bg-black/50 z-0"></div>
+            <AuroraOverlay />
             <div className="w-full h-full overflow-y-auto p-5 relative z-10 styled-scrollbar">
                  <div className="container mx-auto">
                     <header className="text-center mb-4">

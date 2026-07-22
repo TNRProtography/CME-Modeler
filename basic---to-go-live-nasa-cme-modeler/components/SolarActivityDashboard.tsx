@@ -16,6 +16,7 @@ import { stableHash } from '../utils/dataFreshness';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
 import { workerStatePreload } from '../utils/appPreloader';
 import FaqModal from './FaqModal';
+import AuroraOverlay from './AuroraOverlay';
 import { encodeGif, type GifFrame } from '../utils/gifEncoder';
 
 interface SolarActivityDashboardProps {
@@ -3019,6 +3020,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       style={{ backgroundImage: `url('https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/Rapahoe%20Blue%20Aurora%20-%20Full%20Pano.jpg')`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}
     >
       <div className="absolute inset-0 bg-black/50 z-0"></div>
+      <AuroraOverlay />
       <div className="w-full h-full overflow-y-auto p-5 relative z-10 styled-scrollbar">
         <style>{`body { overflow-y: auto !important; } .styled-scrollbar::-webkit-scrollbar { width: 8px; } .styled-scrollbar::-webkit-scrollbar-track { background: #262626; } .styled-scrollbar::-webkit-scrollbar-thumb { background: #525252; } @keyframes sunspotPulse { 0%{transform:scale(1);opacity:.95} 100%{transform:scale(2.25);opacity:0} }`}</style>
         <div className="container mx-auto">
