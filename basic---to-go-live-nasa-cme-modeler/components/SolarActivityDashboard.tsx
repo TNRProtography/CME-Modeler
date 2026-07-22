@@ -18,6 +18,7 @@ import { workerStatePreload } from '../utils/appPreloader';
 import FaqModal from './FaqModal';
 import AuroraOverlay from './AuroraOverlay';
 import StarField from './StarField';
+import DriftingMoon from './DriftingMoon';
 import { encodeGif, type GifFrame } from '../utils/gifEncoder';
 
 interface SolarActivityDashboardProps {
@@ -3022,6 +3023,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     >
       <div className="absolute inset-0 bg-black/50 z-0"></div>
       <StarField />
+      <DriftingMoon size={72} />
       <AuroraOverlay />
       <div className="w-full h-full overflow-y-auto p-5 relative z-10 styled-scrollbar">
         <style>{`body { overflow-y: auto !important; } .styled-scrollbar::-webkit-scrollbar { width: 8px; } .styled-scrollbar::-webkit-scrollbar-track { background: #262626; } .styled-scrollbar::-webkit-scrollbar-thumb { background: #525252; } @keyframes sunspotPulse { 0%{transform:scale(1);opacity:.95} 100%{transform:scale(2.25);opacity:0} }`}</style>

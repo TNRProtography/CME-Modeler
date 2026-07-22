@@ -20,7 +20,7 @@ import MagnetotailStatus from './MagnetotailStatus';
 import RussellMcPherron from './RussellMcPherron';
 import AuroraOverlay from './AuroraOverlay';
 import StarField from './StarField';
-import Moon from './Moon';
+import DriftingMoon from './DriftingMoon';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
 
 import {
@@ -619,17 +619,15 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             )}
             <div className="absolute inset-0 bg-black/50 z-0"></div>
             <StarField />
+            <DriftingMoon
+                size={72}
+                illumination={celestialTimes?.moon?.illumination ?? null}
+                waxing={celestialTimes?.moon?.waxing ?? null}
+            />
             <AuroraOverlay />
             <div className="w-full h-full overflow-y-auto p-5 relative z-10 styled-scrollbar">
                  <div className="container mx-auto">
                     <header className="text-center mb-4">
-                        <div className="flex justify-center mb-3">
-                            <Moon
-                                size={72}
-                                illumination={celestialTimes?.moon?.illumination ?? null}
-                                waxing={celestialTimes?.moon?.waxing ?? null}
-                            />
-                        </div>
                         <h1 className="text-3xl font-bold text-neutral-100">Spot The Aurora</h1>
                         <p className="text-sm text-neutral-400 mt-1">New Zealand Aurora &amp; Space Weather App</p>
                     </header>
