@@ -3,18 +3,18 @@ import React from 'react';
 /**
  * SouthernCross
  * ----------------------------------------------------------------
- * Decorative Crux constellation rendered as an SVG. The five stars
- * are placed and sized to match their real relative positions and
- * apparent magnitudes:
- *   - Acrux (alpha)   - brightest, bottom of the kite
- *   - Mimosa (beta)   - left arm
- *   - Gacrux (gamma)  - top of the kite
- *   - Delta Crucis    - right arm, dimmer
- *   - Epsilon Crucis  - smallest, offset near Acrux
+ * The Crux constellation as it appears on the "Spot The Aurora"
+ * logo - a four-star kite (with a small fifth star offset near the
+ * bottom), the same layout used on the NZ flag.
  *
- * Each star has a soft outer glow (larger blurred circle) plus a
- * bright core, and a staggered twinkle so they don't pulse in unison.
- * Purely decorative - `aria-hidden`.
+ *   - Gacrux (top)         - top of the kite, high up
+ *   - Delta Crucis (right) - right arm, slightly lower than left
+ *   - Mimosa (left)        - left arm
+ *   - Acrux (bottom)       - brightest, at the bottom
+ *   - Epsilon Crucis       - small fifth star tucked next to Acrux
+ *
+ * Each star has a bright core and a soft outer glow, with staggered
+ * twinkle so they don't pulse in unison. Decorative only.
  */
 type Props = {
   /** Rendered width in pixels. Height auto-scales to match aspect. */
@@ -22,21 +22,20 @@ type Props = {
   className?: string;
 };
 
-const SouthernCross: React.FC<Props> = ({ size = 68, className }) => {
-  // ViewBox is 100 wide x 130 tall. Star positions match the "Spot The
-  // Aurora" logo layout (a stylised arrangement, NOT the real Crux):
-  //   - three stars descending diagonally in the upper area
-  //     (largest top-right, medium below-left, small below-left again)
-  //   - two smaller stars sitting in the middle-left region
-  //   - one prominent brighter star lower-center-left
+const SouthernCross: React.FC<Props> = ({ size = 80, className }) => {
+  // ViewBox 100 wide x 130 tall. Positions to match the logo layout:
+  //   top-of-cross star sits near the top-center, slightly right
+  //   left arm sits mid-height on the left
+  //   right arm sits slightly lower on the right
+  //   bottom star (brightest) sits low-center
+  //   fifth small star tucked in below-left of the bottom star
   const stars = [
-    // { cx, cy, r (core), glow (outer soft), delay (seconds) }
-    { name: 'top-right',    cx: 66, cy: 14,  r: 5.0, glow: 15, delay: 0   },
-    { name: 'upper-mid',    cx: 50, cy: 32,  r: 4.0, glow: 12, delay: 1.3 },
-    { name: 'upper-small',  cx: 38, cy: 46,  r: 2.6, glow: 8,  delay: 2.7 },
-    { name: 'mid-small-a',  cx: 24, cy: 60,  r: 2.0, glow: 7,  delay: 0.6 },
-    { name: 'mid-small-b',  cx: 30, cy: 78,  r: 2.2, glow: 7,  delay: 2.1 },
-    { name: 'prominent',    cx: 44, cy: 96,  r: 5.4, glow: 17, delay: 0.9 },
+    // { cx, cy, r (core), glow, delay }
+    { name: 'Gacrux',   cx: 55, cy: 18,  r: 4.8, glow: 15, delay: 0   },
+    { name: 'Mimosa',   cx: 22, cy: 58,  r: 4.4, glow: 14, delay: 1.3 },
+    { name: 'Delta',    cx: 82, cy: 68,  r: 3.6, glow: 12, delay: 2.7 },
+    { name: 'Acrux',    cx: 52, cy: 108, r: 5.4, glow: 17, delay: 0.8 },
+    { name: 'Epsilon',  cx: 34, cy: 92,  r: 2.4, glow: 8,  delay: 2.0 },
   ];
 
   return (
@@ -62,19 +61,19 @@ const SouthernCross: React.FC<Props> = ({ size = 68, className }) => {
       >
         <defs>
           <radialGradient id="crux-star-core" cx="50%" cy="50%" r="50%">
-            <stop offset="0%"  stopColor="rgba(255,255,255,1)" />
-            <stop offset="60%" stopColor="rgba(220,235,255,0.9)" />
+            <stop offset="0%"   stopColor="rgba(255,255,255,1)" />
+            <stop offset="60%"  stopColor="rgba(220,235,255,0.9)" />
             <stop offset="100%" stopColor="rgba(180,210,255,0)" />
           </radialGradient>
           <radialGradient id="crux-star-glow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%"  stopColor="rgba(200,225,255,0.55)" />
-            <stop offset="45%" stopColor="rgba(160,200,255,0.20)" />
+            <stop offset="0%"   stopColor="rgba(200,225,255,0.55)" />
+            <stop offset="45%"  stopColor="rgba(160,200,255,0.20)" />
             <stop offset="100%" stopColor="rgba(120,180,255,0)" />
           </radialGradient>
         </defs>
 
         {stars.map((s) => (
-          <g key={s.name} style={{ transformOrigin: `${s.cx}px ${s.cy}px` }}>
+          <g key={s.name}>
             {/* Outer soft glow */}
             <circle
               cx={s.cx}
