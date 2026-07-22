@@ -158,6 +158,13 @@ const NOAA_XRAY_FLUX_URLS = [
   'https://services.swpc.noaa.gov/json/goes/xrays-7-day.json',
   'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json',
 ];
+// Secondary GOES satellite - fetched purely as a backup/redundant line on the
+// chart. If the primary satellite drops out, this keeps a Long-flux trace
+// on screen instead of the panel going blank.
+const NOAA_XRAY_FLUX_URLS_SECONDARY = [
+  'https://services.swpc.noaa.gov/json/goes/secondary/xrays-7-day.json',
+  'https://services.swpc.noaa.gov/json/goes/secondary/xrays-1-day.json',
+];
 const NOAA_PROTON_FLUX_URLS = [
   'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-7-day.json',
   'https://services.swpc.noaa.gov/json/goes/integral-protons-plot-7-day.json',
@@ -1039,6 +1046,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [allXrayData, setAllXrayData] = useState<any[]>([]);
   const [loadingXray, setLoadingXray] = useState<string | null>('Loading X-ray flux data...');
   const [xrayTimeRange, setXrayTimeRange] = useState<number>(7 * 24 * 60 * 60 * 1000);
+  // Which GOES satellite numbers are currently serving as primary/secondary.
+  // NOAA can swap these designations, so we read the actual satellite id out
+  // of each feed's data rather than hardcoding "18" / "19".
+  const [xrayPrimarySatellite, setXrayPrimarySatellite] = useState<number | null>(null);
+  const [xraySecondarySatellite, setXraySecondarySatellite] = useState<number | null>(null);
   const [allProtonData, setAllProtonData] = useState<any[]>([]);
   const [loadingProton, setLoadingProton] = useState<string | null>('Loading proton flux data...');
   const [protonTimeRange, setProtonTimeRange] = useState<number>(7 * 24 * 60 * 60 * 1000);
@@ -1548,16 +1560,50 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         setLoadingXray('Loading X-ray flux data...');
     }
     try {
-      const rawData = await fetchFirstAvailableJson(NOAA_XRAY_FLUX_URLS);
-        const groupedData = new Map();
-        rawData.forEach((d: any) => {
-          const time = new Date(d.time_tag).getTime();
-          if (!groupedData.has(time)) groupedData.set(time, { time, short: null });
-          if (d.energy === "0.1-0.8nm") groupedData.get(time).short = parseFloat(d.flux);
-        });
-        const processedData = Array.from(groupedData.values())
-          .filter(d => d.short !== null && !isNaN(d.short))
-          .sort((a,b) => a.time - b.time);
+      // Primary satellite drives the main status/summary as before. Secondary
+      // is fetched in parallel purely as a backup chart line - if it fails,
+      // we still render the primary line exactly like before this change.
+      const [primaryResult, secondaryResult] = await Promise.allSettled([
+        fetchFirstAvailableJson(NOAA_XRAY_FLUX_URLS),
+        fetchFirstAvailableJson(NOAA_XRAY_FLUX_URLS_SECONDARY),
+      ]);
+
+      if (primaryResult.status === 'rejected') {
+        throw primaryResult.reason instanceof Error
+          ? primaryResult.reason
+          : new Error('Unknown fetch error');
+      }
+
+      const rawData = primaryResult.value;
+      const secondaryRawData = secondaryResult.status === 'fulfilled' ? secondaryResult.value : [];
+
+      const groupedData = new Map();
+      rawData.forEach((d: any) => {
+        const time = new Date(d.time_tag).getTime();
+        if (!groupedData.has(time)) groupedData.set(time, { time, short: null, secondaryShort: null });
+        if (d.energy === "0.1-0.8nm") groupedData.get(time).short = parseFloat(d.flux);
+      });
+
+      let secondarySatelliteNumber: number | null = null;
+      secondaryRawData.forEach((d: any) => {
+        const time = new Date(d.time_tag).getTime();
+        if (!groupedData.has(time)) groupedData.set(time, { time, short: null, secondaryShort: null });
+        if (d.energy === "0.1-0.8nm") {
+          groupedData.get(time).secondaryShort = parseFloat(d.flux);
+          if (typeof d.satellite === 'number') secondarySatelliteNumber = d.satellite;
+        }
+      });
+
+      const primarySatelliteNumber = rawData.find((d: any) => typeof d.satellite === 'number')?.satellite ?? null;
+      setXrayPrimarySatellite(primarySatelliteNumber);
+      setXraySecondarySatellite(secondarySatelliteNumber);
+
+      const processedData = Array.from(groupedData.values())
+        .filter(d =>
+          (d.short !== null && !isNaN(d.short)) ||
+          (d.secondaryShort !== null && !isNaN(d.secondaryShort))
+        )
+        .sort((a,b) => a.time - b.time);
         if (!processedData.length) {
           setLoadingXray('No valid X-ray data.');
           setAllXrayData([]);
@@ -1568,7 +1614,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         }
         setAllXrayData(processedData);
         setLoadingXray(null);
-        const latestFluxValue = processedData[processedData.length - 1].short;
+        // Prefer the primary satellite's latest reading for the headline
+        // summary; only fall back to the secondary if primary is missing
+        // at the most recent timestamp (i.e. primary is actually down).
+        const lastEntry = processedData[processedData.length - 1];
+        const latestFluxValue = (lastEntry.short !== null && !isNaN(lastEntry.short))
+          ? lastEntry.short
+          : lastEntry.secondaryShort;
         setLatestXrayFlux(latestFluxValue);
         setCurrentXraySummary({ flux: latestFluxValue, class: getXrayClass(latestFluxValue) });
         stampIfChanged('solar-xray', processedData, setLastXrayUpdate);
@@ -2095,9 +2147,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     return {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { display: false },
+        legend: { display: true, labels: { color: '#a1a1aa', boxWidth: 14, boxHeight: 2, font: { size: 11 } } },
         tooltip: { callbacks: {
-          label: (c: any) => `Flux: ${c.parsed.y.toExponential(2)} (${c.parsed.y >= 1e-4 ? 'X' : c.parsed.y >= 1e-5 ? 'M' : c.parsed.y >= 1e-6 ? 'C' : c.parsed.y >= 1e-7 ? 'B' : 'A'}-class)`
+          label: (c: any) => `${c.dataset.label}: ${c.parsed.y.toExponential(2)} (${c.parsed.y >= 1e-4 ? 'X' : c.parsed.y >= 1e-5 ? 'M' : c.parsed.y >= 1e-6 ? 'C' : c.parsed.y >= 1e-7 ? 'B' : 'A'}-class)`
         }},
         annotation: { annotations: midnightAnnotations }
       },
@@ -2110,15 +2162,25 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   const xrayChartData = useMemo(() => {
     if (allXrayData.length === 0) return { datasets: [] };
+    const primaryLabel = xrayPrimarySatellite ? `GOES-${xrayPrimarySatellite} Long (Primary)` : 'Primary Long Flux (0.1-0.8 nm)';
+    const secondaryLabel = xraySecondarySatellite ? `GOES-${xraySecondarySatellite} Long (Backup)` : 'Backup Long Flux (0.1-0.8 nm)';
     return {
-      datasets: [{
-        label: 'Short Flux (0.1-0.8 nm)',
-        data: allXrayData.map(d => ({x: d.time, y: d.short})),
-        pointRadius: 0, tension: 0.1, spanGaps: true, fill: 'origin', borderWidth: 2,
-        segment: { borderColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 1), backgroundColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 0.2) }
-      }],
+      datasets: [
+        {
+          label: primaryLabel,
+          data: allXrayData.map(d => ({x: d.time, y: d.short})),
+          pointRadius: 0, tension: 0.1, spanGaps: true, fill: 'origin', borderWidth: 2,
+          segment: { borderColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 1), backgroundColor: (ctx: any) => getColorForFlux(ctx.p1.parsed.y, 0.2) }
+        },
+        {
+          label: secondaryLabel,
+          data: allXrayData.map(d => ({x: d.time, y: d.secondaryShort})),
+          pointRadius: 0, tension: 0.1, spanGaps: true, fill: false, borderWidth: 1.5,
+          borderColor: 'rgba(244, 114, 182, 0.85)', borderDash: [4, 3],
+        },
+      ],
     };
-  }, [allXrayData]);
+  }, [allXrayData, xrayPrimarySatellite, xraySecondarySatellite]);
 
   const protonChartOptions = useMemo((): ChartOptions<'line'> => {
     const now = Date.now();
