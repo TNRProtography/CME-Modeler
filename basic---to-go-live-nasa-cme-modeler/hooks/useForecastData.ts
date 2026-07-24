@@ -126,6 +126,7 @@ type Status = "QUIET" | "WATCH" | "LIKELY_60" | "IMMINENT_30" | "ONSET";
 // --- Constants ---
 const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';
 const SUBSTORM_RISK_URL = 'https://aurora-index-sta.thenamesrock.workers.dev/api/substorm?resolution=5m';
+const HEMISPHERIC_POWER_RM_URL = 'https://redundant-hp-with-rm.thenamesrock.workers.dev/hp?series=1';
 const SOLAR_WIND_IMF_URL = 'https://imap-solar-data-test.thenamesrock.workers.dev/rtsw/merged-24h';
 const NOAA_GOES18_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/primary/magnetometers-1-day.json';
 const NOAA_GOES19_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/secondary/magnetometers-1-day.json';
@@ -458,7 +459,7 @@ export const useForecastData = (
   const [nzMagData, setNzMagData] = useState<any[]>([]);
   const [loadingNzMag, setLoadingNzMag] = useState<string | null>('Loading data...');
   const [auroraScoreHistory, setAuroraScoreHistory] = useState<{ timestamp: number; baseScore: number; finalScore: number; }[]>([]);
-  const [hemisphericPowerHistory, setHemisphericPowerHistory] = useState<{ timestamp: number; hemisphericPower: number; }[]>([]);
+  const [hemisphericPowerHistory, setHemisphericPowerHistory] = useState<{ timestamp: number; hemisphericPower: number; hemisphericPowerNoRm?: number | null; source?: string; }[]>([]);
   const [dailyCelestialHistory, setDailyCelestialHistory] = useState<DailyHistoryEntry[]>([]);
   const [owmDailyForecast, setOwmDailyForecast] = useState<OwmDailyForecastEntry[]>([]);
   const [interplanetaryShockData, setInterplanetaryShockData] = useState<InterplanetaryShock[]>([]);
@@ -693,6 +694,19 @@ export const useForecastData = (
       // hold the loader. Give them tighter timeouts since they feed secondary widgets only.
       withInitialProgress(fetchJsonWithRecovery(`${NASA_IPS_URL}?_=${Date.now()}`, 7000), 'ipsApi'),
       withInitialProgress(fetchJsonWithRecovery(nzMagUrl, 5000), 'nzMagApi'),
+      (async () => {
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 12000);
+          const res = await fetch(`${HEMISPHERIC_POWER_RM_URL}&_=${Date.now()}`, { signal: controller.signal });
+          clearTimeout(timer);
+          if (!res.ok) return null;
+          return res.json();
+        } catch (err) {
+          console.warn('[HemisphericPowerRMWorker] Error:', err);
+          return null;
+        }
+      })(),
       // Substorm risk worker - non-blocking, plain fetch to avoid the row-recovery
       // parser mangling the object-format JSON response from this worker.
       (async () => {
@@ -717,7 +731,7 @@ export const useForecastData = (
         }
       })(),
     ]);
-    const [forecastResult, solarWindResult, goes18Result, goes19Result, ipsResult, nzMagResult, substormRiskResult] = results;
+    const [forecastResult, solarWindResult, goes18Result, goes19Result, ipsResult, nzMagResult, hpRmResult, substormRiskResult] = results;
 
     if (forecastResult.status === 'fulfilled' && forecastResult.value) {
       const { currentForecast, historicalData, dailyHistory, owmDailyForecast, rawHistory } = forecastResult.value;
@@ -756,7 +770,46 @@ export const useForecastData = (
         moon: getMoonData(currentForecast?.moon?.illumination ?? null, currentForecast?.moon?.rise ?? null, currentForecast?.moon?.set ?? null, owmDailyForecast || [])
       }));
       if (Array.isArray(historicalData)) setAuroraScoreHistory(historicalData.filter((d: any) => d.timestamp != null && d.baseScore != null).sort((a, b) => a.timestamp - b.timestamp)); else setAuroraScoreHistory([]);
-      if (Array.isArray(rawHistory)) setHemisphericPowerHistory(rawHistory.filter((d: any) => d.timestamp && d.hemisphericPower && !isNaN(d.hemisphericPower)).map((d: RawHistoryRecord) => ({ timestamp: d.timestamp, hemisphericPower: d.hemisphericPower })).sort((a: any, b: any) => a.timestamp - b.timestamp)); else setHemisphericPowerHistory([]);
+      if (Array.isArray(rawHistory)) setHemisphericPowerHistory(rawHistory.filter((d: any) => d.timestamp && d.hemisphericPower && !isNaN(d.hemisphericPower)).map((d: RawHistoryRecord) => ({ timestamp: d.timestamp, hemisphericPower: d.hemisphericPower, source: 'forecast' })).sort((a: any, b: any) => a.timestamp - b.timestamp)); else setHemisphericPowerHistory([]);
+    }
+
+    // ── RM-aware Hemispheric Power Worker ─────────────────────────────────────
+    // Prefer the RM-aware worker for the HP chart and gauge when available. It
+    // provides true GSM HP and an RM-free counterfactual.
+    const hpRmValue = hpRmResult?.status === 'fulfilled' ? hpRmResult.value : null;
+    if (hpRmValue?.ok) {
+      const currentHp = Number(hpRmValue.hemispheric_power?.south?.hp_gw);
+
+      if (Number.isFinite(currentHp)) {
+        setGaugeData((prev) => ({
+          ...prev,
+          power: {
+            ...prev.power,
+            value: currentHp.toFixed(1),
+            ...getGaugeStyle(currentHp, 'power'),
+            lastUpdated: `Updated: ${formatNZTimestamp(Date.parse(hpRmValue.valid_at_utc) || Date.now())}`,
+            source: 'RM-aware HP',
+          }
+        }));
+      }
+
+      if (Array.isArray(hpRmValue.series)) {
+        const rmSeries = hpRmValue.series
+          .map((d: any) => {
+            const timestamp = Date.parse(d.time_utc);
+            const hpSouth = Number(d.hp_south);
+            const boostSouth = Number(d.rm_boost_south_gw);
+            return {
+              timestamp,
+              hemisphericPower: hpSouth,
+              hemisphericPowerNoRm: Number.isFinite(hpSouth) && Number.isFinite(boostSouth) ? hpSouth - boostSouth : null,
+              source: 'rm-worker',
+            };
+          })
+          .filter((d: any) => Number.isFinite(d.timestamp) && Number.isFinite(d.hemisphericPower))
+          .sort((a: any, b: any) => a.timestamp - b.timestamp);
+        if (rmSeries.length) setHemisphericPowerHistory(rmSeries);
+      }
     }
 
     // ── Substorm Risk Worker ──────────────────────────────────────────────────
