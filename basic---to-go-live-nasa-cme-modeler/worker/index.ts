@@ -1,4 +1,9 @@
-export interface Env {}
+export interface Env {
+  // Real secret, set via `wrangler secret put CARTO_API_KEY` - never exposed to
+  // the browser. The client only ever talks to /api/proxy/carto/*, which
+  // appends this key server-side before forwarding to CARTO.
+  CARTO_API_KEY?: string;
+}
 
 const ALLOWED_HOSTS = new Set([
   'sdo.gsfc.nasa.gov',
@@ -129,6 +134,50 @@ const proxyData = async (request: Request): Promise<Response> => {
   return withCors(response);
 };
 
+// CARTO basemap tiles - proxied so the CARTO API key never reaches the browser.
+// Matches CARTO's own tile URL shape: /carto/{style}/{z}/{x}/{y}{@2x}.png
+const CARTO_TILE_RE = /^\/api\/proxy\/carto\/([a-zA-Z0-9_]+)\/(\d+)\/(\d+)\/(\d+)(@2x)?\.png$/;
+
+const proxyCartoTile = async (request: Request, env: Env, match: RegExpMatchArray): Promise<Response> => {
+  const apiKey = env.CARTO_API_KEY;
+  if (!apiKey) {
+    return withCors(new Response('CARTO_API_KEY is not configured on this worker', { status: 500 }));
+  }
+
+  const [, style, z, x, y, retina] = match;
+  const target = `https://basemaps.cartocdn.com/${style}/${z}/${x}/${y}${retina ?? ''}.png?api_key=${encodeURIComponent(apiKey)}`;
+
+  // Tiles for a given z/x/y never change, so cache generously at the edge.
+  const ttlSafe = 24 * 60 * 60;
+  const cacheKey = new Request(request.url, request);
+  const cached = await caches.default.match(cacheKey);
+  if (cached) return withCors(cached);
+
+  const upstream = await fetch(target, {
+    cf: { cacheTtl: ttlSafe, cacheEverything: true },
+    headers: {
+      'User-Agent': 'spot-the-aurora-carto-proxy',
+      'Accept': 'image/*',
+    },
+  });
+
+  if (!upstream.ok) {
+    return withCors(new Response(`Upstream fetch failed: ${upstream.status}`, { status: upstream.status }));
+  }
+
+  const headers = new Headers(upstream.headers);
+  headers.set('Cache-Control', `public, max-age=${ttlSafe}, s-maxage=${ttlSafe}`);
+
+  const response = new Response(upstream.body, {
+    status: upstream.status,
+    statusText: upstream.statusText,
+    headers,
+  });
+
+  await caches.default.put(cacheKey, response.clone());
+  return withCors(response);
+};
+
 const proxyImageMeta = async (request: Request): Promise<Response> => {
   const url = new URL(request.url);
   const target = validateTarget(url.searchParams.get('url'));
@@ -143,12 +192,22 @@ const proxyImageMeta = async (request: Request): Promise<Response> => {
 };
 
 export default {
-  async fetch(request: Request): Promise<Response> {
+  async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method === 'OPTIONS') {
       return withCors(new Response(null, { status: 204 }));
     }
 
     const url = new URL(request.url);
+
+    const cartoMatch = url.pathname.match(CARTO_TILE_RE);
+    if (cartoMatch) {
+      try {
+        return await proxyCartoTile(request, env, cartoMatch);
+      } catch (error) {
+        return withCors(new Response((error as Error).message, { status: 400 }));
+      }
+    }
+
     if (url.pathname === '/api/proxy/image') {
       try {
         return await proxyImage(request);

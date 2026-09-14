@@ -8,9 +8,10 @@ import { PlanetData, POIData } from './types';
 export const NASA_API_KEY: string = import.meta.env.VITE_NASA_API_KEY || 'DEMO_KEY';
 // ------------------------------------
 
-// CARTO now requires an API key for basemap tile usage.
-// Set VITE_CARTO_API_KEY in the Cloudflare Pages project's environment variables.
-export const CARTO_API_KEY: string = import.meta.env.VITE_CARTO_API_KEY || '';
+// CARTO basemap tiles now require an API key. The key is kept server-side as a
+// genuine Cloudflare Workers secret (never shipped to the browser) - see
+// worker/index.ts's /api/proxy/carto/* route and CARTO_TILE_PROXY_URL below.
+export const CARTO_TILE_PROXY_URL = 'https://spottheaurora.co.nz/api/proxy/carto';
 
 export const AU_IN_KM = 149597870.7;
 export const SCENE_SCALE = 3.0; // Affects visual scaling of distances and CMEs relative to planets
