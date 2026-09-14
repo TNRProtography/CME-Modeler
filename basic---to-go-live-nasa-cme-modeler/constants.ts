@@ -8,6 +8,10 @@ import { PlanetData, POIData } from './types';
 export const NASA_API_KEY: string = import.meta.env.VITE_NASA_API_KEY || 'DEMO_KEY';
 // ------------------------------------
 
+// CARTO now requires an API key for basemap tile usage.
+// Set VITE_CARTO_API_KEY in the Cloudflare Pages project's environment variables.
+export const CARTO_API_KEY: string = import.meta.env.VITE_CARTO_API_KEY || '';
+
 export const AU_IN_KM = 149597870.7;
 export const SCENE_SCALE = 3.0; // Affects visual scaling of distances and CMEs relative to planets
 export const SUN_ANGULAR_VELOCITY = 2.61799e-6; // rad/sec (approx for 27.27 day synodic period)

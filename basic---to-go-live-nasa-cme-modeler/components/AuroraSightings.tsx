@@ -16,6 +16,7 @@ import {
   trackSightingSubmitted,
   trackSightingSubmitFailed,
 } from '../utils/analytics';
+import { CARTO_API_KEY } from '../constants';
 
 // --- Local SVG Icon components for the UI ---
 const GreenCheckIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -844,7 +845,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                             markerRefs={markerRefs}
                         />
 
-                        <TileLayer attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>' url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"/>
+                        <TileLayer attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>' url={`https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png${CARTO_API_KEY ? `?api_key=${CARTO_API_KEY}` : ''}`}/>
         {isForecastMode ? <ForecastOvalOverlay frame={forecastFrame} latestBy={latestBy} currentPdynNPa={substormRiskData?.metrics?.solar_wind?.avg_30m_pressure_nPa ?? substormRiskData?.metrics?.solar_wind?.dynamic_pressure_nPa ?? null} currentBz={substormRiskData?.metrics?.solar_wind?.bz ?? null} /> : <AuroraOvalOverlay substormRiskData={substormRiskData} latestBy={latestBy} />}
                         <LocationFinder onLocationSelect={() => {}} />
                         {userPosition && <Marker position={userPosition} icon={userMarkerIcon} draggable={false}><Popup>Your GPS location.</Popup></Marker>}

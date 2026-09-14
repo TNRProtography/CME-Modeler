@@ -25,3 +25,9 @@ zone_name = "spottheaurora.co.nz"
 #
 # The app reads this at build time and points all proxy requests to the live
 # Worker on the custom domain, regardless of which domain the Pages app is on.
+
+# CARTO now requires an API key for basemap tile usage. In the Cloudflare
+# Pages project settings, add an environment variable:
+#   VITE_CARTO_API_KEY = <your CARTO API key>
+# The app reads this at build time (constants.ts) and appends it to the
+# CARTO tile requests in AuroraSightings.tsx.
