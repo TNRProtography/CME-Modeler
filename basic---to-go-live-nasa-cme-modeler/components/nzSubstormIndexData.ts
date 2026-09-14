@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { registerDatasetTicker } from '../utils/pollingScheduler';
 
 const TILDE_BASE = 'https://tilde.geonet.org.nz/v4';
 const SOLAR_WIND_IMF_URL = 'https://imap-solar-data-test.thenamesrock.workers.dev/';
@@ -1517,8 +1518,7 @@ export const useNzSubstormIndexData = () => {
       }
     };
     fetchData();
-    const interval = setInterval(fetchData, 60000);
-    return () => clearInterval(interval);
+    return registerDatasetTicker('nz-substorm-index', fetchData, 30_000);
   }, []);
 
   return { data, loading };

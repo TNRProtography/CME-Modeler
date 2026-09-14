@@ -30,6 +30,7 @@ import {
   type WarnLevel,
 } from './epamWarning';
 import { detectShocks, type DetectedShock } from '../utils/shockDetection';
+import { registerDatasetTicker } from '../utils/pollingScheduler';
 
 interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string | React.ReactNode; }
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
@@ -491,8 +492,8 @@ const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) =
   useEffect(() => {
     mountedRef.current = true;
     fetchAll();
-    const iv = setInterval(fetchAll, 3*60*1000);
-    return () => { mountedRef.current = false; clearInterval(iv); };
+    const unregister = registerDatasetTicker('epam-panel-data', fetchAll, 3 * 60 * 1000);
+    return () => { mountedRef.current = false; unregister(); };
   }, [fetchAll]);
 
   // ── Filter data by time range ────────────────────────────────────────────────

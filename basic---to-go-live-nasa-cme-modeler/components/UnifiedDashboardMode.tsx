@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useForecastData } from '../hooks/useForecastData';
+import { registerDatasetTicker } from '../utils/pollingScheduler';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -193,10 +194,10 @@ const UnifiedDashboardMode: React.FC<UnifiedDashboardModeProps> = ({ refreshSign
       }
     };
     pullXray();
-    const interval = setInterval(pullXray, 60000);
+    const unregister = registerDatasetTicker('unified-dashboard-xray', pullXray, 30_000);
     return () => {
       mounted = false;
-      clearInterval(interval);
+      unregister();
     };
   }, []);
 
@@ -223,10 +224,10 @@ const UnifiedDashboardMode: React.FC<UnifiedDashboardModeProps> = ({ refreshSign
       }
     };
     pullSightings();
-    const interval = setInterval(pullSightings, 60000);
+    const unregister = registerDatasetTicker('unified-dashboard-sightings', pullSightings, 30_000);
     return () => {
       mounted = false;
-      clearInterval(interval);
+      unregister();
     };
   }, []);
 

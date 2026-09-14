@@ -220,7 +220,7 @@ const SDO_HMI_IF_4096_FALLBACK = `${NASA_SDO_BASE}/latest_4096_HMII.jpg`;
 
 // Load directly - no Worker dependency, no domain-matching issues.
 const resolveSdoImageUrl = (rawUrl: string, _forceDirect?: boolean) => rawUrl;
-const REFRESH_INTERVAL_MS = 60 * 1000; // Refresh every minute
+const REFRESH_INTERVAL_MS = 30 * 1000; // Refresh JSON data every 30s; images stay cached for an hour (see SOLAR_IMAGE_CACHE_TTL_MS) so this doesn't add image bandwidth
 const HMI_IMAGE_SIZE = 4096;
 const SDO_HMI_NATIVE_CX = 2048;
 const SDO_HMI_NATIVE_CY = 2048;

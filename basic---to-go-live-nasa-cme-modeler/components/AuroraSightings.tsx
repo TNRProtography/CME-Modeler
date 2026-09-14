@@ -17,6 +17,7 @@ import {
   trackSightingSubmitFailed,
 } from '../utils/analytics';
 import { CARTO_API_KEY } from '../constants';
+import { registerDatasetTicker } from '../utils/pollingScheduler';
 
 // --- Local SVG Icon components for the UI ---
 const GreenCheckIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -578,9 +579,9 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
         if (lastReportString) setLastReportInfo(JSON.parse(lastReportString));
         fetchSightings();
         requestGpsFix();
-        const intervalId = setInterval(fetchSightings, 2 * 60 * 1000);
+        const unregister = registerDatasetTicker('aurora-sightings', fetchSightings, 30_000);
         return () => {
-            clearInterval(intervalId);
+            unregister();
             markerRefs.current.clear();
         }
     }, [fetchSightings, requestGpsFix]);

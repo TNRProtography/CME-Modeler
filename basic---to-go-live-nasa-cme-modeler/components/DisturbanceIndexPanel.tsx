@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import CloseIcon from './icons/CloseIcon';
+import { registerDatasetTicker } from '../utils/pollingScheduler';
 
 interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string | React.ReactNode; }
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
@@ -147,8 +148,7 @@ const DisturbanceIndexPanel: React.FC = () => {
 
   useEffect(() => {
     fetchDst();
-    const refreshInterval = setInterval(fetchDst, AUTO_REFRESH_MS);
-    return () => clearInterval(refreshInterval);
+    return registerDatasetTicker('disturbance-index-dst', fetchDst, AUTO_REFRESH_MS);
   }, [fetchDst]);
 
   const latestDst = dstRows.length ? dstRows[dstRows.length - 1] : null;

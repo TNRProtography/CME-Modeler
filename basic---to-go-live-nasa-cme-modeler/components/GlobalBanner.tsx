@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { SubstormActivity, InterplanetaryShock } from '../types';
 import type { SubstormRiskData } from '../hooks/useForecastData';
+import { registerDatasetTicker } from '../utils/pollingScheduler';
 
 const SUBSTORM_URL = 'https://aurora-index-sta.thenamesrock.workers.dev/api/substorm?resolution=5m';
 
@@ -158,8 +159,7 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
       }
     };
     fetchGlobalBanner();
-    const interval = setInterval(fetchGlobalBanner, 60 * 1000);
-    return () => clearInterval(interval);
+    return registerDatasetTicker('global-banner', fetchGlobalBanner, 30_000);
   }, []);
 
   useEffect(() => {
@@ -170,8 +170,7 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
       } catch { /* non-critical */ }
     };
     fetchSubstorm();
-    const interval = setInterval(fetchSubstorm, 60 * 1000);
-    return () => clearInterval(interval);
+    return registerDatasetTicker('global-banner-substorm', fetchSubstorm, 30_000);
   }, []);
 
   useEffect(() => {

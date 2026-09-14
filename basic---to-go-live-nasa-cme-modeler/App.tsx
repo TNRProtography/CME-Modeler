@@ -663,11 +663,11 @@ const App: React.FC = () => {
     };
 
     void fetchBannerXray();
-    const id = window.setInterval(() => { void fetchBannerXray(); }, 60 * 1000);
+    const unregister = registerDatasetTicker('app-banner-xray', fetchBannerXray, 30_000);
 
     return () => {
       cancelled = true;
-      window.clearInterval(id);
+      unregister();
     };
   }, []);
 

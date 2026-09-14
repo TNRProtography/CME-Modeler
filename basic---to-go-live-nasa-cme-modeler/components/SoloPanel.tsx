@@ -1,5 +1,6 @@
 // --- START OF FILE components/SoloPanel.tsx ---
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { registerDatasetTicker } from '../utils/pollingScheduler';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface ImageChannel {
@@ -495,8 +496,8 @@ const SoloPanel: React.FC = () => {
   useEffect(() => {
     mountedRef.current = true;
     fetchAll();
-    const iv = setInterval(fetchAll, 15 * 60 * 1000);
-    return () => { mountedRef.current = false; clearInterval(iv); };
+    const unregister = registerDatasetTicker('solo-panel-data', fetchAll, 15 * 60 * 1000);
+    return () => { mountedRef.current = false; unregister(); };
   }, [fetchAll]);
 
   const derived    = position?.positions?.derived;

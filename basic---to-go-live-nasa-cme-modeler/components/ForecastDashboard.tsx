@@ -266,7 +266,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
 
     useEffect(() => {
       fetchAllData(true, getGaugeStyle);
-      return registerDatasetTicker('forecast-core-data', () => fetchAllData(false, getGaugeStyle), 60_000);
+      return registerDatasetTicker('forecast-core-data', () => fetchAllData(false, getGaugeStyle), 30_000);
     }, [fetchAllData]);
 
     useEffect(() => {
