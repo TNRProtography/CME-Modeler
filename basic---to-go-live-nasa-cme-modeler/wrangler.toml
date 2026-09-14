@@ -26,9 +26,6 @@ zone_name = "spottheaurora.co.nz"
 # The app reads this at build time and points all proxy requests to the live
 # Worker on the custom domain, regardless of which domain the Pages app is on.
 
-# CARTO now requires an API key for basemap tile usage. The key is kept
-# server-side only, as a real Workers secret (never shipped to the browser):
-#   wrangler secret put CARTO_API_KEY
-# The browser requests tiles from this worker's /api/proxy/carto/* route
-# (see worker/index.ts), which appends the key before forwarding to CARTO.
-# The client-side tile URL lives in constants.ts (CARTO_TILE_PROXY_URL).
+# CARTO basemap tiles now require an API key. That proxy lives in the Pages
+# project itself (functions/api/proxy/carto/[[path]].ts), not in this Worker -
+# see that file and constants.ts (CARTO_TILE_PROXY_URL) for details.
