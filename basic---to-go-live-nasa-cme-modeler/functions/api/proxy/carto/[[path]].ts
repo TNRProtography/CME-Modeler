@@ -41,9 +41,13 @@ export const onRequestGet = async (context: EventContext<Env>): Promise<Response
   const target = `https://basemaps.cartocdn.com/${style}/${z}/${x}/${y}${retina ?? ''}.png?key=${encodeURIComponent(apiKey)}`;
 
   // Tiles for a given z/x/y never change, so cache generously at the edge.
+  // Bump CACHE_VERSION to orphan previously cached tiles - the run with the
+  // wrong auth param cached CARTO's "API KEY REQUIRED" placeholders, which
+  // came back as a perfectly cacheable 200.
+  const CACHE_VERSION = '2';
   const ttlSeconds = 24 * 60 * 60;
   const cache = caches.default;
-  const cacheKey = new Request(request.url, request);
+  const cacheKey = new Request(`${request.url}${request.url.includes('?') ? '&' : '?'}__v=${CACHE_VERSION}`, request);
 
   const cached = await cache.match(cacheKey);
   if (cached) return cached;
