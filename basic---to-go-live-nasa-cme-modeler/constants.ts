@@ -8,12 +8,14 @@ import { PlanetData, POIData } from './types';
 export const NASA_API_KEY: string = import.meta.env.VITE_NASA_API_KEY || 'DEMO_KEY';
 // ------------------------------------
 
-// CARTO basemap tiles now require an API key. The key is kept server-side as a
-// Cloudflare Pages secret (never shipped to the browser) - see the Pages
-// Function at functions/api/proxy/carto/[[path]].ts, which appends it before
-// forwarding to CARTO. Relative so it works on any domain the Pages project
-// is served from (production custom domain or a *.pages.dev preview).
-export const CARTO_TILE_PROXY_URL = '/api/proxy/carto';
+// CARTO now requires a (free) API key on its basemap tiles - without it every
+// tile is served with an "API KEY REQUIRED" watermark. Get one at
+// https://carto.com/basemaps/apikey/ and set it as VITE_CARTO_API_KEY (a Text
+// variable in the Cloudflare Pages project - Secret-type variables are not
+// exposed to the Vite build). Note the param is `key`, not `api_key`.
+const CARTO_API_KEY: string = import.meta.env.VITE_CARTO_API_KEY || '';
+const CARTO_KEY_PARAM = CARTO_API_KEY ? `?key=${CARTO_API_KEY}` : '';
+export const CARTO_DARK_TILE_URL = `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png${CARTO_KEY_PARAM}`;
 
 export const AU_IN_KM = 149597870.7;
 export const SCENE_SCALE = 3.0; // Affects visual scaling of distances and CMEs relative to planets
