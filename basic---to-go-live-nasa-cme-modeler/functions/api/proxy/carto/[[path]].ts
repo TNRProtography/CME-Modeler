@@ -18,7 +18,9 @@ interface EventContext<E> {
   waitUntil: (promise: Promise<unknown>) => void;
 }
 
-const CARTO_TILE_RE = /^([a-zA-Z0-9_]+)\/(\d+)\/(\d+)\/(\d+)(@2x)?\.png$/;
+// Style is one or two path segments - CARTO serves some styles at the root
+// (dark_all) and others under a prefix (rastertiles/voyager).
+const CARTO_TILE_RE = /^([a-zA-Z0-9_]+(?:\/[a-zA-Z0-9_]+)?)\/(\d+)\/(\d+)\/(\d+)(@2x)?\.png$/;
 
 export const onRequestGet = async (context: EventContext<Env>): Promise<Response> => {
   const { request, env, params } = context;
@@ -36,7 +38,7 @@ export const onRequestGet = async (context: EventContext<Env>): Promise<Response
   }
 
   const [, style, z, x, y, retina] = match;
-  const target = `https://basemaps.cartocdn.com/${style}/${z}/${x}/${y}${retina ?? ''}.png?api_key=${encodeURIComponent(apiKey)}`;
+  const target = `https://basemaps.cartocdn.com/${style}/${z}/${x}/${y}${retina ?? ''}.png?key=${encodeURIComponent(apiKey)}`;
 
   // Tiles for a given z/x/y never change, so cache generously at the edge.
   const ttlSeconds = 24 * 60 * 60;
