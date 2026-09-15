@@ -220,7 +220,7 @@ const SDO_HMI_IF_4096_FALLBACK = `${NASA_SDO_BASE}/latest_4096_HMII.jpg`;
 
 // Load directly - no Worker dependency, no domain-matching issues.
 const resolveSdoImageUrl = (rawUrl: string, _forceDirect?: boolean) => rawUrl;
-const REFRESH_INTERVAL_MS = 30 * 1000; // Refresh JSON data every 30s; images stay cached for an hour (see SOLAR_IMAGE_CACHE_TTL_MS) so this doesn't add image bandwidth
+const REFRESH_INTERVAL_MS = 30 * 1000; // JSON refreshes every tick; images are rate-limited separately by SOLAR_IMAGE_CACHE_TTL_MS
 const HMI_IMAGE_SIZE = 4096;
 const SDO_HMI_NATIVE_CX = 2048;
 const SDO_HMI_NATIVE_CY = 2048;
@@ -231,7 +231,12 @@ const CLOSEUP_OFFSET_X_PX = 200;
 const CLOSEUP_OFFSET_Y_PX = -200;
 const ACTIVE_REGION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_REGION_MIN_AREA_MSH = 0;
-const SOLAR_IMAGE_CACHE_TTL_MS = 60 * 60 * 1000;
+// Roughly how often the upstream SUVI/SDO "latest" products actually publish.
+// The refresh ticker runs far more often than this, so the TTL is what really
+// decides image freshness: too long and the page shows hour-old imagery to
+// someone who left it open, too short and it re-downloads bytes that haven't
+// changed. Matching the publish cadence keeps it current without waste.
+const SOLAR_IMAGE_CACHE_TTL_MS = 10 * 60 * 1000;
 const solarImageCache = new Map<string, { url: string; fetchedAt: number }>();
 
 const FETCH_TIMEOUT_MS = 12000;

@@ -973,15 +973,19 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!isDashboardMode) return;
 
+    let refreshTimer: number | undefined;
     const runCycle = () => {
       loadCMEData(activeTimeRange, { silent: true });
-      window.setTimeout(() => {
+      refreshTimer = window.setTimeout(() => {
         setManualRefreshKey((v) => v + 1);
       }, 20000);
     };
 
-    const interval = window.setInterval(runCycle, 60000);
-    return () => window.clearInterval(interval);
+    const unregister = registerDatasetTicker('dashboard-cme-cycle', runCycle, 60_000);
+    return () => {
+      unregister();
+      if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+    };
   }, [isDashboardMode, activeTimeRange, loadCMEData]);
 
   const handleShowTutorial = useCallback(() => {

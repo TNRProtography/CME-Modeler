@@ -1,8 +1,13 @@
 // components/KpForecastTimeline.tsx
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { registerDatasetTicker } from '../utils/pollingScheduler';
 
 const NOAA_KP_URL   = 'https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json';
+// NOAA republishes this forecast roughly 3-hourly. Re-fetching every 5 minutes
+// keeps the chart current and, because the 72h window and the "now" marker are
+// derived at fetch/draw time, stops both from freezing at page-load time.
+const KP_REFRESH_MS = 5 * 60 * 1000;
 const KP_THRESHOLD  = 4.33; // below this: no aurora overlay
 const NZ_TIME_ZONE  = 'Pacific/Auckland';
 
@@ -621,7 +626,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   const moon = moonIllumination ?? 50;
 
   // Fetch KP data
-  useEffect(() => {
+  const fetchKpData = useCallback(() => {
     fetch(NOAA_KP_URL)
       .then(r => r.json())
       .then((raw: any) => {
@@ -715,6 +720,11 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
       })
       .catch(() => { setError(true); setLoading(false); });
   }, []);
+
+  useEffect(() => {
+    fetchKpData();
+    return registerDatasetTicker('kp-forecast', fetchKpData, KP_REFRESH_MS);
+  }, [fetchKpData]);
 
   // Responsive resize
   useEffect(() => {

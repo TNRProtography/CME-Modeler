@@ -51,6 +51,11 @@ const bindGlobalListenersOnce = () => {
     if (!document.hidden) catchUpStale();
   });
   window.addEventListener('online', catchUpStale);
+  // Returning to a page restored from the back/forward cache - common on
+  // mobile Safari, where it can happen without a usable visibilitychange.
+  // Without this the tab comes back showing however old the data was when
+  // it was frozen.
+  window.addEventListener('pageshow', catchUpStale);
 };
 
 export const registerDatasetTicker = (key: string, handler: TickHandler, intervalMs = 60_000): (() => void) => {

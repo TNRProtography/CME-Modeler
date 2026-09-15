@@ -26,6 +26,7 @@ import {
   CHHistoryResult,
   CHEvolution,
 } from '../utils/coronalHoleHistory';
+import { registerDatasetTicker } from '../utils/pollingScheduler';
 
 // ── TUNE ──────────────────────────────────────────────────────────────
 const REFRESH_INTERVAL_MS   = 15 * 60 * 1000;  // 15 minutes
@@ -77,7 +78,7 @@ export function useCoronalHoles({ enabled = false, sourceImageUrl }: UseCoronalH
   const [historyProgress, setHistoryProgress] = useState<number | null>(null);
 
   const timerRef          = useRef<ReturnType<typeof setTimeout>  | null>(null);
-  const intervalRef       = useRef<ReturnType<typeof setInterval> | null>(null);
+  const unregisterTickerRef = useRef<(() => void) | null>(null);
   const historyTimerRef   = useRef<ReturnType<typeof setTimeout>  | null>(null);
   const backfillTimerRef  = useRef<ReturnType<typeof setTimeout>  | null>(null);
   const mountedRef        = useRef(true);
@@ -134,19 +135,27 @@ export function useCoronalHoles({ enabled = false, sourceImageUrl }: UseCoronalH
     if (!enabled) {
       setStatus('idle');
       setErrorMessage(undefined);
-      [timerRef, intervalRef, historyTimerRef, backfillTimerRef].forEach(ref => {
+      unregisterTickerRef.current?.();
+      unregisterTickerRef.current = null;
+      [timerRef, historyTimerRef, backfillTimerRef].forEach(ref => {
         if (ref.current) { clearTimeout(ref.current as any); clearInterval(ref.current as any); ref.current = null; }
       });
       return;
     }
 
-    timerRef.current    = setTimeout(() => { void runDetection(); }, INITIAL_DELAY_MS);
-    intervalRef.current = setInterval(() => { void runDetection(); }, REFRESH_INTERVAL_MS);
+    timerRef.current = setTimeout(() => { void runDetection(); }, INITIAL_DELAY_MS);
+    unregisterTickerRef.current = registerDatasetTicker(
+      'coronal-hole-detection',
+      () => runDetection(),
+      REFRESH_INTERVAL_MS,
+    );
     void runDetection();
 
     return () => {
       mountedRef.current = false;
-      [timerRef, intervalRef, historyTimerRef, backfillTimerRef].forEach(ref => {
+      unregisterTickerRef.current?.();
+      unregisterTickerRef.current = null;
+      [timerRef, historyTimerRef, backfillTimerRef].forEach(ref => {
         if (ref.current) { clearTimeout(ref.current as any); clearInterval(ref.current as any); ref.current = null; }
       });
     };
