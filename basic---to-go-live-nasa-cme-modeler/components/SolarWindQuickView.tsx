@@ -15,6 +15,34 @@ import { Line } from 'react-chartjs-2';
 import type { ChartOptions } from 'chart.js';
 import CloseIcon from './icons/CloseIcon';
 import { detectShocks, type DetectedShock } from '../utils/shockDetection';
+import {
+  buildSolarWindSamples,
+  classifySolarWindPhase,
+  type SolarWindPhaseId,
+} from '../utils/solarWindPhase';
+
+// Accent per structure, kept in step with the phase card on the forecast page.
+const STRUCTURE_ACCENT: Record<SolarWindPhaseId, string> = {
+  'shock': '#fb7185',
+  'icme-sheath': '#fb923c',
+  'magnetic-cloud': '#e879f9',
+  'icme-ejecta': '#c084fc',
+  'sir-compression': '#fbbf24',
+  'stream-interface': '#2dd4bf',
+  'hss-plateau': '#22d3ee',
+  'rarefaction': '#7dd3fc',
+  'hcs-crossing': '#a3e635',
+  'plasma-sheet': '#34d399',
+  'slow-ambient': '#34d399',
+  'fast-ambient': '#38bdf8',
+  'unclassified': '#a3a3a3',
+};
+
+const CONFIDENCE_TEXT: Record<'high' | 'moderate' | 'low', string> = {
+  high: 'High confidence',
+  moderate: 'Moderate confidence',
+  low: 'Low confidence',
+};
 
 // ── Shape of a single detected shock, exposed to parent via onShocksDetected ──
 // (Defined in utils/shockDetection.ts - the single shared detector - and
@@ -247,6 +275,16 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
     [speedData, densityData, tempData, magneticData],
   );
 
+  // What structure are we actually in? Same classifier as the forecast page's
+  // phase card, fed the same shock list, so the two panels cannot disagree.
+  const structure = useMemo(() => {
+    const newest = shockEvents.length ? shockEvents[shockEvents.length - 1] : null;
+    return classifySolarWindPhase(
+      buildSolarWindSamples(magneticData, speedData, densityData, tempData),
+      { lastShock: newest ? { t: newest.t, label: newest.label } : null },
+    );
+  }, [magneticData, speedData, densityData, tempData, shockEvents]);
+
   // Latest shock (most recent by time); this is what the carousel defaults to.
   // shockEvents is already sorted chronologically in the reducer above.
   const latestShockIndex = shockEvents.length ? shockEvents.length - 1 : 0;
@@ -334,6 +372,37 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
           <p className="text-xs text-neutral-500 mt-0.5">
             ACE MAG &amp; SWEPAM · Each dot = one reading
           </p>
+        </div>
+      </div>
+
+      {/* What we're currently in - same verdict as the forecast page's phase card */}
+      <div
+        className="mt-2 mb-1 flex items-start gap-3 px-3 py-2.5 rounded-lg border border-neutral-700/60 bg-neutral-900/50"
+      >
+        <div
+          className="h-8 w-8 rounded-full flex-shrink-0 mt-0.5"
+          style={{
+            background: `radial-gradient(circle at 32% 28%, ${STRUCTURE_ACCENT[structure.id]} 0%, ${STRUCTURE_ACCENT[structure.id]}55 55%, transparent 72%)`,
+            boxShadow: `0 0 12px ${STRUCTURE_ACCENT[structure.id]}55`,
+          }}
+        />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="text-[10px] uppercase tracking-wide font-semibold text-neutral-500">Currently in</span>
+            <span className="text-sm font-semibold" style={{ color: STRUCTURE_ACCENT[structure.id] }}>
+              {structure.label}
+            </span>
+            <span className="text-[10px] text-neutral-500">{CONFIDENCE_TEXT[structure.confidence]}</span>
+          </div>
+          {structure.context && (
+            <div className="text-[11px] text-neutral-500 mt-0.5">{structure.context}</div>
+          )}
+          <p className="text-xs text-neutral-400 mt-1 leading-relaxed">{structure.plain}</p>
+          {structure.alternative && (
+            <p className="text-[11px] text-neutral-500 mt-1">
+              Also consistent with {structure.alternative.label.toLowerCase()}.
+            </p>
+          )}
         </div>
       </div>
 

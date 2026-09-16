@@ -9,6 +9,35 @@ import CaretIcon from './icons/CaretIcon';
 import ToggleSwitch from './ToggleSwitch';
 import { DailyHistoryEntry, OwmDailyForecastEntry } from '../types';
 import { NzMagEvent } from '../hooks/useForecastData';
+import {
+    buildSolarWindSamples,
+    classifySolarWindPhase,
+    type SolarWindPhaseId,
+} from '../utils/solarWindPhase';
+
+// Per-structure colour + short tag for the phase card. Warm for CME-driven
+// structures, cool for coronal-hole flow, neutral for quiet and boundary states.
+const PHASE_VISUALS: Record<SolarWindPhaseId, { orb: string; pillText: string; label: string }> = {
+    'shock':            { orb: 'from-rose-300 to-red-500 shadow-rose-300/60',        pillText: 'text-rose-100',    label: 'Shock front' },
+    'icme-sheath':      { orb: 'from-orange-300 to-amber-500 shadow-orange-300/60',  pillText: 'text-orange-100',  label: 'Compressed sheath' },
+    'magnetic-cloud':   { orb: 'from-fuchsia-300 to-violet-500 shadow-fuchsia-300/60', pillText: 'text-fuchsia-100', label: 'CME magnetic core' },
+    'icme-ejecta':      { orb: 'from-purple-300 to-indigo-500 shadow-purple-300/60', pillText: 'text-purple-100',  label: 'CME material' },
+    'sir-compression':  { orb: 'from-amber-300 to-orange-500 shadow-amber-300/60',   pillText: 'text-amber-100',   label: 'Stream compression' },
+    'stream-interface': { orb: 'from-teal-300 to-cyan-500 shadow-teal-300/60',       pillText: 'text-teal-100',    label: 'Slow/fast boundary' },
+    'hss-plateau':      { orb: 'from-cyan-300 to-sky-500 shadow-cyan-300/60',        pillText: 'text-cyan-100',    label: 'Fast wind stream' },
+    'rarefaction':      { orb: 'from-sky-300 to-indigo-500 shadow-sky-300/60',       pillText: 'text-sky-100',     label: 'Trailing flow' },
+    'hcs-crossing':     { orb: 'from-lime-300 to-emerald-500 shadow-lime-300/60',    pillText: 'text-lime-100',    label: 'Sector boundary' },
+    'plasma-sheet':     { orb: 'from-emerald-300 to-green-600 shadow-emerald-300/60', pillText: 'text-emerald-100', label: 'Dense plasma band' },
+    'slow-ambient':     { orb: 'from-emerald-300 to-teal-500 shadow-emerald-300/60', pillText: 'text-emerald-100', label: 'Calm ambient flow' },
+    'fast-ambient':     { orb: 'from-sky-300 to-cyan-500 shadow-sky-300/60',         pillText: 'text-sky-100',     label: 'Elevated ambient flow' },
+    'unclassified':     { orb: 'from-neutral-400 to-neutral-600 shadow-neutral-400/50', pillText: 'text-neutral-200', label: 'Mixed conditions' },
+};
+
+const CONFIDENCE_STYLE: Record<'high' | 'moderate' | 'low', { text: string; label: string }> = {
+    high:     { text: 'text-emerald-300', label: 'High confidence' },
+    moderate: { text: 'text-amber-300',   label: 'Moderate confidence' },
+    low:      { text: 'text-neutral-400', label: 'Low confidence' },
+};
 
 // --- CONSTANTS & HELPERS (from ForecastDashboard) ---
 const GAUGE_THRESHOLDS = {
@@ -346,20 +375,16 @@ export const SolarWindTemperatureChart: React.FC<{ data: any[] }> = ({ data }) =
     );
 };
 
-export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[]; speedData: any[]; densityData: any[]; tempData: any[] }> = ({ magneticData, clockData, speedData, densityData, tempData }) => {
-    const latestSeriesValue = (series: any[]) => {
-        if (!series?.length) return null;
-        const v = series[series.length - 1]?.y;
-        return Number.isFinite(v) ? v : null;
-    };
-
-    const movingAvg = (series: any[], points = 8) => {
-        if (!series?.length) return null;
-        const tail = series.slice(-points).map((p) => p?.y).filter((v) => Number.isFinite(v));
-        if (!tail.length) return null;
-        return tail.reduce((a, b) => a + b, 0) / tail.length;
-    };
-
+export const IMFClockChart: React.FC<{
+    magneticData: any[];
+    clockData: any[];
+    speedData: any[];
+    densityData: any[];
+    tempData: any[];
+    /** Most recent shock from the shared detector, when the parent has one.
+     *  Lets the phase card say "4h after a fast forward shock". */
+    lastShock?: { t: number; label: string } | null;
+}> = ({ magneticData, clockData, speedData, densityData, tempData, lastShock = null }) => {
     const latestPoint = magneticData.length ? magneticData[magneticData.length - 1] : null;
     const latestClock = useMemo(() => {
         if (clockData.length) return clockData[clockData.length - 1]?.y ?? null;
@@ -387,13 +412,6 @@ export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[]; sp
     const bt = Number.isFinite(latestPoint?.bt) ? latestPoint.bt : null;
     const by = Number.isFinite(latestPoint?.by) ? latestPoint.by : null;
     const bz = Number.isFinite(latestPoint?.bz) ? latestPoint.bz : null;
-    const speed = latestSeriesValue(speedData);
-    const density = latestSeriesValue(densityData);
-    const temp = latestSeriesValue(tempData);
-    const densityAvg = movingAvg(densityData, 12);
-    const speedAvg = movingAvg(speedData, 12);
-    const tempAvg = movingAvg(tempData, 12);
-    const hotPlasma = temp != null && tempAvg != null && temp > Math.max(280000, tempAvg * 1.25);
 
     const status = useMemo(() => {
         if (bz == null || by == null || bt == null) {
@@ -438,96 +456,18 @@ export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[]; sp
         return 'Northward';
     }, [latestClock]);
 
-    const stormPhase = useMemo(() => {
-        const densitySpike = density != null && densityAvg != null && density > Math.max(14, densityAvg * 1.6);
-        const speedJump = speed != null && speedAvg != null && speed > Math.max(520, speedAvg * 1.15);
-        const strongField = bt != null && bt >= 12;
-        const southCoupling = bz != null && bz <= -6;
+    // Full structure classification - see utils/solarWindPhase.ts. Scores every
+    // candidate structure against its published signatures rather than taking
+    // the first matching branch, and reports how sure it is.
+    const stormPhase = useMemo(
+        () => classifySolarWindPhase(
+            buildSolarWindSamples(magneticData, speedData, densityData, tempData),
+            { lastShock },
+        ),
+        [magneticData, speedData, densityData, tempData, lastShock],
+    );
 
-        if (densitySpike && speedJump && strongField) {
-            return {
-                phase: 'Shock / Sheath Arrival',
-                explanation: 'Pressure and speed just jumped. We are likely at the storm front (shock/sheath).',
-                graphic: 'croissant-front' as const,
-                color: 'text-orange-300'
-            };
-        }
-
-        if ((strongField && southCoupling && density != null && density >= 8) || (bt != null && bt >= 14 && bz != null && bz <= -8)) {
-            return {
-                phase: 'CME Core / Main Phase',
-                explanation: 'Strong field with sustained southward coupling suggests we are in the CME core/main geoeffective phase.',
-                graphic: 'croissant-core' as const,
-                color: 'text-fuchsia-300'
-            };
-        }
-
-        if (speed != null && speed >= 620 && temp != null && temp >= 280000 && density != null && density <= 7) {
-            return {
-                phase: 'Coronal Hole High-Speed Stream',
-                explanation: 'Fast, hot, lower-density wind fits a coronal-hole stream (HSS/CIR-like) regime.',
-                graphic: 'fast-wind' as const,
-                color: 'text-cyan-300'
-            };
-        }
-
-        if ((density != null && density <= 5) && (bt != null && bt <= 7) && (speed != null && speed <= 450) && !hotPlasma) {
-            return {
-                phase: 'Ambient Solar Wind',
-                explanation: 'Calmer field and flow indicate ambient background solar wind conditions.',
-                graphic: 'calm' as const,
-                color: 'text-emerald-300'
-            };
-        }
-
-        return {
-            phase: 'Wake / Recovery Transition',
-            explanation: 'Conditions look transitional after a disturbance; coupling may come in short bursts.',
-            graphic: 'wake' as const,
-            color: 'text-neutral-300'
-        };
-    }, [bt, bz, density, densityAvg, hotPlasma, speed, speedAvg, temp, tempAvg]);
-
-    const phaseVisual = useMemo(() => {
-        if (stormPhase.graphic === 'croissant-front') {
-            return {
-                orb: 'from-orange-300 to-amber-500 shadow-orange-300/60',
-                pillBorder: 'border-orange-300/70',
-                pillText: 'text-orange-100',
-                label: 'Shock / sheath front'
-            };
-        }
-        if (stormPhase.graphic === 'croissant-core') {
-            return {
-                orb: 'from-fuchsia-300 to-violet-500 shadow-fuchsia-300/60',
-                pillBorder: 'border-fuchsia-300/70',
-                pillText: 'text-fuchsia-100',
-                label: 'CME magnetic core'
-            };
-        }
-        if (stormPhase.graphic === 'fast-wind') {
-            return {
-                orb: 'from-cyan-300 to-sky-500 shadow-cyan-300/60',
-                pillBorder: 'border-cyan-300/70',
-                pillText: 'text-cyan-100',
-                label: 'Fast wind stream'
-            };
-        }
-        if (stormPhase.graphic === 'calm') {
-            return {
-                orb: 'from-emerald-300 to-teal-500 shadow-emerald-300/60',
-                pillBorder: 'border-emerald-300/70',
-                pillText: 'text-emerald-100',
-                label: 'Calm ambient flow'
-            };
-        }
-        return {
-            orb: 'from-sky-300 to-indigo-500 shadow-sky-300/60',
-            pillBorder: 'border-slate-300/60',
-            pillText: 'text-slate-100',
-            label: 'Wake / trailing flow'
-        };
-    }, [stormPhase.graphic]);
+    const phaseVisual = useMemo(() => PHASE_VISUALS[stormPhase.id] ?? PHASE_VISUALS.unclassified, [stormPhase.id]);
 
     return (
         <div className="h-full flex flex-col justify-start overflow-y-auto pr-1">
@@ -584,25 +524,39 @@ export const IMFClockChart: React.FC<{ magneticData: any[]; clockData: any[]; sp
                     </div>
                 </div>
 
-                {/* Solar-wind phase - matches app's section divider style */}
+                {/* Solar-wind structure - matches app's section divider style */}
                 <div className="mt-4 rounded-lg border border-neutral-700/60 bg-neutral-800/40 p-3">
-                    <div className="text-[11px] uppercase tracking-wide font-semibold text-neutral-500">Solar-wind phase estimate</div>
-                    <div className="text-sm text-white mt-1 font-semibold">{stormPhase.phase}</div>
-                    <div className="text-xs text-neutral-400 mt-1">{stormPhase.explanation}</div>
+                    <div className="flex items-baseline justify-between gap-2">
+                        <div className="text-[11px] uppercase tracking-wide font-semibold text-neutral-500">Solar-wind structure</div>
+                        <div className={`text-[10px] font-semibold ${CONFIDENCE_STYLE[stormPhase.confidence].text}`}>
+                            {CONFIDENCE_STYLE[stormPhase.confidence].label}
+                        </div>
+                    </div>
+                    <div className="text-sm text-white mt-1 font-semibold">{stormPhase.label}</div>
+                    {stormPhase.context && (
+                        <div className="text-[11px] text-neutral-500 mt-0.5">{stormPhase.context}</div>
+                    )}
+                    <div className="text-xs text-neutral-400 mt-1">{stormPhase.plain}</div>
 
                     <div className="mt-3 rounded-lg border border-neutral-700/60 bg-neutral-950/60 p-3">
                         <div className="flex items-center gap-3">
                             <div className={`h-10 w-10 rounded-full flex-shrink-0 bg-gradient-to-br ${phaseVisual.orb}`} />
                             <div>
                                 <div className={`text-sm font-semibold ${phaseVisual.pillText}`}>{phaseVisual.label}</div>
-                                <div className="text-[11px] text-neutral-500">{stormPhase.phase}</div>
+                                <div className="text-[11px] text-neutral-500">{stormPhase.label}</div>
                             </div>
                         </div>
 
-                        {stormPhase.graphic === 'fast-wind' && (
+                        {stormPhase.id === 'hss-plateau' && (
                             <div className="relative mt-2 h-4">
                                 <div className="absolute left-16 right-4 top-1 h-[2px] bg-neutral-600" />
                                 <div className="absolute left-20 right-8 top-3 h-[2px] bg-neutral-700" />
+                            </div>
+                        )}
+
+                        {stormPhase.alternative && (
+                            <div className="mt-2 text-[11px] text-neutral-500">
+                                Also consistent with {stormPhase.alternative.label.toLowerCase()}.
                             </div>
                         )}
                     </div>

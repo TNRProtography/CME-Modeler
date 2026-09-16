@@ -783,7 +783,14 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 satellite={getSatelliteSource(gaugeData.bt.source) || getSatelliteSource(gaugeData.bz.source)}
                                 lastDataReceived={imfLastReceived}
                             >
-                                <IMFClockChart magneticData={allMagneticData} clockData={allImfClockData} speedData={allSpeedData} densityData={allDensityData} tempData={allTempData} />
+                                <IMFClockChart
+                                    magneticData={allMagneticData}
+                                    clockData={allImfClockData}
+                                    speedData={allSpeedData}
+                                    densityData={allDensityData}
+                                    tempData={allTempData}
+                                    lastShock={betaShocks.length ? { t: betaShocks[betaShocks.length - 1].t, label: betaShocks[betaShocks.length - 1].label } : null}
+                                />
                             </ForecastChartPanel>
                             <ForecastChartPanel title="Hemispheric Power" currentValue={`${gaugeData.power.value} <span class='text-base'>GW</span>`} emoji={gaugeData.power.emoji} onOpenModal={() => openModal('power')} lastDataReceived={powerLastReceived}><HemisphericPowerChart data={hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower }))} /></ForecastChartPanel>
                             <ForecastChartPanel
