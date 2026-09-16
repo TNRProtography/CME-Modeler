@@ -114,7 +114,29 @@ export interface SolarWindPhaseResult {
   layers: { id: SolarWindPhaseId; label: string; score: number }[];
   /** Primary plus any layers, e.g. "Coronal Hole High-Speed Stream + ICME Ejecta". */
   summaryLabel: string;
+  /** What someone new to this should expect to happen next. */
+  outlook: PhaseOutlook;
   derived: PhaseDerived;
+}
+
+/**
+ * Plain-language "what happens next" for someone who has just started chasing.
+ *
+ * Naming the structure is only half an answer - "Heliospheric Current Sheet
+ * Crossing" tells a beginner nothing about whether to go outside tonight. Each
+ * structure has a well-known downstream behaviour, so we say it directly: what
+ * the magnetic field is likely to do, what speed and density are likely to do,
+ * and what that means for actually seeing anything.
+ */
+export interface PhaseOutlook {
+  /** Expected behaviour of the interplanetary magnetic field, Bz especially. */
+  imf: string;
+  /** Expected behaviour of solar wind speed and density. */
+  plasma: string;
+  /** What this means for seeing aurora, and what to do about it. */
+  aurora: string;
+  /** One extra sentence when a secondary structure changes the picture. */
+  layerNote: string | null;
 }
 
 // ── Physical constants ───────────────────────────────────────────────────────
@@ -543,6 +565,7 @@ export const classifySolarWindPhase = (
     alternative: null,
     layers: [],
     summaryLabel: PHASE_LABELS.unclassified,
+    outlook: buildOutlook('unclassified', [], derived),
     derived,
   });
 
@@ -763,6 +786,7 @@ export const classifySolarWindPhase = (
       : null,
     layers: layerOut,
     summaryLabel,
+    outlook: buildOutlook(best.id, layers.map((l) => l.id), derived),
     derived,
   };
 };
@@ -773,6 +797,141 @@ export const classifySolarWindPhase = (
  * stream underneath this" is the part that explains why the aurora behaviour
  * is not matching the headline structure.
  */
+/**
+ * Is the field tilted south (the orientation that actually lets energy into
+ * the magnetosphere), north, or near flat? Several structures have an outlook
+ * that swings entirely on this, so it is answered from live data rather than
+ * described in the abstract.
+ */
+const bzTone = (bz: number | null): 'south' | 'north' | 'flat' => {
+  if (bz == null) return 'flat';
+  if (bz <= -3) return 'south';
+  if (bz >= 3) return 'north';
+  return 'flat';
+};
+
+interface OutlookSpec {
+  imf: string;
+  plasma: string;
+  aurora: string | ((bz: number | null) => string);
+}
+
+const PHASE_OUTLOOK: Record<SolarWindPhaseId, OutlookSpec> = {
+  'shock': {
+    imf: 'Field strength should stay high, with the north/south tilt (Bz) swinging hard both ways for the next few hours.',
+    plasma: 'Speed and density both jumped and usually stay elevated for 6-12 hours afterwards.',
+    aurora: 'This is the best window you get. If it is dark and clear where you are, go and look now rather than waiting for the numbers to look better.',
+  },
+  'icme-sheath': {
+    imf: 'Strong but messy. Expect Bz to flip north and south every few minutes rather than settling.',
+    plasma: 'Density stays high and speed stays up while the sheath passes - typically a few hours.',
+    aurora: 'Displays here switch on and off fast, so a quiet sky can turn into a good show within minutes. Keep checking every 10-15 minutes instead of deciding once.',
+  },
+  'magnetic-cloud': {
+    imf: 'The field should turn smoothly and slowly over several hours, so Bz will drift steadily one way rather than jumping about.',
+    plasma: 'Density stays low and speed eases off gradually. This is the calm, strong-field core of a CME.',
+    aurora: (bz) => bzTone(bz) === 'south'
+      ? 'Bz is pointing south, which is the part that matters. A steady display can hold for hours - this is the kind of night worth driving for.'
+      : bzTone(bz) === 'north'
+        ? 'Bz is pointing north at the moment, so it will probably stay quiet. As the cloud rotates, Bz may turn south later - check back every hour or so before writing the night off.'
+        : 'Bz is close to flat, so it is finely balanced. Watch the Bz chart - if it settles south, expect a long steady display.',
+  },
+  'icme-ejecta': {
+    imf: 'Field is strong but not turning tidily, so Bz can sit one way for a while and then change with little warning.',
+    plasma: 'Density stays low and speed slowly declines over the next several hours.',
+    aurora: (bz) => bzTone(bz) === 'south'
+      ? 'Bz is south, so conditions are favourable right now. It is less predictable than a clean CME core, so make the most of it while it holds.'
+      : 'Aurora here depends almost entirely on Bz, and it is not currently helping. Watch the Bz chart rather than the speed - a swing south can come at any time.',
+  },
+  'sir-compression': {
+    imf: 'Field strength stays elevated and Bz keeps oscillating while the compression passes.',
+    plasma: 'Density should peak and then fall away as speed climbs into the faster stream behind it.',
+    aurora: 'Moderate chances, usually best right at the density peak. Expect activity to ease once density drops and the faster stream takes over.',
+  },
+  'stream-interface': {
+    imf: 'Variable through the boundary itself, then steadier once the fast stream is established.',
+    plasma: 'Speed is rising quickly now; density should drop away sharply over the next few hours.',
+    aurora: 'A short burst is possible right at the boundary, then it usually settles into milder but longer-lasting activity.',
+  },
+  'hss-plateau': {
+    imf: 'Field stays modest, with Bz wandering north and south. No big sustained swings expected.',
+    plasma: 'Speed should stay high and density stay low, often for one to three days.',
+    aurora: 'Modest but persistent - this is a slow burner rather than a big event. Best odds are around local midnight when substorms are most likely, so it is worth checking each night while the stream lasts.',
+  },
+  'rarefaction': {
+    imf: 'Field strength continues to weaken as the stream empties out behind it.',
+    plasma: 'Speed slowly declines and density stays very low.',
+    aurora: 'Winding down. Chances fade over the next day unless something new arrives behind this.',
+  },
+  'hcs-crossing': {
+    imf: 'The field has just flipped direction. Expect a few unsettled hours, then it should settle into the new orientation.',
+    plasma: 'Density often spikes around the crossing and then falls away; speed frequently picks up afterwards.',
+    aurora: 'Unsettled rather than promising on its own. The useful part is what usually follows: a faster stream often arrives within a day or so, so conditions tend to improve from here rather than fade.',
+  },
+  'plasma-sheet': {
+    imf: 'Field stays weak to moderate in the band around the current sheet.',
+    plasma: 'Density stays high and speed stays low while we are inside it.',
+    aurora: 'Usually quiet. It often sits just ahead of faster wind though, so it is worth checking again over the next day.',
+  },
+  'slow-ambient': {
+    imf: 'Field should stay weak, with only small Bz wobbles.',
+    plasma: 'Speed and density both steady and low.',
+    aurora: 'Unlikely tonight unless a new CME or coronal hole stream arrives. Nothing in the current data suggests a change in the next few hours.',
+  },
+  'fast-ambient': {
+    imf: 'Field moderate, with Bz drifting both ways.',
+    plasma: 'Speed should hold above background while density stays low.',
+    aurora: (bz) => bzTone(bz) === 'south'
+      ? 'Mildly supportive, and Bz is currently south, which helps. Worth a look if your sky is dark and clear.'
+      : 'Mildly supportive, but it needs Bz to swing south for anything much to happen. Keep an eye on the Bz chart.',
+  },
+  'unclassified': {
+    imf: 'Signatures are mixed, so the next few hours are genuinely hard to call.',
+    plasma: 'No clear trend in speed or density right now.',
+    aurora: 'Watch the Bz chart directly rather than relying on the structure call - if Bz goes strongly south, it is worth a look regardless of what else is going on.',
+  },
+};
+
+/**
+ * Extra guidance when a secondary structure meaningfully changes what to
+ * expect, rather than just adding a name to the headline.
+ */
+const layerNoteFor = (primary: SolarWindPhaseId, layerIds: SolarWindPhaseId[]): string | null => {
+  const has = (id: SolarWindPhaseId) => layerIds.includes(id);
+  const cme = primary === 'magnetic-cloud' || primary === 'icme-ejecta' || primary === 'icme-sheath';
+
+  if (cme && has('hss-plateau')) {
+    return 'Because a fast stream is running underneath the CME material, speed should stay high even after the CME part has passed - so activity may not drop off as sharply as it normally would.';
+  }
+  if (has('hcs-crossing') && (primary === 'sir-compression' || primary === 'stream-interface')) {
+    return 'A sector boundary inside a compression usually means a coronal hole stream is arriving right behind it. Expect speed to keep climbing over the next several hours.';
+  }
+  if (primary === 'hcs-crossing' && (has('sir-compression') || has('plasma-sheet'))) {
+    return 'The dense, compressed plasma around this crossing is the usual signature of a stream arriving behind it. Expect density to fall and speed to rise over the next several hours, with the better aurora chances coming after that rather than now.';
+  }
+  if (cme && has('sir-compression')) {
+    return 'The CME is ploughing into slower wind ahead of it, which compresses the field and can add short bursts of activity on top of the main structure.';
+  }
+  if (has('hcs-crossing')) {
+    return 'The field has also flipped sector, so expect a few hours of unsettled conditions on top of the main structure.';
+  }
+  return null;
+};
+
+const buildOutlook = (
+  id: SolarWindPhaseId,
+  layerIds: SolarWindPhaseId[],
+  derived: PhaseDerived,
+): PhaseOutlook => {
+  const spec = PHASE_OUTLOOK[id] ?? PHASE_OUTLOOK.unclassified;
+  return {
+    imf: spec.imf,
+    plasma: spec.plasma,
+    aurora: typeof spec.aurora === 'function' ? spec.aurora(derived.bz) : spec.aurora,
+    layerNote: layerNoteFor(id, layerIds),
+  };
+};
+
 const buildPlain = (id: SolarWindPhaseId, layerIds: SolarWindPhaseId[]): string => {
   const base = PHASE_PLAIN[id];
   if (!layerIds.length) return base;

@@ -583,6 +583,33 @@ export const IMFClockChart: React.FC<{
                             </div>
                         )}
                     </div>
+
+                    {/* Naming the structure is only half an answer - this is the half
+                        that tells someone new whether to go outside tonight. */}
+                    <div className="mt-3 rounded-lg border border-neutral-700/60 bg-neutral-950/60 p-3">
+                        <div className="text-[11px] uppercase tracking-wide font-semibold text-neutral-500 mb-2">
+                            What to expect
+                        </div>
+                        <dl className="space-y-2">
+                            <div>
+                                <dt className="text-[10px] uppercase tracking-wide font-semibold text-neutral-500">Magnetic field</dt>
+                                <dd className="text-xs text-neutral-400 mt-0.5">{stormPhase.outlook.imf}</dd>
+                            </div>
+                            <div>
+                                <dt className="text-[10px] uppercase tracking-wide font-semibold text-neutral-500">Speed &amp; density</dt>
+                                <dd className="text-xs text-neutral-400 mt-0.5">{stormPhase.outlook.plasma}</dd>
+                            </div>
+                            <div>
+                                <dt className="text-[10px] uppercase tracking-wide font-semibold text-emerald-400/80">Aurora</dt>
+                                <dd className="text-xs text-neutral-300 mt-0.5">{stormPhase.outlook.aurora}</dd>
+                            </div>
+                        </dl>
+                        {stormPhase.outlook.layerNote && (
+                            <div className="mt-2 pt-2 border-t border-neutral-700/50 text-[11px] text-neutral-400">
+                                {stormPhase.outlook.layerNote}
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>

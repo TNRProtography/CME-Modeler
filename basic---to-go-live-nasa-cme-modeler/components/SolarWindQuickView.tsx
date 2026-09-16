@@ -412,6 +412,25 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
               Could instead be {structure.alternative.label.toLowerCase()}.
             </p>
           )}
+
+          {/* What this actually means for tonight - the part a beginner needs. */}
+          <div className="mt-2 pt-2 border-t border-neutral-700/50 space-y-1.5">
+            <div className="text-[11px] text-neutral-400">
+              <span className="text-neutral-500 font-semibold">Magnetic field: </span>
+              {structure.outlook.imf}
+            </div>
+            <div className="text-[11px] text-neutral-400">
+              <span className="text-neutral-500 font-semibold">Speed &amp; density: </span>
+              {structure.outlook.plasma}
+            </div>
+            <div className="text-[11px] text-neutral-300">
+              <span className="text-emerald-400/80 font-semibold">Aurora: </span>
+              {structure.outlook.aurora}
+            </div>
+            {structure.outlook.layerNote && (
+              <div className="text-[11px] text-neutral-400 pt-1">{structure.outlook.layerNote}</div>
+            )}
+          </div>
         </div>
       </div>
 
