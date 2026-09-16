@@ -6,6 +6,7 @@ import {
   SubstormForecast,
   ActivitySummary,
 } from '../types';
+import { cleanSolarWindSeries, summariseRejections } from '../utils/solarWindQuality';
 
 // --- Type Definitions ---
 interface CelestialTimeData {
@@ -817,7 +818,7 @@ export const useForecastData = (
       const densityPoints: { time: number; value: number; source: string }[] = [];
       const tempPoints: { time: number; value: number; source: string }[] = [];
       const clockPoints: { time: number; value: number; source: string }[] = [];
-      const magneticPoints: { time: number; bt: number; bz: number; by: number; bx: number; clock: number | null }[] = [];
+      const magneticPoints: { time: number; bt: number; bz: number; by: number; bx: number; clock: number | null; btSource: string }[] = [];
       const newellPoints: { x: number; y: number }[] = [];
       const pressurePoints: { x: number; y: number }[] = [];
 
@@ -869,25 +870,12 @@ export const useForecastData = (
         }
 
         if (computedBt != null && by != null && bz != null && computedBt >= 0) {
-          magneticPoints.push({ time: t, bt: computedBt, by, bz, bx: bx ?? 0, clock });
+          magneticPoints.push({
+            time: t, bt: computedBt, by, bz, bx: bx ?? 0, clock,
+            btSource: combineSources(btReading.source, byReading.source, bzReading.source),
+          });
         }
 
-        // Compute Newell coupling: requires speed + By + Bz
-        const speedForNewell = speedReading.value;
-        if (speedForNewell != null && speedForNewell > 0 && by != null && bz != null) {
-          // newellCoupling() returns val/1000 for the probability model;
-          // charts and gauges need the raw Wb/s scale (typical 0–30,000), so ×1000.
-          const nc = newellCoupling(speedForNewell, by, bz) * 1000;
-          if (Number.isFinite(nc)) newellPoints.push({ x: t, y: nc });
-        }
-
-        // Compute dynamic pressure: P = 1.6726e-6 · n · v²  (nPa)
-        const densityForPressure = densityReading.value;
-        const speedForPressure = speedReading.value;
-        if (densityForPressure != null && densityForPressure >= 0 && speedForPressure != null && speedForPressure > 0) {
-          const pdyn = 1.6726e-6 * densityForPressure * speedForPressure * speedForPressure;
-          if (Number.isFinite(pdyn)) pressurePoints.push({ x: t, y: pdyn });
-        }
       }
 
       speedPoints.sort((a, b) => a.time - b.time);
@@ -895,21 +883,80 @@ export const useForecastData = (
       tempPoints.sort((a, b) => a.time - b.time);
       clockPoints.sort((a, b) => a.time - b.time);
       magneticPoints.sort((a, b) => a.time - b.time);
+
+      // ── Quality control ────────────────────────────────────────────
+      // The worker picks a source per field per minute, so the merged series
+      // contains instrument handovers that look like physical discontinuities
+      // (a single-sample density of 45 against a background of 1.8, a speed of
+      // 639 against 390). Left alone they read as shocks to the detector and
+      // ruin plasma beta for the structure classifier. Drop them here, once, so
+      // every consumer downstream - charts, gauges, shock detection and the
+      // classifier - sees the same cleaned series.
+      const speedQc = cleanSolarWindSeries(speedPoints, 'speed');
+      const densityQc = cleanSolarWindSeries(densityPoints, 'density');
+      const tempQc = cleanSolarWindSeries(tempPoints, 'temp');
+      const magneticQc = cleanSolarWindSeries(
+        magneticPoints.map(p => ({ time: p.time, value: p.bt, source: p.btSource })),
+        'bt',
+      );
+
+      const cleanSpeed = speedQc.clean;
+      const cleanDensity = densityQc.clean;
+      const cleanTemp = tempQc.clean;
+      // A rejected |B| means the whole field vector for that minute is suspect,
+      // so the magnetic sample goes with it rather than being half-trusted.
+      const acceptedMagTimes = new Set(magneticQc.clean.map(p => p.time));
+      const cleanMagnetic = magneticPoints
+        .filter(p => acceptedMagTimes.has(p.time))
+        .map(({ btSource, ...rest }) => rest);
+
+      if (import.meta.env.DEV) {
+        for (const [label, report] of [
+          ['speed', speedQc], ['density', densityQc], ['temp', tempQc], ['bt', magneticQc],
+        ] as const) {
+          const line = summariseRejections(label, report);
+          if (line) console.info(line);
+        }
+      }
+
+      // Newell coupling and dynamic pressure are products of the plasma and
+      // field values, so they are rebuilt from the cleaned series - computing
+      // them from the raw rows would carry every spike straight back in.
+      const cleanDensityByTime = new Map(cleanDensity.map(p => [p.time, p.value]));
+      const cleanSpeedByTime = new Map(cleanSpeed.map(p => [p.time, p.value]));
+
+      for (const m of cleanMagnetic) {
+        const v = cleanSpeedByTime.get(m.time);
+        if (v == null || v <= 0) continue;
+        // newellCoupling() returns val/1000 for the probability model;
+        // charts and gauges need the raw Wb/s scale (typical 0–30,000), so ×1000.
+        const nc = newellCoupling(v, m.by, m.bz) * 1000;
+        if (Number.isFinite(nc)) newellPoints.push({ x: m.time, y: nc });
+      }
+
+      for (const [time, n] of cleanDensityByTime) {
+        const v = cleanSpeedByTime.get(time);
+        if (v == null || v <= 0 || n < 0) continue;
+        // Dynamic pressure: P = 1.6726e-6 · n · v²  (nPa)
+        const pdyn = 1.6726e-6 * n * v * v;
+        if (Number.isFinite(pdyn)) pressurePoints.push({ x: time, y: pdyn });
+      }
+
       newellPoints.sort((a, b) => a.x - b.x);
       pressurePoints.sort((a, b) => a.x - b.x);
 
-      setAllSpeedData(speedPoints.map(p => ({ x: p.time, y: p.value })));
-      setAllDensityData(densityPoints.map(p => ({ x: p.time, y: p.value })));
-      setAllTempData(tempPoints.map(p => ({ x: p.time, y: p.value })));
+      setAllSpeedData(cleanSpeed.map(p => ({ x: p.time, y: p.value })));
+      setAllDensityData(cleanDensity.map(p => ({ x: p.time, y: p.value })));
+      setAllTempData(cleanTemp.map(p => ({ x: p.time, y: p.value })));
       setAllImfClockData(clockPoints.map(p => ({ x: p.time, y: p.value })));
-      setAllMagneticData(magneticPoints);
+      setAllMagneticData(cleanMagnetic);
       setAllNewellData(newellPoints);
       setAllPressureData(pressurePoints);
 
-      const latestSpeed = speedPoints.at(-1);
-      const latestDensity = densityPoints.at(-1);
-      const latestTemp = tempPoints.at(-1);
-      const latestMagneticPoint = magneticPoints.at(-1);
+      const latestSpeed = cleanSpeed.at(-1);
+      const latestDensity = cleanDensity.at(-1);
+      const latestTemp = cleanTemp.at(-1);
+      const latestMagneticPoint = cleanMagnetic.at(-1);
       const latestMagEntry = [...solarWindRows].reverse().find((entry: any) => {
         const bt = pickSolarWindValue(entry, 'bt').value;
         const by = pickSolarWindValue(entry, 'by').value;
@@ -922,13 +969,13 @@ export const useForecastData = (
       setGaugeData(prev => ({
         ...prev,
         speed: latestSpeed
-          ? { ...prev.speed, value: latestSpeed.value.toFixed(0), ...getGaugeStyle(latestSpeed.value, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(latestSpeed.time)}`, source: latestSpeed.source }
+          ? { ...prev.speed, value: latestSpeed.value.toFixed(0), ...getGaugeStyle(latestSpeed.value, 'speed'), lastUpdated: `Updated: ${formatNZTimestamp(latestSpeed.time)}`, source: latestSpeed.source ?? ' - ' }
           : { ...prev.speed, value: 'N/A', lastUpdated: 'Updated: N/A', source: ' - ' },
         density: latestDensity
-          ? { ...prev.density, value: latestDensity.value.toFixed(1), ...getGaugeStyle(latestDensity.value, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(latestDensity.time)}`, source: latestDensity.source }
+          ? { ...prev.density, value: latestDensity.value.toFixed(1), ...getGaugeStyle(latestDensity.value, 'density'), lastUpdated: `Updated: ${formatNZTimestamp(latestDensity.time)}`, source: latestDensity.source ?? ' - ' }
           : { ...prev.density, value: 'N/A', lastUpdated: 'Updated: N/A', source: ' - ' },
         temp: latestTemp
-          ? { ...prev.temp, value: latestTemp.value.toFixed(0), emoji: latestTemp.value > 600000 ? '🔥' : latestTemp.value > 250000 ? '🌡️' : '🧊', percentage: 0, color: '#38bdf8', lastUpdated: `Updated: ${formatNZTimestamp(latestTemp.time)}`, source: latestTemp.source }
+          ? { ...prev.temp, value: latestTemp.value.toFixed(0), emoji: latestTemp.value > 600000 ? '🔥' : latestTemp.value > 250000 ? '🌡️' : '🧊', percentage: 0, color: '#38bdf8', lastUpdated: `Updated: ${formatNZTimestamp(latestTemp.time)}`, source: latestTemp.source ?? ' - ' }
           : { ...prev.temp, value: 'N/A', emoji: '❓', lastUpdated: 'Updated: N/A', source: ' - ' },
         bt: latestMagneticPoint
           ? { ...prev.bt, value: latestMagneticPoint.bt.toFixed(1), ...getGaugeStyle(latestMagneticPoint.bt, 'bt'), lastUpdated: `Updated: ${formatNZTimestamp(latestMagneticPoint.time)}`, source: latestBtSource }

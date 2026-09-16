@@ -532,7 +532,14 @@ export const IMFClockChart: React.FC<{
                             {CONFIDENCE_STYLE[stormPhase.confidence].label}
                         </div>
                     </div>
-                    <div className="text-sm text-white mt-1 font-semibold">{stormPhase.label}</div>
+                    <div className="flex items-center gap-2 mt-1">
+                        <div className="text-sm text-white font-semibold">{stormPhase.label}</div>
+                        {stormPhase.layers.length > 0 && (
+                            <span className="text-[9px] uppercase tracking-wide font-semibold text-neutral-400 border border-neutral-600/70 rounded px-1 py-[1px]">
+                                Layered
+                            </span>
+                        )}
+                    </div>
                     {stormPhase.context && (
                         <div className="text-[11px] text-neutral-500 mt-0.5">{stormPhase.context}</div>
                     )}
@@ -554,9 +561,25 @@ export const IMFClockChart: React.FC<{
                             </div>
                         )}
 
+                        {/* Co-occurring structures. Indented under the primary because
+                            they are part of the same picture, not competing readings. */}
+                        {stormPhase.layers.map((layer) => {
+                            const visual = PHASE_VISUALS[layer.id] ?? PHASE_VISUALS.unclassified;
+                            return (
+                                <div key={layer.id} className="flex items-center gap-2 mt-2 pl-3 border-l border-neutral-700/60">
+                                    <span className="text-neutral-600 text-xs font-semibold">+</span>
+                                    <div className={`h-6 w-6 rounded-full flex-shrink-0 bg-gradient-to-br ${visual.orb}`} />
+                                    <div>
+                                        <div className={`text-xs font-semibold ${visual.pillText}`}>{visual.label}</div>
+                                        <div className="text-[10px] text-neutral-500">{layer.label}</div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+
                         {stormPhase.alternative && (
                             <div className="mt-2 text-[11px] text-neutral-500">
-                                Also consistent with {stormPhase.alternative.label.toLowerCase()}.
+                                Could instead be {stormPhase.alternative.label.toLowerCase()}.
                             </div>
                         )}
                     </div>

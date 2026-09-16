@@ -379,11 +379,15 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
       <div
         className="mt-2 mb-1 flex items-start gap-3 px-3 py-2.5 rounded-lg border border-neutral-700/60 bg-neutral-900/50"
       >
+        {/* When two structures are layered, the orb carries the primary's glow
+            ringed in the secondary's colour - one glance says "both at once". */}
         <div
           className="h-8 w-8 rounded-full flex-shrink-0 mt-0.5"
           style={{
             background: `radial-gradient(circle at 32% 28%, ${STRUCTURE_ACCENT[structure.id]} 0%, ${STRUCTURE_ACCENT[structure.id]}55 55%, transparent 72%)`,
-            boxShadow: `0 0 12px ${STRUCTURE_ACCENT[structure.id]}55`,
+            boxShadow: structure.layers.length
+              ? `0 0 12px ${STRUCTURE_ACCENT[structure.id]}55, 0 0 0 2px ${STRUCTURE_ACCENT[structure.layers[0].id]}99`
+              : `0 0 12px ${STRUCTURE_ACCENT[structure.id]}55`,
           }}
         />
         <div className="flex-1 min-w-0">
@@ -392,6 +396,11 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
             <span className="text-sm font-semibold" style={{ color: STRUCTURE_ACCENT[structure.id] }}>
               {structure.label}
             </span>
+            {structure.layers.map((layer) => (
+              <span key={layer.id} className="text-xs font-semibold" style={{ color: STRUCTURE_ACCENT[layer.id] }}>
+                + {layer.label}
+              </span>
+            ))}
             <span className="text-[10px] text-neutral-500">{CONFIDENCE_TEXT[structure.confidence]}</span>
           </div>
           {structure.context && (
@@ -400,7 +409,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
           <p className="text-xs text-neutral-400 mt-1 leading-relaxed">{structure.plain}</p>
           {structure.alternative && (
             <p className="text-[11px] text-neutral-500 mt-1">
-              Also consistent with {structure.alternative.label.toLowerCase()}.
+              Could instead be {structure.alternative.label.toLowerCase()}.
             </p>
           )}
         </div>

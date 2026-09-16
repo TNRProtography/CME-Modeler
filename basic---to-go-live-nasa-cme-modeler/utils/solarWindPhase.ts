@@ -98,8 +98,22 @@ export interface SolarWindPhaseResult {
   confidence: PhaseConfidence;
   /** 0..1 raw score of the winning phase, for debugging and tie inspection. */
   score: number;
-  /** Runner-up, when one scored close enough to be worth knowing about. */
+  /**
+   * A competing explanation - a runner-up that scored close but is physically
+   * INCOMPATIBLE with the primary, so only one of them can be true. This is a
+   * statement of uncertainty.
+   */
   alternative: { id: SolarWindPhaseId; label: string; score: number } | null;
+  /**
+   * Structures that are genuinely present *alongside* the primary, rather than
+   * instead of it. Real solar wind layers: a CME ploughing into a coronal-hole
+   * stream is both, at once, and reporting only the winner throws away the
+   * half of the picture that explains why conditions are behaving oddly.
+   * Empty when the interval is cleanly one thing.
+   */
+  layers: { id: SolarWindPhaseId; label: string; score: number }[];
+  /** Primary plus any layers, e.g. "Coronal Hole High-Speed Stream + ICME Ejecta". */
+  summaryLabel: string;
   derived: PhaseDerived;
 }
 
@@ -112,6 +126,14 @@ const RECENT_MIN = 30;     // "now" - smooths instrument noise without blurring 
 const BASELINE_MIN = 24 * 60;
 const ROTATION_MIN = 4 * 60;
 const MIN_COVERAGE_MIN = 12;   // below this we decline to classify at all
+
+// ── Layering thresholds ──────────────────────────────────────────────────────
+/** A secondary structure must stand on its own feet, not merely out-score the floor. */
+const LAYER_MIN_SCORE = 0.55;
+/** ...and must be within reach of the primary, or it is a weak also-ran. */
+const LAYER_MAX_GAP = 0.25;
+/** Three structures at once is already a lot to put in front of someone. */
+const MAX_LAYERS = 2;
 
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
@@ -361,6 +383,79 @@ const PHASE_LABELS: Record<SolarWindPhaseId, string> = {
   'unclassified': 'Mixed / Transitional',
 };
 
+/**
+ * Which structures can physically be present at the same time at L1.
+ *
+ * This is what makes a multi-label answer honest rather than just a list of
+ * high scores. Some pairs are real and common - a CME embedded in or
+ * overtaking a coronal-hole stream, a current sheet crossing inside a
+ * compression region - and the aurora behaviour only makes sense if you name
+ * both. Other pairs are contradictions: the wind cannot be slow ambient and a
+ * high-speed stream, and the same plasma cannot be a tidy flux rope and
+ * non-cloud ejecta.
+ *
+ * Declared as pairs and expanded symmetrically, so the table cannot drift into
+ * saying A goes with B but B does not go with A.
+ */
+const COMPATIBLE_PAIRS: [SolarWindPhaseId, SolarWindPhaseId][] = [
+  // A shock is the leading edge of whatever is driving it.
+  ['shock', 'icme-sheath'],
+  ['shock', 'sir-compression'],
+  // A CME driving into slower wind compresses it: sheath and SIR coexist.
+  ['icme-sheath', 'sir-compression'],
+  ['icme-sheath', 'hcs-crossing'],
+  // CME material embedded in, or being overtaken by, a fast stream. This is
+  // the messy case that a single label handles worst.
+  ['magnetic-cloud', 'hss-plateau'],
+  ['magnetic-cloud', 'sir-compression'],
+  ['magnetic-cloud', 'fast-ambient'],
+  ['icme-ejecta', 'hss-plateau'],
+  ['icme-ejecta', 'sir-compression'],
+  ['icme-ejecta', 'fast-ambient'],
+  ['icme-ejecta', 'stream-interface'],
+  // The stream interface is a feature *inside* a compression region.
+  ['sir-compression', 'stream-interface'],
+  ['sir-compression', 'hcs-crossing'],
+  ['sir-compression', 'plasma-sheet'],
+  ['stream-interface', 'hss-plateau'],
+  ['stream-interface', 'hcs-crossing'],
+  ['hss-plateau', 'hcs-crossing'],
+  ['rarefaction', 'hcs-crossing'],
+  ['rarefaction', 'slow-ambient'],
+  ['plasma-sheet', 'hcs-crossing'],
+  ['plasma-sheet', 'slow-ambient'],
+  // A current sheet crossing is a field-topology event and is close to
+  // orthogonal to the bulk flow state, so it layers with almost anything.
+  ['slow-ambient', 'hcs-crossing'],
+  ['fast-ambient', 'hcs-crossing'],
+];
+
+const COMPATIBILITY: Record<string, Set<SolarWindPhaseId>> = {};
+for (const [a, b] of COMPATIBLE_PAIRS) {
+  (COMPATIBILITY[a] ??= new Set()).add(b);
+  (COMPATIBILITY[b] ??= new Set()).add(a);
+}
+
+const canCoexist = (a: SolarWindPhaseId, b: SolarWindPhaseId): boolean =>
+  a !== b && !!COMPATIBILITY[a]?.has(b);
+
+/** Short noun phrase for use inside a combined sentence. */
+const PHASE_SHORT: Record<SolarWindPhaseId, string> = {
+  'shock': 'a shock front',
+  'icme-sheath': 'CME sheath compression',
+  'magnetic-cloud': 'a CME flux rope',
+  'icme-ejecta': 'CME ejecta',
+  'sir-compression': 'stream compression',
+  'stream-interface': 'a stream interface',
+  'hss-plateau': 'fast coronal-hole flow',
+  'rarefaction': 'a rarefaction tail',
+  'hcs-crossing': 'a current sheet crossing',
+  'plasma-sheet': 'the heliospheric plasma sheet',
+  'slow-ambient': 'slow background wind',
+  'fast-ambient': 'elevated background flow',
+  'unclassified': 'mixed signatures',
+};
+
 const PHASE_PLAIN: Record<SolarWindPhaseId, string> = {
   'shock': 'A shock front just passed - speed, density and field all jumped together. Aurora activity often picks up sharply in the hours after this.',
   'icme-sheath': 'Compressed, turbulent plasma piled up ahead of a CME. This is where many of the best aurora displays actually happen, because the field swings south hard and often.',
@@ -446,6 +541,8 @@ export const classifySolarWindPhase = (
     confidence: 'low',
     score: 0,
     alternative: null,
+    layers: [],
+    summaryLabel: PHASE_LABELS.unclassified,
     derived,
   });
 
@@ -454,7 +551,7 @@ export const classifySolarWindPhase = (
   }
 
   const {
-    speed, density, bt, beta, tempRatio, fieldVariance,
+    speed, density, beta, tempRatio, fieldVariance,
     rotation, rotationSmooth, speedTrend, densityRatio, btRatio, sectorFlip,
   } = derived;
 
@@ -584,7 +681,6 @@ export const classifySolarWindPhase = (
 
   // Honest uncertainty: a weak winner, or a winner that barely beat the next
   // candidate, is reported as mixed rather than asserted.
-  const margin = runnerUp ? best.score - runnerUp.score : best.score;
   if (best.score < 0.45) {
     return {
       ...unclassified(PHASE_PLAIN.unclassified),
@@ -595,6 +691,42 @@ export const classifySolarWindPhase = (
     };
   }
 
+  // ── Layering ───────────────────────────────────────────────────────────────
+  // Everything below the winner already has a score; until now all of it was
+  // thrown away. A close second is one of two quite different things, and the
+  // difference matters:
+  //
+  //   incompatible  -> we are unsure which of the two it is  (alternative)
+  //   compatible    -> both are true at once                 (layer)
+  //
+  // Telling them apart is what stops "CME tangled up with a high-speed stream"
+  // from flickering between two labels that are each half right.
+  const layers = candidates
+    .slice(1)
+    .filter((c) => c.id !== 'unclassified' && c.score >= LAYER_MIN_SCORE && best.score - c.score <= LAYER_MAX_GAP)
+    .reduce<typeof candidates>((acc, c) => {
+      // Must be consistent with the primary *and* with every layer already
+      // accepted, so the reported set never contradicts itself.
+      if (!canCoexist(best.id, c.id)) return acc;
+      if (acc.some((existing) => !canCoexist(existing.id, c.id))) return acc;
+      if (acc.length >= MAX_LAYERS) return acc;
+      acc.push(c);
+      return acc;
+    }, []);
+
+  const layeredIds = new Set([best.id, ...layers.map((l) => l.id)]);
+
+  // The alternative is now strictly a competing explanation: the best-scoring
+  // candidate that could NOT be true at the same time as what we reported.
+  const competing = candidates
+    .slice(1)
+    .find((c) => !layeredIds.has(c.id) && !canCoexist(best.id, c.id) && c.score >= best.score - 0.12);
+
+  // Margin is measured against that competitor, not against a layer. A high
+  // scoring layer is corroboration, not doubt, and used to drag confidence
+  // down for no reason.
+  const margin = competing ? best.score - competing.score : best.score;
+
   // Margin matters when two phases are competing explanations, but a close
   // runner-up is often just a second true statement (a current sheet crossing
   // happens inside slow wind - both are real). So a strong absolute match
@@ -604,26 +736,51 @@ export const classifySolarWindPhase = (
   else if (best.score >= 0.55 && margin >= 0.07) confidence = 'moderate';
   else if (best.score >= 0.85) confidence = 'moderate';
 
-  // No composition data, so never claim high confidence on a CME-family call.
-  const cmeFamily = best.id === 'magnetic-cloud' || best.id === 'icme-ejecta' || best.id === 'icme-sheath';
-  if (cmeFamily && confidence === 'high') confidence = 'moderate';
+  // No composition data (no alpha ratio, no electron pitch angles), so never
+  // claim high confidence on a CME-family call - including when CME material
+  // is only the secondary layer, since that is the same unverifiable claim.
+  const isCmeFamily = (id: SolarWindPhaseId) =>
+    id === 'magnetic-cloud' || id === 'icme-ejecta' || id === 'icme-sheath';
+  if (confidence === 'high' && [best.id, ...layers.map((l) => l.id)].some(isCmeFamily)) {
+    confidence = 'moderate';
+  }
 
   // Sparse data caps confidence too.
   if (derived.coverageMin < RECENT_MIN / 2 && confidence === 'high') confidence = 'moderate';
 
+  const layerOut = layers.map((l) => ({ id: l.id, label: PHASE_LABELS[l.id], score: l.score }));
+  const summaryLabel = [PHASE_LABELS[best.id], ...layerOut.map((l) => l.label)].join(' + ');
+
   return {
     id: best.id,
     label: PHASE_LABELS[best.id],
-    plain: PHASE_PLAIN[best.id],
+    plain: buildPlain(best.id, layers.map((l) => l.id)),
     context: buildContext(best.id, derived, hoursSinceShock, options.lastShock?.label ?? null),
     confidence,
     score: best.score,
-    alternative:
-      runnerUp && runnerUp.score >= best.score - 0.12
-        ? { id: runnerUp.id, label: PHASE_LABELS[runnerUp.id], score: runnerUp.score }
-        : null,
+    alternative: competing
+      ? { id: competing.id, label: PHASE_LABELS[competing.id], score: competing.score }
+      : null,
+    layers: layerOut,
+    summaryLabel,
     derived,
   };
+};
+
+/**
+ * Plain-English sentence for the reported set. The primary carries the
+ * description; layers are appended as a clause, because "there is also a fast
+ * stream underneath this" is the part that explains why the aurora behaviour
+ * is not matching the headline structure.
+ */
+const buildPlain = (id: SolarWindPhaseId, layerIds: SolarWindPhaseId[]): string => {
+  const base = PHASE_PLAIN[id];
+  if (!layerIds.length) return base;
+  const shorts = layerIds.map((l) => PHASE_SHORT[l]);
+  const joined = shorts.length === 1
+    ? shorts[0]
+    : `${shorts.slice(0, -1).join(', ')} and ${shorts[shorts.length - 1]}`;
+  return `${base} It is layered with ${joined}, so conditions can shift faster than any one of them would suggest on its own.`;
 };
 
 const buildContext = (
