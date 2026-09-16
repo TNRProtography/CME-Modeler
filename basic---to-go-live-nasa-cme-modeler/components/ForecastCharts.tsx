@@ -14,6 +14,7 @@ import {
     classifySolarWindPhase,
     type SolarWindPhaseId,
 } from '../utils/solarWindPhase';
+import SolarWindStructureDiagram from './SolarWindStructureDiagram';
 
 // Per-structure colour + short tag for the phase card. Warm for CME-driven
 // structures, cool for coronal-hole flow, neutral for quiet and boundary states.
@@ -583,6 +584,10 @@ export const IMFClockChart: React.FC<{
                             </div>
                         )}
                     </div>
+
+                    {/* The structure itself, flowing past. The card names it and the
+                        block below says what to expect; this shows the thing. */}
+                    <SolarWindStructureDiagram phase={stormPhase} className="mt-3" />
 
                     {/* Naming the structure is only half an answer - this is the half
                         that tells someone new whether to go outside tonight. */}
