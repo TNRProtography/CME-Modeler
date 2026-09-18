@@ -12,6 +12,12 @@ interface FluxRopeAnalyzerProps {
   tempData:     XYPt[];
 }
 
+import {
+  drawGlow, loadMilkyWay, drawMilkyWay,
+  loadEarthTexture, earthTexture, renderGlobe,
+} from '../utils/spaceScene';
+import { effectiveBz } from '../utils/rmEffect';
+
 interface RopeResult {
   shockTime:        number;
   ropeEntry:        number;
@@ -35,12 +41,6 @@ interface RopeResult {
   remainingMin:     number;
   coldFraction:     number;   // temperature-based rope confidence (0–1)
   inPlaneRatio:     number;   // sqrt(By²+Bz²) / Bt - rope field planarity
-}
-
-interface SlinkySeg {
-  sx0: number; sy0: number;
-  sx1: number; sy1: number;
-  zm: number; theta: number; isPast: boolean;
 }
 
 const FORECAST_DT     = [0, 15, 30, 60, 180, 360];
@@ -309,6 +309,20 @@ function analyzeRope(mag: MagPt[], spd: XYPt[], den: XYPt[], tmp: XYPt[]) {
   };
 }
 
+// Earth is drawn with the same texture and renderer the magnetotail uses, so
+// the planet looks identical wherever it appears.
+let ropeGlobe: HTMLCanvasElement | null = null;
+const ROPE_GLOBE_PX = 120;
+function ropeGlobeSprite(): HTMLCanvasElement | null {
+  const tex = earthTexture();
+  if (!tex) return null;
+  if (!ropeGlobe) {
+    ropeGlobe = document.createElement('canvas');
+    renderGlobe(ropeGlobe, tex, 172, -62, 0, false, ROPE_GLOBE_PX);
+  }
+  return ropeGlobe;
+}
+
 function drawScene(cvs: HTMLCanvasElement, W: number, result: RopeResult, animAngle: number) {
   const DPR = window.devicePixelRatio || 1;
   const H   = 280;
@@ -325,6 +339,8 @@ function drawScene(cvs: HTMLCanvasElement, W: number, result: RopeResult, animAn
   ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = '#030810';
   ctx.fillRect(0, 0, W, H);
+  // Same sky as the CME visualisation and the magnetotail.
+  drawMilkyWay(ctx, W, H, performance.now() / 1000, 0.30, 0.8);
 
   // ── Layout: slinky left 68 %, compass right 32 % ──────────────────────────
   const SW  = Math.floor(W * 0.68);
@@ -341,69 +357,217 @@ function drawScene(cvs: HTMLCanvasElement, W: number, result: RopeResult, animAn
   const axialBzFrac = Math.cos(axialTheta);                // +1=N, 0=E/W, -1=S
   const AXIS_LEAN   = axialBzFrac * 0.60 * 74;            // max lean ≈ 60 % of coil radius
 
-  // ── Slinky ─────────────────────────────────────────────────────────────────
+  // ── Rope ───────────────────────────────────────────────────────────────────
+  // A force-free flux rope is not a single hollow coil. The field runs almost
+  // straight along the axis at the centre and becomes progressively more wound
+  // the further out you go, until the outer shell is twisted tight. So the rope
+  // is drawn as nested shells whose twist scales with radius, around a bright
+  // axial core, which reads as one solid structure rather than a loose spring.
   const X0 = 14, X1 = SW - 14, RLEN = X1 - X0;
-  const R = 74, N_FL = 4, N_COILS = 2.0, N_SEG = 260, TILT = 0.22;
-  const u_earth = Math.min(0.82, result.minutesInRope / result.estDurMin);
-  const earthX  = X0 + u_earth * RLEN;
+  // Segment count has to beat the twist rate or the outer shells alias into a
+  // flat band instead of reading as a helix. The outer shell does 4.2 turns, so
+  // this gives roughly 30 samples per turn.
+  const R = 50, N_SEG = 150, TILT = 0.34;
+  const SHELLS = [
+    { rf: 0.26, lines: 2, turns: 0.9, size: 1.35, alpha: 0.95 },
+    { rf: 0.52, lines: 3, turns: 2.6, size: 1.20, alpha: 0.85 },
+    { rf: 0.78, lines: 5, turns: 4.4, size: 1.05, alpha: 0.70 },
+    { rf: 1.00, lines: 6, turns: 6.2, size: 0.92, alpha: 0.58 },
+  ];
+  const u_earth = Math.min(0.92, result.minutesInRope / result.estDurMin);
+  // Earth sits near the left, the Sun is off-frame right, and the rope streams
+  // leftward past us. The part already through Earth is squeezed into the strip
+  // on the left, the part still to arrive gets the rest of the width, because
+  // that is the half worth looking at.
+  const EARTH_FRAC = 0.2;
+  const earthX = X0 + RLEN * EARTH_FRAC;
+  // Only a short stretch of already-passed rope is shown. Squeezing the whole
+  // passed section in would crush it against the left edge once the rope is
+  // mostly through, and leave the part that still matters almost empty.
+  const PAST_SPAN = 0.18;
+  const uStart = Math.max(0, u_earth - PAST_SPAN);
+  const xOfU = (u: number) => u <= u_earth
+    ? X0 + ((u - uStart) / Math.max(1e-6, u_earth - uStart)) * (earthX - X0)
+    : earthX + ((u - u_earth) / Math.max(1e-6, 1 - u_earth)) * (X1 - earthX);
+
+  // Field colour is driven by the field Earth's dipole actually sees, not the
+  // raw Bz. Because the dipole is tilted, By projects onto the GSM Bz axis, so
+  // the same By helps or hinders depending on the season and time of day. That
+  // is the Russell-McPherron effect, and it is why a rope with modest Bz can
+  // still light the sky up.
+  const nowDate = new Date();
+  const ropeColourAt = (theta: number, alpha: number) => {
+    const bt = Math.max(0.1, result.btMean);
+    const by = bt * Math.sin(theta), bz = bt * Math.cos(theta);
+    const { bzEff } = effectiveBz(by, bz, nowDate);
+    return segColor(Math.max(-1, Math.min(1, bzEff / bt)), alpha);
+  };
+  const ropeRgbAt = (theta: number) => {
+    const c = ropeColourAt(theta, 1);
+    const m = c.match(/rgba?\(([^)]+)\)/);
+    return m ? m[1].split(',').slice(0, 3).map(v => Math.round(parseFloat(v))).join(',') : '255,255,255';
+  };
 
   // Faint axis line
   ctx.strokeStyle = 'rgba(40,70,120,0.2)'; ctx.lineWidth = 0.5; ctx.setLineDash([4,6]);
   ctx.beginPath(); ctx.moveTo(X0, CY); ctx.lineTo(X1, CY); ctx.stroke();
   ctx.setLineDash([]);
 
-  const segs: any[] = [];
-  for (let fl = 0; fl < N_FL; fl++) {
-    // Each field line is equally spaced around the cross-section.
-    const flPhaseOffset = (fl / N_FL) * Math.PI * 2;
-    for (let s = 0; s < N_SEG; s++) {
-      const u0 = s / N_SEG, u1 = (s + 1) / N_SEG;
+  type Pt = { x: number; y: number; z: number; theta: number; isPast: boolean; size: number; alpha: number };
+  const pts: Pt[] = [];
 
-      // Physical field angle at this position along the rope.
-      const th0 = result.thetaFit0 + result.omega * u0 * ROPE_DUR_MIN;
-      const th1 = result.thetaFit0 + result.omega * u1 * ROPE_DUR_MIN;
-
-      // PHYSICAL PHASE: ph = π/2 − theta gives:
-      //   theta=0  (Bz+, north)  → ph=π/2  → sin(ph)=+1  → coil at TOP  (north)  ✓
-      //   theta=π  (Bz-, south)  → ph=−π/2 → sin(ph)=−1  → coil at BOTTOM (south) ✓
-      //   theta=π/2 (By+, east)  → ph=0    → sin(ph)=0   → coil at mid-right ✓
-      // Then we add the coil winding (N_COILS turns) + field-line offset + animation.
-      const ph0 = (Math.PI/2 - th0) + N_COILS * Math.PI*2 * u0 + flPhaseOffset + animAngle;
-      const ph1 = (Math.PI/2 - th1) + N_COILS * Math.PI*2 * u1 + flPhaseOffset + animAngle;
-
-      const x0 = X0 + u0 * RLEN, x1 = X0 + u1 * RLEN;
-      const y0 = R * Math.sin(ph0), z0 = R * Math.cos(ph0);
-      const y1 = R * Math.sin(ph1), z1 = R * Math.cos(ph1);
-
-      // Axial lean: tilt the rope centre line based on the axial direction.
-      // u=0 (leading) → lean down if rope leans northward (trailing end is higher).
-      const lean0 = AXIS_LEAN * (0.5 - u0);   // +lean at leading, −lean at trailing
-      const lean1 = AXIS_LEAN * (0.5 - u1);
-
-      const sx0 = x0 + z0 * TILT, sy0 = (CY + lean0) - y0;
-      const sx1 = x1 + z1 * TILT, sy1 = (CY + lean1) - y1;
-
-      if (sx1 < -5 || sx0 > SW + 5) continue;
-      segs.push({ sx0, sy0, sx1, sy1, zm:(z0+z1)/2, theta:th0, isPast:u0 < u_earth });
+  for (const sh of SHELLS) {
+    const rad = R * sh.rf;
+    for (let fl = 0; fl < sh.lines; fl++) {
+      const flPhase = (fl / sh.lines) * Math.PI * 2;
+      for (let seg = 0; seg <= N_SEG; seg++) {
+        // Split the samples between the two panels in proportion to the screen
+        // width each one occupies, so both are drawn at the same density.
+        const f = seg / N_SEG;
+        const u = f < EARTH_FRAC
+          ? uStart + (f / EARTH_FRAC) * (u_earth - uStart)
+          : u_earth + ((f - EARTH_FRAC) / (1 - EARTH_FRAC)) * (1 - u_earth);
+        const th = result.thetaFit0 + result.omega * u * ROPE_DUR_MIN;
+        // Physical phase, then the shell's own winding. Twist scales with
+        // radius, so the core barely rotates and the outer shell spins hard.
+        const ph = (Math.PI / 2 - th) + sh.turns * Math.PI * 2 * u + flPhase + animAngle;
+        const x = xOfU(u);
+        const y = rad * Math.sin(ph), z = rad * Math.cos(ph);
+        const lean = AXIS_LEAN * (0.5 - u);
+        const sx = x + z * TILT, sy = (CY + lean) - y;
+        if (sx < -6 || sx > SW + 6) continue;
+        pts.push({ x: sx, y: sy, z, theta: th, isPast: u < u_earth, size: sh.size, alpha: sh.alpha });
+      }
     }
   }
-  segs.sort((a, b) => a.zm - b.zm);
-  segs.forEach(({ sx0, sy0, sx1, sy1, zm, theta, isPast }) => {
-    const depth = (zm + R) / (2*R);
-    const alpha = (isPast ? 0.22 : 0.88) * (0.18 + depth * 0.82);
-    ctx.beginPath(); ctx.moveTo(sx0, sy0); ctx.lineTo(sx1, sy1);
-    ctx.strokeStyle = segColor(Math.cos(theta), alpha);
-    ctx.lineWidth   = 0.6 + depth * 2.2;
-    ctx.stroke();
-  });
+
+  // Bright axial core, drawn first so the shells sit over it.
+  ctx.globalCompositeOperation = 'lighter';
+  for (let seg = 0; seg <= N_SEG * 3; seg++) {
+    const f = seg / (N_SEG * 3);
+    const u = f < EARTH_FRAC
+      ? uStart + (f / EARTH_FRAC) * (u_earth - uStart)
+      : u_earth + ((f - EARTH_FRAC) / (1 - EARTH_FRAC)) * (1 - u_earth);
+    const th = result.thetaFit0 + result.omega * u * ROPE_DUR_MIN;
+    const x = xOfU(u);
+    const lean = AXIS_LEAN * (0.5 - u);
+    const past = u < u_earth;
+    drawGlow(ctx, ropeRgbAt(th), x, CY + lean, past ? 2.8 : 4.0, past ? 0.10 : 0.24);
+  }
+
+  // Shells, painted back to front so the depth cue survives additive blending.
+  pts.sort((a, b) => a.z - b.z);
+  for (const pt of pts) {
+    const depth = (pt.z + R) / (2 * R);
+    const a = (pt.isPast ? 0.34 : 1) * pt.alpha * (0.16 + depth * 0.84);
+    drawGlow(ctx, ropeRgbAt(pt.theta), pt.x, pt.y, (1.1 + depth * 1.9) * pt.size, a);
+  }
+  ctx.globalCompositeOperation = 'source-over';
+
+  // ── Leading edge, drawn like the CME visualisation's front ────────────────
+  // The 3D scene draws a CME as a curved particle front with a body trailing
+  // behind it. The same idea here marks the part of the rope that has already
+  // reached us, so the moment of impact is visible rather than implied.
+  {
+    const thLead = result.thetaFit0 + result.omega * u_earth * ROPE_DUR_MIN;
+    const rgb = ropeRgbAt(thLead);
+    const lx = earthX, ly = CY + AXIS_LEAN * (0.5 - u_earth);
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i <= 70; i++) {
+      const a = (i / 70) * Math.PI - Math.PI / 2;      // arc across the rope face
+      const px = lx + Math.cos(a) * R * 0.30;
+      const py = ly + Math.sin(a) * R * 1.04;
+      drawGlow(ctx, rgb, px, py, 2.0, 0.5);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  // ── What Bz does from here ────────────────────────────────────────────────
+  // The rope's rotation is what sets Bz, so the same fit that draws the coil
+  // draws the forward trace. Southward is shaded, because that is the half
+  // that produces aurora.
+  {
+    const sy = H - 58, sh = 20;
+    const bt = Math.max(0.1, result.btMean);
+    ctx.strokeStyle = 'rgba(90,120,170,0.25)'; ctx.lineWidth = 0.5; ctx.setLineDash([3,4]);
+    ctx.beginPath(); ctx.moveTo(earthX, sy); ctx.lineTo(X1, sy); ctx.stroke(); ctx.setLineDash([]);
+
+    const pathPts: { x: number; y: number; bzEff: number }[] = [];
+    for (let i = 0; i <= 90; i++) {
+      const u = u_earth + (i / 90) * (1 - u_earth);
+      const th = result.thetaFit0 + result.omega * u * ROPE_DUR_MIN;
+      const { bzEff } = effectiveBz(bt * Math.sin(th), bt * Math.cos(th), nowDate);
+      pathPts.push({ x: xOfU(u), y: sy - (bzEff / bt) * sh, bzEff });
+    }
+    // Shade the southward stretches.
+    ctx.fillStyle = 'rgba(34,197,94,0.16)';
+    ctx.beginPath(); ctx.moveTo(pathPts[0].x, sy);
+    pathPts.forEach(q => ctx.lineTo(q.x, q.bzEff < 0 ? q.y : sy));
+    ctx.lineTo(pathPts[pathPts.length - 1].x, sy); ctx.closePath(); ctx.fill();
+
+    ctx.lineWidth = 1.4;
+    for (let i = 1; i < pathPts.length; i++) {
+      ctx.beginPath(); ctx.moveTo(pathPts[i-1].x, pathPts[i-1].y); ctx.lineTo(pathPts[i].x, pathPts[i].y);
+      ctx.strokeStyle = segColor(Math.max(-1, Math.min(1, pathPts[i].bzEff / bt)), 0.9);
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(120,155,195,0.45)'; ctx.font = '7px system-ui'; ctx.textAlign = 'left';
+    ctx.fillText('Bz from here', earthX + 3, sy - sh - 4);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = 'rgba(34,197,94,0.5)'; ctx.fillText('south', X1, sy + sh + 8);
+    ctx.fillStyle = 'rgba(210,60,60,0.5)'; ctx.fillText('north', X1, sy - sh - 4);
+  }
+
+  // ── Where it came from, where it is going, and how it turns ────────────────
+  // Material arrives from the Sun on the right and sweeps leftward past Earth.
+  // Sun glow off-frame right, so the geometry reads Sun -> rope -> Earth.
+  const sunG = ctx.createRadialGradient(SW + 30, CY, 0, SW + 30, CY, 150);
+  sunG.addColorStop(0, 'rgba(255,196,92,0.20)');
+  sunG.addColorStop(0.5, 'rgba(255,170,60,0.06)');
+  sunG.addColorStop(1, 'rgba(255,170,60,0)');
+  ctx.fillStyle = sunG; ctx.fillRect(SW - 130, 0, 130, H);
+  ctx.fillStyle = 'rgba(255,196,92,0.6)'; ctx.font = '600 8px system-ui'; ctx.textAlign = 'right';
+  ctx.fillText('TOWARD THE SUN', SW - 12, 18);
+  // Arrow points left: the rope is sweeping from the Sun onto Earth.
+  ctx.strokeStyle = 'rgba(255,190,55,0.5)'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(SW - 16, 27); ctx.lineTo(SW - 74, 27); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(SW - 78, 27); ctx.lineTo(SW - 71, 23.5); ctx.lineTo(SW - 71, 30.5); ctx.closePath();
+  ctx.fillStyle = 'rgba(255,190,55,0.5)'; ctx.fill();
+  ctx.fillStyle = 'rgba(255,190,55,0.42)'; ctx.font = '8px system-ui'; ctx.textAlign = 'right';
+  ctx.fillText('rope sweeping onto Earth', SW - 12, 39);
+
+  // Rotation sense, taken from the sign of omega.
+  const ccw = result.omega >= 0;
+  const rcx = X0 + 34, rcy = H - 34, rr = 13;
+  ctx.strokeStyle = 'rgba(150,190,255,0.5)'; ctx.lineWidth = 1.3;
+  ctx.beginPath(); ctx.arc(rcx, rcy, rr, ccw ? 0.5 : 2.0, ccw ? 5.2 : 6.7); ctx.stroke();
+  const tipA = ccw ? 5.2 : 2.0;
+  const tx = rcx + Math.cos(tipA) * rr, ty = rcy + Math.sin(tipA) * rr;
+  const perp = tipA + (ccw ? Math.PI / 2 : -Math.PI / 2);
+  ctx.fillStyle = 'rgba(150,190,255,0.5)';
+  ctx.beginPath();
+  ctx.moveTo(tx + Math.cos(perp) * 5, ty + Math.sin(perp) * 5);
+  ctx.lineTo(tx + Math.cos(perp + 2.4) * 5, ty + Math.sin(perp + 2.4) * 5);
+  ctx.lineTo(tx + Math.cos(perp - 2.4) * 5, ty + Math.sin(perp - 2.4) * 5);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(150,190,255,0.5)'; ctx.font = '8px system-ui'; ctx.textAlign = 'left';
+  ctx.fillText(ccw ? 'rotating counterclockwise' : 'rotating clockwise', rcx + rr + 7, rcy - 2);
+  ctx.fillStyle = 'rgba(120,155,195,0.4)';
+  ctx.fillText(result.chirality === 'right-handed' ? 'right-handed rope' : result.chirality === 'left-handed' ? 'left-handed rope' : 'handedness unclear', rcx + rr + 7, rcy + 9);
 
   // ── Earth ──────────────────────────────────────────────────────────────────
   ctx.strokeStyle='rgba(60,100,180,0.25)'; ctx.lineWidth=0.6; ctx.setLineDash([3,4]);
   ctx.beginPath(); ctx.moveTo(earthX, CY-R-16); ctx.lineTo(earthX, CY+R+16); ctx.stroke();
   ctx.setLineDash([]);
   const eR = 15;
-  ctx.fillStyle='#0d2244'; ctx.beginPath(); ctx.arc(earthX,CY,eR,0,Math.PI*2); ctx.fill();
-  ctx.strokeStyle='#2563eb'; ctx.lineWidth=2.5; ctx.stroke();
+  const globe = ropeGlobeSprite();
+  if (globe) {
+    ctx.drawImage(globe, earthX - eR, CY - eR, eR * 2, eR * 2);
+  } else {
+    ctx.fillStyle='#0d2244'; ctx.beginPath(); ctx.arc(earthX,CY,eR,0,Math.PI*2); ctx.fill();
+  }
+  ctx.strokeStyle='rgba(96,165,250,0.6)'; ctx.lineWidth=1.2;
+  ctx.beginPath(); ctx.arc(earthX,CY,eR,0,Math.PI*2); ctx.stroke();
   for (let i=0; i<2; i++) {
     ctx.strokeStyle=`rgba(100,170,255,${0.38-i*0.18})`; ctx.lineWidth=0.7;
     ctx.beginPath(); ctx.arc(earthX,CY,eR+5+i*10,-Math.PI*0.78,Math.PI*0.78); ctx.stroke();
@@ -413,7 +577,10 @@ function drawScene(cvs: HTMLCanvasElement, W: number, result: RopeResult, animAn
   ctx.fillText('Earth', earthX, CY+eR+14);
 
   // Live Bz indicator above Earth
-  const bzAtEarth = Math.cos(result.thetaFit0 + result.omega * u_earth * ROPE_DUR_MIN);
+  // Effective Bz, so the label agrees with the colour of the rope beside it.
+  const thAtEarth = result.thetaFit0 + result.omega * u_earth * ROPE_DUR_MIN;
+  const btE = Math.max(0.1, result.btMean);
+  const bzAtEarth = effectiveBz(btE * Math.sin(thAtEarth), btE * Math.cos(thAtEarth), nowDate).bzEff / btE;
   const bzCol = bzAtEarth < -0.15 ? '#22c55e' : bzAtEarth > 0.15 ? '#ef4444' : '#f59e0b';
   const bzTxt = bzAtEarth < -0.15 ? 'Bz− now' : bzAtEarth > 0.15 ? 'Bz+ now' : 'Bz≈0 now';
   ctx.fillStyle = bzCol; ctx.font='500 9px system-ui'; ctx.textAlign='center';
@@ -421,14 +588,8 @@ function drawScene(cvs: HTMLCanvasElement, W: number, result: RopeResult, animAn
 
   // Passage labels
   ctx.fillStyle='rgba(75,105,148,0.4)'; ctx.font='8px system-ui'; ctx.textAlign='center';
-  if (u_earth > 0.1) ctx.fillText('← passed Earth', X0+u_earth*RLEN*0.48, CY+R+26);
-  if (u_earth < 0.9) ctx.fillText('incoming →', X0+(u_earth+(1-u_earth)*0.5)*RLEN, CY+R+26);
-
-  // Solar wind arrow
-  ctx.strokeStyle='rgba(255,190,55,0.35)'; ctx.lineWidth=1; ctx.setLineDash([3,4]);
-  ctx.beginPath(); ctx.moveTo(SW-10,CY); ctx.lineTo(SW-44,CY); ctx.stroke(); ctx.setLineDash([]);
-  ctx.fillStyle='rgba(255,190,55,0.38)'; ctx.font='8px system-ui'; ctx.textAlign='center';
-  ctx.fillText('solar wind', SW-28, CY-8);
+  if (u_earth > 0.06) ctx.fillText('already through', (X0 + earthX) / 2, CY + R + 26);
+  if (u_earth < 0.95) ctx.fillText('still to arrive', (earthX + X1) / 2, CY + R + 26);
 
   // Legend
   ctx.fillStyle='rgba(75,105,148,0.32)'; ctx.textAlign='left'; ctx.font='8px system-ui';
@@ -677,6 +838,7 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
   magneticData, speedData, densityData, tempData,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => { loadMilkyWay(); loadEarthTexture(); }, []);
   const wrapRef   = useRef<HTMLDivElement>(null);
   const animRef   = useRef<number>(0);
   const angleRef  = useRef<number>(0);

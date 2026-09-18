@@ -22,6 +22,10 @@
 // adding or retuning a structure is a data change, not new drawing code.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  drawParticle, loadMilkyWay, drawMilkyWay,
+  loadEarthTexture, earthTexture, renderGlobe,
+} from '../utils/spaceScene';
 import type { SolarWindPhaseId, SolarWindPhaseResult } from '../utils/solarWindPhase';
 
 const ASPECT = 3.1; // width : height
@@ -103,6 +107,8 @@ const SolarWindStructureDiagram: React.FC<Props> = ({ phase, className }) => {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [reducedMotion, setReducedMotion] = useState(false);
+  const globeRef = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => { loadMilkyWay(); loadEarthTexture(); }, []);
 
   const scene = SCENES[phase.id] ?? SCENES.unclassified;
 
@@ -329,6 +335,7 @@ const SolarWindStructureDiagram: React.FC<Props> = ({ phase, className }) => {
       const r = Math.max(5, H * 0.09);
       ctx.save();
 
+
       // Bow shock / magnetosphere standoff.
       ctx.strokeStyle = bz <= -1 ? 'rgba(248,113,113,0.55)' : 'rgba(96,165,250,0.5)';
       ctx.lineWidth = 1.6;
@@ -350,13 +357,24 @@ const SolarWindStructureDiagram: React.FC<Props> = ({ phase, className }) => {
         ctx.globalAlpha = 1;
       }
 
-      const g = ctx.createRadialGradient(ex - r * 0.3, ey - r * 0.3, r * 0.2, ex, ey, r);
-      g.addColorStop(0, '#7dd3fc');
-      g.addColorStop(1, '#1e3a8a');
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(ex, ey, r, 0, Math.PI * 2);
-      ctx.fill();
+      // Same globe the magnetotail and the flux rope draw, with the old flat
+      // gradient kept as the fallback until the texture has loaded.
+      const tex = earthTexture();
+      if (tex) {
+        if (!globeRef.current) {
+          globeRef.current = document.createElement('canvas');
+          renderGlobe(globeRef.current, tex, 172, -62, 0, false, 120);
+        }
+        ctx.drawImage(globeRef.current, ex - r, ey - r, r * 2, r * 2);
+      } else {
+        const g = ctx.createRadialGradient(ex - r * 0.3, ey - r * 0.3, r * 0.2, ex, ey, r);
+        g.addColorStop(0, '#7dd3fc');
+        g.addColorStop(1, '#1e3a8a');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(ex, ey, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.restore();
     };
 
@@ -372,6 +390,8 @@ const SolarWindStructureDiagram: React.FC<Props> = ({ phase, className }) => {
       const { speed, density, bz, bt, field, band, accent } = live.current;
 
       ctx.clearRect(0, 0, W, H);
+      // Same sky as the CME visualisation, the magnetotail and the flux rope.
+      drawMilkyWay(ctx, W, H, t, 0.28, 0.7);
       const bg = ctx.createLinearGradient(0, 0, W, 0);
       bg.addColorStop(0, 'rgba(250,204,21,0.07)'); // a hint of the Sun off-frame left
       bg.addColorStop(0.35, 'rgba(0,0,0,0)');
@@ -386,8 +406,7 @@ const SolarWindStructureDiagram: React.FC<Props> = ({ phase, className }) => {
       const rate = flowRate(speed);
       const n = particleCount(density);
       const streak = 5 + (rate - 0.06) * 150;
-      ctx.strokeStyle = 'rgba(226,232,240,0.8)';
-      ctx.lineWidth = 1.2;
+      ctx.globalCompositeOperation = 'lighter';
       // Smooth 0..1 ramp, used to vary the flow across the frame without the
       // popping a hard cut-off would cause as particles cross the boundary.
       const ramp = (x: number, a: number, b: number) => Math.max(0, Math.min(1, (x - a) / (b - a)));
@@ -413,13 +432,13 @@ const SolarWindStructureDiagram: React.FC<Props> = ({ phase, className }) => {
         if (p.x > 1.05) { p.x = -0.05; p.y = Math.random(); }
         const px = p.x * W;
         const py = p.y * H;
-        ctx.globalAlpha = p.a * aMul;
-        ctx.beginPath();
-        ctx.moveTo(px - streak * p.v * vMul, py);
-        ctx.lineTo(px, py);
-        ctx.stroke();
+        // Same additive sprite the CME scene and the magnetotail use. Streak
+        // length still tracks speed, it is just smeared rather than stroked.
+        const tail = streak * p.v * vMul;
+        drawParticle(ctx, '226,232,240', px, py, px - tail, py, 1.7, p.a * aMul);
       }
       ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
 
       drawEarth(bz);
     };
