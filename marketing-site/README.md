@@ -94,6 +94,24 @@ and the stats note in `about.html`.
 If you want GA on this site too, paste the same gtag snippet used in the app's
 `index.html` into the `<head>` of each page.
 
+## Design system
+
+The palette is taken from the app, not invented. The app is overwhelmingly
+Tailwind **neutral** greys (its background is `#171717`, which is `neutral-900`)
+with **sky** blue as the single accent and amber a distant second. The site
+mirrors that.
+
+- Surfaces: `--n-950` page, `--n-900` cards and alt bands, `--n-850` raised
+- Text: `--n-200` headings, `--n-400` body, `--n-500` muted
+- Accent: `--sky` / `--sky-500`, used only for links, the primary button, the
+  eyebrow dot, and the numbered section markers. Nothing else.
+- Amber: secondary, used sparingly
+- Red / orange / green appear **only** in the visibility score scale, where the
+  colour carries meaning and matches the app's own scale
+
+If you add anything, keep decoration neutral and let the accent stay rare. No
+multi-colour gradients.
+
 ## Voice rules
 
 The copy follows Dean's voice guide. If you edit or add anything, keep to these:

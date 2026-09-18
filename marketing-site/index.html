@@ -33,7 +33,7 @@
 <header class="site-header">
   <div class="wrap nav">
     <a class="brand" href="/">
-      <img src="https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/SpotTheAuroraLogo.png" alt="Spot The Aurora logo" width="32" height="32">
+      <img src="https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/SpotTheAuroraLogo.png" alt="" width="30" height="30">
       <span>Spot The Aurora<small>New Zealand</small></span>
     </a>
     <button class="nav-toggle" aria-label="Menu" aria-expanded="false" onclick="var n=document.getElementById('nav');n.classList.toggle('open');this.setAttribute('aria-expanded',n.classList.contains('open'))"><svg width="18" height="14" viewBox="0 0 18 14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M1 1h16M1 7h16M1 13h16"/></svg></button>
@@ -86,7 +86,7 @@
   <div class="wrap">
     <div class="split">
       <div>
-        <span class="eyebrow amber">Why it exists</span>
+        <span class="eyebrow">Why it exists</span>
         <h2>It started with the drive home.</h2>
         <p>You check a forecast, see a number that sounds promising, pack the car and drive out to somewhere dark with a clear view south. Then there's nothing. Or cloud. Or the moon is up and whatever is there has been washed out to a faint grey smudge.</p>
         <p>The information needed to avoid every one of those nights already existed. It was just scattered across a dozen government websites, in units nobody outside the field uses, updating at different rates, none of it referenced to New Zealand, and none of it answering the only question that actually matters.</p>
@@ -94,7 +94,7 @@
       </div>
       <div>
         <div class="card flat">
-          <span class="icon amber"></span>
+          <span class="icon"></span>
           <h3>"Kp 5 tonight" tells you almost nothing</h3>
           <p>Kp is a planetary average, published three hours after the fact. It says nothing about where you are, what the sky above you is doing, or whether the aurora will be bright enough for your eyes rather than a 20 second exposure.</p>
           <p class="mb0">Chasers have been filling in those gaps by hand for years. This does it for you.</p>
@@ -125,7 +125,7 @@
 <section class="alt">
   <div class="wrap">
     <div class="section-head">
-      <span class="eyebrow violet">Things nothing else does</span>
+      <span class="eyebrow">Things nothing else does</span>
       <h2>Three of these exist nowhere else that we know of.</h2>
       <p class="lead">Not features borrowed off a NOAA page. Built from scratch, running live, and as far as anyone has been able to tell us, not available in any other public aurora tool.</p>
     </div>
@@ -134,7 +134,7 @@
       <div>
         <h3><span class="hl-violet">01.</span> A live 3D model of the solar system, with the CMEs in flight</h3>
         <p>Watch coronal mass ejections leave the Sun and travel toward Earth in a real, interactive 3D heliosphere. Every CME in NASA's catalogue is propagated with published drag physics, so a fast one genuinely slows down as it ploughs into slower wind ahead of it, instead of sliding along in a straight line at a fixed speed.</p>
-        <ul class="list violet">
+        <ul class="list">
           <li><strong>Scrub the timeline</strong> forward and back, seven days of history plus the forecast window.</li>
           <li><strong>Colour tracks current speed</strong>, grey near ambient wind through to pink for the extreme events.</li>
           <li><strong>Click a flare</strong> on the Solar Activity page and jump straight to the CME it launched.</li>
@@ -160,7 +160,7 @@
       <div>
         <h3><span class="hl-violet">02.</span> Coronal holes, found live in your browser</h3>
         <p>Coronal holes fire high speed streams at Earth and cause a large share of New Zealand's aurora. Most apps ignore them completely. This one finds them. It pulls the latest image of the Sun and runs a ten step detection pipeline, limb detection through to heliographic projection, entirely on your device with no server doing the work.</p>
-        <ul class="list violet">
+        <ul class="list">
           <li><strong>Detected holes are drawn on the solar disk</strong> at their real position and size.</li>
           <li><strong>Parker spiral arms</strong> project the resulting stream out past Earth's orbit, so you can see what's coming.</li>
           <li><strong>72 hours of history</strong> is tracked, so you can watch a hole rotate into a position that points at us.</li>
@@ -172,7 +172,7 @@
       <div>
         <h3><span class="hl-violet">03.</span> The magnetosphere, actually visualised</h3>
         <p>The physics that decides whether you see anything is usually left as jargon on a chart. Here it's performed live, driven by the real measurements coming off the satellites.</p>
-        <ul class="list violet">
+        <ul class="list">
           <li><strong>The magnetotail scene.</strong> Solar wind particles stream in at the measured speed, in numbers tracking the measured density. Northward field and they visibly deflect around the magnetosphere. Southward and they slip in, spiral down the tail and pile up as a growing glow. Then the substorm fires: a flash at the pinch point, a river of particles onto the pole, curtains blooming on the globe. A five step tour walks you through the whole chain.</li>
           <li><strong>The solar wind structure cross section.</strong> An animated slice of whatever is passing us right now, shock front, CME sheath, magnetic cloud, stream interaction region, with particles moving at the real measured speed.</li>
           <li><strong>The Russell McPherron effect, live.</strong> The seasonal geometry that makes equinox aurora better, reduced to a plain helping, neutral or working against you meter, with the full geometry there if you want it.</li>
@@ -191,7 +191,7 @@
 
 <section class="tight">
   <div class="wrap narrow center">
-    <span class="eyebrow violet">Who's been using it</span>
+    <span class="eyebrow">Who's been using it</span>
     <h2 style="font-size:clamp(1.4rem,2.6vw,1.9rem)">Chasers and photographers, and a few people who do this for a living.</h2>
     <p>Directors at NOAA's Space Weather Prediction Center and people at MetService have had good things to say about the visualisations, along with working space weather researchers and a lot of very particular enthusiasts. It's built for someone standing in a paddock at 1am, but it holds up in front of that lot too.</p>
     <p class="muted mb0">Spot The Aurora is an independent project. It is not affiliated with or endorsed by NOAA or MetService.</p>
@@ -207,17 +207,17 @@
     </div>
     <div class="grid g4">
       <div class="card">
-        <span class="icon amber"></span>
+        <span class="icon"></span>
         <h3>1. On the Sun</h3>
         <p>X-ray flux with every flare marked and clickable, sunspot regions mapped onto live solar imagery with their flare probabilities, proton flux, coronal imagery and coronagraph video.</p>
       </div>
       <div class="card">
-        <span class="icon violet"></span>
+        <span class="icon"></span>
         <h3>2. In flight</h3>
         <p>CMEs crossing the 3D heliosphere with real drag physics, coronal hole streams drawn along Parker spirals, and a seven day forecast of what reaches Earth and when.</p>
       </div>
       <div class="card">
-        <span class="icon sky"></span>
+        <span class="icon"></span>
         <h3>3. At L1</h3>
         <p>NASA's IMAP and NOAA's DSCOVR sit 1.5 million km upsun, which buys roughly 45 to 60 minutes of warning. Speed, density, temperature and the all important Bz, updated every minute.</p>
       </div>
@@ -227,7 +227,7 @@
         <p>GeoNet's Eyrewell observatory in Canterbury measures the field changing over New Zealand itself. A sharp bay means the electrojet is overhead now. This is why the score can differ from global Kp.</p>
       </div>
     </div>
-    <div class="card flat" style="margin-top:20px;background:linear-gradient(135deg,rgba(74,222,128,0.07),rgba(167,139,250,0.07))">
+    <div class="card" style="margin-top:16px">
       <span class="icon"></span>
       <h3>5. Eyes on the sky</h3>
       <p class="mb0">Then the part no satellite can give you. Other people, out there right now, pinning reports to a map. Naked eye, phone, camera, nothing, or clouded out, feeding straight back into the Now slot of the forecast. Plus cloud cover from Windy and seven live cameras from Oban to New Plymouth, so you can look at the sky before you commit to the drive.</p>
@@ -243,7 +243,7 @@
         <h2>Your phone goes when you can see it.</h2>
         <p>Most aurora alerts are one threshold blasted at an entire country, ignoring cloud, moon, and the fact that Invercargill and Auckland are 1,400 km apart. People turn them off inside a week.</p>
         <p>These work out where the oval's edge actually sits, convert your position into geomagnetic latitude, and only go when the aurora reaches your horizon, at the tier that applies to you.</p>
-        <ul class="list teal">
+        <ul class="list">
           <li><strong>Three visibility tiers.</strong> Camera, phone, naked eye. They only escalate, so you're not pinged twice for the same thing.</li>
           <li><strong>Moon aware.</strong> Thresholds tighten as the moon brightens. Camera tier stops entirely above 80 percent.</li>
           <li><strong>Overnight watch.</strong> One evening summary, at the standard you set. Every night, or only when it's camera, phone or naked eye worthy.</li>
@@ -276,12 +276,12 @@
         <p>Simple View. A percentage, a sentence in plain English, and four time slots that say things like "conditions are building". No jargon, no acronyms. Look at the map, see what people are reporting, check the cloud, go outside.</p>
       </div>
       <div class="card feature">
-        <span class="icon violet"></span>
+        <span class="icon"></span>
         <h3>Been chasing for years</h3>
         <p>Advanced View. Bz, Bt, By, Bx, speed, density, temperature, hemispheric power, Newell coupling, the Eyrewell trace, the disturbance index, substorm probabilities, clock angle, and 24 hours of history behind every chart.</p>
       </div>
       <div class="card feature">
-        <span class="icon sky"></span>
+        <span class="icon"></span>
         <h3>Visiting the country</h3>
         <p>You've got a handful of nights and no idea what's normal here. It tells you whether tonight is worth staying up for, what the sky looks like at seven camera sites around the country, and whether the moon is going to ruin it.</p>
       </div>
@@ -340,7 +340,7 @@
     <div class="foot-grid">
       <div>
         <a class="brand" href="/" style="margin-bottom:14px">
-          <img src="https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/SpotTheAuroraLogo.png" alt="" width="32" height="32">
+          <img src="https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/SpotTheAuroraLogo.png" alt="" width="30" height="30">
           <span>Spot The Aurora<small>New Zealand</small></span>
         </a>
         <p class="muted">A live aurora forecast for New Zealand, built in Greymouth by <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener">TNR Protography</a>. Made by a chaser, for chasers.</p>
