@@ -237,3 +237,113 @@ export function renderGlobe(
   ctx.globalAlpha = 1;
 }
 // --- END OF FILE utils/spaceScene.ts ---
+
+// ── Sun ────────────────────────────────────────────────────────────────────
+// The CME visualisation's Sun is not an image, it is an animated Simplex-noise
+// fragment shader. To put the same Sun in a 2D canvas scene we compile that
+// exact shader (SUN_FRAGMENT_SHADER from constants) in a small offscreen WebGL
+// canvas and blit the result. Same source, same noise, same colours.
+//
+// The original vertex shader is written for Three's sphere geometry, so this
+// supplies a minimal full-quad one that feeds the same vUv varying.
+const SUN_QUAD_VERT = `
+attribute vec2 aPos;
+varying vec2 vUv;
+void main() {
+  vUv = aPos * 0.5 + 0.5;
+  gl_Position = vec4(aPos, 0.0, 1.0);
+}`;
+
+let sunGl: WebGLRenderingContext | null = null;
+let sunCanvas: HTMLCanvasElement | null = null;
+let sunTimeLoc: WebGLUniformLocation | null = null;
+let sunBroken = false;
+
+function initSun(sizePx: number, fragSrc: string): boolean {
+  if (sunBroken) return false;
+  if (sunGl) return true;
+  if (typeof document === 'undefined') return false;
+  try {
+    sunCanvas = document.createElement('canvas');
+    sunCanvas.width = sizePx; sunCanvas.height = sizePx;
+    const gl = sunCanvas.getContext('webgl', { alpha: true, premultipliedAlpha: false });
+    if (!gl) { sunBroken = true; return false; }
+
+    const compile = (type: number, src: string) => {
+      const sh = gl.createShader(type)!;
+      gl.shaderSource(sh, src); gl.compileShader(sh);
+      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh) || 'shader');
+      return sh;
+    };
+    // Three injects precision qualifiers for its own shaders. A raw WebGL
+    // context does not, and a fragment shader without one fails to compile,
+    // which is what silently dropped this to the gradient fallback.
+    const frag = /precision\s+(low|medium|high)p\s+float/.test(fragSrc)
+      ? fragSrc
+      : 'precision mediump float;\n' + fragSrc;
+    const prog = gl.createProgram()!;
+    gl.attachShader(prog, compile(gl.VERTEX_SHADER, SUN_QUAD_VERT));
+    gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, frag));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog) || 'link');
+    gl.useProgram(prog);
+
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(prog, 'aPos');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+    sunTimeLoc = gl.getUniformLocation(prog, 'uTime');
+    sunGl = gl;
+    return true;
+  } catch (e) {
+    console.warn('[spaceScene] Sun shader unavailable, using gradient fallback:', e);
+    sunBroken = true; sunGl = null; sunCanvas = null;
+    return false;
+  }
+}
+
+/**
+ * Draw the CME visualisation's Sun, centred at (cx, cy) with radius r.
+ * `fragSrc` is SUN_FRAGMENT_SHADER. Falls back to a plain radial gradient if
+ * WebGL is unavailable, so a scene never loses its Sun entirely.
+ */
+export function drawSun(
+  ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number,
+  timeSec: number, fragSrc: string,
+) {
+  // Corona first, underneath the disc.
+  const corona = ctx.createRadialGradient(cx, cy, r * 0.55, cx, cy, r * 3.2);
+  corona.addColorStop(0, 'rgba(255,186,74,0.28)');
+  corona.addColorStop(0.35, 'rgba(255,150,50,0.10)');
+  corona.addColorStop(1, 'rgba(255,140,40,0)');
+  ctx.fillStyle = corona;
+  ctx.beginPath(); ctx.arc(cx, cy, r * 3.2, 0, Math.PI * 2); ctx.fill();
+
+  const ok = initSun(128, fragSrc);
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
+  if (ok && sunGl && sunCanvas) {
+    if (sunTimeLoc) sunGl.uniform1f(sunTimeLoc, timeSec);
+    sunGl.viewport(0, 0, sunCanvas.width, sunCanvas.height);
+    sunGl.drawArrays(sunGl.TRIANGLE_STRIP, 0, 4);
+    ctx.drawImage(sunCanvas, cx - r, cy - r, r * 2, r * 2);
+    // A little limb darkening, so a flat quad still reads as a sphere.
+    const limb = ctx.createRadialGradient(cx - r * 0.25, cy - r * 0.25, r * 0.1, cx, cy, r);
+    limb.addColorStop(0, 'rgba(255,255,255,0.16)');
+    limb.addColorStop(0.65, 'rgba(0,0,0,0)');
+    limb.addColorStop(1, 'rgba(90,35,0,0.42)');
+    ctx.fillStyle = limb;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  } else {
+    const disc = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.25, r * 0.1, cx, cy, r);
+    disc.addColorStop(0, '#fff6d8');
+    disc.addColorStop(0.45, '#ffd166');
+    disc.addColorStop(1, '#f59f2b');
+    ctx.fillStyle = disc;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}

@@ -14,8 +14,9 @@ interface FluxRopeAnalyzerProps {
 
 import {
   drawGlow, loadMilkyWay, drawMilkyWay,
-  loadEarthTexture, earthTexture, renderGlobe,
+  loadEarthTexture, earthTexture, renderGlobe, drawSun,
 } from '../utils/spaceScene';
+import { SUN_FRAGMENT_SHADER } from '../constants';
 import { effectiveBz } from '../utils/rmEffect';
 
 interface RopeResult {
@@ -550,26 +551,10 @@ function drawScene(cvs: HTMLCanvasElement, W: number, result: RopeResult, animAn
   // rope between, Earth on the left.
   {
     const sunX = SW - 46, sunR = 26;
-    const corona = ctx.createRadialGradient(sunX, CY, sunR * 0.5, sunX, CY, sunR * 3.4);
-    corona.addColorStop(0, 'rgba(255,186,74,0.30)');
-    corona.addColorStop(0.35, 'rgba(255,150,50,0.11)');
-    corona.addColorStop(1, 'rgba(255,140,40,0)');
-    ctx.fillStyle = corona;
-    ctx.beginPath(); ctx.arc(sunX, CY, sunR * 3.4, 0, Math.PI * 2); ctx.fill();
-
-    const disc = ctx.createRadialGradient(sunX - sunR * 0.3, CY - sunR * 0.25, sunR * 0.1, sunX, CY, sunR);
-    disc.addColorStop(0, '#fff6d8');
-    disc.addColorStop(0.45, '#ffd166');
-    disc.addColorStop(1, '#f59f2b');
-    ctx.save();
-    ctx.beginPath(); ctx.rect(0, 0, SW, H); ctx.clip();
-    ctx.fillStyle = disc;
-    ctx.beginPath(); ctx.arc(sunX, CY, sunR, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
-
+    drawSun(ctx, sunX, CY, sunR, performance.now() / 1000, SUN_FRAGMENT_SHADER);
     ctx.fillStyle = 'rgba(255,205,110,0.75)';
-    ctx.font = '600 8px system-ui'; ctx.textAlign = 'right';
-    ctx.fillText('SUN', sunX + sunR, CY + sunR + 15);
+    ctx.font = '600 8px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText('SUN', sunX, CY + sunR + 15);
   }
 
   // ── Cross section ─────────────────────────────────────────────────────────
