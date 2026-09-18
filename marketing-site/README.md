@@ -122,38 +122,56 @@ anything using `--display`, it renders as a tofu block.
 
 ## Live elements
 
-Two scripts, both plain JS with no dependencies and no build step.
+Three scripts, plain JS, no dependencies, no build step.
 
-**`assets/sky.js`** draws the page backdrop: a seeded starfield (the same
-mulberry32 approach as the app's `StarField.tsx`, so the layout is stable
-between loads), three drifting aurora curtains in the logo's colours, and a moon
-showing the **real current phase** with a proper terminator mask, ported from
-the app's `DriftingMoon.tsx`. It respects `prefers-reduced-motion` and is
-entirely decorative, wrapped so it can never break the page.
+### `assets/sky.js`
+Page backdrop: a seeded starfield (same mulberry32 approach as the app's
+`StarField.tsx`, so the layout is stable between loads), drifting aurora
+curtains in the logo's colours, and a moon at the **real current phase** with a
+proper terminator mask, ported from `DriftingMoon.tsx`.
 
-**`assets/forecast.js`** renders the **live aurora score**, fetched from the
-same Cloudflare Worker the app uses:
+### `assets/scenes.js`
+Three live canvas scenes that replace what were screenshots. Mount one with
+`<div class="scene" data-scene="NAME"></div>`.
+
+| `data-scene` | What it shows |
+|---|---|
+| `cme` | Top-down heliosphere. CMEs leave the Sun and decelerate toward the ambient wind using the drag-based model, with the app's exact speed colour scale (grey 350 km/s through pink 2500+). Each is a particle cloud bunched toward the leading edge. |
+| `coronalhole` | The solar disk with a coronal hole rotating across it, foreshortened at the limb, firing a high speed stream wound into a Parker spiral out past Earth's orbit. Earth lights up when the stream points at it. |
+| `magnetotail` | Side-on magnetosphere cycling through loading, stretched, onset and afterglow. Southward field lets particles in to load the tail; northward deflects them around the magnetopause. On onset the tail snaps and aurora blooms at the poles. |
+
+Each scene only animates while on screen, pauses when the tab is hidden, and
+honours `prefers-reduced-motion`.
+
+Two numbers in the CME scene are tuned for watchability, not realism: `dt`
+(simulated seconds per animation frame) and the firing interval. `dt` was
+originally 3600, which made every CME cross the frame in about two seconds and
+look like an empty window. It is now 250, giving roughly 20 seconds to 1 AU,
+with `gamma` retuned to match so the deceleration still looks right.
+
+### `assets/forecast.js`
+The **live visibility forecast**: Now, 15 min, 30 min, 1 hour, 2 hours. Mount
+with `<div class="live-forecast"></div>`. Any number of mounts share one fetch,
+and it refreshes every 60 seconds.
+
+It reads two workers, the same ones the app uses:
 
 ```
-https://spottheaurora.thenamesrock.workers.dev/
+https://spottheaurora.thenamesrock.workers.dev/               (score, moon, power)
+https://aurora-index-sta.thenamesrock.workers.dev/api/substorm (substorm risk)
 ```
 
-It reads `currentForecast.spotTheAuroraForecast` for the score,
-`currentForecast.lastUpdated`, `currentForecast.inputs.hemisphericPower`, and
-`owmDailyForecast[0].moon_phase`. The score bands and the plain-English
-sentences are copied from the app's `ForecastDashboard.tsx` so the site can
-never say something different from the app. "Use my location" applies the same
-0.2% per 10 km adjustment from Greymouth that the app does. It refreshes every
-60 seconds.
+The slot maths is ported from `ForecastDashboard.tsx` (`simpleTimelineSlots`):
+the same trend multiplier, Newell boost, `boostFromP` and per-status branch, and
+the sentences are copied word for word so the site can never say something
+different from the app. "Use my location" applies the same 0.2% per 10 km
+adjustment from Greymouth.
 
-Mount it by putting `<div class="live-forecast"></div>` anywhere and including
-the script. Any number of mounts per page share one fetch. It currently appears
-in the hero on the home page and in the Simple View slot on the features page.
-
-**If the worker does not send CORS headers for this domain**, the fetch will
-fail and the widget falls back to a message plus a link to the app. Check the
-browser console once the site is live. The fix is to allow the marketing
-domain's origin in the worker's response headers.
+**One approximation worth knowing.** The app derives `status`, P30 and P60 from
+the raw L1 series, using 15-minute means. The substorm worker exposes 30-minute
+means, so the site uses those in the documented probability model. Slot wording
+is identical but a borderline slot could occasionally differ by one band from
+the app. Worth spot-checking against the app on an active night.
 
 ## Voice rules
 
