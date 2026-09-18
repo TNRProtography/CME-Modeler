@@ -17,41 +17,11 @@
 
 import React, { useMemo, useEffect, useRef, useState, useCallback } from 'react';
 import { computeOvalBoundary as computeOvalBoundaryPhysics, avgBy30m, loadingMinutesFromSeries } from '../utils/ovalPhysics';
+import {
+  EARTH_TEX, renderGlobe, drawParticle,
+  loadMilkyWay, drawMilkyWay,
+} from '../utils/spaceScene';
 
-// ── Particle sprite ────────────────────────────────────────────────────────
-// The CME visualisation draws its particles as a soft radial-gradient sprite
-// blended additively (see createParticleTexture in SimulationCanvas). The
-// magnetotail used short line trails, which read as a different scene. This
-// builds the same sprite, with the same gradient stops, tinted per particle
-// state, so both scenes look like the same simulation. Motion is unchanged:
-// the particles still stream, deflect, get captured and burst exactly as before,
-// they are just drawn as glowing points rather than strokes.
-const SPRITE_PX = 64;
-const spriteCache = new Map<string, HTMLCanvasElement>();
-function particleSprite(rgb: string): HTMLCanvasElement | null {
-  if (typeof document === 'undefined') return null;
-  const hit = spriteCache.get(rgb);
-  if (hit) return hit;
-  const c = document.createElement('canvas');
-  c.width = SPRITE_PX; c.height = SPRITE_PX;
-  const x = c.getContext('2d');
-  if (!x) return null;
-  const h = SPRITE_PX / 2;
-  const g = x.createRadialGradient(h, h, 0, h, h, h);
-  g.addColorStop(0,   `rgba(${rgb},1)`);
-  g.addColorStop(0.2, `rgba(${rgb},0.8)`);
-  g.addColorStop(1,   `rgba(${rgb},0)`);
-  x.fillStyle = g;
-  x.fillRect(0, 0, SPRITE_PX, SPRITE_PX);
-  spriteCache.set(rgb, c);
-  return c;
-}
-
-// Same panorama the CME visualisation uses as its scene background, so the two
-// scenes sit against the same sky.
-const MILKY_WAY_TEX = 'https://upload.wikimedia.org/wikipedia/commons/6/60/ESO_-_Milky_Way.jpg';
-
-const EARTH_TEX = 'https://upload.wikimedia.org/wikipedia/commons/c/c3/Solarsystemscope_texture_2k_earth_daymap.jpg';
 
 // ---- Types ----
 interface SubstormRiskDataLike {
@@ -114,17 +84,6 @@ function computeOvalBoundary(
 }
 
 // ---- IGRF-13 helpers (globe oval) ----
-const POLE_LAT_RAD = 80.65 * Math.PI / 180;
-const POLE_LON_RAD = -72.68 * Math.PI / 180;
-function geoToGmag(latDeg: number, lonDeg: number): number {
-  const p = latDeg * Math.PI / 180, l = lonDeg * Math.PI / 180;
-  return Math.asin(Math.max(-1, Math.min(1, Math.sin(p) * Math.sin(POLE_LAT_RAD) + Math.cos(p) * Math.cos(POLE_LAT_RAD) * Math.cos(l - POLE_LON_RAD)))) * 180 / Math.PI;
-}
-function gmagToGeoLat(gmagLat: number, lonDeg: number): number {
-  let lo = -90, hi = 90;
-  for (let i = 0; i < 48; i++) { const m = (lo + hi) / 2; if (geoToGmag(m, lonDeg) < gmagLat) lo = m; else hi = m; }
-  return (lo + hi) / 2;
-}
 
 // ---- Verdict tiers (what a snap right now means for NZ) ----
 interface Tier { label: string; score: number; colour: string; nzNote: string }
@@ -141,120 +100,6 @@ const LABELS: Record<MagState, string> = { QUIET: 'Quiet', LOADING: 'Loading', S
 const COLOURS: Record<MagState, string> = { QUIET: '#38bdf8', LOADING: '#fbbf24', STRETCHED: '#fb923c', SNAPPING: '#f87171' };
 
 // ---- Globe sprite renderer (orthographic, IGRF-curved live oval, NZ dot) ----
-function renderGlobe(
-  canvas: HTMLCanvasElement, tex: HTMLImageElement,
-  centreLon: number, ovalBound: number, score: number, hot: boolean, sizePx: number,
-) {
-  const size = sizePx;
-  canvas.width = size; canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  const tmp = document.createElement('canvas');
-  tmp.width = tex.naturalWidth; tmp.height = tex.naturalHeight;
-  const tCtx = tmp.getContext('2d');
-  if (!tCtx) return;
-  tCtx.drawImage(tex, 0, 0);
-  const texPx = tCtx.getImageData(0, 0, tmp.width, tmp.height);
-  const out = ctx.createImageData(size, size);
-  const half = size / 2, cLon = (centreLon * Math.PI) / 180;
-  const tw = tex.naturalWidth, th = tex.naturalHeight;
-
-  for (let py = 0; py < size; py++) {
-    for (let px = 0; px < size; px++) {
-      const nx = (px - half) / half, ny = (py - half) / half;
-      if (nx * nx + ny * ny > 1) continue;
-      const lat = Math.asin(-ny), cosLat = Math.cos(lat);
-      if (cosLat < 0.0001) continue;
-      const sinDlon = nx / cosLat;
-      if (Math.abs(sinDlon) > 1) continue;
-      const lon = Math.asin(sinDlon) + cLon;
-      let u = ((lon * 180 / Math.PI) + 180) / 360;
-      u = ((u % 1) + 1) % 1;
-      const v = (90 - lat * 180 / Math.PI) / 180;
-      const tx = Math.min(tw - 1, Math.max(0, Math.floor(u * tw)));
-      const ty = Math.min(th - 1, Math.max(0, Math.floor(v * th)));
-      const si = (ty * tw + tx) * 4, di = (py * size + px) * 4;
-      out.data[di] = texPx.data[si]; out.data[di+1] = texPx.data[si+1];
-      out.data[di+2] = texPx.data[si+2]; out.data[di+3] = 255;
-    }
-  }
-  ctx.putImageData(out, 0, 0);
-
-  // Cinematic lighting: sun from the left, deep night limb on the right
-  ctx.globalCompositeOperation = 'source-atop';
-  const lightGrad = ctx.createRadialGradient(half * 0.5, half * 0.6, 0, half, half, half * 1.15);
-  lightGrad.addColorStop(0, 'rgba(255,250,240,0.14)');
-  lightGrad.addColorStop(0.4, 'rgba(255,255,255,0.02)');
-  lightGrad.addColorStop(0.78, 'rgba(2,4,14,0.34)');
-  lightGrad.addColorStop(1, 'rgba(2,4,14,0.7)');
-  ctx.fillStyle = lightGrad; ctx.fillRect(0, 0, size, size);
-  const term = ctx.createLinearGradient(half * 0.7, 0, size, 0);
-  term.addColorStop(0, 'rgba(0,0,0,0)');
-  term.addColorStop(0.55, 'rgba(1,3,12,0.28)');
-  term.addColorStop(1, 'rgba(1,3,12,0.62)');
-  ctx.fillStyle = term; ctx.fillRect(0, 0, size, size);
-
-  // Live aurora oval band
-  const DR = Math.PI / 180;
-  function ringPts(gmagLat: number) {
-    const pts: { x: number; y: number; vis: boolean }[] = [];
-    for (let lon = 0; lon <= 360; lon += 4) {
-      const normLon = lon <= 180 ? lon : lon - 360;
-      const geoLat = gmagToGeoLat(gmagLat, normLon);
-      const latR = geoLat * DR;
-      const dlonR = (normLon - centreLon) * DR;
-      const cosC = Math.cos(latR) * Math.cos(dlonR);
-      pts.push({ x: half + half * Math.cos(latR) * Math.sin(dlonR), y: half - half * Math.sin(latR), vis: cosC > 0 });
-    }
-    return pts;
-  }
-  function strokeVisible(pts: { x: number; y: number; vis: boolean }[]) {
-    ctx!.beginPath();
-    let on = false;
-    for (const p of pts) {
-      if (p.vis) { if (!on) { ctx!.moveTo(p.x, p.y); on = true; } else ctx!.lineTo(p.x, p.y); }
-      else on = false;
-    }
-    ctx!.stroke();
-  }
-  ctx.save();
-  ctx.beginPath(); ctx.arc(half, half, half - 0.5, 0, Math.PI * 2); ctx.clip();
-  const act = Math.min(1, score / 100);
-  const widthDeg = 3.5 + act * 7 + (hot ? 2 : 0);
-  const layers = 14;
-  const base = 0.09 + act * 0.17 + (hot ? 0.1 : 0);
-  const bandPx = (half * widthDeg) / 90;
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.lineCap = 'round';
-  for (let i = 0; i < layers; i++) {
-    const f = i / (layers - 1);
-    const gmagLat = ovalBound - f * widthDeg;
-    const prof = Math.pow(1 - f, 1.5);
-    const alpha = base * (0.22 + 0.78 * prof);
-    let r = 70, g = 215, bl = 130;
-    if (f < 0.4 && act > 0.4) {
-      const redMix = ((act - 0.4) / 0.6) * (1 - f / 0.4);
-      r = Math.round(70 + redMix * 185); g = Math.round(215 - redMix * 95); bl = Math.round(130 - redMix * 55);
-    }
-    ctx.strokeStyle = `rgba(${r},${g},${bl},${alpha.toFixed(3)})`;
-    ctx.lineWidth = (bandPx / layers) * 2.6 + 0.6;
-    ctx.filter = `blur(${(1 + f * 2.4).toFixed(1)}px)`;
-    strokeVisible(ringPts(gmagLat));
-  }
-  ctx.filter = 'blur(0.5px)';
-  ctx.lineWidth = 1.3;
-  ctx.strokeStyle = `rgba(160,255,195,${(0.45 + act * 0.4).toFixed(2)})`;
-  strokeVisible(ringPts(ovalBound));
-  ctx.filter = 'none';
-  ctx.restore();
-  ctx.globalCompositeOperation = 'source-over';
-  // NZ dot
-  const nzLatR = (-43.5 * Math.PI) / 180, nzDlon = ((172 - centreLon) * Math.PI) / 180;
-  const nzX = half + half * Math.cos(nzLatR) * Math.sin(nzDlon), nzY = half - half * Math.sin(nzLatR);
-  ctx.globalAlpha = 0.9; ctx.fillStyle = '#5fb47a'; ctx.beginPath(); ctx.arc(nzX, nzY, size * 0.018, 0, Math.PI * 2); ctx.fill();
-  ctx.globalAlpha = 0.45; ctx.strokeStyle = '#5fb47a'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.arc(nzX, nzY, size * 0.036, 0, Math.PI * 2); ctx.stroke();
-  ctx.globalAlpha = 1;
-}
 
 // ======================================================================
 // Story tour
@@ -334,16 +179,7 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
   }, [ovalBound, score, isSnappingLive]);
 
   // ── Canvas scene ──
-  const milkyWayRef = useRef<HTMLImageElement | null>(null);
-  const milkyWayReadyRef = useRef(false);
-  useEffect(() => {
-    if (typeof Image === 'undefined') return;
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => { milkyWayRef.current = img; milkyWayReadyRef.current = true; };
-    img.src = MILKY_WAY_TEX;
-    return () => { img.onload = null; };
-  }, []);
+  useEffect(() => { loadMilkyWay(); }, []);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -546,22 +382,8 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
       ctx!.fillStyle = bg;
       ctx!.fillRect(0, 0, W, H);
 
-      // Milky Way backdrop, drawn over the base gradient and under everything
-      // else. Scaled to cover, tiled horizontally so the slow drift wraps
-      // seamlessly, and held well back in opacity so the scene stays readable.
-      if (milkyWayReadyRef.current && milkyWayRef.current) {
-        const mw = milkyWayRef.current;
-        const sc = Math.max(W / mw.width, H / mw.height) * 1.08;
-        const dw = mw.width * sc, dh = mw.height * sc;
-        const dy = (H - dh) * 0.5;
-        const off = (elapsed * 1.1) % dw;
-        // Tune this one number if the backdrop competes with the tail glow.
-        // The real panorama's galactic core is bright, so it is held back.
-        ctx!.globalAlpha = 0.42;
-        ctx!.drawImage(mw, -off, dy, dw, dh);
-        ctx!.drawImage(mw, dw - off, dy, dw, dh);
-        ctx!.globalAlpha = 1;
-      }
+      // Milky Way backdrop, under everything else.
+      drawMilkyWay(ctx!, W, H, elapsed);
 
       // Stars (parallax drift + twinkle)
       for (const st of stars) {
@@ -638,19 +460,7 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
         else if (p.st === 'captured') { col = '242,201,106'; r = 4.2; a = 0.75; }
         else if (p.st === 'burstE') { col = '150,255,190'; r = 5.4; a = 0.95; }
         else { col = '255,190,150'; r = 4.6; a = 0.80; }
-        const sp = particleSprite(col);
-        if (!sp) continue;
-        // Overlapping steps back along the travel vector. Spacing is kept tight
-        // so a fast particle reads as one smeared streak rather than a row of
-        // separate dots.
-        const dx = p.x - p.px, dy = p.y - p.py;
-        const STEPS = 5;
-        for (let k = 0; k < STEPS; k++) {
-          const t = (k / STEPS) * 0.6;           // 0 = head, then back along the trail
-          const rr = r * (1 - t * 0.5);
-          ctx!.globalAlpha = a * (1 - t * 1.1);
-          ctx!.drawImage(sp, p.x - dx * t - rr, p.y - dy * t - rr, rr * 2, rr * 2);
-        }
+        drawParticle(ctx!, col, p.x, p.y, p.px, p.py, r, a);
       }
       ctx!.globalAlpha = 1;
       ctx!.globalCompositeOperation = 'source-over';
