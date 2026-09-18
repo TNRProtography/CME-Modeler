@@ -191,7 +191,13 @@ section.tight { padding: clamp(40px, 5vw, 64px) 0; }
 .card:hover { border-color: var(--line-2); transform: translateY(-2px); }
 .card h3 { margin-bottom: .45em; }
 .card p:last-child { margin-bottom: 0; }
-.card .icon { font-size: 1.6rem; display: block; margin-bottom: 14px; line-height: 1; }
+.card .icon {
+  display: block; width: 34px; height: 3px; border-radius: 99px; margin-bottom: 18px;
+  background: linear-gradient(90deg, var(--green), var(--teal));
+}
+.card .icon.violet { background: linear-gradient(90deg, var(--violet), var(--pink)); }
+.card .icon.amber  { background: linear-gradient(90deg, var(--amber), #fb923c); }
+.card .icon.sky    { background: linear-gradient(90deg, var(--sky), var(--teal)); }
 .card.feature { padding: 30px; }
 .card.flat:hover { transform: none; }
 

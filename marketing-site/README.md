@@ -81,14 +81,7 @@ Screenshots wanted, in priority order:
 
 Keep images under ~400 KB each (WebP is ideal) so the pages stay fast.
 
-### 3. Replace the draft FAQ answers
-
-Five FAQ answers are placeholders written by Claude and marked in the source with
-`<!-- DRAFT: placeholder answer written by Claude. Replace with Dean's own words. -->`.
-They cover: high score but nothing visible, best place to see it, best time of year,
-camera settings, and who built this. Search for `DRAFT:` in `faq.html`.
-
-### 4. Check the professional-praise wording
+### 3. Check the professional-praise wording
 
 `index.html` and `about.html` say the visualisations have drawn praise from NOAA SWPC
 directors, MetService and space weather researchers, with a disclaimer that the project
@@ -96,10 +89,31 @@ is not affiliated with or endorsed by them. If you'd rather name people, quote t
 directly, or soften it, that text is in the "Who's using it" section of `index.html`
 and the stats note in `about.html`.
 
-### 5. Analytics (optional)
+### 4. Analytics (optional)
 
 If you want GA on this site too, paste the same gtag snippet used in the app's
 `index.html` into the `<head>` of each page.
+
+## Voice rules
+
+The copy follows Dean's voice guide. If you edit or add anything, keep to these:
+
+- **No em dashes.** Use commas, full stops, or restructure the sentence.
+- **No emojis.** Card accents are CSS gradient bars (`.card .icon`), not glyphs.
+- **One exclamation mark per page, maximum.** Currently zero.
+- Story first, photo second. Lead with what happened, not what the screenshot shows.
+- Understate. State the achievement plainly, then undercut it.
+- Name places specifically: Greymouth, the Coast, Oban, Twizel, Rapahoe.
+- Avoid: blessed, grateful, humbled, epic, content, check out, don't forget to follow,
+  and marketing speak generally.
+
+A checker for the mechanical rules:
+
+```bash
+cd marketing-site
+grep -l 'mdash\|—' *.html          # should return nothing
+grep -o '!' *.html | sort | uniq -c  # one per page at most
+```
 
 ## Figures used on the site
 
