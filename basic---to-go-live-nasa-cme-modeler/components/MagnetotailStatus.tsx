@@ -18,6 +18,35 @@
 import React, { useMemo, useEffect, useRef, useState, useCallback } from 'react';
 import { computeOvalBoundary as computeOvalBoundaryPhysics, avgBy30m, loadingMinutesFromSeries } from '../utils/ovalPhysics';
 
+// ── Particle sprite ────────────────────────────────────────────────────────
+// The CME visualisation draws its particles as a soft radial-gradient sprite
+// blended additively (see createParticleTexture in SimulationCanvas). The
+// magnetotail used short line trails, which read as a different scene. This
+// builds the same sprite, with the same gradient stops, tinted per particle
+// state, so both scenes look like the same simulation. Motion is unchanged:
+// the particles still stream, deflect, get captured and burst exactly as before,
+// they are just drawn as glowing points rather than strokes.
+const SPRITE_PX = 64;
+const spriteCache = new Map<string, HTMLCanvasElement>();
+function particleSprite(rgb: string): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null;
+  const hit = spriteCache.get(rgb);
+  if (hit) return hit;
+  const c = document.createElement('canvas');
+  c.width = SPRITE_PX; c.height = SPRITE_PX;
+  const x = c.getContext('2d');
+  if (!x) return null;
+  const h = SPRITE_PX / 2;
+  const g = x.createRadialGradient(h, h, 0, h, h, h);
+  g.addColorStop(0,   `rgba(${rgb},1)`);
+  g.addColorStop(0.2, `rgba(${rgb},0.8)`);
+  g.addColorStop(1,   `rgba(${rgb},0)`);
+  x.fillStyle = g;
+  x.fillRect(0, 0, SPRITE_PX, SPRITE_PX);
+  spriteCache.set(rgb, c);
+  return c;
+}
+
 const EARTH_TEX = 'https://upload.wikimedia.org/wikipedia/commons/c/c3/Solarsystemscope_texture_2k_earth_daymap.jpg';
 
 // ---- Types ----
@@ -565,23 +594,33 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
         }
       }
 
-      // Particles (short additive trails)
+      // Particles, drawn as CME-style additive sprites.
+      // Each one is the head plus two fainter sprites stepped back along its
+      // travel vector, which keeps the sense of speed the old trails gave while
+      // using the softer look from the CME scene.
       ctx!.globalCompositeOperation = 'lighter';
-      ctx!.lineCap = 'round';
       for (let i = 0; i < Math.min(parts.length, targetN + 40); i++) {
         const p = parts[i];
-        let col: string, w: number, a: number;
-        if (p.st === 'wind') { col = '255,205,140'; w = 1.1; a = 0.5; }
-        else if (p.st === 'captured') { col = '242,201,106'; w = 1.5; a = 0.75; }
-        else if (p.st === 'burstE') { col = '150,255,190'; w = 1.9; a = 0.95; }
-        else { col = '255,190,150'; w = 1.6; a = 0.8; }
-        ctx!.strokeStyle = `rgba(${col},${a})`;
-        ctx!.lineWidth = w;
-        ctx!.beginPath();
-        ctx!.moveTo(p.px, p.py);
-        ctx!.lineTo(p.x, p.y);
-        ctx!.stroke();
+        let col: string, r: number, a: number;
+        if (p.st === 'wind') { col = '255,205,140'; r = 3.1; a = 0.50; }
+        else if (p.st === 'captured') { col = '242,201,106'; r = 4.2; a = 0.75; }
+        else if (p.st === 'burstE') { col = '150,255,190'; r = 5.4; a = 0.95; }
+        else { col = '255,190,150'; r = 4.6; a = 0.80; }
+        const sp = particleSprite(col);
+        if (!sp) continue;
+        // Overlapping steps back along the travel vector. Spacing is kept tight
+        // so a fast particle reads as one smeared streak rather than a row of
+        // separate dots.
+        const dx = p.x - p.px, dy = p.y - p.py;
+        const STEPS = 5;
+        for (let k = 0; k < STEPS; k++) {
+          const t = (k / STEPS) * 0.6;           // 0 = head, then back along the trail
+          const rr = r * (1 - t * 0.5);
+          ctx!.globalAlpha = a * (1 - t * 1.1);
+          ctx!.drawImage(sp, p.x - dx * t - rr, p.y - dy * t - rr, rr * 2, rr * 2);
+        }
       }
+      ctx!.globalAlpha = 1;
       ctx!.globalCompositeOperation = 'source-over';
 
       // Earth: atmosphere rim + globe sprite
