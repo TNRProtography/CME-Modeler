@@ -85,15 +85,15 @@ function useInView<T extends HTMLElement>(): [React.RefObject<T>, boolean] {
  * Shared: the app's 3D scene, configured per embed.
  * ------------------------------------------------------------------ */
 function SceneEmbed({
-  focus, showHss, showExtraPlanets, caption
-}: { focus: FocusTarget | null; showHss: boolean; showExtraPlanets: boolean; caption: string }) {
+  showHss, showExtraPlanets, caption
+}: { showHss: boolean; showExtraPlanets: boolean; caption: string }) {
   const [hostRef, inView] = useInView<HTMLDivElement>();
   const [libsReady, setLibsReady] = useState(false);
-  /* SimulationCanvas moves the camera in response to activeView *changing*, so
-     a constant prop leaves it at whatever it was built with. Mount as SIDE and
-     flip to TOP once the scene exists, which fires that effect and frames the
-     heliosphere from above the way the app does. */
-  const [view, setView] = useState(ViewMode.SIDE);
+  /* SIDE view with the Earth focus is the app's own "behind Earth, looking at
+     the Sun" camera (see moveCamera in SimulationCanvas: Sun -> Earth -> Camera).
+     That effect only runs when activeView or focusTarget change, and on mount the
+     scene does not exist yet, so the focus is applied once the libraries are up. */
+  const [focus, setFocus] = useState<FocusTarget | null>(null);
   const [cmeData, setCmeData] = useState<ProcessedCME[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -132,11 +132,12 @@ function SceneEmbed({
   const getClockElapsedTime = useCallback(() => (performance.now() - clockStart.current) / 1000, []);
   const resetClock = useCallback(() => { clockStart.current = performance.now(); }, []);
 
-  useEffect(() => {
-    if (!libsReady) return;
-    const t = setTimeout(() => setView(ViewMode.TOP), 600);
-    return () => clearTimeout(t);
-  }, [libsReady]);
+  /* Applying the focus on a timer was racy: moveCamera bails if the camera and
+     controls do not exist yet. onCameraReady is the component's own signal that
+     the scene is built, so the focus is applied from there instead. */
+  const handleCameraReady = useCallback(() => {
+    setFocus(f => (f === FocusTarget.EARTH ? f : FocusTarget.EARTH));
+  }, []);
 
   const noop = useCallback(() => {}, []);
   const setLabels = useCallback((_: PlanetLabelInfo[]) => {}, []);
@@ -149,7 +150,7 @@ function SceneEmbed({
         {error && <div className="embed-note">{error}</div>}
         {libsReady && <SimulationCanvas
           cmeData={cmeData}
-          activeView={view}
+          activeView={ViewMode.SIDE}
           focusTarget={focus}
           currentlyModeledCMEId={null}
           onCMEClick={noop as any}
@@ -161,7 +162,7 @@ function SceneEmbed({
           timelineMaxDate={maxDate}
           setPlanetMeshesForLabels={setLabels}
           setRendererDomElement={setDom}
-          onCameraReady={noop as any}
+          onCameraReady={handleCameraReady}
           getClockElapsedTime={getClockElapsedTime}
           resetClock={resetClock}
           onScrubberChangeByAnim={setScrub}
@@ -345,9 +346,9 @@ function ForecastEmbed() {
  * Mounting
  * ------------------------------------------------------------------ */
 const EMBEDS: Record<string, () => JSX.Element> = {
-  cme: () => <SceneEmbed focus={null} showHss={false} showExtraPlanets={true}
+  cme: () => <SceneEmbed showHss={false} showExtraPlanets={true}
     caption="The app's own 3D scene, running live on NASA's current CME catalogue" />,
-  coronalhole: () => <SceneEmbed focus={FocusTarget.SUN} showHss={true} showExtraPlanets={false}
+  coronalhole: () => <SceneEmbed showHss={true} showExtraPlanets={false}
     caption="Coronal holes detected in your browser from the live SUVI image, with their high speed streams on the Parker spiral" />,
   magnetotail: () => <MagnetotailEmbed />,
   forecast: () => <ForecastEmbed />

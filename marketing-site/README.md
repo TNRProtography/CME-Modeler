@@ -167,6 +167,17 @@ not a copy that can drift.
 
 The scenes loop with no controls: 3 days of history, 4 days ahead, 5x speed.
 
+The scenes use the app's own **behind Earth, looking at the Sun** camera
+(`ViewMode.SIDE` + `FocusTarget.EARTH`, the `Sun -> Earth -> Camera` branch of
+`moveCamera`). That effect only runs when `activeView` or `focusTarget` change,
+and on mount the camera does not exist yet, so the focus is applied from
+`onCameraReady` rather than on a timer.
+
+`functions/api/proxy/image.js` is a Pages Function mirroring the app worker's
+image proxy, including its host allow list. The coronal hole detector fetches
+the SUVI image same-origin so `getImageData()` can read it; without this the
+request 404s on this domain.
+
 **Two things this required, both worth knowing about.**
 
 *Tailwind.* The app's components are written with Tailwind classes. Without it
