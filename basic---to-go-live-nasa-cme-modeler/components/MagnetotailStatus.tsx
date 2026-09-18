@@ -47,6 +47,10 @@ function particleSprite(rgb: string): HTMLCanvasElement | null {
   return c;
 }
 
+// Same panorama the CME visualisation uses as its scene background, so the two
+// scenes sit against the same sky.
+const MILKY_WAY_TEX = 'https://upload.wikimedia.org/wikipedia/commons/6/60/ESO_-_Milky_Way.jpg';
+
 const EARTH_TEX = 'https://upload.wikimedia.org/wikipedia/commons/c/c3/Solarsystemscope_texture_2k_earth_daymap.jpg';
 
 // ---- Types ----
@@ -330,6 +334,17 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
   }, [ovalBound, score, isSnappingLive]);
 
   // ── Canvas scene ──
+  const milkyWayRef = useRef<HTMLImageElement | null>(null);
+  const milkyWayReadyRef = useRef(false);
+  useEffect(() => {
+    if (typeof Image === 'undefined') return;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => { milkyWayRef.current = img; milkyWayReadyRef.current = true; };
+    img.src = MILKY_WAY_TEX;
+    return () => { img.onload = null; };
+  }, []);
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [reducedMotion, setReducedMotion] = useState(false);
@@ -530,6 +545,23 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
       bg.addColorStop(0, '#0a0c14'); bg.addColorStop(0.5, '#05070e'); bg.addColorStop(1, '#03040a');
       ctx!.fillStyle = bg;
       ctx!.fillRect(0, 0, W, H);
+
+      // Milky Way backdrop, drawn over the base gradient and under everything
+      // else. Scaled to cover, tiled horizontally so the slow drift wraps
+      // seamlessly, and held well back in opacity so the scene stays readable.
+      if (milkyWayReadyRef.current && milkyWayRef.current) {
+        const mw = milkyWayRef.current;
+        const sc = Math.max(W / mw.width, H / mw.height) * 1.08;
+        const dw = mw.width * sc, dh = mw.height * sc;
+        const dy = (H - dh) * 0.5;
+        const off = (elapsed * 1.1) % dw;
+        // Tune this one number if the backdrop competes with the tail glow.
+        // The real panorama's galactic core is bright, so it is held back.
+        ctx!.globalAlpha = 0.42;
+        ctx!.drawImage(mw, -off, dy, dw, dh);
+        ctx!.drawImage(mw, dw - off, dy, dw, dh);
+        ctx!.globalAlpha = 1;
+      }
 
       // Stars (parallax drift + twinkle)
       for (const st of stars) {
