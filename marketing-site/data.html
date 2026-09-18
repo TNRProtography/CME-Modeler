@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en-NZ">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Data Sources, Spot The Aurora</title>
+<meta name="description" content="Every number in the app traces to a real sensor. NASA IMAP, NOAA DSCOVR, GOES-18 and 19, GeoNet Eyrewell, NASA DONKI, SDO and more, with refresh rates and what each one is used for.">
+<link rel="canonical" href="https://about.spottheaurora.co.nz/data.html">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<meta name="author" content="TNR Protography">
+<meta name="theme-color" content="#0a0c0f">
+
+<meta property="og:locale" content="en_NZ">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Spot The Aurora">
+<meta property="og:title" content="Data Sources, Spot The Aurora">
+<meta property="og:description" content="Every number in the app traces to a real sensor. NASA IMAP, NOAA DSCOVR, GOES-18 and 19, GeoNet Eyrewell, NASA DONKI, SDO and more, with refresh rates and what each one is used for.">
+<meta property="og:url" content="https://about.spottheaurora.co.nz/data.html">
+<meta property="og:image" content="https://spottheaurora.co.nz/background-aurora.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Data Sources, Spot The Aurora">
+<meta name="twitter:description" content="Every number in the app traces to a real sensor. NASA IMAP, NOAA DSCOVR, GOES-18 and 19, GeoNet Eyrewell, NASA DONKI, SDO and more, with refresh rates and what each one is used for.">
+<meta name="twitter:image" content="https://spottheaurora.co.nz/background-aurora.jpg">
+
+<link rel="icon" type="image/png" href="https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/SpotTheAuroraLogo.png">
+<link rel="apple-touch-icon" href="https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/SpotTheAuroraLogo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap nav">
+    <a class="brand" href="/">
+      <img src="https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/SpotTheAuroraLogo.png" alt="Spot The Aurora logo" width="32" height="32">
+      <span>Spot The Aurora<small>New Zealand</small></span>
+    </a>
+    <button class="nav-toggle" aria-label="Menu" aria-expanded="false" onclick="var n=document.getElementById('nav');n.classList.toggle('open');this.setAttribute('aria-expanded',n.classList.contains('open'))"><svg width="18" height="14" viewBox="0 0 18 14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M1 1h16M1 7h16M1 13h16"/></svg></button>
+    <nav class="nav-links" id="nav">
+      <a href="/features.html">Features</a>
+      <a href="/how-it-works.html">How It Works</a>
+      <a href="/data.html" class="active">Data Sources</a>
+      <a href="/faq.html">FAQ</a>
+      <a href="/about.html">About</a>
+      <a class="btn btn-primary btn-sm" href="https://www.spottheaurora.co.nz" target="_blank" rel="noopener">Open the App</a>
+    </nav>
+  </div>
+</header>
+<section class="hero" style="padding-bottom:40px">
+  <div class="hero-bg"></div>
+  <div class="wrap">
+    <span class="eyebrow"><span class="dot"></span> Full transparency</span>
+    <h1>Every number comes from a real sensor.</h1>
+    <p class="lead">No made up indices, no unexplained proprietary magic, no numbers that exist only to look impressive. Here is every data source in the app, what it contributes, and how often it updates.</p>
+  </div>
+</section>
+
+<section class="alt">
+  <div class="wrap">
+    <h2>Forecast page</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Source</th><th>What it provides</th><th>Refresh</th></tr></thead>
+        <tbody>
+          <tr><td><strong>NASA IMAP</strong><br><span class="muted">L1, 1.5M km upsun</span></td><td>Primary real-time solar wind: speed, density, temperature, and the magnetic field components Bx, By, Bt and Bz.</td><td>60 s</td></tr>
+          <tr><td><strong>NOAA DSCOVR</strong><br><span class="muted">L1 real-time solar wind</span></td><td>Backup solar wind and magnetic field feed. Every data point in the app is labelled with which spacecraft it came from.</td><td>60 s</td></tr>
+          <tr><td><strong>NOAA GOES-18 &amp; GOES-19</strong></td><td>Hemispheric power , the auroral energy in gigawatts being deposited into the ionosphere. The two satellites are averaged.</td><td>60 s</td></tr>
+          <tr><td><strong>GeoNet Tilde , Eyrewell (EY2M)</strong><br><span class="muted">Canterbury, New Zealand</span></td><td>One-minute rate of change of the horizontal magnetic field. Local NZ ground truth, and the source of magnetic bay onset detection.</td><td>60 s</td></tr>
+          <tr><td><strong>NASA DONKI</strong></td><td>Interplanetary shock and geomagnetic storm events, used for the alert banner.</td><td>60 s</td></tr>
+          <tr><td><strong>OpenWeatherMap</strong></td><td>Seven-day hourly cloud cover, moon phase and illumination, moonrise and moonset, sunrise and sunset.</td><td>On demand</td></tr>
+          <tr><td><strong>Windy.com</strong></td><td>The interactive ECMWF cloud-cover map overlay.</td><td>Live</td></tr>
+          <tr><td><strong>NZ camera operators</strong><br><span class="muted">Southloop, Roundshot, TrafficNZ, MetData, Horizons Regional Council, Primo</span></td><td>Seven live camera feeds: Oban, Queenstown, Twizel, Taylors Mistake, Opiki, Rangitikei and New&nbsp;Plymouth.</td><td>Live</td></tr>
+          <tr><td><strong>You and everyone else</strong></td><td>Community aurora sighting reports. Naked eye, phone, camera, nothing, or clouded out, on the live map and feeding into the Now forecast.</td><td>Live</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Solar Activity page</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Source</th><th>What it provides</th><th>Used for</th></tr></thead>
+        <tbody>
+          <tr><td><strong>NOAA GOES X-ray sensors</strong></td><td>24 hours of X-ray flux across two energy bands, at five-minute cadence.</td><td>The flux chart and A/B/C/M/X flare classification</td></tr>
+          <tr><td><strong>NOAA GOES proton sensors</strong></td><td>Proton flux at the &ge;10, &ge;50 and &ge;100&nbsp;MeV channels.</td><td>Proton flux chart and S-scale radiation storm threshold</td></tr>
+          <tr><td><strong>NASA DONKI</strong></td><td>The official flare catalogue. Class, begin, peak and end times, source location, active region, and any linked CME.</td><td>Flare list, chart annotations, and the jump-to-CME button</td></tr>
+          <tr><td><strong>NOAA solar region reports</strong></td><td>The authoritative list of active regions: number, position, area, classification, spot count and magnetic class.</td><td>The sunspot tracker</td></tr>
+          <tr><td><strong>NOAA sunspot report</strong></td><td>Per-region M-class, X-class and proton flare probabilities.</td><td>Sunspot detail panels</td></tr>
+          <tr><td><strong>SDO/HMI via JSOC Stanford</strong><br><span class="muted">NASA SDO as fallback</span></td><td>Live solar disk imagery in three modes at up to 4096&nbsp;px: colourised magnetogram, magnetogram, intensitygram.</td><td>Sunspot tracker imagery and fullscreen zoom</td></tr>
+          <tr><td><strong>NOAA SUVI &amp; CCOR-1</strong></td><td>Extreme-ultraviolet coronal imagery and coronagraph video.</td><td>Coronal imagery panel and CME watching</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="alt">
+  <div class="wrap">
+    <h2>CME Visualization page</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Source</th><th>What it provides</th><th>Used for</th></tr></thead>
+        <tbody>
+          <tr><td><strong>NASA DONKI CME catalogue</strong></td><td>Every catalogued CME with its start time, speed, half angle and direction, using the most accurate available analysis for each event.</td><td>The 3D CME objects, the CME list, and the impact forecast</td></tr>
+          <tr><td><strong>NASA IMAP / NOAA DSCOVR</strong></td><td>The current ambient solar wind speed at L1.</td><td>Calibrating the drag model so CME deceleration matches real conditions</td></tr>
+          <tr><td><strong>NOAA GOES-19 SUVI 195&#8491;</strong></td><td>The latest extreme-ultraviolet image of the solar disk.</td><td>Input to the in-browser coronal hole detection pipeline</td></tr>
+          <tr><td><strong>Drag-based model</strong><br><span class="muted">Vr&scaron;nak et&nbsp;al. (2013)</span></td><td>The published physics for how a CME decelerates or accelerates toward the ambient wind speed as it crosses the heliosphere.</td><td>CME trajectories and arrival time estimates</td></tr>
+          <tr><td><strong>IGRF-13</strong></td><td>The International Geomagnetic Reference Field , the standard model of Earth's magnetic field.</td><td>Geomagnetic latitude conversion for the oval and location-aware alerts</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="section-head">
+      <span class="eyebrow violet">Under the hood</span>
+      <h2>How it all gets to you</h2>
+    </div>
+    <div class="grid g3">
+      <div class="card">
+        <span class="icon"></span>
+        <h3>Edge workers, not a server</h3>
+        <p>A set of Cloudflare Workers running at the edge handle the forecast scoring, substorm risk, solar wind merging, the NASA proxy, notifications, coronal hole history and announcements. There's no server sitting in a rack somewhere waiting to fall over.</p>
+      </div>
+      <div class="card">
+        <span class="icon"></span>
+        <h3>Nobody hammers NASA</h3>
+        <p>Your browser never calls NOAA or NASA directly. Everything is fetched once, cached at the edge and served from there. That protects their rate limits and means the app keeps working even when an upstream source has an outage.</p>
+      </div>
+      <div class="card">
+        <span class="icon"></span>
+        <h3>Freshness you can check</h3>
+        <p>Every panel carries a last-updated time, and the app flags a source when it goes stale rather than quietly showing you an old number. If something upstream is down, you'll know.</p>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:34px">
+      <p class="mb0"><strong>Thanks</strong> to NOAA SWPC, NASA, GeoNet and the New Zealand camera operators who make this data publicly available. None of this would exist without open science. This project is not affiliated with or endorsed by any of them.</p>
+    </div>
+  </div>
+</section>
+<section class="cta-band">
+  <div class="wrap narrow">
+    <h2>Worth a look before you commit to the drive.</h2>
+    <p class="lead">Free, no ads, made on the Coast. Open it in your browser, add it to your home screen, turn the alerts on, and stop missing nights you never knew were happening.</p>
+    <div class="btn-row mt3">
+      <a class="btn btn-primary" href="https://www.spottheaurora.co.nz" target="_blank" rel="noopener">Open Spot The Aurora</a>
+      <a class="btn btn-ghost" href="/features.html">See what it does</a>
+    </div>
+  </div>
+</section>
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a class="brand" href="/" style="margin-bottom:14px">
+          <img src="https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/SpotTheAuroraLogo.png" alt="" width="32" height="32">
+          <span>Spot The Aurora<small>New Zealand</small></span>
+        </a>
+        <p class="muted">A live aurora forecast for New Zealand, built in Greymouth by <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener">TNR Protography</a>. Made by a chaser, for chasers.</p>
+      </div>
+      <div>
+        <h4>The App</h4>
+        <ul>
+          <li><a href="https://www.spottheaurora.co.nz" target="_blank" rel="noopener">Open the app</a></li>
+          <li><a href="/features.html">Features</a></li>
+          <li><a href="/how-it-works.html">How it works</a></li>
+          <li><a href="/data.html">Data sources</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Help</h4>
+        <ul>
+          <li><a href="/faq.html">FAQ</a></li>
+          <li><a href="/about.html">About &amp; support</a></li>
+          <li><a href="https://www.tnrprotography.co.nz/spot-the-aurora---change-log" target="_blank" rel="noopener">Change log</a></li>
+          <li><a href="mailto:help@spottheaurora.co.nz">help@spottheaurora.co.nz</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Community</h4>
+        <ul>
+          <li><a href="https://www.facebook.com/spot.the.aurora" target="_blank" rel="noopener">Facebook</a></li>
+          <li><a href="https://buymeacoffee.com/spottheaurora" target="_blank" rel="noopener">Buy me a coffee</a></li>
+          <li><a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener">TNR Protography</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-base">
+      <span>&copy; <span id="yr">2026</span> TNR Protography. Made in New Zealand.</span>
+      <span>Data from NOAA SWPC, NASA, GeoNet and others. Not an official warning service.</span>
+    </div>
+  </div>
+  <script>document.getElementById('yr').textContent=new Date().getFullYear();</script>
+</footer>
+</body>
+</html>
