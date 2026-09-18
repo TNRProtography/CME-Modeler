@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Features, Spot The Aurora</title>
-<meta name="description" content="Everything in New Zealand's aurora app: location based forecast, three visibility tiers, moon aware alerts, 3D CME visualisation, live coronal hole detection, magnetosphere visualisations, sightings map and live cameras.">
+<meta name="description" content="Everything in New Zealand's aurora app: location based forecast, three visibility tiers, moon aware scoring, 3D CME visualisation, live coronal hole detection, magnetosphere visualisations, sightings map and live cameras.">
 <link rel="canonical" href="https://about.spottheaurora.co.nz/features.html">
 <meta name="robots" content="index,follow,max-image-preview:large">
 <meta name="author" content="TNR Protography">
@@ -14,12 +14,12 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Spot The Aurora">
 <meta property="og:title" content="Features, Spot The Aurora">
-<meta property="og:description" content="Everything in New Zealand's aurora app: location based forecast, three visibility tiers, moon aware alerts, 3D CME visualisation, live coronal hole detection, magnetosphere visualisations, sightings map and live cameras.">
+<meta property="og:description" content="Everything in New Zealand's aurora app: location based forecast, three visibility tiers, moon aware scoring, 3D CME visualisation, live coronal hole detection, magnetosphere visualisations, sightings map and live cameras.">
 <meta property="og:url" content="https://about.spottheaurora.co.nz/features.html">
 <meta property="og:image" content="https://spottheaurora.co.nz/background-aurora.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Features, Spot The Aurora">
-<meta name="twitter:description" content="Everything in New Zealand's aurora app: location based forecast, three visibility tiers, moon aware alerts, 3D CME visualisation, live coronal hole detection, magnetosphere visualisations, sightings map and live cameras.">
+<meta name="twitter:description" content="Everything in New Zealand's aurora app: location based forecast, three visibility tiers, moon aware scoring, 3D CME visualisation, live coronal hole detection, magnetosphere visualisations, sightings map and live cameras.">
 <meta name="twitter:image" content="https://spottheaurora.co.nz/background-aurora.jpg">
 
 <link rel="icon" type="image/png" href="https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/SpotTheAuroraLogo.png">
@@ -43,6 +43,7 @@
       <a href="/data.html">Data Sources</a>
       <a href="/faq.html">FAQ</a>
       <a href="/about.html">About</a>
+      <a href="/changelog.html">Change log</a>
       <a class="btn btn-primary btn-sm" href="https://www.spottheaurora.co.nz" target="_blank" rel="noopener">Open the App</a>
     </nav>
   </div>
@@ -57,7 +58,6 @@
       <span class="pill">Forecast</span>
       <span class="pill">Solar Activity</span>
       <span class="pill">CME Visualization</span>
-      <span class="pill">Alerts</span>
       <span class="pill">Sightings map</span>
       <span class="pill">Live cameras</span>
     </div>
@@ -208,39 +208,6 @@
   </div>
 </section>
 
-<section id="alerts">
-  <div class="wrap">
-    <div class="section-head">
-      <span class="eyebrow">Notifications</span>
-      <h2>Ten alert categories, all opt in</h2>
-      <p class="lead">Turn on only what you want. The three visibility tiers use your location and the real geometry of the auroral oval. Everything else fires on measured events at the satellites.</p>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Alert</th><th>Goes when</th><th>Uses your location</th></tr></thead>
-        <tbody>
-          <tr><td><strong>Naked eye</strong></td><td>The oval boundary comes within about 5 degrees geomagnetic latitude of you, tightening to 12 degrees under a bright moon.</td><td>Yes</td></tr>
-          <tr><td><strong>Phone camera</strong></td><td>The oval reaches phone night mode range for your position. Suppressed above 80 percent moon.</td><td>Yes</td></tr>
-          <tr><td><strong>Camera or DSLR</strong></td><td>The oval reaches long exposure range for your position. Switched off entirely above 80 percent moon.</td><td>Yes</td></tr>
-          <tr><td><strong>Overnight watch</strong></td><td>One evening summary between 6 and 9pm NZ time, at the standard you pick. Every night, or only camera, phone or naked eye grade.</td><td>NZ timezone</td></tr>
-          <tr><td><strong>Solar flare</strong></td><td>A flare is confirmed at M1.0 or above, meaning still above threshold five minutes into its decline, so you don't get false peaks.</td><td>No</td></tr>
-          <tr><td><strong>Fast forward shock</strong></td><td>Speed, density, temperature and field strength all jump together at L1. The classic CME arrival signature.</td><td>No</td></tr>
-          <tr><td><strong>Slow forward shock</strong></td><td>Weaker compression, often a stream interaction region or the flank of a CME.</td><td>No</td></tr>
-          <tr><td><strong>Fast reverse shock</strong></td><td>The trailing edge of a CME or the back of a high speed stream.</td><td>No</td></tr>
-          <tr><td><strong>Slow reverse shock</strong></td><td>An uncommon trailing rarefaction.</td><td>No</td></tr>
-          <tr><td><strong>Announcements</strong></td><td>Occasional messages from Dean. Major events, new features, outages.</td><td>No</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="callout">
-      <p><strong>Built to not annoy you.</strong> Visibility alerts only escalate, so once you've had the camera tier you won't get it again that night unless conditions improve to the next tier. Shock alerts have a four hour cooldown, each visibility tier has a two hour cooldown per person, and the overnight summary is capped at one a day.</p>
-    </div>
-    <div class="callout violet">
-      <p><strong>One detail if you care about privacy.</strong> Notification payloads are encrypted end to end to your device. The whole Web Push stack was written from scratch rather than handed to a third party push service, so nobody in the middle, including us, can read the contents of your alerts.</p>
-    </div>
-  </div>
-</section>
-
 <section class="alt">
   <div class="wrap">
     <div class="section-head center">
@@ -260,7 +227,7 @@
 <section class="cta-band">
   <div class="wrap narrow">
     <h2>Worth a look before you commit to the drive.</h2>
-    <p class="lead">Free, no ads, made on the Coast. Open it in your browser, add it to your home screen, turn the alerts on, and stop missing nights you never knew were happening.</p>
+    <p class="lead">Free, no ads, made on the Coast. Open it in your browser, add it to your home screen, and stop missing nights you never knew were happening.</p>
     <div class="btn-row mt3">
       <a class="btn btn-primary" href="https://www.spottheaurora.co.nz" target="_blank" rel="noopener">Open Spot The Aurora</a>
       <a class="btn btn-ghost" href="/features.html">See what it does</a>
@@ -291,7 +258,7 @@
         <ul>
           <li><a href="/faq.html">FAQ</a></li>
           <li><a href="/about.html">About &amp; support</a></li>
-          <li><a href="https://www.tnrprotography.co.nz/spot-the-aurora---change-log" target="_blank" rel="noopener">Change log</a></li>
+          <li><a href="/changelog.html">Change log</a></li>
           <li><a href="mailto:help@spottheaurora.co.nz">help@spottheaurora.co.nz</a></li>
         </ul>
       </div>

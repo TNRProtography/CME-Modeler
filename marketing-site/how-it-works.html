@@ -43,6 +43,7 @@
       <a href="/data.html">Data Sources</a>
       <a href="/faq.html">FAQ</a>
       <a href="/about.html">About</a>
+      <a href="/changelog.html">Change log</a>
       <a class="btn btn-primary btn-sm" href="https://www.spottheaurora.co.nz" target="_blank" rel="noopener">Open the App</a>
     </nav>
   </div>
@@ -95,7 +96,7 @@
         <p>The base score is calculated for Greymouth on the West Coast. If you allow location access, it's adjusted for your actual position, roughly <strong>0.2 percent per 10 km</strong> of latitude difference. Further south, closer to the oval, and your score goes up. Further north and it comes down.</p>
         <p>It's deliberately conservative. The point isn't to promise Invercargill twice as much aurora as Auckland. It's to stop a single national number from misleading people at either end of the country.</p>
         <div class="callout">
-          <p class="mb0"><strong>Your location never leaves your control.</strong> It's used on your device for the displayed score, and sent to the alert system so location aware notifications work. It is never logged, sold, or shared with a third party. Decline it and the app still works, you just get the Greymouth reference score.</p>
+          <p class="mb0"><strong>Your location never leaves your control.</strong> It's used on your device for the displayed score. It is never logged, sold, or shared with a third party. Decline it and the app still works, you just get the Greymouth reference score.</p>
         </div>
       </div>
       <div>
@@ -160,44 +161,14 @@
         <span class="eyebrow">Step four</span>
         <h2>And then the moon gets a veto.</h2>
         <p>This is the part other apps miss, and it's the difference between a good night and a wasted tank of petrol. A 40 percent aurora under a new moon is a lovely display. The same 40 percent under a full moon overhead is a faintly green sky you'll struggle to convince anyone about.</p>
-        <p>The app tracks moon illumination and rise and set times, shows them on the forecast chart and the moon arc, and folds them into the alert thresholds:</p>
+        <p>The app tracks moon illumination and rise and set times, shows them on the forecast chart and the moon arc, and folds them into what a given score actually means:</p>
         <ul class="list">
           <li><strong>Under 20 percent.</strong> Standard thresholds. The sky is dark, everything counts.</li>
-          <li><strong>40 to 60 percent.</strong> Thresholds shift conservatively. The naked eye alert now needs the oval within 8 degrees instead of 5.</li>
-          <li><strong>60 to 80 percent.</strong> The phone alert takes over the camera tier's role. A long exposure will still get it, but you need more.</li>
-          <li><strong>Above 80 percent.</strong> Camera tier alerts switch off entirely and naked eye needs the oval within 12 degrees. If we wake you on a full moon night, it's because it's genuinely worth it.</li>
+          <li><strong>40 to 60 percent.</strong> Thresholds shift conservatively. Naked eye now needs the oval within 8 degrees instead of 5.</li>
+          <li><strong>60 to 80 percent.</strong> The phone tier takes over the camera tier's role. A long exposure will still get it, but you need more.</li>
+          <li><strong>Above 80 percent.</strong> The camera tier drops out entirely and naked eye needs the oval within 12 degrees. On a full moon night the bar is deliberately high.</li>
         </ul>
       </div>
-    </div>
-  </div>
-</section>
-
-<section class="alt" id="alerts">
-  <div class="wrap">
-    <div class="section-head">
-      <span class="eyebrow">The alert geometry</span>
-      <h2>Why your alerts differ from your mate's in Dunedin</h2>
-      <p class="lead">Blanket alerts are why people turn aurora notifications off. Here's what happens instead.</p>
-    </div>
-    <div class="grid g3">
-      <div class="card">
-        <span class="icon"></span>
-        <h3>Where the oval sits</h3>
-        <p>From the coupling averages, the app estimates how far equatorward the oval's boundary has pushed, and shifts it further equatorward when a substorm onset is confirmed on the ground.</p>
-      </div>
-      <div class="card">
-        <span class="icon"></span>
-        <h3>Where you really are</h3>
-        <p>Your position is converted from geographic to geomagnetic latitude using the standard field model. The magnetic pole isn't the geographic pole, and at our longitude that difference is big enough to misplace the oval by degrees if you ignore it.</p>
-      </div>
-      <div class="card">
-        <span class="icon"></span>
-        <h3>How far the glow reaches</h3>
-        <p>Aurora is visible well equatorward of the oval itself, and how far depends on how strong the display is. That horizon is scaled by the current score, then compared against your position to decide which tier, if any, to alert you at.</p>
-      </div>
-    </div>
-    <div class="callout violet">
-      <p class="mb0"><strong>What that means in practice.</strong> On a moderate night someone in Invercargill gets a naked eye alert, someone in Christchurch gets a phone alert, someone in Wellington gets a camera alert, and someone in Auckland gets nothing, because there's nothing for them to see. Everyone's phone is telling them the truth about their own sky.</p>
     </div>
   </div>
 </section>
@@ -222,7 +193,7 @@
 <section class="cta-band">
   <div class="wrap narrow">
     <h2>Worth a look before you commit to the drive.</h2>
-    <p class="lead">Free, no ads, made on the Coast. Open it in your browser, add it to your home screen, turn the alerts on, and stop missing nights you never knew were happening.</p>
+    <p class="lead">Free, no ads, made on the Coast. Open it in your browser, add it to your home screen, and stop missing nights you never knew were happening.</p>
     <div class="btn-row mt3">
       <a class="btn btn-primary" href="https://www.spottheaurora.co.nz" target="_blank" rel="noopener">Open Spot The Aurora</a>
       <a class="btn btn-ghost" href="/features.html">See what it does</a>
@@ -253,7 +224,7 @@
         <ul>
           <li><a href="/faq.html">FAQ</a></li>
           <li><a href="/about.html">About &amp; support</a></li>
-          <li><a href="https://www.tnrprotography.co.nz/spot-the-aurora---change-log" target="_blank" rel="noopener">Change log</a></li>
+          <li><a href="/changelog.html">Change log</a></li>
           <li><a href="mailto:help@spottheaurora.co.nz">help@spottheaurora.co.nz</a></li>
         </ul>
       </div>

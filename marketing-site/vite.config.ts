@@ -26,6 +26,7 @@ export default defineConfig({
         data: resolve(__dirname, 'data.html'),
         faq: resolve(__dirname, 'faq.html'),
         about: resolve(__dirname, 'about.html'),
+        changelog: resolve(__dirname, 'changelog.html'),
         notfound: resolve(__dirname, '404.html')
       }
     }

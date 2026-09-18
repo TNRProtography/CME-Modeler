@@ -43,6 +43,7 @@
       <a href="/data.html" class="active">Data Sources</a>
       <a href="/faq.html">FAQ</a>
       <a href="/about.html">About</a>
+      <a href="/changelog.html">Change log</a>
       <a class="btn btn-primary btn-sm" href="https://www.spottheaurora.co.nz" target="_blank" rel="noopener">Open the App</a>
     </nav>
   </div>
@@ -67,7 +68,7 @@
           <tr><td><strong>NOAA DSCOVR</strong><br><span class="muted">L1 real-time solar wind</span></td><td>Backup solar wind and magnetic field feed. Every data point in the app is labelled with which spacecraft it came from.</td><td>60 s</td></tr>
           <tr><td><strong>NOAA GOES-18 &amp; GOES-19</strong></td><td>Hemispheric power , the auroral energy in gigawatts being deposited into the ionosphere. The two satellites are averaged.</td><td>60 s</td></tr>
           <tr><td><strong>GeoNet Tilde , Eyrewell (EY2M)</strong><br><span class="muted">Canterbury, New Zealand</span></td><td>One-minute rate of change of the horizontal magnetic field. Local NZ ground truth, and the source of magnetic bay onset detection.</td><td>60 s</td></tr>
-          <tr><td><strong>NASA DONKI</strong></td><td>Interplanetary shock and geomagnetic storm events, used for the alert banner.</td><td>60 s</td></tr>
+          <tr><td><strong>NASA DONKI</strong></td><td>Interplanetary shock and geomagnetic storm events, shown in the solar wind summary.</td><td>60 s</td></tr>
           <tr><td><strong>OpenWeatherMap</strong></td><td>Seven-day hourly cloud cover, moon phase and illumination, moonrise and moonset, sunrise and sunset.</td><td>On demand</td></tr>
           <tr><td><strong>Windy.com</strong></td><td>The interactive ECMWF cloud-cover map overlay.</td><td>Live</td></tr>
           <tr><td><strong>NZ camera operators</strong><br><span class="muted">Southloop, Roundshot, TrafficNZ, MetData, Horizons Regional Council, Primo</span></td><td>Seven live camera feeds: Oban, Queenstown, Twizel, Taylors Mistake, Opiki, Rangitikei and New&nbsp;Plymouth.</td><td>Live</td></tr>
@@ -109,7 +110,7 @@
           <tr><td><strong>NASA IMAP / NOAA DSCOVR</strong></td><td>The current ambient solar wind speed at L1.</td><td>Calibrating the drag model so CME deceleration matches real conditions</td></tr>
           <tr><td><strong>NOAA GOES-19 SUVI 195&#8491;</strong></td><td>The latest extreme-ultraviolet image of the solar disk.</td><td>Input to the in-browser coronal hole detection pipeline</td></tr>
           <tr><td><strong>Drag-based model</strong><br><span class="muted">Vr&scaron;nak et&nbsp;al. (2013)</span></td><td>The published physics for how a CME decelerates or accelerates toward the ambient wind speed as it crosses the heliosphere.</td><td>CME trajectories and arrival time estimates</td></tr>
-          <tr><td><strong>IGRF-13</strong></td><td>The International Geomagnetic Reference Field , the standard model of Earth's magnetic field.</td><td>Geomagnetic latitude conversion for the oval and location-aware alerts</td></tr>
+          <tr><td><strong>IGRF-13</strong></td><td>The International Geomagnetic Reference Field , the standard model of Earth's magnetic field.</td><td>Geomagnetic latitude conversion for the auroral oval</td></tr>
         </tbody>
       </table>
     </div>
@@ -126,7 +127,7 @@
       <div class="card">
         <span class="icon"></span>
         <h3>Edge workers, not a server</h3>
-        <p>A set of Cloudflare Workers running at the edge handle the forecast scoring, substorm risk, solar wind merging, the NASA proxy, notifications, coronal hole history and announcements. There's no server sitting in a rack somewhere waiting to fall over.</p>
+        <p>A set of Cloudflare Workers running at the edge handle the forecast scoring, substorm risk, solar wind merging, the NASA proxy, coronal hole history and announcements. There's no server sitting in a rack somewhere waiting to fall over.</p>
       </div>
       <div class="card">
         <span class="icon"></span>
@@ -147,7 +148,7 @@
 <section class="cta-band">
   <div class="wrap narrow">
     <h2>Worth a look before you commit to the drive.</h2>
-    <p class="lead">Free, no ads, made on the Coast. Open it in your browser, add it to your home screen, turn the alerts on, and stop missing nights you never knew were happening.</p>
+    <p class="lead">Free, no ads, made on the Coast. Open it in your browser, add it to your home screen, and stop missing nights you never knew were happening.</p>
     <div class="btn-row mt3">
       <a class="btn btn-primary" href="https://www.spottheaurora.co.nz" target="_blank" rel="noopener">Open Spot The Aurora</a>
       <a class="btn btn-ghost" href="/features.html">See what it does</a>
@@ -178,7 +179,7 @@
         <ul>
           <li><a href="/faq.html">FAQ</a></li>
           <li><a href="/about.html">About &amp; support</a></li>
-          <li><a href="https://www.tnrprotography.co.nz/spot-the-aurora---change-log" target="_blank" rel="noopener">Change log</a></li>
+          <li><a href="/changelog.html">Change log</a></li>
           <li><a href="mailto:help@spottheaurora.co.nz">help@spottheaurora.co.nz</a></li>
         </ul>
       </div>

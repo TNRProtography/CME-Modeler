@@ -17,6 +17,7 @@ Edit the HTML directly.
 | `data.html` | Every data source with refresh rates |
 | `faq.html` | Frequently asked questions |
 | `about.html` | The story, the numbers, and the tip jar |
+| `changelog.html` | Every release, newest first |
 | `404.html` | Not-found page |
 | `assets/site.css` | The entire stylesheet |
 
@@ -222,6 +223,38 @@ into a shared module would remove the duplication entirely.
 Page backdrop on every page: a seeded starfield using the same mulberry32
 approach as `StarField.tsx`, drifting aurora curtains in the logo's colours, and
 a moon at the real current phase ported from `DriftingMoon.tsx`.
+
+## Change log
+
+`changelog.html` uses one template per release, and new entries must match it:
+
+```html
+<article class="release" id="v1-7">
+  <div class="release-head">
+    <span class="release-ver">v1.7</span>
+    <span class="release-tag">Latest</span>   <!-- newest release only -->
+    <span class="release-date">1 May 2026</span>
+  </div>
+  <h2>Short title, sentence case</h2>
+  <p>One or two lines on what the release was about.</p>
+  <h3>New</h3>      <ul class="list">...</ul>
+  <h3>Improved</h3> <ul class="list">...</ul>
+  <h3>Fixed</h3>    <ul class="list">...</ul>
+</article>
+```
+
+Newest first, `Latest` tag moves to the new entry, and only include the
+subsections that apply. Each bullet leads with a bold noun phrase, then a plain
+sentence. Voice rules below apply here too.
+
+## Notifications
+
+Push notifications are **not mentioned anywhere on this site**, by request.
+That covers alert categories, the alert geometry, moon-adjusted alert
+thresholds, per-person alerts and the "turn the alerts on" call to action, all
+of which were removed. If they come back, the relevant sections were on
+`index.html`, `features.html` (`#alerts`), `how-it-works.html` (`#alerts`) and
+`faq.html`, and are in the git history.
 
 ## Voice rules
 
