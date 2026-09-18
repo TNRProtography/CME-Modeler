@@ -140,6 +140,16 @@ function SceneEmbed({
 }: { showHss: boolean; showExtraPlanets: boolean; caption: string }) {
   const [hostRef, inView] = useInView<HTMLDivElement>();
   const [libsReady, setLibsReady] = useState(false);
+  /* Same live inputs the app hands the scene. bzSouth colours the Bz indicator,
+     and the measured wind speed calibrates the drag model, which is what makes a
+     CME decelerate correctly. Earth's day, normal, specular and cloud textures
+     and the auroral oval shader are built into SimulationCanvas itself and need
+     no props: the oval brightens on CME impact through its own uniforms. */
+  const fc = useSharedForecast();
+  const latestBz = fc && fc.allMagneticData && fc.allMagneticData.length
+    ? fc.allMagneticData[fc.allMagneticData.length - 1].bz : null;
+  const latestSpeed = fc && fc.allSpeedData && fc.allSpeedData.length
+    ? fc.allSpeedData[fc.allSpeedData.length - 1].y : undefined;
   /* SIDE view with the Earth focus is the app's own "behind Earth, looking at
      the Sun" camera (see moveCamera in SimulationCanvas: Sun -> Earth -> Camera).
      That effect only runs when activeView or focusTarget change, and on mount the
@@ -227,7 +237,8 @@ function SceneEmbed({
           chEvolutions={showHss ? chEvolutions : []}
           dataVersion={cmeData.length}
           interactionMode={InteractionMode.MOVE}
-          measuredWindSpeedKms={undefined}
+          bzSouth={typeof latestBz === 'number' ? latestBz < 0 : false}
+          measuredWindSpeedKms={typeof latestSpeed === 'number' ? latestSpeed : undefined}
         />}
       </div>
       <p className="scene-cap embed-caption">{caption}</p>
@@ -404,7 +415,7 @@ const EMBEDS: Record<string, () => JSX.Element> = {
 
 function mountAll() {
   // One hidden provider drives every data-backed embed on the page.
-  if (document.querySelector('[data-app-embed="forecast"], [data-app-embed="magnetotail"]')) {
+  if (document.querySelector('[data-app-embed]')) {
     const host = document.createElement('div');
     host.style.display = 'none';
     document.body.appendChild(host);

@@ -186,6 +186,14 @@ loading messages. A single hidden `ForecastProvider` now runs the hook, calls
 `fetchAllData` on mount and every 60 seconds, and publishes to both embeds, so
 the page makes one set of requests rather than one per embed.
 
+Earth's textures (day, normal, specular, clouds), the atmosphere glow and the
+**auroral oval shader** are all built into `SimulationCanvas` and need no props.
+The oval has a faint base opacity and brightens through its own uniforms when a
+CME reaches Earth, scaled by impact speed (`speedToLatBoundaryDeg` and
+`speedToIntensity`). The scene is given the live `bzSouth` and
+`measuredWindSpeedKms` from the shared forecast data, so the Bz indicator and the
+drag model match the app rather than sitting on defaults.
+
 **Two things this required, both worth knowing about.**
 
 *Tailwind.* The app's components are written with Tailwind classes. Without it
