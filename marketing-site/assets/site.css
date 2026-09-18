@@ -77,8 +77,14 @@ strong { color: var(--white); font-weight: 600; }
 code { font-family: var(--mono); font-size: .86em; background: var(--mid); color: var(--cream); padding: .12em .45em; }
 
 .wrap { width: 100%; max-width: var(--maxw); margin: 0 auto; padding: 0 28px; }
-.narrow { max-width: 840px; margin-left: 0; margin-right: auto; }
-.center .narrow, .cta-band .narrow, .narrow.center { margin-left: auto; margin-right: auto; }
+/* A narrow column must still share its left edge with every other section, so
+   the container keeps the normal centred width and the CONTENT is what gets
+   constrained. Setting margin-left:0 on the container pinned it to the viewport
+   edge instead, which drifted further from the rest of the page the wider the
+   window got. */
+.wrap.narrow { max-width: var(--maxw); }
+.wrap.narrow > * { max-width: 840px; }
+.center.narrow > *, .cta-band .wrap.narrow > * { margin-left: auto; margin-right: auto; }
 @media (max-width: 600px) { .wrap { padding: 0 20px; } }
 
 section { padding: clamp(60px, 8vw, 118px) 0; position: relative; }
@@ -493,11 +499,16 @@ body > *:not(.sky) { position: relative; z-index: 1; }
 .embed-fallback span { font-size: .84rem; color: var(--gray); max-width: 42ch; line-height: 1.55; }
 
 /* ================= Change log ================= */
-.release { padding: 34px 0 6px; border-top: 1px solid var(--border); }
-.release:first-of-type { border-top: 0; padding-top: 0; }
-.release-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+/* Each release is its own full width band, alternating background, so they read
+   as separate entries instead of running together. */
+.release-band { padding: clamp(40px, 5vw, 66px) 0; border-top: 1px solid var(--border); }
+.release-band.alt { background: var(--dark); }
+.release-band:first-of-type { border-top: 0; }
+
+.release { padding: 0; border: 0; }
+.release-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
 .release-ver {
-  font-family: var(--display); font-size: 1.5rem; line-height: 1;
+  font-family: var(--display); font-size: clamp(1.8rem, 3.2vw, 2.4rem); line-height: 1;
   text-transform: uppercase; color: var(--aurora); letter-spacing: .02em;
 }
 .release-date {
@@ -509,14 +520,15 @@ body > *:not(.sky) { position: relative; z-index: 1; }
   letter-spacing: .18em; text-transform: uppercase;
   color: #04160e; background: var(--aurora); padding: 4px 9px;
 }
-.release h2 { font-size: clamp(1.5rem, 3vw, 2.1rem); margin-bottom: .5rem; }
+.release h2 { font-size: clamp(1.5rem, 3vw, 2.1rem); margin-bottom: .55rem; }
+.release > p { color: var(--text-2); margin-bottom: 0; }
 .release h3 {
   font-family: var(--label); font-size: .58rem; font-weight: 700;
-  letter-spacing: .22em; text-transform: uppercase; color: var(--gray);
-  margin: 26px 0 12px;
+  letter-spacing: .22em; text-transform: uppercase; color: var(--aurora);
+  margin: 30px 0 14px; padding-top: 18px; border-top: 1px solid var(--border);
 }
 .release .list { margin-bottom: 0; }
-.release .list li { margin-bottom: 10px; }
+.release .list li { margin-bottom: 11px; }
 @media (max-width: 560px) {
   .release-date { margin-left: 0; width: 100%; }
 }

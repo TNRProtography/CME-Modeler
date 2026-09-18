@@ -118,6 +118,12 @@ labels at `0.25em` letter-spacing, Open Sans body at line-height 1.7.
 **Layout**: square corners everywhere, no card boxes, hairline rules, hard
 `<br>` line breaks in display headings, unframed imagery.
 
+**Narrow columns**: use `<div class="wrap narrow">`. The container keeps the
+normal centred width and the *content* is constrained, so a narrow column shares
+its left edge with every other section. Do not put `margin-left: 0` on `.wrap`,
+which pins it to the viewport edge and drifts further from the rest of the page
+the wider the window gets.
+
 Note that Bebas Neue has no hyphen glyph. Never put `-` or `--` in a heading or
 anything using `--display`, it renders as a tofu block.
 
@@ -242,6 +248,10 @@ a moon at the real current phase ported from `DriftingMoon.tsx`.
   <h3>Fixed</h3>    <ul class="list">...</ul>
 </article>
 ```
+
+Each release is wrapped in its own `<section class="release-band">` (add `alt`
+to every second one for the alternating background) so entries read as separate
+blocks rather than running together.
 
 Newest first, `Latest` tag moves to the new entry, and only include the
 subsections that apply. Each bullet leads with a bold noun phrase, then a plain
