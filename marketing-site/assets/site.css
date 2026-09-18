@@ -479,3 +479,15 @@ body > *:not(.sky) { position: relative; z-index: 1; }
   margin: 0; padding: 0 16px; pointer-events: none;
   text-shadow: 0 1px 10px rgba(0,0,0,0.9);
 }
+
+/* Shown only until React mounts over it, or permanently if the bundle never
+   arrives. Better than an empty black box. */
+.embed-fallback {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 12px; padding: 30px 26px; text-align: center;
+}
+.embed-fallback strong {
+  font-family: var(--display); font-size: 1.4rem; text-transform: uppercase;
+  color: var(--white); font-weight: 400; letter-spacing: .02em;
+}
+.embed-fallback span { font-size: .84rem; color: var(--gray); max-width: 42ch; line-height: 1.55; }
