@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en-NZ">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>How It Works &mdash; The Science Behind Spot The Aurora</title>
+<meta name="description" content="The full explanation of how Spot The Aurora's 0-100% score is calculated: IMF Bz, the Newell coupling function, GOES hemispheric power, the Eyrewell NZ magnetometer, GPS latitude adjustment, moon gating and the substorm probability model.">
+<link rel="canonical" href="https://about.spottheaurora.co.nz/how-it-works.html">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<meta name="author" content="TNR Protography">
+<meta name="theme-color" content="#0a0c0f">
+
+<meta property="og:locale" content="en_NZ">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Spot The Aurora">
+<meta property="og:title" content="How It Works &mdash; The Science Behind Spot The Aurora">
+<meta property="og:description" content="The full explanation of how Spot The Aurora's 0-100% score is calculated: IMF Bz, the Newell coupling function, GOES hemispheric power, the Eyrewell NZ magnetometer, GPS latitude adjustment, moon gating and the substorm probability model.">
+<meta property="og:url" content="https://about.spottheaurora.co.nz/how-it-works.html">
+<meta property="og:image" content="https://spottheaurora.co.nz/background-aurora.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="How It Works &mdash; The Science Behind Spot The Aurora">
+<meta name="twitter:description" content="The full explanation of how Spot The Aurora's 0-100% score is calculated: IMF Bz, the Newell coupling function, GOES hemispheric power, the Eyrewell NZ magnetometer, GPS latitude adjustment, moon gating and the substorm probability model.">
+<meta name="twitter:image" content="https://spottheaurora.co.nz/background-aurora.jpg">
+
+<link rel="icon" type="image/png" href="https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/SpotTheAuroraLogo.png">
+<link rel="apple-touch-icon" href="https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/SpotTheAuroraLogo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap nav">
+    <a class="brand" href="/">
+      <img src="https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/SpotTheAuroraLogo.png" alt="Spot The Aurora logo" width="32" height="32">
+      <span>Spot The Aurora<small>New Zealand</small></span>
+    </a>
+    <button class="nav-toggle" aria-label="Menu" aria-expanded="false" onclick="var n=document.getElementById('nav');n.classList.toggle('open');this.setAttribute('aria-expanded',n.classList.contains('open'))">&#9776;</button>
+    <nav class="nav-links" id="nav">
+      <a href="/features.html">Features</a>
+      <a href="/how-it-works.html" class="active">How It Works</a>
+      <a href="/data.html">Data Sources</a>
+      <a href="/faq.html">FAQ</a>
+      <a href="/about.html">About</a>
+      <a class="btn btn-primary btn-sm" href="https://www.spottheaurora.co.nz" target="_blank" rel="noopener">Open the App</a>
+    </nav>
+  </div>
+</header>
+<section class="hero" style="padding-bottom:40px">
+  <div class="hero-bg"></div>
+  <div class="wrap">
+    <span class="eyebrow violet"><span class="dot"></span> Nothing hidden</span>
+    <h1>How the forecast actually works.</h1>
+    <p class="lead">Most aurora apps ask you to trust a number. This page explains exactly where ours comes from, what it's measuring, and &mdash; just as importantly &mdash; what it can't tell you. If you'd rather skip the physics, the <a href="/features.html">features page</a> covers what you'll see on screen.</p>
+  </div>
+</section>
+
+<section class="alt">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="eyebrow">Step one</span>
+      <h2>Four measurements, one score</h2>
+      <p class="lead">The 0&ndash;100% score is a composite. It is recalculated every five minutes from live data and refreshed in your app every sixty seconds. Four things drive it.</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <h3>IMF Bz &mdash; the single most important number in aurora forecasting</h3>
+        <p>The Sun's magnetic field is carried outward by the solar wind. When the north&ndash;south component of that field (Bz) points <em>south</em>, it's anti-parallel to Earth's field at the front of the magnetosphere, and the two reconnect &mdash; opening a door that lets solar wind energy pour in. When Bz points north, the door stays shut and very little happens no matter how fast the wind is blowing.</p>
+        <p>This is why a 700&nbsp;km/s stream can produce nothing at all, and a modest 450&nbsp;km/s wind with a steady &minus;10&nbsp;nT Bz can light up the whole South Island. Both the instantaneous value and rolling 10 and 30-minute averages are used, because a brief southward flick that immediately recovers is worth far less than sustained southward field. <strong>Bz below &minus;5&nbsp;nT held for fifteen minutes or more is the strongest single predictor of aurora at New&nbsp;Zealand latitudes.</strong></p>
+      </div>
+      <div class="step">
+        <h3>The Newell coupling function &mdash; how fast energy is going in</h3>
+        <p>Bz on its own isn't the whole story; speed and the total transverse field matter too. The Newell coupling function combines solar wind speed, transverse field strength and the field's clock angle into a single physics-derived rate of energy input into the magnetosphere. It's a standard in the field, and it's what lets the app distinguish "southward field, but weak and slow" from "southward field with real power behind it".</p>
+      </div>
+      <div class="step">
+        <h3>Hemispheric power &mdash; confirmation from orbit</h3>
+        <p>NOAA's GOES-18 and GOES-19 satellites measure how much energy is being dumped into the ionosphere by particles falling into the auroral zones, in gigawatts. This isn't a model &mdash; it's a direct measurement of aurora being produced <em>right now</em>. Above 20&nbsp;GW is active; above 50&nbsp;GW is significant; above 100&nbsp;GW is a major storm. It's used to confirm that the coupling the solar wind data implies is genuinely translating into aurora.</p>
+      </div>
+      <div class="step">
+        <h3>Eyrewell &mdash; the one measurement that's actually in New Zealand</h3>
+        <p>GeoNet runs a magnetic observatory at Eyrewell in Canterbury. It reports how fast the horizontal magnetic field is changing, once a minute. When the auroral electrojet switches on overhead, that trace drops sharply &mdash; a "magnetic bay". A drop of 50&nbsp;nT or more inside fifteen minutes means a substorm current is flowing above New&nbsp;Zealand at that moment.</p>
+        <p>No global index can tell you that. It's the reason this app's score can differ sharply from a Kp-based forecast, and it's usually the reason it's right when they're wrong.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="location">
+  <div class="wrap">
+    <div class="split">
+      <div>
+        <span class="eyebrow">Step two</span>
+        <h2>Then it's adjusted for where you are.</h2>
+        <p>The base score is calculated for Greymouth on the West Coast, at latitude &minus;42.45&deg;. If you allow location access, the app adjusts it for your actual position: roughly <strong>0.2% per 10&nbsp;km</strong> of latitude difference. Further south &mdash; closer to the auroral oval &mdash; and your score goes up. Further north and it comes down.</p>
+        <p>It's deliberately conservative. The point isn't to promise Invercargill twice as much aurora as Auckland; it's to stop a single national number from misleading people at either end of the country.</p>
+        <div class="callout">
+          <p class="mb0"><strong>Your location never leaves your control.</strong> It's used on your device for the displayed score, and sent to the alert system so location-aware notifications work. It is never logged, sold, or shared with any third party. Decline it and the app works fine &mdash; you just get the Greymouth reference score.</p>
+        </div>
+      </div>
+      <div>
+        <div class="card flat">
+          <h3 style="margin-bottom:18px">What the score means</h3>
+          <div class="scale">
+            <div class="scale-row"><span class="r">80&ndash;100%</span><span class="bar" style="width:120px;background:#ef4444"></span><span class="t">Go outside now. Significant display, possibly overhead.</span></div>
+            <div class="scale-row"><span class="r">65&ndash;79%</span><span class="bar" style="width:96px;background:#f97316"></span><span class="t">Naked eye &mdash; a distinct glow or pillars to the south.</span></div>
+            <div class="scale-row"><span class="r">50&ndash;64%</span><span class="bar" style="width:78px;background:#eab308"></span><span class="t">Faint glow possible from a genuinely dark spot.</span></div>
+            <div class="scale-row"><span class="r">35&ndash;49%</span><span class="bar" style="width:58px;background:#84cc16"></span><span class="t">Phone night mode will pick it up. Not reliably naked eye.</span></div>
+            <div class="scale-row"><span class="r">20&ndash;34%</span><span class="bar" style="width:38px;background:#22c55e"></span><span class="t">Very faint &mdash; long exposure on a tripod only.</span></div>
+            <div class="scale-row"><span class="r">0&ndash;19%</span><span class="bar" style="width:22px;background:#16a34a"></span><span class="t">Too quiet. Nothing to see tonight.</span></div>
+          </div>
+          <p class="muted" style="margin-top:18px;margin-bottom:0">Thresholds referenced to the South Island. Dark skies and a clear southern horizon still matter enormously &mdash; a 45% night from a black-sky site beats a 60% night from a suburban backyard.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="alt" id="substorm">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="eyebrow amber">Step three</span>
+      <h2>Substorms: the reason aurora arrives suddenly</h2>
+      <p class="lead">Aurora at New&nbsp;Zealand latitudes usually doesn't build gradually. It arrives in a burst, and that burst is a substorm.</p>
+    </div>
+    <div class="split wide-left">
+      <div>
+        <p>Here's the mechanism. While Bz is southward, energy is loaded into Earth's magnetotail &mdash; the field stretches out behind the planet like a drawn bow, storing more and more energy. At some point it can't hold any more, the tail reconnects, and the stored energy snaps back toward Earth, firing particles down the field lines into the atmosphere over the polar regions. That's when the sky goes off.</p>
+        <p>Spot The Aurora runs a dedicated substorm engine separately from the headline score. It integrates the coupling function over rolling 30 and 60-minute windows to measure how much energy has been loaded, and simultaneously scans the Eyrewell magnetometer for the ground signature of an onset already in progress.</p>
+        <p>From that it produces a probability of substorm onset within the next 30 and 60&nbsp;minutes, and a status:</p>
+        <ul class="list">
+          <li><strong>Quiet</strong> &mdash; coupling is low, nothing is loading.</li>
+          <li><strong>Watch</strong> &mdash; energy is going in. Worth keeping an eye out.</li>
+          <li><strong>Likely within the hour</strong> &mdash; high probability in the next 60&nbsp;minutes.</li>
+          <li><strong>Imminent</strong> &mdash; very likely within 30&nbsp;minutes. Get outside and let your eyes adjust.</li>
+          <li><strong>Onset</strong> &mdash; confirmed from the ground. It is happening now.</li>
+        </ul>
+        <p class="mb0">That last one is the payoff. When the Canterbury magnetometer registers a bay, the app isn't predicting anything &mdash; it's telling you a substorm is underway over New&nbsp;Zealand at this moment.</p>
+      </div>
+      <div>
+        <div class="shot"><div class="shot-ph">
+          <span class="k">substorm-panel.png</span>
+          <span class="d">The substorm panel showing a status (ideally something above Quiet), P30/P60 probabilities and the metrics underneath.</span>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="moon">
+  <div class="wrap">
+    <div class="split rev">
+      <div>
+        <div class="shot"><div class="shot-ph">
+          <span class="k">moon-arc-chart.png</span>
+          <span class="d">The moon arc chart from Advanced View, showing illumination percentage plus rise and set times through the night.</span>
+        </div></div>
+      </div>
+      <div>
+        <span class="eyebrow">Step four</span>
+        <h2>And then the moon gets a veto.</h2>
+        <p>This is the part that other apps miss, and it's the difference between a good night and a wasted tank of petrol. A 40% aurora under a new moon is a lovely display. The same 40% under a full moon overhead is a faintly green sky you'll struggle to convince anyone about.</p>
+        <p>The app tracks moon illumination and rise/set times, shows them on the forecast chart and the moon arc, and &mdash; critically &mdash; folds them into the alert thresholds:</p>
+        <ul class="list">
+          <li><strong>Under 20% illumination:</strong> standard thresholds. The sky is dark, everything counts.</li>
+          <li><strong>40&ndash;60%:</strong> thresholds shift conservatively. The naked-eye alert now needs the oval within 8&deg; instead of 5&deg;.</li>
+          <li><strong>60&ndash;80%:</strong> the phone-camera alert takes over the camera tier's role &mdash; a long exposure will still get it, but you need more.</li>
+          <li><strong>Above 80%:</strong> camera-tier alerts are switched off entirely, and naked-eye needs the oval within 12&deg;. If we wake you up on a full-moon night, it's because it's genuinely worth it.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="alt" id="alerts">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="eyebrow teal">The alert geometry</span>
+      <h2>Why your alerts are different from your mate's in Dunedin</h2>
+      <p class="lead">Blanket alerts are why people turn aurora notifications off. Here's what happens instead.</p>
+    </div>
+    <div class="grid g3">
+      <div class="card">
+        <span class="icon">&#127760;</span>
+        <h3>Where the oval sits</h3>
+        <p>From the coupling averages, the app estimates how far equatorward the auroral oval's boundary has pushed &mdash; and shifts it further equatorward when a substorm onset is confirmed on the ground.</p>
+      </div>
+      <div class="card">
+        <span class="icon">&#129517;</span>
+        <h3>Where you really are</h3>
+        <p>Your GPS position is converted from geographic to <em>geomagnetic</em> latitude using the IGRF-13 model. The magnetic pole isn't the geographic pole, and for New&nbsp;Zealand's longitude that difference is significant &mdash; ignoring it misplaces the oval by degrees.</p>
+      </div>
+      <div class="card">
+        <span class="icon">&#128225;</span>
+        <h3>How far the glow reaches</h3>
+        <p>Aurora is visible well equatorward of the oval itself, and how far depends on how strong the display is. That visibility horizon is scaled by the current score, then compared against your position to decide which tier &mdash; if any &mdash; to alert you at.</p>
+      </div>
+    </div>
+    <div class="callout violet">
+      <p class="mb0"><strong>The practical upshot:</strong> on a moderate night, someone in Invercargill gets a naked-eye alert, someone in Christchurch gets a phone-camera alert, someone in Wellington gets a camera alert, and someone in Auckland gets nothing &mdash; because there's nothing for them to see. Everyone's phone is telling them the truth about their own sky.</p>
+    </div>
+  </div>
+</section>
+
+<section id="limits">
+  <div class="wrap narrow">
+    <span class="eyebrow amber">Being straight with you</span>
+    <h2>What this can't do</h2>
+    <p class="lead">Any forecast that doesn't tell you its limits isn't worth trusting. Here are ours.</p>
+    <ul class="list">
+      <li><strong>L1 gives you about 45&ndash;60 minutes, not hours.</strong> The satellites sit 1.5&nbsp;million km upsun, so we see the solar wind before it hits us &mdash; but that's under an hour of warning, not a day. Anything beyond the 60-minute slot is guidance, not prediction.</li>
+      <li><strong>Substorm timing is genuinely hard.</strong> We can tell you energy is loading and give you a probability. Nobody on Earth can tell you the exact minute the tail will snap.</li>
+      <li><strong>Cloud beats everything.</strong> A 90% score under solid overcast is a 0% night. That's why the cloud overlay, the live cameras and the sightings map are right there next to the score.</li>
+      <li><strong>Your sky matters as much as the physics.</strong> Light pollution, a hill in the way to the south, or ten minutes without proper dark adaptation will all cost you more than a few points of score.</li>
+      <li><strong>It is not an official warning service.</strong> For critical infrastructure or official space weather warnings, use NOAA SWPC and MetService NZ. This is a chaser's tool and a citizen-science project &mdash; a very good one, but that's what it is.</li>
+    </ul>
+    <div class="callout">
+      <p class="mb0">Every formula summarised on this page is documented in full inside the app, in its own technical documentation section &mdash; exact coefficients, thresholds, refresh rates and data sources. Nothing is a black box.</p>
+    </div>
+  </div>
+</section>
+<section class="cta-band">
+  <div class="wrap narrow">
+    <h2>Tonight might be the night.</h2>
+    <p class="lead">Free, ad-free, and made in New Zealand. Open it in your browser, add it to your home screen, turn on alerts &mdash; and stop missing displays you never knew were happening.</p>
+    <div class="btn-row mt3">
+      <a class="btn btn-primary" href="https://www.spottheaurora.co.nz" target="_blank" rel="noopener">Open Spot The Aurora &rarr;</a>
+      <a class="btn btn-ghost" href="/features.html">See everything it does</a>
+    </div>
+  </div>
+</section>
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a class="brand" href="/" style="margin-bottom:14px">
+          <img src="https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/SpotTheAuroraLogo.png" alt="" width="32" height="32">
+          <span>Spot The Aurora<small>New Zealand</small></span>
+        </a>
+        <p class="muted">New Zealand's most in-depth aurora forecasting tool. Built in Greymouth by <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener">TNR Protography</a> &mdash; by a Kiwi chaser, for Kiwi chasers.</p>
+      </div>
+      <div>
+        <h4>The App</h4>
+        <ul>
+          <li><a href="https://www.spottheaurora.co.nz" target="_blank" rel="noopener">Open the app</a></li>
+          <li><a href="/features.html">Features</a></li>
+          <li><a href="/how-it-works.html">How it works</a></li>
+          <li><a href="/data.html">Data sources</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Help</h4>
+        <ul>
+          <li><a href="/faq.html">FAQ</a></li>
+          <li><a href="/about.html">About &amp; support</a></li>
+          <li><a href="https://www.tnrprotography.co.nz/spot-the-aurora---change-log" target="_blank" rel="noopener">Change log</a></li>
+          <li><a href="mailto:help@spottheaurora.co.nz">help@spottheaurora.co.nz</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Community</h4>
+        <ul>
+          <li><a href="https://www.facebook.com/spot.the.aurora" target="_blank" rel="noopener">Facebook</a></li>
+          <li><a href="https://buymeacoffee.com/spottheaurora" target="_blank" rel="noopener">Buy me a coffee</a></li>
+          <li><a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener">TNR Protography</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-base">
+      <span>&copy; <span id="yr">2026</span> TNR Protography. Made in New Zealand.</span>
+      <span>Data from NOAA SWPC, NASA DONKI, GeoNet &amp; others. Not an official warning service.</span>
+    </div>
+  </div>
+  <script>document.getElementById('yr').textContent=new Date().getFullYear();</script>
+</footer>
+</body>
+</html>

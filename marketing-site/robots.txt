@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://about.spottheaurora.co.nz/sitemap.xml
