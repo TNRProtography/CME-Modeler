@@ -59,7 +59,7 @@
       <a class="btn btn-ghost" href="#why">Why it's different</a>
     </div>
     <div style="margin-top:52px">
-      <div class="live-forecast"></div>
+      <div class="live-forecast" data-app-embed="forecast"></div>
       <p class="shot-cap">This is the real score, live from the same feed as the app. It refreshes every minute.</p>
     </div>
   </div>
@@ -138,15 +138,13 @@
         <a class="btn btn-ghost btn-sm" href="/features.html#cme">More on the CME visualisation</a>
       </div>
       <div>
-        <div class="scene" data-scene="cme"><span class="scene-tag">Live</span></div>
-        <p class="scene-cap">CMEs leaving the Sun, decelerating by the same drag model the app uses</p>
+        <div class="app-embed" data-app-embed="cme"></div>
       </div>
     </div>
 
     <div class="split rev wide-left" style="margin-bottom:64px">
       <div>
-        <div class="scene" data-scene="coronalhole"><span class="scene-tag">Live</span></div>
-        <p class="scene-cap">A coronal hole rotating across the disk, firing a high speed stream along the Parker spiral</p>
+        <div class="app-embed" data-app-embed="coronalhole"></div>
       </div>
       <div>
         <h3><span class="hl-violet">02.</span> Coronal holes, found live in your browser</h3>
@@ -171,8 +169,7 @@
         </ul>
       </div>
       <div>
-        <div class="scene" data-scene="magnetotail"><span class="scene-tag">Live</span></div>
-        <p class="scene-cap">The tail loading, snapping, and firing aurora onto the pole</p>
+        <div class="app-embed" data-app-embed="magnetotail"></div>
       </div>
     </div>
   </div>
@@ -369,7 +366,6 @@
   <script>document.getElementById('yr').textContent=new Date().getFullYear();</script>
 </footer>
 <script src="/assets/sky.js" defer></script>
-<script src="/assets/forecast.js" defer></script>
-<script src="/assets/scenes.js" defer></script>
+<script type="module" src="/src/embeds.tsx"></script>
 </body>
 </html>

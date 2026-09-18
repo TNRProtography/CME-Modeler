@@ -1,0 +1,7 @@
+/* Utilities only. Preflight is disabled in tailwind.config.cjs so this cannot
+   reset or override the marketing site's own stylesheet. */
+@tailwind utilities;
+
+/* The app's scene wrapper is <div class="w-full h-full">, which needs a parent
+   with real height. The embed host provides it. */
+.embed-stage > div { width: 100%; height: 100%; }

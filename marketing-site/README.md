@@ -120,58 +120,81 @@ labels at `0.25em` letter-spacing, Open Sans body at line-height 1.7.
 Note that Bebas Neue has no hyphen glyph. Never put `-` or `--` in a heading or
 anything using `--display`, it renders as a tofu block.
 
+## Build
+
+This is no longer a plain static folder. It is a Vite build, because the site
+**imports the app's real components** rather than reimplementing them.
+
+```bash
+cd marketing-site
+npm install
+npm run build      # -> marketing-site/dist
+npm run dev        # local dev server
+```
+
+### Cloudflare Pages settings, these changed
+
+| Setting | Value |
+|---|---|
+| Root directory | `marketing-site` |
+| Build command | `npm install && npm run build` |
+| Build output directory | `dist` |
+
+The old settings (no build command, output `marketing-site`) will now publish
+raw source and the embeds will not work.
+
+`vite.config.ts` aliases `@app` to `../basic---to-go-live-nasa-cme-modeler`.
+That path is outside the Pages root directory but inside the repo, which is
+fine because Cloudflare clones the whole repository.
+
+Anything in `public/` is copied to `dist` verbatim: `sky.js`, `robots.txt`,
+`sitemap.xml`, `_headers`, and `assets/screenshots/`.
+
 ## Live elements
 
-Three scripts, plain JS, no dependencies, no build step.
+### The app's real components, embedded
 
-### `assets/sky.js`
-Page backdrop: a seeded starfield (same mulberry32 approach as the app's
-`StarField.tsx`, so the layout is stable between loads), drifting aurora
-curtains in the logo's colours, and a moon at the **real current phase** with a
-proper terminator mask, ported from `DriftingMoon.tsx`.
+`src/embeds.tsx` mounts the **app's own components**, imported from the app
+source next door. There is one implementation of each model in this repository,
+not a copy that can drift.
 
-### `assets/scenes.js`
-Three live canvas scenes that replace what were screenshots. Mount one with
-`<div class="scene" data-scene="NAME"></div>`.
+| Mount point | What it renders | Imported from |
+|---|---|---|
+| `<div data-app-embed="cme">` | The 3D heliosphere with the current NASA CME catalogue | `@app/components/SimulationCanvas` |
+| `<div data-app-embed="coronalhole">` | Same scene with coronal holes and their Parker spiral streams | `SimulationCanvas` + `@app/hooks/useCoronalHoles` |
+| `<div data-app-embed="magnetotail">` | The magnetotail scene | `@app/components/MagnetotailStatus` |
+| `<div data-app-embed="forecast">` | The five slot visibility forecast | `@app/hooks/useForecastData` |
 
-| `data-scene` | What it shows |
-|---|---|
-| `cme` | Top-down heliosphere. CMEs leave the Sun and decelerate toward the ambient wind using the drag-based model, with the app's exact speed colour scale (grey 350 km/s through pink 2500+). Each is a particle cloud bunched toward the leading edge. |
-| `coronalhole` | The solar disk with a coronal hole rotating across it, foreshortened at the limb, firing a high speed stream wound into a Parker spiral out past Earth's orbit. Earth lights up when the stream points at it. |
-| `magnetotail` | Side-on magnetosphere cycling through loading, stretched, onset and afterglow. Southward field lets particles in to load the tail; northward deflects them around the magnetopause. On onset the tail snaps and aurora blooms at the poles. |
+The scenes loop with no controls: 3 days of history, 4 days ahead, 5x speed.
 
-Each scene only animates while on screen, pauses when the tab is hidden, and
-honours `prefers-reduced-motion`.
+**Two things this required, both worth knowing about.**
 
-Two numbers in the CME scene are tuned for watchability, not realism: `dt`
-(simulated seconds per animation frame) and the firing interval. `dt` was
-originally 3600, which made every CME cross the frame in about two seconds and
-look like an empty window. It is now 250, giving roughly 20 seconds to 1 AU,
-with `gamma` retuned to match so the deceleration still looks right.
+*Tailwind.* The app's components are written with Tailwind classes. Without it
+the scene wrapper (`w-full h-full`) collapsed to zero height and the canvas
+rendered nothing. `tailwind.config.cjs` scans the app's components and **has
+preflight disabled**, so only utilities are emitted and Tailwind's base reset
+cannot fight `assets/site.css`.
 
-### `assets/forecast.js`
-The **live visibility forecast**: Now, 15 min, 30 min, 1 hour, 2 hours. Mount
-with `<div class="live-forecast"></div>`. Any number of mounts share one fetch,
-and it refreshes every 60 seconds.
+*A Three.js load race.* `SimulationCanvas` loads Three, OrbitControls and GSAP
+itself, and its `loadScript` resolves as soon as a `<script>` with that src is
+in the DOM, whether or not it has finished loading. The app only ever mounts one
+scene, so it never hits this. This page mounts two: the second saw the first's
+`three.min.js` tag, resolved immediately, and injected OrbitControls before
+`THREE` existed, leaving both canvases blank. `embeds.tsx` now loads those three
+files once, strictly in order, before mounting any scene. Scenes are also
+lazy-mounted on scroll so two WebGL contexts do not start up together.
 
-It reads two workers, the same ones the app uses:
+The forecast slot derivation is the one piece of app logic duplicated here
+(`ForecastEmbed`), copied from `ForecastDashboard.tsx`'s `simpleTimelineSlots`,
+because that logic lives inline in a component that also renders the whole
+dashboard. It now runs on the app's real `useForecastData` output, so the inputs
+are identical. If you are happy for the app to be touched, extracting that block
+into a shared module would remove the duplication entirely.
 
-```
-https://spottheaurora.thenamesrock.workers.dev/               (score, moon, power)
-https://aurora-index-sta.thenamesrock.workers.dev/api/substorm (substorm risk)
-```
-
-The slot maths is ported from `ForecastDashboard.tsx` (`simpleTimelineSlots`):
-the same trend multiplier, Newell boost, `boostFromP` and per-status branch, and
-the sentences are copied word for word so the site can never say something
-different from the app. "Use my location" applies the same 0.2% per 10 km
-adjustment from Greymouth.
-
-**One approximation worth knowing.** The app derives `status`, P30 and P60 from
-the raw L1 series, using 15-minute means. The substorm worker exposes 30-minute
-means, so the site uses those in the documented probability model. Slot wording
-is identical but a borderline slot could occasionally differ by one band from
-the app. Worth spot-checking against the app on an active night.
+### `public/assets/sky.js`
+Page backdrop on every page: a seeded starfield using the same mulberry32
+approach as `StarField.tsx`, drifting aurora curtains in the logo's colours, and
+a moon at the real current phase ported from `DriftingMoon.tsx`.
 
 ## Voice rules
 

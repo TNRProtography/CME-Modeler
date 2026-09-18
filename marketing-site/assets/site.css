@@ -451,3 +451,31 @@ body > *:not(.sky) { position: relative; z-index: 1; }
   .fc-slot { grid-template-columns: 1fr; gap: 5px; padding: 15px 0; }
   .fc-slot.is-now { padding-left: 12px; }
 }
+
+/* ================= App embeds ================= */
+/* These host the app's real components. The 3D scene needs a real height. */
+.app-embed {
+  position: relative; width: 100%; aspect-ratio: 16 / 10;
+  background: radial-gradient(ellipse 80% 70% at 50% 45%, #120e22, #08060f 78%);
+  border: 1px solid var(--border); overflow: hidden;
+}
+.app-embed-wide { aspect-ratio: 21 / 9; margin-bottom: 12px; }
+.app-embed canvas { display: block; width: 100% !important; height: 100% !important; }
+.embed-stage { position: absolute; inset: 0; }
+.embed-loose { position: relative; width: 100%; }
+.app-embed:has(.embed-loose) { aspect-ratio: auto; background: none; border: 0; overflow: visible; }
+.embed-note {
+  position: absolute; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center;
+  font-family: var(--label); font-size: .58rem; font-weight: 700;
+  letter-spacing: .22em; text-transform: uppercase; color: var(--gray); pointer-events: none;
+}
+@media (max-width: 600px) { .app-embed { aspect-ratio: 4 / 3; } .app-embed-wide { aspect-ratio: 16 / 10; } }
+
+/* The embed caption is rendered by React after the stage. The stage fills the
+   aspect box, so the caption has to be lifted out from under it. */
+.app-embed { display: block; }
+.embed-caption {
+  position: absolute; left: 0; right: 0; bottom: 8px; z-index: 4;
+  margin: 0; padding: 0 16px; pointer-events: none;
+  text-shadow: 0 1px 10px rgba(0,0,0,0.9);
+}
