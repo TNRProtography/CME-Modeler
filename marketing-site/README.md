@@ -96,21 +96,40 @@ If you want GA on this site too, paste the same gtag snippet used in the app's
 
 ## Design system
 
-The palette is taken from the app, not invented. The app is overwhelmingly
-Tailwind **neutral** greys (its background is `#171717`, which is `neutral-900`)
-with **sky** blue as the single accent and amber a distant second. The site
-mirrors that.
+Taken directly from tnrprotography.co.nz so the two sites read as one brand.
+The values below were lifted from the aurora page's own stylesheet, not invented.
 
-- Surfaces: `--n-950` page, `--n-900` cards and alt bands, `--n-850` raised
-- Text: `--n-200` headings, `--n-400` body, `--n-500` muted
-- Accent: `--sky` / `--sky-500`, used only for links, the primary button, the
-  eyebrow dot, and the numbered section markers. Nothing else.
-- Amber: secondary, used sparingly
-- Red / orange / green appear **only** in the visibility score scale, where the
-  colour carries meaning and matches the app's own scale
+**Colour**
 
-If you add anything, keep decoration neutral and let the accent stay rare. No
-multi-colour gradients.
+| Token | Value | Use |
+|---|---|---|
+| `--gold` | `#c8963e` | The accent. Labels, rules, buttons, links, numbers. |
+| `--gold-light` / `--gold-dark` | `#d9ac5a` / `#a07428` | Hover and recessed states |
+| `--black` | `#07090d` | Page background |
+| `--dark` | `#0b1520` | Alternate bands |
+| `--card` / `--mid` | `#101e2a` / `#1a2d3d` | Raised surfaces |
+| `--border` | `#22384a` | Every hairline rule |
+| `--gray` / `--light-gray` | `#5a7080` / `#92aab8` | Muted and secondary text |
+| `--white` / `--cream` | `#f0ede8` / `#e4dfd6` | Headings and body. Warm off-white, never pure white. |
+
+**Type**
+
+- Display: **Bebas Neue**, uppercase, `clamp(3.2rem, 8vw, 6.5rem)` for h1 at
+  line-height 0.95, `clamp(2.2rem, 5vw, 3.5rem)` for h2
+- Labels and buttons: **Montserrat** 700, around 0.6rem, `letter-spacing: 0.25em`,
+  uppercase, in gold
+- Body: **Open Sans**, `clamp(0.9rem, 1.5vw, 1.05rem)`, line-height 1.7
+
+**Layout rules**
+
+- **Square corners everywhere.** No border radius on anything.
+- **No card boxes.** Blocks are separated by hairline top rules in `--border`,
+  content sits directly on the page background.
+- Headings take **hard line breaks** (`<br>`) so they stack as deliberate blocks,
+  the way the aurora page does it.
+- Imagery is unframed and full width with a deep shadow, never a bordered panel.
+- Gold is the only accent. Red and green appear once, in the visibility score
+  scale, where the colour carries meaning.
 
 ## Voice rules
 
