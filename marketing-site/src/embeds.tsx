@@ -81,6 +81,57 @@ function useInView<T extends HTMLElement>(): [React.RefObject<T>, boolean] {
   return [ref, seen];
 }
 
+
+/* ------------------------------------------------------------------ *
+ * Shared forecast data.
+ *
+ * useForecastData does NOT fetch on its own. In the app, ForecastDashboard
+ * calls fetchAllData(true, getGaugeStyle) in an effect and then re-runs it on a
+ * ticker. Nothing here was doing that, so the hook sat at isLoading forever and
+ * both the forecast and the magnetotail stayed on their loading messages.
+ *
+ * One provider runs the hook and calls fetchAllData, and both embeds subscribe,
+ * so the whole page makes one set of requests rather than two.
+ * ------------------------------------------------------------------ */
+type Forecast = ReturnType<typeof useForecastData>;
+let latest: Forecast | null = null;
+const listeners = new Set<(d: Forecast) => void>();
+function publish(d: Forecast) { latest = d; listeners.forEach(fn => fn(d)); }
+
+function useSharedForecast(): Forecast | null {
+  const [, force] = useState(0);
+  useEffect(() => {
+    const fn = () => force(n => n + 1);
+    listeners.add(fn);
+    return () => { listeners.delete(fn); };
+  }, []);
+  return latest;
+}
+
+/* Presentational only: colour, emoji and bar percentage for the gauges.
+   The app's version lives inside ForecastDashboard and is not exported. */
+function gaugeStyle(value: number | null) {
+  if (value === null || !Number.isFinite(value)) return { color: '#808080', emoji: '', percentage: 0 };
+  return { color: '#3ddc97', emoji: '', percentage: Math.max(0, Math.min(100, Math.abs(value))) };
+}
+
+function ForecastProvider() {
+  const [, setScore] = useState<number | null>(null);
+  const [, setActivity] = useState<any>(null);
+  const d = useForecastData(setScore as any, setActivity as any);
+
+  useEffect(() => {
+    let alive = true;
+    const run = (first: boolean) => { if (alive) d.fetchAllData(first, gaugeStyle); };
+    run(true);
+    const id = setInterval(() => run(false), 60000);
+    return () => { alive = false; clearInterval(id); };
+  }, [d.fetchAllData]);
+
+  useEffect(() => { publish(d); });
+  return null;
+}
+
 /* ------------------------------------------------------------------ *
  * Shared: the app's 3D scene, configured per embed.
  * ------------------------------------------------------------------ */
@@ -188,12 +239,10 @@ function SceneEmbed({
  * Magnetotail: the app's component, fed by the app's data hook.
  * ------------------------------------------------------------------ */
 function MagnetotailEmbed() {
-  const [, setScore] = useState<number | null>(null);
-  const [, setActivity] = useState<any>(null);
-  const d = useForecastData(setScore as any, setActivity as any);
+  const d = useSharedForecast();
   const noop = useCallback(() => {}, []);
 
-  if (!d.substormRiskData) {
+  if (!d || !d.substormRiskData) {
     return (
       <>
         <div className="embed-stage"><div className="embed-note">Loading live substorm data</div></div>
@@ -256,11 +305,10 @@ function phraseFor(score: number, confidence: 'high' | 'medium' | 'low', label: 
 }
 
 function ForecastEmbed() {
-  const [, setScore] = useState<number | null>(null);
-  const [, setActivity] = useState<any>(null);
-  const d = useForecastData(setScore as any, setActivity as any);
+  const d = useSharedForecast();
 
   const slots = useMemo(() => {
+    if (!d) return [];
     const risk = d.substormRiskData;
     const workerScore = risk?.current?.score ?? null;
     const workerTrend = risk?.current?.risk_trend;
@@ -307,14 +355,14 @@ function ForecastEmbed() {
       { label: '1 hour',  score: Math.round(applyMods(raw60)), conf: slotConf('1h') },
       { label: '2 hours', score: Math.round(spotScore), conf: 'low' as const }
     ].map(s => ({ label: s.label, ...phraseFor(s.score, s.conf, s.label) }));
-  }, [d.auroraScore, d.substormForecast, d.substormRiskData, d.allNewellData]);
+  }, [d]);
+
+  if (!d || (d.isLoading && d.auroraScore == null)) {
+    return <div className="lf-head"><span className="lf-status">Loading the live forecast</span></div>;
+  }
 
   const power = d.gaugeData?.power?.value;
   const moon = d.gaugeData?.moon?.percentage;
-
-  if (d.isLoading && d.auroraScore == null) {
-    return <div className="lf-head"><span className="lf-status">Loading the live forecast</span></div>;
-  }
 
   return (
     <>
@@ -355,6 +403,13 @@ const EMBEDS: Record<string, () => JSX.Element> = {
 };
 
 function mountAll() {
+  // One hidden provider drives every data-backed embed on the page.
+  if (document.querySelector('[data-app-embed="forecast"], [data-app-embed="magnetotail"]')) {
+    const host = document.createElement('div');
+    host.style.display = 'none';
+    document.body.appendChild(host);
+    createRoot(host).render(<ForecastProvider />);
+  }
   document.querySelectorAll<HTMLElement>('[data-app-embed]').forEach(node => {
     const kind = node.getAttribute('data-app-embed') || '';
     const make = EMBEDS[kind];

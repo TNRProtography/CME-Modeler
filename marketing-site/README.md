@@ -178,6 +178,14 @@ image proxy, including its host allow list. The coronal hole detector fetches
 the SUVI image same-origin so `getImageData()` can read it; without this the
 request 404s on this domain.
 
+`useForecastData` **does not fetch on its own.** In the app,
+`ForecastDashboard` calls `fetchAllData(true, getGaugeStyle)` in an effect and
+re-runs it on a ticker. Nothing here was doing that, so the hook sat at
+`isLoading` forever and both the forecast and the magnetotail stayed on their
+loading messages. A single hidden `ForecastProvider` now runs the hook, calls
+`fetchAllData` on mount and every 60 seconds, and publishes to both embeds, so
+the page makes one set of requests rather than one per embed.
+
 **Two things this required, both worth knowing about.**
 
 *Tailwind.* The app's components are written with Tailwind classes. Without it
