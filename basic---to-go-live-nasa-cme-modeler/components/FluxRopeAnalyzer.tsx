@@ -381,14 +381,17 @@ function drawScene(cvs: HTMLCanvasElement, W: number, result: RopeResult, animAn
   // that is the half worth looking at.
   const EARTH_FRAC = 0.2;
   const earthX = X0 + RLEN * EARTH_FRAC;
-  // Only a short stretch of already-passed rope is shown. Squeezing the whole
-  // passed section in would crush it against the left edge once the rope is
-  // mostly through, and leave the part that still matters almost empty.
-  const PAST_SPAN = 0.18;
-  const uStart = Math.max(0, u_earth - PAST_SPAN);
-  const xOfU = (u: number) => u <= u_earth
-    ? X0 + ((u - uStart) / Math.max(1e-6, u_earth - uStart)) * (earthX - X0)
-    : earthX + ((u - u_earth) / Math.max(1e-6, 1 - u_earth)) * (X1 - earthX);
+  // The rope is drawn to scale against a fixed Earth, rather than always being
+  // stretched to fill the panel. That matters: when the passage is nearly done
+  // the trailing end sits right in front of Earth and the space beyond it is
+  // empty, which is the honest picture. Stretching the remainder across the
+  // full width made a finished rope look like it still had plenty to come.
+  const PX_PER_U = RLEN * 0.92;
+  const xOfU = (u: number) => earthX + (u - u_earth) * PX_PER_U;
+  // Screen span that actually holds rope, used to sample at even density.
+  const uAtX0 = u_earth + (X0 - earthX) / PX_PER_U;
+  const uAtX1 = u_earth + (X1 - earthX) / PX_PER_U;
+  const uLo = Math.max(0, uAtX0), uHi = Math.min(1, uAtX1);
 
   // Field colour is driven by the field Earth's dipole actually sees, not the
   // raw Bz. Because the dipole is tilted, By projects onto the GSM Bz axis, so
@@ -421,12 +424,7 @@ function drawScene(cvs: HTMLCanvasElement, W: number, result: RopeResult, animAn
     for (let fl = 0; fl < sh.lines; fl++) {
       const flPhase = (fl / sh.lines) * Math.PI * 2;
       for (let seg = 0; seg <= N_SEG; seg++) {
-        // Split the samples between the two panels in proportion to the screen
-        // width each one occupies, so both are drawn at the same density.
-        const f = seg / N_SEG;
-        const u = f < EARTH_FRAC
-          ? uStart + (f / EARTH_FRAC) * (u_earth - uStart)
-          : u_earth + ((f - EARTH_FRAC) / (1 - EARTH_FRAC)) * (1 - u_earth);
+        const u = uLo + (seg / N_SEG) * (uHi - uLo);
         const th = result.thetaFit0 + result.omega * u * ROPE_DUR_MIN;
         // Physical phase, then the shell's own winding. Twist scales with
         // radius, so the core barely rotates and the outer shell spins hard.
@@ -444,10 +442,7 @@ function drawScene(cvs: HTMLCanvasElement, W: number, result: RopeResult, animAn
   // Bright axial core, drawn first so the shells sit over it.
   ctx.globalCompositeOperation = 'lighter';
   for (let seg = 0; seg <= N_SEG * 3; seg++) {
-    const f = seg / (N_SEG * 3);
-    const u = f < EARTH_FRAC
-      ? uStart + (f / EARTH_FRAC) * (u_earth - uStart)
-      : u_earth + ((f - EARTH_FRAC) / (1 - EARTH_FRAC)) * (1 - u_earth);
+    const u = uLo + (seg / (N_SEG * 3)) * (uHi - uLo);
     const th = result.thetaFit0 + result.omega * u * ROPE_DUR_MIN;
     const x = xOfU(u);
     const lean = AXIS_LEAN * (0.5 - u);
@@ -490,11 +485,12 @@ function drawScene(cvs: HTMLCanvasElement, W: number, result: RopeResult, animAn
     const sy = H - 58, sh = 20;
     const bt = Math.max(0.1, result.btMean);
     ctx.strokeStyle = 'rgba(90,120,170,0.25)'; ctx.lineWidth = 0.5; ctx.setLineDash([3,4]);
-    ctx.beginPath(); ctx.moveTo(earthX, sy); ctx.lineTo(X1, sy); ctx.stroke(); ctx.setLineDash([]);
+    const traceEnd = Math.max(earthX + 2, xOfU(uHi));
+    ctx.beginPath(); ctx.moveTo(earthX, sy); ctx.lineTo(traceEnd, sy); ctx.stroke(); ctx.setLineDash([]);
 
     const pathPts: { x: number; y: number; bzEff: number }[] = [];
     for (let i = 0; i <= 90; i++) {
-      const u = u_earth + (i / 90) * (1 - u_earth);
+      const u = u_earth + (i / 90) * Math.max(0, uHi - u_earth);
       const th = result.thetaFit0 + result.omega * u * ROPE_DUR_MIN;
       const { bzEff } = effectiveBz(bt * Math.sin(th), bt * Math.cos(th), nowDate);
       pathPts.push({ x: xOfU(u), y: sy - (bzEff / bt) * sh, bzEff });
@@ -514,27 +510,119 @@ function drawScene(cvs: HTMLCanvasElement, W: number, result: RopeResult, animAn
     ctx.fillStyle = 'rgba(120,155,195,0.45)'; ctx.font = '7px system-ui'; ctx.textAlign = 'left';
     ctx.fillText('Bz from here', earthX + 3, sy - sh - 4);
     ctx.textAlign = 'right';
-    ctx.fillStyle = 'rgba(34,197,94,0.5)'; ctx.fillText('south', X1, sy + sh + 8);
-    ctx.fillStyle = 'rgba(210,60,60,0.5)'; ctx.fillText('north', X1, sy - sh - 4);
+    ctx.fillStyle = 'rgba(34,197,94,0.5)'; ctx.fillText('south', traceEnd, sy + sh + 8);
+    ctx.fillStyle = 'rgba(210,60,60,0.5)'; ctx.fillText('north', traceEnd, sy - sh - 4);
   }
 
   // ── Where it came from, where it is going, and how it turns ────────────────
   // Material arrives from the Sun on the right and sweeps leftward past Earth.
-  // Sun glow off-frame right, so the geometry reads Sun -> rope -> Earth.
-  const sunG = ctx.createRadialGradient(SW + 30, CY, 0, SW + 30, CY, 150);
-  sunG.addColorStop(0, 'rgba(255,196,92,0.20)');
-  sunG.addColorStop(0.5, 'rgba(255,170,60,0.06)');
-  sunG.addColorStop(1, 'rgba(255,170,60,0)');
-  ctx.fillStyle = sunG; ctx.fillRect(SW - 130, 0, 130, H);
-  ctx.fillStyle = 'rgba(255,196,92,0.6)'; ctx.font = '600 8px system-ui'; ctx.textAlign = 'right';
-  ctx.fillText('TOWARD THE SUN', SW - 12, 18);
-  // Arrow points left: the rope is sweeping from the Sun onto Earth.
-  ctx.strokeStyle = 'rgba(255,190,55,0.5)'; ctx.lineWidth = 1.2;
-  ctx.beginPath(); ctx.moveTo(SW - 16, 27); ctx.lineTo(SW - 74, 27); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(SW - 78, 27); ctx.lineTo(SW - 71, 23.5); ctx.lineTo(SW - 71, 30.5); ctx.closePath();
-  ctx.fillStyle = 'rgba(255,190,55,0.5)'; ctx.fill();
-  ctx.fillStyle = 'rgba(255,190,55,0.42)'; ctx.font = '8px system-ui'; ctx.textAlign = 'right';
-  ctx.fillText('rope sweeping onto Earth', SW - 12, 39);
+  // ── Ambient wind behind the rope ──────────────────────────────────────────
+  // Once the rope has passed, the space between its trailing end and the Sun is
+  // ordinary solar wind, not nothing. Drawing it keeps the gap meaningful and
+  // shows the flow direction without needing a label to explain it.
+  {
+    const tailX = Math.min(X1, xOfU(uHi));
+    if (tailX < X1 - 20) {
+      const drift = (performance.now() / 1000) * 26;
+      ctx.globalCompositeOperation = 'lighter';
+      // Kept modest: this is backdrop, and the shells already cost the frame.
+      for (let i = 0; i < 110; i++) {
+        const seed = i * 97.13;
+        const span = X1 - tailX;
+        const px = X1 - (((seed * 7.7 + drift) % span));
+        const py = 26 + ((seed * 31.7) % (H - 90));
+        const sp = 3 + ((seed * 13.1) % 5);
+        drawGlow(ctx, '190,205,230', px, py, 1.5, 0.38);
+        ctx.globalAlpha = 0.20;
+        ctx.strokeStyle = 'rgba(190,205,230,0.5)'; ctx.lineWidth = 0.7;
+        ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + sp, py); ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = 'rgba(150,170,205,0.3)'; ctx.font = '7px system-ui'; ctx.textAlign = 'center';
+      ctx.fillText('ambient solar wind', (tailX + X1) / 2, H - 22);
+    }
+  }
+
+  // ── The Sun ───────────────────────────────────────────────────────────────
+  // An actual Sun at the right edge, rather than labels and arrows explaining
+  // which way is sunward. The geometry then reads on its own: Sun on the right,
+  // rope between, Earth on the left.
+  {
+    const sunX = SW - 46, sunR = 26;
+    const corona = ctx.createRadialGradient(sunX, CY, sunR * 0.5, sunX, CY, sunR * 3.4);
+    corona.addColorStop(0, 'rgba(255,186,74,0.30)');
+    corona.addColorStop(0.35, 'rgba(255,150,50,0.11)');
+    corona.addColorStop(1, 'rgba(255,140,40,0)');
+    ctx.fillStyle = corona;
+    ctx.beginPath(); ctx.arc(sunX, CY, sunR * 3.4, 0, Math.PI * 2); ctx.fill();
+
+    const disc = ctx.createRadialGradient(sunX - sunR * 0.3, CY - sunR * 0.25, sunR * 0.1, sunX, CY, sunR);
+    disc.addColorStop(0, '#fff6d8');
+    disc.addColorStop(0.45, '#ffd166');
+    disc.addColorStop(1, '#f59f2b');
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, SW, H); ctx.clip();
+    ctx.fillStyle = disc;
+    ctx.beginPath(); ctx.arc(sunX, CY, sunR, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+
+    ctx.fillStyle = 'rgba(255,205,110,0.75)';
+    ctx.font = '600 8px system-ui'; ctx.textAlign = 'right';
+    ctx.fillText('SUN', sunX + sunR, CY + sunR + 15);
+  }
+
+  // ── Cross section ─────────────────────────────────────────────────────────
+  // The rope seen end-on, looking back down its axis toward the Sun. Same
+  // nested shells as the side view, so the structure the coil is made of is
+  // legible. The arrow is the field direction passing Earth right now, in the
+  // By-Bz plane, and it turns as the rope rotates.
+  {
+    const ccX = X0 + 54, ccY = 60, ccR = 36;
+    ctx.fillStyle = 'rgba(4,10,22,0.72)';
+    ctx.beginPath(); ctx.arc(ccX, ccY, ccR + 8, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(80,110,160,0.22)'; ctx.lineWidth = 0.6;
+    ctx.beginPath(); ctx.arc(ccX, ccY, ccR + 8, 0, Math.PI * 2); ctx.stroke();
+
+    const thHere = result.thetaFit0 + result.omega * u_earth * ROPE_DUR_MIN;
+    ctx.globalCompositeOperation = 'lighter';
+    for (const sh of SHELLS) {
+      const rr = ccR * sh.rf;
+      const dots = Math.max(10, Math.round(sh.rf * 34));
+      for (let i = 0; i < dots; i++) {
+        // Shells rotate at their own rate, matching the twist in the side view.
+        const a = (i / dots) * Math.PI * 2 + animAngle * sh.turns * 0.5;
+        const th = thHere + sh.turns * 0.35;
+        drawGlow(ctx, ropeRgbAt(th), ccX + Math.cos(a) * rr, ccY + Math.sin(a) * rr,
+                 1.5 * sh.size, sh.alpha * 0.7);
+      }
+    }
+    drawGlow(ctx, ropeRgbAt(thHere), ccX, ccY, 4.4, 0.5);
+    ctx.globalCompositeOperation = 'source-over';
+
+    // Field direction at Earth: up is Bz north, right is By east.
+    const fx = Math.sin(thHere), fy = -Math.cos(thHere);
+    ctx.strokeStyle = segColor(Math.cos(thHere), 0.95); ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.moveTo(ccX, ccY); ctx.lineTo(ccX + fx * ccR, ccY + fy * ccR); ctx.stroke();
+    const ha = Math.atan2(fy, fx);
+    const tipX = ccX + fx * ccR, tipY = ccY + fy * ccR;
+    const HEAD = 8;
+    ctx.fillStyle = segColor(Math.cos(thHere), 0.95);
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    ctx.lineTo(tipX + Math.cos(ha + 2.5) * HEAD, tipY + Math.sin(ha + 2.5) * HEAD);
+    ctx.lineTo(tipX + Math.cos(ha - 2.5) * HEAD, tipY + Math.sin(ha - 2.5) * HEAD);
+    ctx.closePath(); ctx.fill();
+
+    ctx.font = '7px system-ui';
+    ctx.fillStyle = 'rgba(120,155,195,0.5)'; ctx.textAlign = 'left';
+    ctx.fillText('cross section', ccX + ccR + 12, ccY - 2);
+    ctx.fillStyle = 'rgba(120,155,195,0.32)';
+    ctx.fillText('looking back down the rope', ccX + ccR + 12, ccY + 8);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(210,60,60,0.5)'; ctx.fillText('Bz+', ccX, ccY - ccR - 4);
+    ctx.fillStyle = 'rgba(34,197,94,0.5)'; ctx.fillText('Bz−', ccX, ccY + ccR + 9);
+  }
 
   // Rotation sense, taken from the sign of omega.
   const ccw = result.omega >= 0;
@@ -588,8 +676,9 @@ function drawScene(cvs: HTMLCanvasElement, W: number, result: RopeResult, animAn
 
   // Passage labels
   ctx.fillStyle='rgba(75,105,148,0.4)'; ctx.font='8px system-ui'; ctx.textAlign='center';
-  if (u_earth > 0.06) ctx.fillText('already through', (X0 + earthX) / 2, CY + R + 26);
-  if (u_earth < 0.95) ctx.fillText('still to arrive', (earthX + X1) / 2, CY + R + 26);
+  if (u_earth > 0.06) ctx.fillText('already through', (Math.max(X0, xOfU(uLo)) + earthX) / 2, CY + R + 26);
+  if (u_earth < 0.97) ctx.fillText('still to arrive', (earthX + Math.min(X1, xOfU(uHi))) / 2, CY + R + 26);
+  else { ctx.fillStyle = 'rgba(248,180,90,0.7)'; ctx.fillText('trailing end of the rope', earthX + 54, CY + R + 26); }
 
   // Legend
   ctx.fillStyle='rgba(75,105,148,0.32)'; ctx.textAlign='left'; ctx.font='8px system-ui';
