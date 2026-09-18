@@ -79,10 +79,8 @@
         <p>Below that, the live sightings map, a cloud cover overlay from Windy, and the cameras. Everything you need to make the call, nothing you need to decode.</p>
       </div>
       <div>
-        <div class="shot"><div class="shot-ph">
-          <span class="k">forecast-simple-view.png</span>
-          <span class="d">Simple View on a phone or desktop. Score, status sentence, and the four time slots.</span>
-        </div></div>
+        <div class="live-forecast"></div>
+        <p class="shot-cap">The live score, right now, from the same feed as the app</p>
       </div>
     </div>
 
@@ -316,5 +314,7 @@
   </div>
   <script>document.getElementById('yr').textContent=new Date().getFullYear();</script>
 </footer>
+<script src="/assets/sky.js" defer></script>
+<script src="/assets/forecast.js" defer></script>
 </body>
 </html>

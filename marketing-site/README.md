@@ -96,40 +96,64 @@ If you want GA on this site too, paste the same gtag snippet used in the app's
 
 ## Design system
 
-Taken directly from tnrprotography.co.nz so the two sites read as one brand.
-The values below were lifted from the aurora page's own stylesheet, not invented.
+Colour comes from the logo, type and layout from tnrprotography.co.nz, so the
+site sits between the two.
 
-**Colour**
+**Colour, sampled from the logo**
 
 | Token | Value | Use |
 |---|---|---|
-| `--gold` | `#c8963e` | The accent. Labels, rules, buttons, links, numbers. |
-| `--gold-light` / `--gold-dark` | `#d9ac5a` / `#a07428` | Hover and recessed states |
-| `--black` | `#07090d` | Page background |
-| `--dark` | `#0b1520` | Alternate bands |
-| `--card` / `--mid` | `#101e2a` / `#1a2d3d` | Raised surfaces |
-| `--border` | `#22384a` | Every hairline rule |
-| `--gray` / `--light-gray` | `#5a7080` / `#92aab8` | Muted and secondary text |
-| `--white` / `--cream` | `#f0ede8` / `#e4dfd6` | Headings and body. Warm off-white, never pure white. |
+| `--aurora` | `#3ddc97` | Primary accent. The green curtain at the base of the logo. |
+| `--aurora-light` / `--aurora-dark` | `#6df0b8` / `#1d9c68` | Hover and recessed |
+| `--magenta` | `#e0447a` | The crimson band. Used sparingly. |
+| `--violet` | `#7c5cd6` | The purple above it. Background curtains only. |
+| `--black` / `--dark` | `#08060f` / `#0d0a18` | Page and alternate bands, indigo-black not grey |
+| `--border` | `#2a2344` | Every hairline rule |
+| `--white` | `#f2f0f7` | Headings and body |
 
-**Type**
+**Type** (from the aurora page): Bebas Neue uppercase display, Montserrat 700
+labels at `0.25em` letter-spacing, Open Sans body at line-height 1.7.
 
-- Display: **Bebas Neue**, uppercase, `clamp(3.2rem, 8vw, 6.5rem)` for h1 at
-  line-height 0.95, `clamp(2.2rem, 5vw, 3.5rem)` for h2
-- Labels and buttons: **Montserrat** 700, around 0.6rem, `letter-spacing: 0.25em`,
-  uppercase, in gold
-- Body: **Open Sans**, `clamp(0.9rem, 1.5vw, 1.05rem)`, line-height 1.7
+**Layout**: square corners everywhere, no card boxes, hairline rules, hard
+`<br>` line breaks in display headings, unframed imagery.
 
-**Layout rules**
+Note that Bebas Neue has no hyphen glyph. Never put `-` or `--` in a heading or
+anything using `--display`, it renders as a tofu block.
 
-- **Square corners everywhere.** No border radius on anything.
-- **No card boxes.** Blocks are separated by hairline top rules in `--border`,
-  content sits directly on the page background.
-- Headings take **hard line breaks** (`<br>`) so they stack as deliberate blocks,
-  the way the aurora page does it.
-- Imagery is unframed and full width with a deep shadow, never a bordered panel.
-- Gold is the only accent. Red and green appear once, in the visibility score
-  scale, where the colour carries meaning.
+## Live elements
+
+Two scripts, both plain JS with no dependencies and no build step.
+
+**`assets/sky.js`** draws the page backdrop: a seeded starfield (the same
+mulberry32 approach as the app's `StarField.tsx`, so the layout is stable
+between loads), three drifting aurora curtains in the logo's colours, and a moon
+showing the **real current phase** with a proper terminator mask, ported from
+the app's `DriftingMoon.tsx`. It respects `prefers-reduced-motion` and is
+entirely decorative, wrapped so it can never break the page.
+
+**`assets/forecast.js`** renders the **live aurora score**, fetched from the
+same Cloudflare Worker the app uses:
+
+```
+https://spottheaurora.thenamesrock.workers.dev/
+```
+
+It reads `currentForecast.spotTheAuroraForecast` for the score,
+`currentForecast.lastUpdated`, `currentForecast.inputs.hemisphericPower`, and
+`owmDailyForecast[0].moon_phase`. The score bands and the plain-English
+sentences are copied from the app's `ForecastDashboard.tsx` so the site can
+never say something different from the app. "Use my location" applies the same
+0.2% per 10 km adjustment from Greymouth that the app does. It refreshes every
+60 seconds.
+
+Mount it by putting `<div class="live-forecast"></div>` anywhere and including
+the script. Any number of mounts per page share one fetch. It currently appears
+in the hero on the home page and in the Simple View slot on the features page.
+
+**If the worker does not send CORS headers for this domain**, the fetch will
+fail and the widget falls back to a message plus a link to the app. Check the
+browser console once the site is live. The fix is to allow the marketing
+domain's origin in the worker's response headers.
 
 ## Voice rules
 

@@ -5,22 +5,33 @@
    rules instead of card boxes. */
 
 :root {
-  --gold:       #c8963e;
-  --gold-light: #d9ac5a;
-  --gold-dark:  #a07428;
+  /* Accents sampled from the Spot The Aurora logo: the green curtain at the
+     base, the crimson band through the middle, the violet above it. Green is
+     the primary, the other two are used sparingly. */
+  --aurora:       #3ddc97;
+  --aurora-light: #6df0b8;
+  --aurora-dark:  #1d9c68;
+  --magenta:      #e0447a;
+  --violet:       #7c5cd6;
 
-  --black:      #07090d;
-  --dark:       #0b1520;
-  --card:       #101e2a;
-  --mid:        #1a2d3d;
-  --border:     #22384a;
-  --gray:       #5a7080;
-  --light-gray: #92aab8;
-  --white:      #f0ede8;
-  --cream:      #e4dfd6;
+  /* Base: the deep indigo-black of the logo's sky, not a neutral grey */
+  --black:      #08060f;
+  --dark:       #0d0a18;
+  --card:       #141024;
+  --mid:        #1c1730;
+  --border:     #2a2344;
+  --gray:       #6f6790;
+  --light-gray: #9a93b8;
+  --white:      #f2f0f7;
+  --cream:      #ded9ec;
+
+  /* aliases kept so existing rules keep working */
+  --gold:       var(--aurora);
+  --gold-light: var(--aurora-light);
+  --gold-dark:  var(--aurora-dark);
 
   --text:   var(--white);
-  --text-2: rgba(240,237,232,0.85);
+  --text-2: rgba(242,240,247,0.82);
   --text-3: var(--light-gray);
   --line:   var(--border);
 
@@ -111,8 +122,8 @@ section.tight { padding: clamp(44px, 5vw, 70px) 0; }
 }
 .nav-links a:hover { color: var(--white); }
 .nav-links a.active { color: var(--gold); }
-.nav-links a.btn-primary { color: var(--black); }
-.nav-links a.btn-primary:hover { color: var(--black); }
+.nav-links a.btn-primary { color: #04160e; }
+.nav-links a.btn-primary:hover { color: #04160e; }
 .nav-toggle {
   display: none; margin-left: auto; background: transparent; border: 1px solid var(--border);
   color: var(--white); padding: 10px 12px; cursor: pointer; line-height: 0;
@@ -138,8 +149,8 @@ section.tight { padding: clamp(44px, 5vw, 70px) 0; }
   padding: 16px 30px; border: 1px solid transparent; cursor: pointer;
   transition: background .2s var(--ease), color .2s var(--ease), border-color .2s var(--ease);
 }
-.btn-primary { background: var(--gold); color: var(--black); }
-.btn-primary:hover { background: var(--gold-light); color: var(--black); }
+.btn-primary { background: var(--aurora); color: #04160e; }
+.btn-primary:hover { background: var(--aurora-light); color: #04160e; }
 .btn-ghost { background: transparent; color: var(--white); border-color: var(--border); }
 .btn-ghost:hover { border-color: var(--gold); color: var(--gold); }
 .btn-sm { padding: 12px 20px; font-size: .62rem; }
@@ -149,8 +160,9 @@ section.tight { padding: clamp(44px, 5vw, 70px) 0; }
 .hero { position: relative; overflow: hidden; padding: clamp(80px, 11vw, 150px) 0 clamp(60px, 8vw, 100px); }
 .hero-bg { position: absolute; inset: 0; z-index: 0; pointer-events: none;
   background:
-    radial-gradient(ellipse 70% 55% at 22% 12%, rgba(200,150,62,0.09), transparent 62%),
-    radial-gradient(ellipse 80% 60% at 78% 28%, rgba(26,45,61,0.7), transparent 66%);
+    radial-gradient(ellipse 65% 50% at 20% 8%, rgba(61,220,151,0.07), transparent 62%),
+    radial-gradient(ellipse 60% 45% at 62% 4%, rgba(124,92,214,0.09), transparent 65%),
+    radial-gradient(ellipse 70% 40% at 88% 22%, rgba(224,68,122,0.05), transparent 68%);
 }
 .hero-grid { display: none; }
 .hero .wrap { position: relative; z-index: 1; }
@@ -238,7 +250,8 @@ tr:last-child td { border-bottom: none; }
 /* ---------- Callout ---------- */
 .callout { border-left: 2px solid var(--gold); background: transparent; padding: 2px 0 2px 24px; margin: 30px 0; }
 .callout p:last-child { margin-bottom: 0; }
-.callout.violet, .callout.amber { border-left-color: var(--gold-dark); }
+.callout.violet { border-left-color: var(--violet); }
+.callout.amber { border-left-color: var(--magenta); }
 
 /* ---------- Pills ---------- */
 .pills { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -308,3 +321,88 @@ details.faq .body p:last-child { margin-bottom: 0; }
 .mt3 { margin-top: 34px; }
 .muted { color: var(--gray); font-size: .84rem; }
 .hl-violet, .hl-green, .hl-teal, .hl-pink, .hl-amber { color: var(--gold); }
+
+/* ================= Live sky backdrop ================= */
+.sky { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+body > *:not(.sky) { position: relative; z-index: 1; }
+.sky-stars { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+.sky-curtain {
+  position: absolute; left: -30%; right: -30%; top: -22%; height: 78%;
+  filter: blur(62px); opacity: .5; transform-origin: 50% 0%;
+}
+.sky-c1 {
+  background: radial-gradient(ellipse 42% 100% at 28% 40%, rgba(61,220,151,0.30), transparent 68%);
+  animation: curtain1 34s ease-in-out infinite alternate;
+}
+.sky-c2 {
+  background: radial-gradient(ellipse 38% 100% at 58% 34%, rgba(124,92,214,0.28), transparent 68%);
+  animation: curtain2 47s ease-in-out infinite alternate;
+}
+.sky-c3 {
+  background: radial-gradient(ellipse 34% 100% at 80% 46%, rgba(224,68,122,0.17), transparent 70%);
+  animation: curtain3 58s ease-in-out infinite alternate;
+}
+@keyframes curtain1 { from { transform: translateX(-7%) scaleY(1); }   to { transform: translateX(6%) scaleY(1.22); } }
+@keyframes curtain2 { from { transform: translateX(5%) scaleY(1.14); } to { transform: translateX(-8%) scaleY(0.92); } }
+@keyframes curtain3 { from { transform: translateX(-4%) scaleY(0.95); } to { transform: translateX(8%) scaleY(1.2); } }
+
+.sky-moon {
+  position: absolute; top: 9%; right: 9%; width: 112px; height: 112px;
+  filter: drop-shadow(0 0 34px rgba(242,240,247,0.2));
+  animation: moondrift 220s linear infinite alternate;
+}
+@keyframes moondrift { from { transform: translate(0,0); } to { transform: translate(-13vw, 5vh); } }
+@media (max-width: 760px) { .sky-moon { width: 74px; height: 74px; top: 7%; right: 7%; } }
+
+.sky-still .sky-curtain, .sky-still .sky-moon { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .sky-curtain, .sky-moon { animation: none !important; }
+}
+
+/* ================= Live forecast panel ================= */
+.live-forecast { border: 1px solid var(--border); background: rgba(20,16,36,0.72); backdrop-filter: blur(8px); padding: 30px 32px 28px; }
+@media (max-width: 600px) { .live-forecast { padding: 24px 20px 22px; } }
+
+.lf-head { display: flex; flex-wrap: wrap; gap: 10px 18px; justify-content: space-between; align-items: baseline; margin-bottom: 18px; }
+.lf-status, .lf-where {
+  font-family: var(--label); font-size: .56rem; font-weight: 700;
+  letter-spacing: .22em; text-transform: uppercase;
+}
+.lf-status { color: var(--aurora); display: inline-flex; align-items: center; gap: 9px; }
+.lf-status::before {
+  content: ''; width: 6px; height: 6px; background: currentColor; flex-shrink: 0;
+  animation: lfpulse 2.4s ease-in-out infinite;
+}
+.is-down .lf-status { color: var(--gray); }
+.is-down .lf-status::before { animation: none; }
+@keyframes lfpulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+.lf-where { color: var(--gray); }
+
+.lf-score { font-family: var(--display); font-size: clamp(4rem, 11vw, 7rem); line-height: .85; color: var(--white); min-height: .85em; }
+
+/* When the feed can't be reached, show the message and the way through to the
+   app, not an empty gauge or a location button that would change nothing. */
+.is-down .lf-score,
+.is-down .lf-track,
+.is-down .lf-tier,
+.is-down .lf-meta,
+.is-down [data-lf="locate"] { display: none; }
+.is-down .lf-phrase { margin-top: 4px; }
+.lf-track { height: 4px; background: var(--mid); margin: 16px 0 18px; }
+.lf-bar { height: 100%; width: 0; background: var(--aurora); transition: width .7s var(--ease), background .7s var(--ease); }
+.lf-tier {
+  font-family: var(--label); font-size: .6rem; font-weight: 700;
+  letter-spacing: .24em; text-transform: uppercase; color: var(--white); margin-bottom: 10px;
+}
+.lf-phrase { font-size: .95rem; line-height: 1.6; margin-bottom: 20px; color: var(--text-2); }
+
+.lf-meta { display: flex; flex-wrap: wrap; gap: 22px; margin-bottom: 22px; }
+.lf-stat {
+  font-family: var(--label); font-size: .56rem; font-weight: 700;
+  letter-spacing: .2em; text-transform: uppercase; color: var(--gray);
+}
+.lf-stat b { font-family: var(--display); font-size: 1.3rem; font-weight: 400; color: var(--white); letter-spacing: .02em; margin-right: 7px; }
+.lf-actions { display: flex; flex-wrap: wrap; gap: 11px; }
+.lf-actions .btn { flex: 0 0 auto; }
+#lf-locate:disabled { opacity: .55; cursor: default; }

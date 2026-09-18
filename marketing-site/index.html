@@ -59,13 +59,8 @@
       <a class="btn btn-ghost" href="#why">Why it's different</a>
     </div>
     <div style="margin-top:52px">
-      <div class="shot">
-        <div class="shot-ph">
-          <span class="k">hero-forecast-dashboard.png</span>
-          <span class="d">Wide screenshot of the Forecast page in Simple View. Big score, the plain English status line, and the Now / 15 / 30 / 60 min slots visible. Best captured on a night with a decent score.</span>
-        </div>
-      </div>
-      <p class="shot-cap">One number, one sentence, and the next hour laid out. The technical stuff is there if you want it, one tap away.</p>
+      <div class="live-forecast"></div>
+      <p class="shot-cap">This is the real score, live from the same feed as the app. It refreshes every minute.</p>
     </div>
   </div>
 </section>
@@ -379,5 +374,7 @@
   </div>
   <script>document.getElementById('yr').textContent=new Date().getFullYear();</script>
 </footer>
+<script src="/assets/sky.js" defer></script>
+<script src="/assets/forecast.js" defer></script>
 </body>
 </html>
