@@ -558,55 +558,104 @@ function drawScene(cvs: HTMLCanvasElement, W: number, result: RopeResult, animAn
   }
 
   // ── Cross section ─────────────────────────────────────────────────────────
-  // The rope seen end-on, looking back down its axis toward the Sun. Same
-  // nested shells as the side view, so the structure the coil is made of is
-  // legible. The arrow is the field direction passing Earth right now, in the
-  // By-Bz plane, and it turns as the rope rotates.
+  // The rope seen end-on, looking back down its axis toward the Sun.
+  //
+  // In a real flux rope the field direction depends on how far out you are: the
+  // core runs almost straight along the axis, and each shell further out is
+  // wound more tightly around it. So every shell gets its own arrows showing
+  // which way the IMF points at that turn, and the core carries the axial
+  // symbol. All of it is drawn with the CME visualisation's particle sprite.
   {
     const ccX = X0 + 54, ccY = 60, ccR = 36;
     ctx.fillStyle = 'rgba(4,10,22,0.72)';
-    ctx.beginPath(); ctx.arc(ccX, ccY, ccR + 8, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(ccX, ccY, ccR + 10, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = 'rgba(80,110,160,0.22)'; ctx.lineWidth = 0.6;
-    ctx.beginPath(); ctx.arc(ccX, ccY, ccR + 8, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(ccX, ccY, ccR + 10, 0, Math.PI * 2); ctx.stroke();
 
     const thHere = result.thetaFit0 + result.omega * u_earth * ROPE_DUR_MIN;
+    const ccw = result.omega >= 0;
     ctx.globalCompositeOperation = 'lighter';
+
+    // Colour follows the vertical component of the field at each point on the
+    // turn, not a per-shell fudge. The field here is azimuthal, so at the sides
+    // of a ring it points up or down (Bz) and at the top and bottom it points
+    // across (By). That makes the southward part of every turn visible, which
+    // is the part that drives aurora.
+    const localRgb = (tangentAngle: number) => {
+      // Screen y is inverted, so a downward tangent is southward field.
+      const bzComponent = -Math.sin(tangentAngle);
+      const c = segColor(bzComponent, 1);
+      const m = c.match(/rgba?\(([^)]+)\)/);
+      return m ? m[1].split(',').slice(0, 3).map(v => Math.round(parseFloat(v))).join(',') : '255,255,255';
+    };
+
     for (const sh of SHELLS) {
       const rr = ccR * sh.rf;
-      const dots = Math.max(10, Math.round(sh.rf * 34));
+
+      // The turn itself, as particles.
+      const dots = Math.max(12, Math.round(sh.rf * 38));
       for (let i = 0; i < dots; i++) {
-        // Shells rotate at their own rate, matching the twist in the side view.
-        const a = (i / dots) * Math.PI * 2 + animAngle * sh.turns * 0.5;
-        const th = thHere + sh.turns * 0.35;
-        drawGlow(ctx, ropeRgbAt(th), ccX + Math.cos(a) * rr, ccY + Math.sin(a) * rr,
-                 1.5 * sh.size, sh.alpha * 0.7);
+        const a = (i / dots) * Math.PI * 2 - thHere + animAngle * 0.35;
+        const ta = a + (ccw ? Math.PI / 2 : -Math.PI / 2);
+        drawGlow(ctx, localRgb(ta), ccX + Math.cos(a) * rr, ccY + Math.sin(a) * rr,
+                 1.4 * sh.size, sh.alpha * 0.55);
+      }
+
+      // Which way the field points on this turn. Tangential, because the field
+      // winds around the axis, with the sense taken from the rope's rotation.
+      const arrows = Math.max(3, Math.round(sh.rf * 5));
+      for (let k = 0; k < arrows; k++) {
+        const a = (k / arrows) * Math.PI * 2 - thHere + animAngle * 0.35;
+        const px = ccX + Math.cos(a) * rr, py = ccY + Math.sin(a) * rr;
+        const ta = a + (ccw ? Math.PI / 2 : -Math.PI / 2);
+        const rgb = localRgb(ta);
+        const tx = Math.cos(ta), ty = Math.sin(ta);
+        // A short streak of particles running into a brighter head.
+        for (let q = 1; q <= 4; q++) {
+          drawGlow(ctx, rgb, px - tx * q * 2.1, py - ty * q * 2.1,
+                   1.5 - q * 0.18, sh.alpha * (0.5 - q * 0.08));
+        }
+        drawGlow(ctx, rgb, px, py, 2.3, Math.min(1, sh.alpha + 0.2));
+        // Head, so the direction is unambiguous at a glance.
+        ctx.fillStyle = `rgba(${rgb},${(sh.alpha * 0.85).toFixed(2)})`;
+        ctx.beginPath();
+        ctx.moveTo(px + tx * 4.2, py + ty * 4.2);
+        ctx.lineTo(px + Math.cos(ta + 2.5) * 3.4, py + Math.sin(ta + 2.5) * 3.4);
+        ctx.lineTo(px + Math.cos(ta - 2.5) * 3.4, py + Math.sin(ta - 2.5) * 3.4);
+        ctx.closePath(); ctx.fill();
       }
     }
-    drawGlow(ctx, ropeRgbAt(thHere), ccX, ccY, 4.4, 0.5);
-    ctx.globalCompositeOperation = 'source-over';
 
-    // Field direction at Earth: up is Bz north, right is By east.
-    const fx = Math.sin(thHere), fy = -Math.cos(thHere);
-    ctx.strokeStyle = segColor(Math.cos(thHere), 0.95); ctx.lineWidth = 1.8;
-    ctx.beginPath(); ctx.moveTo(ccX, ccY); ctx.lineTo(ccX + fx * ccR, ccY + fy * ccR); ctx.stroke();
-    const ha = Math.atan2(fy, fx);
-    const tipX = ccX + fx * ccR, tipY = ccY + fy * ccR;
-    const HEAD = 8;
-    ctx.fillStyle = segColor(Math.cos(thHere), 0.95);
-    ctx.beginPath();
-    ctx.moveTo(tipX, tipY);
-    ctx.lineTo(tipX + Math.cos(ha + 2.5) * HEAD, tipY + Math.sin(ha + 2.5) * HEAD);
-    ctx.lineTo(tipX + Math.cos(ha - 2.5) * HEAD, tipY + Math.sin(ha - 2.5) * HEAD);
-    ctx.closePath(); ctx.fill();
+    // The core is essentially axial, so it is shown as field along the rope
+    // rather than around it: a dot for coming at you, a cross for going away.
+    // It is neutral because an axial field has no vertical component to colour.
+    const coreRgb = '170,190,220';
+    drawGlow(ctx, coreRgb, ccX, ccY, 5.0, 0.55);
+    ctx.globalCompositeOperation = 'source-over';
+    const towardUs = result.axial === 'E' || result.axial === 'N';
+    ctx.strokeStyle = `rgba(${coreRgb},0.9)`; ctx.lineWidth = 1.3;
+    if (towardUs) {
+      ctx.beginPath(); ctx.arc(ccX, ccY, 4.6, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = `rgba(${coreRgb},0.9)`;
+      ctx.beginPath(); ctx.arc(ccX, ccY, 1.6, 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.beginPath(); ctx.arc(ccX, ccY, 4.6, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(ccX - 3.2, ccY - 3.2); ctx.lineTo(ccX + 3.2, ccY + 3.2);
+      ctx.moveTo(ccX + 3.2, ccY - 3.2); ctx.lineTo(ccX - 3.2, ccY + 3.2);
+      ctx.stroke();
+    }
 
     ctx.font = '7px system-ui';
     ctx.fillStyle = 'rgba(120,155,195,0.5)'; ctx.textAlign = 'left';
-    ctx.fillText('cross section', ccX + ccR + 12, ccY - 2);
+    ctx.fillText('cross section', ccX + ccR + 14, ccY - 8);
     ctx.fillStyle = 'rgba(120,155,195,0.32)';
-    ctx.fillText('looking back down the rope', ccX + ccR + 12, ccY + 8);
+    ctx.fillText('arrows show IMF at each turn', ccX + ccR + 14, ccY + 2);
+    ctx.fillText('green where that field points south', ccX + ccR + 14, ccY + 22);
+    ctx.fillText(towardUs ? 'core field points toward us' : 'core field points away', ccX + ccR + 14, ccY + 12);
     ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(210,60,60,0.5)'; ctx.fillText('Bz+', ccX, ccY - ccR - 4);
-    ctx.fillStyle = 'rgba(34,197,94,0.5)'; ctx.fillText('Bz−', ccX, ccY + ccR + 9);
+    ctx.fillStyle = 'rgba(210,60,60,0.5)'; ctx.fillText('Bz+', ccX, ccY - ccR - 6);
+    ctx.fillStyle = 'rgba(34,197,94,0.5)'; ctx.fillText('Bz−', ccX, ccY + ccR + 11);
   }
 
   // Rotation sense, taken from the sign of omega.
