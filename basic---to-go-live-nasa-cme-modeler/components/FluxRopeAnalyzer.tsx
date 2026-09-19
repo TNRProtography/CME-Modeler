@@ -626,33 +626,122 @@ function drawScene(cvs: HTMLCanvasElement, W: number, result: RopeResult, animAn
       }
     }
 
-    // The core is essentially axial, so it is shown as field along the rope
-    // rather than around it: a dot for coming at you, a cross for going away.
-    // It is neutral because an axial field has no vertical component to colour.
-    const coreRgb = '170,190,220';
-    drawGlow(ctx, coreRgb, ccX, ccY, 5.0, 0.55);
+    // ── The core ─────────────────────────────────────────────────────────────
+    // The whole point of this diagram is to show what Bz is about to do, so the
+    // core carries that rather than sitting neutral. Vertical on this circle is
+    // Bz, as the labels above and below it say, so an arrow drawn from the
+    // centre in the direction of the field reads as Bz at a glance: pointing
+    // down and green is southward, pointing up and red is northward. A second,
+    // fainter arrow shows where that field will have rotated to in an hour, and
+    // the arc between the two shows which way it is sweeping. The axial symbol
+    // stays at the centre, so the direction along the rope is still there.
+    const bt = Math.max(0.1, result.btMean);
+    // Same damped rotation the numeric forecast uses, so the arrow and the
+    // figures below the chart cannot disagree.
+    const lam = Math.LN2 / 60;
+    const thFut = thHere + (result.omega / lam) * (1 - Math.exp(-lam * 60));
+    const fieldAt = (theta: number) => {
+      const { bzEff } = effectiveBz(bt * Math.sin(theta), bt * Math.cos(theta), nowDate);
+      // Screen y runs downward, so southward field points down the screen.
+      return { bz: bzEff, ang: Math.atan2(-bzEff, bt * Math.sin(theta)) };
+    };
+    const fNow = fieldAt(thHere), fFut = fieldAt(thFut);
+    const coreRgb = ropeRgbAt(thHere), futRgb = ropeRgbAt(thFut);
+
+    const drawFieldArrow = (ang: number, rgb: string, alpha: number, len: number) => {
+      const dx = Math.cos(ang), dy = Math.sin(ang);
+      // A dark shaft first, so the arrow reads against the shells behind it.
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = `rgba(4,10,22,${(alpha * 0.75).toFixed(2)})`; ctx.lineWidth = 4.5;
+      ctx.beginPath();
+      ctx.moveTo(ccX + dx * 6, ccY + dy * 6);
+      ctx.lineTo(ccX + dx * (len + 4), ccY + dy * (len + 4));
+      ctx.stroke();
+      ctx.globalCompositeOperation = 'lighter';
+      for (let q = 0; q <= 9; q++) {
+        const r = 7 + (len - 7) * (q / 9);
+        drawGlow(ctx, rgb, ccX + dx * r, ccY + dy * r, 1.5 + q * 0.12, alpha * (0.35 + q * 0.06));
+      }
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = `rgba(${rgb},${alpha.toFixed(2)})`;
+      // Built from the tip outward along the shaft, not swung around the centre,
+      // so the head stays a head at any arrow length.
+      const tipX = ccX + dx * (len + 5), tipY = ccY + dy * (len + 5);
+      const nx = -dy, ny = dx;   // perpendicular to the shaft
+      ctx.beginPath();
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(ccX + dx * len + nx * 3.8, ccY + dy * len + ny * 3.8);
+      ctx.lineTo(ccX + dx * len - nx * 3.8, ccY + dy * len - ny * 3.8);
+      ctx.closePath(); ctx.fill();
+      ctx.globalCompositeOperation = 'lighter';
+    };
+
+    // Where the field is heading, drawn first so the present sits on top of it.
+    drawFieldArrow(fFut.ang, futRgb, 0.42, ccR * 0.62);
+    drawFieldArrow(fNow.ang, coreRgb, 0.95, ccR * 0.82);
+
+    // The sweep between the two, so the rotation is visible rather than implied.
+    {
+      let sweep = fFut.ang - fNow.ang;
+      while (sweep > Math.PI) sweep -= Math.PI * 2;
+      while (sweep < -Math.PI) sweep += Math.PI * 2;
+      if (Math.abs(sweep) > 0.12) {
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.strokeStyle = `rgba(${futRgb},0.45)`; ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(ccX, ccY, ccR * 0.70, fNow.ang, fFut.ang, sweep < 0);
+        ctx.stroke();
+        const ea = fFut.ang, side = sweep > 0 ? 1 : -1;
+        const ex = ccX + Math.cos(ea) * ccR * 0.70, ey = ccY + Math.sin(ea) * ccR * 0.70;
+        const pe = ea + side * Math.PI / 2;
+        ctx.fillStyle = `rgba(${futRgb},0.5)`;
+        ctx.beginPath();
+        ctx.moveTo(ex + Math.cos(pe) * 4, ey + Math.sin(pe) * 4);
+        ctx.lineTo(ex + Math.cos(pe + 2.4) * 4, ey + Math.sin(pe + 2.4) * 4);
+        ctx.lineTo(ex + Math.cos(pe - 2.4) * 4, ey + Math.sin(pe - 2.4) * 4);
+        ctx.closePath(); ctx.fill();
+      }
+    }
+
+    // The axial component, which the arrows cannot show because it runs into the
+    // screen: a dot for coming at you, a cross for going away.
+    drawGlow(ctx, coreRgb, ccX, ccY, 5.0, 0.6);
     ctx.globalCompositeOperation = 'source-over';
     const towardUs = result.axial === 'E' || result.axial === 'N';
     ctx.strokeStyle = `rgba(${coreRgb},0.9)`; ctx.lineWidth = 1.3;
+    ctx.beginPath(); ctx.arc(ccX, ccY, 4.6, 0, Math.PI * 2); ctx.stroke();
     if (towardUs) {
-      ctx.beginPath(); ctx.arc(ccX, ccY, 4.6, 0, Math.PI * 2); ctx.stroke();
       ctx.fillStyle = `rgba(${coreRgb},0.9)`;
       ctx.beginPath(); ctx.arc(ccX, ccY, 1.6, 0, Math.PI * 2); ctx.fill();
     } else {
-      ctx.beginPath(); ctx.arc(ccX, ccY, 4.6, 0, Math.PI * 2); ctx.stroke();
       ctx.beginPath();
       ctx.moveTo(ccX - 3.2, ccY - 3.2); ctx.lineTo(ccX + 3.2, ccY + 3.2);
       ctx.moveTo(ccX + 3.2, ccY - 3.2); ctx.lineTo(ccX - 3.2, ccY + 3.2);
       ctx.stroke();
     }
 
+    const dBz = fFut.bz - fNow.bz;
+    const trend =
+      Math.abs(dBz) < bt * 0.08 ? (fNow.bz < -0.5 ? 'holding south for the next hour'
+                                 : fNow.bz > 0.5 ? 'holding north for the next hour'
+                                 : 'flat for the next hour')
+      : dBz < 0 ? 'turning south over the next hour'
+      : 'turning north over the next hour';
+
     ctx.font = '7px system-ui';
     ctx.fillStyle = 'rgba(120,155,195,0.5)'; ctx.textAlign = 'left';
-    ctx.fillText('cross section', ccX + ccR + 14, ccY - 8);
+    ctx.fillText('cross section', ccX + ccR + 14, ccY - 22);
     ctx.fillStyle = 'rgba(120,155,195,0.32)';
-    ctx.fillText('arrows show IMF at each turn', ccX + ccR + 14, ccY + 2);
-    ctx.fillText('green where that field points south', ccX + ccR + 14, ccY + 22);
-    ctx.fillText(towardUs ? 'core field points toward us' : 'core field points away', ccX + ccR + 14, ccY + 12);
+    ctx.fillText('arrows show IMF at each turn', ccX + ccR + 14, ccY - 12);
+    ctx.fillText('green where that field points south', ccX + ccR + 14, ccY - 2);
+    ctx.fillStyle = `rgba(${coreRgb},0.85)`;
+    ctx.fillText(`core arrow: Bz ${fNow.bz >= 0 ? '+' : '−'}${Math.abs(fNow.bz).toFixed(1)} nT now`, ccX + ccR + 14, ccY + 9);
+    // Coloured by where Bz is heading rather than by where it lands, so the
+    // wording and the colour always say the same thing.
+    ctx.fillStyle = segColor(Math.abs(dBz) < bt * 0.08 ? Math.max(-1, Math.min(1, fNow.bz / bt)) : (dBz < 0 ? -1 : 1), 0.8);
+    ctx.fillText(`faint arrow: ${trend}`, ccX + ccR + 14, ccY + 19);
+    ctx.fillStyle = 'rgba(120,155,195,0.32)';
+    ctx.fillText(towardUs ? 'core runs toward us' : 'core runs away from us', ccX + ccR + 14, ccY + 29);
     ctx.textAlign = 'center';
     ctx.fillStyle = 'rgba(210,60,60,0.5)'; ctx.fillText('Bz+', ccX, ccY - ccR - 6);
     ctx.fillStyle = 'rgba(34,197,94,0.5)'; ctx.fillText('Bz−', ccX, ccY + ccR + 11);
