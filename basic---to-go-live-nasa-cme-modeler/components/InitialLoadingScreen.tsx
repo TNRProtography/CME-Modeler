@@ -1,6 +1,8 @@
 // --- START OF FILE src/components/InitialLoadingScreen.tsx ---
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { drawSun, drawGlow } from '../utils/spaceScene';
+import { SUN_FRAGMENT_SHADER } from '../constants';
 
 const SLOGANS = [
   'Aligning planetary orbits...',
@@ -23,10 +25,23 @@ interface InitialLoadingScreenProps {
   reloadCountdown?: number | null;
 }
 
+// Returns "r,g,b" rather than an hsl() string, because the particles are now
+// drawn with the shared additive sprite, which tints from a raw triple.
+const hslTriple = (h: number, sPct: number, lPct: number): string => {
+  const sN = sPct / 100, lN = Math.max(0, Math.min(100, lPct)) / 100;
+  const c = (1 - Math.abs(2 * lN - 1)) * sN;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = lN - c / 2;
+  const [r, g, b] =
+    h < 60  ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] :
+    h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+  return [r, g, b].map(v => Math.round((v + m) * 255)).join(',');
+};
+
 const getParticleColor = (progress: number): string => {
-  if (progress < 0.1) return `hsl(240, 100%, ${70 + progress * 200}%)`; // Blue-ish wake
-  if (progress < 0.4) return `hsl(50, 100%, ${60 + progress * 100}%)`;  // Yellow core
-  return `hsl(25, 100%, ${55 + (1-progress) * 50}%)`; // Orange/Red shock front
+  if (progress < 0.1) return hslTriple(240, 100, 70 + progress * 200); // Blue-ish wake
+  if (progress < 0.4) return hslTriple(50, 100, 60 + progress * 100);  // Yellow core
+  return hslTriple(25, 100, 55 + (1 - progress) * 50);                 // Orange/Red shock front
 };
 
 const InitialLoadingScreen: React.FC<InitialLoadingScreenProps> = ({ isFadingOut, progress, statusText, reloadNotice, reloadCountdown }) => {
@@ -130,32 +145,14 @@ const InitialLoadingScreen: React.FC<InitialLoadingScreenProps> = ({ isFadingOut
         ctx.fill();
       }
 
-      // Draw Sun
+      // Draw Sun, using the same shader the CME visualisation uses, so the
+      // first thing anyone sees matches the scene they are about to open.
       const pulse = 1 + 0.03 * Math.sin(time / 400);
-      const sunGradient = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, sunRadius * pulse);
-      sunGradient.addColorStop(0, '#fff5e6');
-      sunGradient.addColorStop(0.5, '#ffcc00');
-      sunGradient.addColorStop(0.9, '#ff8800');
-      sunGradient.addColorStop(1, 'rgba(255, 100, 0, 0.3)');
-
-      ctx.fillStyle = sunGradient;
-      ctx.beginPath();
-      ctx.arc(sunX, sunY, sunRadius * pulse, 0, Math.PI * 2);
-      ctx.fill();
-      
-      const hotSpotPulse = sunRadius * (1 + 0.05 * Math.sin(time / 333));
-      ctx.globalCompositeOperation = 'lighter';
-      const hotspotGradient = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, hotSpotPulse * 0.6);
-      hotspotGradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
-      hotspotGradient.addColorStop(1, 'rgba(255, 200, 0, 0)');
-      ctx.fillStyle = hotspotGradient;
-      ctx.beginPath();
-      ctx.arc(sunX, sunY, hotSpotPulse * 0.6, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalCompositeOperation = 'source-over';
+      drawSun(ctx, sunX, sunY, sunRadius * pulse, time / 1000, SUN_FRAGMENT_SHADER);
 
 
       // Draw CMEs
+      ctx.globalCompositeOperation = 'lighter';
       cmesRef.current.forEach((cme, index) => {
         const elapsed = time - cme.creationTime;
         
@@ -174,14 +171,13 @@ const InitialLoadingScreen: React.FC<InitialLoadingScreenProps> = ({ isFadingOut
           const lifeProgress = distance / maxDist;
           const alpha = Math.sin(Math.min(lifeProgress, 1.0) * Math.PI);
 
-          ctx.fillStyle = p.color;
-          ctx.globalAlpha = alpha * 0.8;
-          ctx.beginPath();
-          ctx.arc(px, py, p.size * window.devicePixelRatio, 0, Math.PI * 2);
-          ctx.fill();
+          // Same additive sprite as the CME visualisation's particles.
+          drawGlow(ctx, p.color, px, py,
+                   p.size * window.devicePixelRatio * 1.6, alpha * 0.8);
         });
         ctx.globalAlpha = 1;
       });
+      ctx.globalCompositeOperation = 'source-over';
 
       animationFrameId.current = requestAnimationFrame(animate);
     };

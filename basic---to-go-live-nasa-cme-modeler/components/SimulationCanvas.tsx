@@ -221,6 +221,66 @@ const createArrowTexture = (THREE: any) => {
   return arrowTextureCache;
 };
 
+
+// ============================================================
+//  SPACECRAFT MARKER
+// ============================================================
+// The probes were single tetrahedra, which read as generic markers rather than
+// as spacecraft. This builds a recognisable little satellite instead: a central
+// bus, two solar panels on short booms, and a dish.
+//
+// Returned as a Group, which is a drop-in for the Mesh it replaces: the caller
+// only sets .position and .name, attaches a PointLight, and hands it to the
+// label system, all of which Object3D provides.
+//
+// Built around local +Z, because the animation loop calls lookAt(sun) on these,
+// so +Z ends up pointing sunward. That puts the panel faces and the dish toward
+// the Sun, which is how these actually fly.
+const buildSpacecraftMarker = (THREE: any, size: number, color: number) => {
+  const g = new THREE.Group();
+  const flat = (c: number, o = 1) => new THREE.MeshBasicMaterial({ color: c, transparent: o < 1, opacity: o });
+
+  // Bus: the body of the spacecraft.
+  const bus = new THREE.Mesh(new THREE.BoxGeometry(size * 1.1, size * 1.1, size * 1.6), flat(color));
+  g.add(bus);
+
+  // Solar panels either side, broad faces toward the Sun.
+  const panelGeo = new THREE.BoxGeometry(size * 2.2, size * 1.25, size * 0.12);
+  const panelMat = flat(0x2b3f6b);
+  const boomGeo = new THREE.BoxGeometry(size * 0.55, size * 0.16, size * 0.16);
+  const boomMat = flat(0x9aa6bb, 0.9);
+  [-1, 1].forEach(sgn => {
+    const panel = new THREE.Mesh(panelGeo, panelMat);
+    panel.position.set(sgn * size * 1.95, 0, 0);
+    g.add(panel);
+    const boom = new THREE.Mesh(boomGeo, boomMat);
+    boom.position.set(sgn * size * 0.85, 0, 0);
+    g.add(boom);
+    // A couple of cell divisions so the panel does not read as a plain slab.
+    for (let i = -1; i <= 1; i++) {
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(size * 0.04, size * 1.25, size * 0.14), flat(0x6f7f9e, 0.8));
+      rib.position.set(sgn * size * 1.95 + i * size * 0.62, 0, 0);
+      g.add(rib);
+    }
+  });
+
+  // Dish on the sunward face.
+  const dish = new THREE.Mesh(new THREE.ConeGeometry(size * 0.62, size * 0.5, 12, 1, true), flat(0xdfe6f2, 0.95));
+  dish.rotation.x = -Math.PI / 2;
+  dish.position.set(0, 0, size * 1.05);
+  g.add(dish);
+  const mast = new THREE.Mesh(new THREE.BoxGeometry(size * 0.1, size * 0.1, size * 0.5), boomMat);
+  mast.position.set(0, 0, size * 0.85);
+  g.add(mast);
+
+  // The markers are already exaggerated relative to true scale so they are
+  // visible at all. A detailed model spans far wider than the single
+  // tetrahedron it replaces, so it is scaled back to sit closer to the old
+  // footprint while still being readable as a spacecraft.
+  g.scale.setScalar(0.55);
+  return g;
+};
+
 // ============================================================
 //  GCS GEOMETRY CONSTANTS
 // ============================================================
@@ -1142,8 +1202,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             const initX = snapEarthX + offX;
             const initZ = snapEarthZ + offZ;
             spacecraftPositionsRef.current[key] = { x: initX, y: vert, z: initZ, name, color: '#' + color.toString(16).padStart(6,'0') };
-            const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 });
-            const mesh = new THREE.Mesh(new THREE.TetrahedronGeometry(size, 0), mat);
+            const mesh = buildSpacecraftMarker(THREE, size, color);
             mesh.position.set(initX, vert, initZ);
             mesh.name = meshName;
             const light = new THREE.PointLight(color, 0.4, size * 80);
@@ -1169,8 +1228,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             snapEarthLon,
             meshName,
           };
-          const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85 });
-          const mesh = new THREE.Mesh(new THREE.TetrahedronGeometry(size, 0), mat);
+          const mesh = buildSpacecraftMarker(THREE, size, color);
           mesh.position.set(sx, sy, sz);
           mesh.name = meshName;
           const light = new THREE.PointLight(color, 0.4, size * 80);
@@ -1368,6 +1426,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           const rx = off.dx * cosD + off.dz * sinD;
           const rz = -off.dx * sinD + off.dz * cosD;
           mesh.position.set(earthPosNow.x + rx, earthPosNow.y + off.dy, earthPosNow.z + rz);
+          // Panels and dish face the Sun, which is where they point in reality.
+          mesh.lookAt(0, 0, 0);
         }
       }
 
