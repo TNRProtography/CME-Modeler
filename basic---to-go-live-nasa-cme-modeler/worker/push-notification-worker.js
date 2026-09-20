@@ -1946,12 +1946,24 @@ async function handleStats(request, env) {
   const url = new URL(request.url);
   if (url.searchParams.get('secret') !== env.TRIGGER_SECRET) return new Response('Forbidden', { status: 403 });
   const snap = await kv(env).get(STATS_KEY, 'json');
-  if (!snap) return json({ error: 'No census has completed yet. One runs within the hour, or force it with ?force=1.' }, 404);
+
+  // Force first. Checking for an existing snapshot before honouring force=1
+  // meant that on a fresh deploy - the one time you most want to force one -
+  // this replied "no census yet, force it with ?force=1" to a request that
+  // was already forcing it.
   if (url.searchParams.get('force') === '1') {
     await kv(env).delete(STATS_KEY);
     await maybeRunCensus(env);
-    return json({ ...snap, note: 'A fresh census has been started; these numbers are the previous one.' });
+    return json({
+      started: true,
+      note: snap
+        ? 'A fresh census has been started. The numbers below are the previous one; read /stats again in a minute for the new count.'
+        : 'First census started. It walks every subscriber across 64 shards - read /stats again in a minute.',
+      previous: snap ?? null,
+    });
   }
+
+  if (!snap) return json({ error: 'No census has completed yet. One runs within the hour, or force it with ?force=1.' }, 404);
   return json(snap);
 }
 
