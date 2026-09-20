@@ -31,7 +31,8 @@ Check afterwards with:
 | `VAPID_PUBLIC_KEY` | secret | web push |
 | `VAPID_PRIVATE_KEY` | secret | web push |
 | `VAPID_SUBJECT` | secret | web push, a `mailto:` |
-| `SELF_URL` | var | the worker's own origin. **Required.** Without it nothing fans out except on the cron sweep |
+| `SELF` | **service binding, pointing at this worker** | how the worker calls itself. **Without it nothing is ever delivered** - see below |
+| `SELF_URL` | var | the worker's own origin. Used for building URLs and as a fallback outside Cloudflare |
 
 `CONFIG_THRESHOLDS` must exist in KV as JSON or the scheduled run aborts
 before it does anything. It should carry at least:
@@ -39,6 +40,24 @@ before it does anything. It should carry at least:
 ```json
 { "substorm": { "cooldownMinutes": 30 } }
 ```
+
+## The SELF binding
+
+Add a service binding named exactly `SELF`, pointing at this same worker
+(Settings → Bindings → Add → Service binding).
+
+Everything here fans out by the worker calling its own `/run-shard`, and **a
+Worker is not allowed to fetch its own hostname**. Cloudflare refuses it with
+error 1042, and the refusal arrives looking like an ordinary 404 - so the
+dispatch silently never happens. The symptom is sixty-four shards sitting at
+`pending`, nothing running, no error in sight, and `/stats` answering "no
+census has completed yet" forever however many times you force it.
+
+A service binding goes through Cloudflare's internal dispatch instead of out
+over the network, which is the supported way for a Worker to reach a Worker -
+itself included.
+
+    /diagnose?secret=...   says whether the binding is there and working
 
 ## How an alert gets delivered
 

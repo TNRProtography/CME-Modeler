@@ -25,7 +25,8 @@ writeFileSync(copy, readFileSync(SRC, 'utf8') +
   '\nexport { checkOvernightWatch, runShard, sweepJobs, jobProgress, maybeRunCensus, runCensusShard,' +
   ' recordSend, foldAllClicks, handleSends, handleNotificationClicked, stampSendId,' +
   ' maybeRunMigration, runMigrationShard, migrationTotals, TOPIC_DEFAULT_ON, ALL_TOPICS,' +
-  ' pushServiceOf, enqueueDelivery, OP_BUDGET, isRetryablePushStatus, fitPushPayload };\n');
+  ' pushServiceOf, enqueueDelivery, OP_BUDGET, isRetryablePushStatus, fitPushPayload,' +
+  ' selfFetch, canSelfCall };\n');
 const W = await import(pathToFileURL(copy).href);
 
 // ---- fake KV with real prefix/cursor semantics -------------------------
@@ -761,6 +762,52 @@ console.log('\n15. a dry run reaches everyone and delivers nothing');
   check(realProg.sent === want && got.size === want,
         'the real send afterwards still reaches everyone',
         `${realProg.sent} sent, ${got.size} unique`);
+
+  globalThis.fetch = realFetch;
+}
+
+// ---- 16. the worker calls itself through the service binding ----------
+// A Worker may not fetch its own hostname. Cloudflare refuses it with error
+// 1042, which arrives looking like an ordinary 404, so the fan-out silently
+// never happened: 64 shards pending, nothing running, no error anywhere.
+console.log('\n16. fan-out goes through the SELF binding, not the network');
+{
+  const viaBinding = [];
+  const viaNetwork = [];
+
+  const bound = {
+    ...env,
+    SELF: { fetch: async (req) => { viaBinding.push(new URL(req.url).pathname); return new Response('{}', { status: 200 }); } },
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    viaNetwork.push(String(typeof input === 'string' ? input : input.url));
+    // What Cloudflare actually returns for a worker calling itself.
+    return new Response('error code: 1042\n', { status: 404 });
+  };
+
+  check(await W.canSelfCall(bound), 'a worker with the binding knows it can call itself');
+  await W.selfFetch(bound, '/run-shard', { method: 'POST', body: '{}' });
+  check(viaBinding.length === 1 && viaBinding[0] === '/run-shard',
+        'the call goes through the binding', viaBinding.join(','));
+  check(viaNetwork.length === 0,
+        'and never out over the network, where 1042 would swallow it',
+        viaNetwork.join(','));
+
+  // A whole job's worth of dispatches must all take that route.
+  viaBinding.length = 0;
+  await W.enqueueDelivery(bound, {
+    kind: 'topic', topic: 'admin-broadcast', dryRun: true,
+    payload: { title: 'T', body: 'B', tag: 'admin-broadcast', data: { url: '/' } },
+  });
+  check(viaBinding.length === 64 && viaNetwork.length === 0,
+        'every one of the 64 shard dispatches uses the binding',
+        `${viaBinding.length} via binding, ${viaNetwork.length} via network`);
+
+  // And without the binding, it says so rather than dispatching into a 404.
+  const unbound = { ...env, SELF: undefined, SELF_URL: undefined };
+  check(!(await W.canSelfCall(unbound)),
+        'without the binding or a URL it reports that it cannot fan out');
 
   globalThis.fetch = realFetch;
 }

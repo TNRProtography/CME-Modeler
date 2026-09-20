@@ -1604,9 +1604,8 @@ async function runMigrationShard(env, ch) {
   }));
 
   if (!complete) {
-    const origin = await resolveSelfUrl(env);
-    if (origin) {
-      keepAlive(env, fetch(new URL('/run-migration-shard', origin), {
+    if (await canSelfCall(env)) {
+      keepAlive(env, selfFetch(env, '/run-migration-shard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ secret: env.TRIGGER_SECRET, shard: ch }),
@@ -1630,9 +1629,8 @@ async function maybeRunMigration(env, note = /** @type {(name?: string, status?:
   const state = await kv(env).get(MIGRATION_KEY, 'json');
   if (state?.version >= MIGRATION_VERSION && state?.complete) return;
 
-  const origin = await resolveSelfUrl(env);
-  if (!origin) {
-    note('migrate', 'skipped', 'no self origin known yet');
+  if (!(await canSelfCall(env))) {
+    note('migrate', 'skipped', 'the worker cannot call itself - add the SELF service binding');
     return;
   }
 
@@ -1666,7 +1664,7 @@ async function maybeRunMigration(env, note = /** @type {(name?: string, status?:
 
   note('migrate', 'running', `${due.length} shard(s) left`);
   for (const ch of due) {
-    keepAlive(env, fetch(new URL('/run-migration-shard', origin), {
+    keepAlive(env, selfFetch(env, '/run-migration-shard', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ secret: env.TRIGGER_SECRET, shard: ch }),
@@ -2288,13 +2286,12 @@ async function enqueueDelivery(env, { kind, topic = null, payload = null, params
 
 /** Fire one invocation per shard. Each gets its own subrequest budget. */
 async function dispatchShards(env, jobId, chars) {
-  const origin = await resolveSelfUrl(env);
-  if (!origin) {
-    console.error('[outbox] no self origin known - shards can only be drained by the cron sweep.');
+  if (!(await canSelfCall(env))) {
+    console.error('[outbox] the worker cannot call itself - add the SELF service binding. Shards can only be drained by the cron sweep.');
     return;
   }
   for (const ch of chars) {
-    keepAlive(env, fetch(new URL('/run-shard', origin), {
+    keepAlive(env, selfFetch(env, '/run-shard', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ secret: env.TRIGGER_SECRET, jobId, shard: ch }),
@@ -2332,33 +2329,26 @@ async function handleDiagnose(request, env) {
   const url = new URL(request.url);
   if (url.searchParams.get('secret') !== env.TRIGGER_SECRET) return new Response('Forbidden', { status: 403 });
 
-  const origin = await resolveSelfUrl(env);
   const out = {
+    selfBindingPresent: !!env.SELF?.fetch,
     selfUrlConfigured: env.SELF_URL ?? null,
-    originInUse: origin,
     requestOrigin: new URL(request.url).origin,
     triggerSecretSet: !!env.TRIGGER_SECRET,
     lastDispatchError: await kv(env).get(DISPATCH_ERROR_KEY, 'json'),
   };
 
-  if (!origin) {
-    out.verdict = 'No origin to call. Set SELF_URL.';
+  if (!out.selfBindingPresent) {
+    out.verdict = 'No SELF service binding. A Worker cannot fetch its own hostname - '
+                + 'Cloudflare refuses it with error 1042 and it looks like a 404 - so nothing '
+                + 'will ever fan out. Add a service binding named SELF pointing at this worker.';
     return json(out, 200);
   }
 
-  // 1. Can we reach ourselves at all?
+  // The endpoint the fan-out actually uses, with the secret it actually sends.
+  // A made-up job id should come back as 'gone'; what matters is that the call
+  // arrives at all.
   try {
-    const r = await fetch(new URL('/health', origin));
-    out.selfHealth = { status: r.status, body: (await r.text()).slice(0, 200) };
-  } catch (e) {
-    out.selfHealth = { error: e.message };
-  }
-
-  // 2. Can we reach the endpoint the fan-out actually uses, with the secret
-  //    the fan-out actually sends? A made-up job id is expected to come back
-  //    as 'gone' - what matters is that it is not 403 and not a throw.
-  try {
-    const r = await fetch(new URL('/run-shard', origin), {
+    const r = await selfFetch(env, '/run-shard', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ secret: env.TRIGGER_SECRET, jobId: 'diagnose-no-such-job', shard: 'A' }),
@@ -2368,15 +2358,13 @@ async function handleDiagnose(request, env) {
     out.selfRunShard = { error: e.message };
   }
 
-  const okHealth = out.selfHealth?.status === 200 || out.selfHealth?.status === 503;
-  const okShard  = out.selfRunShard?.status === 200;
-  out.verdict = okHealth && okShard
-    ? 'The worker can call itself. Fan-out should work.'
-    : !okHealth
-      ? 'The worker cannot reach its own origin. SELF_URL is wrong, or the platform is refusing the loopback.'
-      : out.selfRunShard?.status === 403
-        ? 'Reached itself, but /run-shard refused the secret.'
-        : 'Reached itself, but /run-shard did not answer normally. See selfRunShard.';
+  out.verdict = out.selfRunShard?.status === 200
+    ? 'The worker can call itself through the SELF binding. Fan-out should work.'
+    : out.selfRunShard?.status === 403
+      ? 'The binding works, but /run-shard refused the secret.'
+      : out.selfRunShard?.body?.includes('1042')
+        ? 'Still error 1042 - the SELF binding is not being used. Check it is named exactly SELF and points at this worker.'
+        : 'The binding did not answer normally. See selfRunShard.';
   return json(out, 200);
 }
 
@@ -2391,6 +2379,34 @@ async function handleDiagnose(request, env) {
  * invocation has no request to learn from, but by the time one runs the worker
  * has almost certainly served a /save-subscription or a /health.
  */
+/**
+ * Call this worker's own endpoint.
+ *
+ * A Worker is not allowed to fetch its own hostname. Cloudflare refuses it
+ * with error 1042 - "Worker tried to fetch from another Worker on the same
+ * zone" - and the refusal looks like an ordinary 404, so the fan-out simply
+ * never happened and sixty-four shards sat at pending forever. That is what
+ * was wrong: not the budget, not the secret, not SELF_URL, but the assumption
+ * that a worker can call itself over the network at all.
+ *
+ * The supported route is a service binding pointing at this same worker, which
+ * goes through Cloudflare's internal dispatch rather than out and back. SELF
+ * is that binding. The plain fetch is kept only as a fallback for a local
+ * harness, where there is no binding and no restriction.
+ */
+/** Can this worker reach itself at all? Nothing fans out if it cannot. */
+async function canSelfCall(env) {
+  return !!env.SELF?.fetch || !!(await resolveSelfUrl(env));
+}
+
+async function selfFetch(env, path, init) {
+  const origin = await resolveSelfUrl(env);
+  const url = new URL(path, origin ?? 'https://worker.invalid');
+  if (env.SELF?.fetch) return env.SELF.fetch(new Request(url, init));
+  if (!origin) throw new Error('no SELF binding and no self origin');
+  return fetch(url, init);
+}
+
 async function resolveSelfUrl(env) {
   if (env.SELF_URL) return env.SELF_URL;
   try {
@@ -3060,9 +3076,8 @@ async function maybeRunCensus(env, note = /** @type {(name?: string, status?: st
   const existing = await kv(env).get(STATS_KEY, 'json');
   const age = existing?.takenAt ? Date.now() - existing.takenAt : Infinity;
   if (age < CENSUS_INTERVAL_MS) return;
-  const origin = await resolveSelfUrl(env);
-  if (!origin) {
-    console.warn('[census] no self origin known - cannot dispatch census shards.');
+  if (!(await canSelfCall(env))) {
+    console.warn('[census] the worker cannot call itself - add the SELF service binding.');
     return;
   }
   const censusId = Date.now().toString(36);
@@ -3077,7 +3092,7 @@ async function maybeRunCensus(env, note = /** @type {(name?: string, status?: st
     note('clicks', 'error', e.message);
   }
   for (const ch of SHARD_CHARS) {
-    keepAlive(env, fetch(new URL('/run-census-shard', origin), {
+    keepAlive(env, selfFetch(env, '/run-census-shard', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ secret: env.TRIGGER_SECRET, censusId, shard: ch }),
@@ -3182,9 +3197,8 @@ async function runCensusShard(env, censusId, ch) {
 
   if (!complete) {
     // Out of budget, not out of subscribers. Come straight back.
-    const origin = await resolveSelfUrl(env);
-    if (origin) {
-      keepAlive(env, fetch(new URL('/run-census-shard', origin), {
+    if (await canSelfCall(env)) {
+      keepAlive(env, selfFetch(env, '/run-census-shard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ secret: env.TRIGGER_SECRET, censusId, shard: ch }),
