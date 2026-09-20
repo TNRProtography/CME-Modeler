@@ -468,18 +468,10 @@ async function runScheduledTasks(env) {
     return;
   }
 
-  try {
-    const lastMigration = await kv(env).get('LAST_PREF_MIGRATION_TIMESTAMP');
-    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-    if (!lastMigration || (Date.now() - Number(lastMigration)) > ONE_DAY_MS) {
-      console.log('[auto-migration] Running daily preference migration...');
-      await runPreferenceMigration(env);
-      await kv(env).put('LAST_PREF_MIGRATION_TIMESTAMP', Date.now().toString());
-      console.log('[auto-migration] Done.');
-    }
-  } catch (e) {
-    console.warn('[auto-migration] Failed (non-fatal):', e.message);
-  }
+  // The daily preference migration used to run from here. It is now
+  // maybeRunMigration, called at the end of this function: versioned, sharded
+  // so it can finish at 80,000 records, and self-limiting rather than
+  // re-walking the whole namespace every day.
 
   const forecastData = await getFullForecastData(env);
   if (!forecastData) {
@@ -552,7 +544,7 @@ const FLARE_M1_THRESHOLD = 1e-5;
 const FLARE_DECLINE_MS = 3 * 60 * 1000;
 const FLARE_STALE_MS   = 4 * 60 * 60 * 1000;
 
-async function checkSolarFlares(env, allData = null, note = () => {}) {
+async function checkSolarFlares(env, allData = null, note = /** @type {(name?: string, status?: string, detail?: string) => void} */ (() => {})) {
   try {
     if (!allData) {
       const response = await fetchWithRetry(NOAA_XRAY_URL);
@@ -794,7 +786,7 @@ function tailLoadingSentence(loadingState) {
 // swallowed the error, and substorm alerts silently never sent. Default it.
 const SUBSTORM_DEFAULT_COOLDOWN_MIN = 30;
 
-async function checkSubstormActivity(env, substormThresholds, substormData, loadingState = null, note = () => {}) {
+async function checkSubstormActivity(env, substormThresholds, substormData, loadingState = null, note = /** @type {(name?: string, status?: string, detail?: string) => void} */ (() => {})) {
   try {
     if (!substormData?.current) {
       note('substorm', 'skipped', 'substorm worker unavailable');
@@ -859,7 +851,7 @@ async function checkSubstormActivity(env, substormThresholds, substormData, load
 }
 
 // ── Interplanetary Shock Detector ────────────────────────────────────────────
-async function checkShockDetection(env, magPoints, plasmaPoints, tempAvailable = true, note = () => {}) {
+async function checkShockDetection(env, magPoints, plasmaPoints, tempAvailable = true, note = /** @type {(name?: string, status?: string, detail?: string) => void} */ (() => {})) {
   if (magPoints.length < 10 || plasmaPoints.length < 10) {
     note('shock', 'skipped', `insufficient data (mag=${magPoints.length} plasma=${plasmaPoints.length})`);
     return;
@@ -1082,7 +1074,7 @@ const OVERNIGHT_MODE_THRESHOLDS = {
   'eye':         55,
 };
 
-async function checkOvernightWatch(env, forecastData, substormData, magPoints = [], plasmaPoints = [], note = () => {}) {
+async function checkOvernightWatch(env, forecastData, substormData, magPoints = [], plasmaPoints = [], note = /** @type {(name?: string, status?: string, detail?: string) => void} */ (() => {})) {
   if (!forecastData?.currentForecast) { note('overnight', 'skipped', 'forecast unavailable'); return; }
 
   const sunsetMs = forecastData?.currentForecast?.sun?.set ?? null;
@@ -1275,7 +1267,7 @@ function pickVisibilityTier(distToVis, distToBoundary, triggers) {
   return null;
 }
 
-async function checkVisibilityNotifications(env, substormData, forecastData, magPoints = [], plasmaPoints = [], note = () => {}) {
+async function checkVisibilityNotifications(env, substormData, forecastData, magPoints = [], plasmaPoints = [], note = /** @type {(name?: string, status?: string, detail?: string) => void} */ (() => {})) {
   try {
     const visLastRun = await kv(env).get('STATE_vis_last_run');
     if (visLastRun && (Date.now() - Number(visLastRun)) < 4.5 * 60 * 1000) {
@@ -1518,7 +1510,7 @@ async function runMigrationShard(env, ch) {
  * follow-up curl is something that will eventually be forgotten. Bumping
  * MIGRATION_VERSION is all a future change needs.
  */
-async function maybeRunMigration(env, note = () => {}) {
+async function maybeRunMigration(env, note = /** @type {(name?: string, status?: string, detail?: string) => void} */ (() => {})) {
   const state = await kv(env).get(MIGRATION_KEY, 'json');
   if (state?.version >= MIGRATION_VERSION && state?.complete) return;
 
@@ -2070,7 +2062,11 @@ function newJobId() {
  *   'overnight'  per subscriber, by their overnight mode, score and cooldown
  *   'visibility' per subscriber, by their location and which tier they reach
  */
-async function enqueueDelivery(env, { kind, topic, payload, params }) {
+/**
+ * @param {any} env
+ * @param {{ kind: string, topic?: string|null, payload?: any, params?: any }} job
+ */
+async function enqueueDelivery(env, { kind, topic = null, payload = null, params = null }) {
   const id = newJobId();
   const job = {
     id, kind, topic,
@@ -2314,7 +2310,7 @@ function buildVisibilityPayload(tier, statsLine) {
  * plausibly live. Without this, a dropped dispatch is a permanently missed
  * alert, which is exactly what was happening before.
  */
-async function sweepJobs(env, note = () => {}) {
+async function sweepJobs(env, note = /** @type {(name?: string, status?: string, detail?: string) => void} */ (() => {})) {
   const now = Date.now();
   let cursor, jobs = [], revived = 0, stillRunning = 0, exhausted = 0;
 
@@ -2635,7 +2631,7 @@ const CENSUS_SHARD_TTL   = 2 * 60 * 60;
 // Older ones are still sent to; this is only for reporting.
 const ACTIVE_WINDOW_DAYS = 60;
 
-async function maybeRunCensus(env, note = () => {}) {
+async function maybeRunCensus(env, note = /** @type {(name?: string, status?: string, detail?: string) => void} */ (() => {})) {
   const existing = await kv(env).get(STATS_KEY, 'json');
   const age = existing?.takenAt ? Date.now() - existing.takenAt : Infinity;
   if (age < CENSUS_INTERVAL_MS) return;
@@ -2802,12 +2798,24 @@ async function importVapidPrivateKeyFlexible(privInput, pubInput) {
 async function encryptWebPushPayload(subscription, jsonString) {
   const uaPubRaw   = b64urlToBytes(subscription.keys?.p256dh);
   const authSecret = b64urlToBytes(subscription.keys?.auth);
-  const { publicKey: serverPublicKey, privateKey: serverPrivateKey } =
-    await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
-  const exportedRaw  = await crypto.subtle.exportKey('raw', serverPublicKey);
+  // The editor's TypeScript flags the next few lines. It is wrong about all of
+  // them, and this is the code every push has ever been encrypted with, so the
+  // casts are there to quieten it rather than to change anything:
+  //   generateKey returns CryptoKey | CryptoKeyPair and TS will not narrow it
+  //   to the pair, even though an ECDH keypair is the only thing it can be
+  //   exportKey('raw', ...) returns ArrayBuffer | JsonWebKey for the same
+  //   reason - 'raw' can only ever give an ArrayBuffer
+  //   deriveBits wants the peer key under `public`, which is what the WebCrypto
+  //   spec calls it; the Workers type definitions name it differently
+  const keyPair = /** @type {CryptoKeyPair} */ (
+    await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']));
+  const serverPublicKey = keyPair.publicKey;
+  const serverPrivateKey = keyPair.privateKey;
+  const exportedRaw  = /** @type {ArrayBuffer} */ (await crypto.subtle.exportKey('raw', serverPublicKey));
   const serverPubRaw = new Uint8Array(exportedRaw);
   const uaPubKey   = await crypto.subtle.importKey('raw', uaPubRaw, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
-  const ecdhBits   = await crypto.subtle.deriveBits({ name: 'ECDH', public: uaPubKey }, serverPrivateKey, 256);
+  const ecdhBits   = await crypto.subtle.deriveBits(
+    /** @type {any} */ ({ name: 'ECDH', public: uaPubKey }), serverPrivateKey, 256);
   const ecdhSecret = new Uint8Array(ecdhBits);
   const prkKey     = await hmac(authSecret, ecdhSecret);
   const keyInfo    = concatBytes(utf8('WebPush: info'), new Uint8Array([0x00]), uaPubRaw, serverPubRaw);
