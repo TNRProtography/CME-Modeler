@@ -1935,6 +1935,10 @@ async function handleRunShard(request, env) {
   const { secret, jobId, shard } = await request.json().catch(() => ({}));
   if (!secret || secret !== env.TRIGGER_SECRET) return new Response('Forbidden', { status: 403 });
   if (!jobId || !shard) return json({ error: 'jobId and shard are required' }, 400);
+  // Only a real shard character. An arbitrary prefix here would list and work
+  // a slice of the namespace nobody intended, and the migration handler
+  // already checks this.
+  if (!SHARD_CHARS.includes(shard)) return json({ error: 'bad shard' }, 400);
   const res = await runShard(env, jobId, shard);
   return json({ jobId, shard, ...res });
 }

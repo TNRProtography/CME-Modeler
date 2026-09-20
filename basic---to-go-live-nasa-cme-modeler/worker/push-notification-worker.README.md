@@ -56,6 +56,18 @@ invocation with its own subrequest budget, so the fan-out is 64 times wider
 than a single invocation could ever be, and a shard that runs out of budget
 saves its cursor and dispatches itself again.
 
+A shard budgets **operations**, not sends. Every KV read, write and delete is
+a subrequest and a Worker gets about a thousand per invocation, so a shard
+holding 1,250 subscribers cannot finish in one go - it stops early, saves both
+the page cursor and the last key it processed within that page, and dispatches
+itself again. The within-page marker matters: KV cursors only move a page at a
+time, so without it a resumed shard would start the page again and send to
+everyone in it twice.
+
+A push that fails with a 429, a 408 or a 5xx is held on the shard and tried
+first on the next attempt. A 404 or 410 prunes the subscription. A 400 or 403
+is not retried, because it will be just as wrong next time.
+
 Durability is the cron sweep, not the dispatch. Every scheduled run
 re-dispatches any shard that is pending, or leased past the point a worker
 could still be alive, or failed and due a retry. So a dropped dispatch, an
@@ -165,7 +177,8 @@ into the dashboard.
 | `test:topics` | the app and this worker agree about every topic; nothing sends into a void; no topic is live without either a toggle or a written reason |
 | `test:worker` | the detectors against synthetic solar wind, including cases that must stay quiet |
 | `test:detectors` | a full X5 flare minute by minute, a CME arrival with and without the temperature channel, a quiet day, and a half-configured worker |
-| `test:outbox` | delivery, the sweep's recovery, the ledger, click counting and the migration, at several thousand subscribers |
+| `test:outbox` | delivery, the sweep's recovery, the ledger, click counting, the migration, an oversized shard, a rate-limiting push service and a cron tick racing a send |
+| `test:scale` | 80,000 subscribers with dispatches dropped and pushes failing, asserting everyone is reached exactly once. Not in `test:all` - takes half a minute |
 
 The topic list in this worker is generated. To add a notification, add it to
 `utils/notificationCategories.ts` and run `npm run sync:topics` - do not edit
