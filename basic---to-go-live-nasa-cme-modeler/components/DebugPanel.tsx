@@ -11,6 +11,7 @@ import {
   getOvernightMode,
 } from '../utils/notifications';
 import { getLogs, clearLogs, type LogEntry } from '../utils/logCapture';
+import { getServiceWorkerVersion } from '../utils/serviceWorker';
 
 const PUSH_WORKER_URL = 'https://push-notification-worker.thenamesrock.workers.dev';
 
@@ -207,6 +208,7 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ isOpen, onClose }) => {
   const [subId, setSubId]               = useState<string | null>(null);
   const [endpoint, setEndpoint]         = useState<string | null>(null);
   const [swReady, setSwReady]           = useState<boolean | null>(null);
+  const [swVersion, setSwVersion]       = useState<string | null>(null);
   const [serverRecord, setServerRecord] = useState<ServerRecord | null>(null);
   const [workerHealth, setWorkerHealth] = useState<WorkerHealth | null>(null);
   const [localPrefs, setLocalPrefs]     = useState<Record<string, boolean>>({});
@@ -233,6 +235,9 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ isOpen, onClose }) => {
       try {
         const reg = await navigator.serviceWorker.ready;
         setSwReady(true);
+        // Which build of sw.js is actually in charge. A device stuck on an old
+        // one is the failure this answers, so it is worth a line of its own.
+        setSwVersion(await getServiceWorkerVersion());
         const sub = await reg.pushManager.getSubscription();
         if (sub) {
           setEndpoint(sub.endpoint);
@@ -311,6 +316,7 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ isOpen, onClose }) => {
       `ID: ${subId ?? 'not found'}`,
       `Endpoint: ${endpoint ?? 'none'}`,
       `SW ready: ${swReady}`,
+      `SW version: ${swVersion ?? 'unknown'}`,
       `Permission: ${deviceInfo?.notificationPermission ?? 'unknown'}`,
       '',
       '--- SERVER RECORD ---',
@@ -421,6 +427,7 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ isOpen, onClose }) => {
           <Row label="Push endpoint" value={endpoint ? `…${endpoint.slice(-40)}` : 'No subscription'} mono />
           <Row label="Permission" value={deviceInfo?.notificationPermission ?? '…'} />
           <Row label="Service worker" value={swReady === null ? '…' : swReady ? 'Active' : 'Not ready'} />
+          <Row label="SW version" value={swVersion ?? (swReady === null ? '…' : 'unknown')} />
         </div>
 
         {/* Server record */}

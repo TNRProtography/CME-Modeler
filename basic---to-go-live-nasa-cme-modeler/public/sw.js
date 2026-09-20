@@ -1,12 +1,26 @@
 /**
  * Spot The Aurora — Browser Service Worker
  * Handles Web Push notifications and notification click events.
- * @version 2.2.0
+ * @version 2.3.0
  *
  * The icon now comes from the push payload when the worker sends one, so the
  * category manifest in the app is the single place an icon is chosen. The map
  * below is the fallback for payloads sent before that change.
+ *
+ * Deliberately has no `fetch` handler and stores nothing in Cache Storage. An
+ * earlier version of this file served navigations cache-first, which is how a
+ * stale build could pin itself on a device for as long as the cache survived.
+ * Without a fetch handler there is nothing for an old copy of the app to be
+ * served *from*: the network and the CDN decide what the page is, the same as
+ * on a browser with no service worker at all. Do not add caching here without
+ * a versioned cache name and a matching cleanup in `activate`.
  */
+
+// Bumped on every change to this file. The byte-compare the browser does on
+// /sw.js is what actually triggers an update, so this is not load-bearing - it
+// exists so a device can be asked what it is running, and so a version stuck in
+// the field is a fact somebody can read rather than a theory.
+const SW_VERSION = '2.3.0';
 
 // Maps notification topic/tag to a specific icon
 const TOPIC_ICONS = {
@@ -88,10 +102,58 @@ function lookup(map, tag, fallback) {
   return fallback;
 }
 
-self.addEventListener('install', () => self.skipWaiting());
+// ── lifecycle ────────────────────────────────────────────────────────────────
+// The rule this file follows: a new version takes over immediately and an old
+// one is never left running. `skipWaiting` means a new worker does not sit in
+// `waiting` behind a tab that has been open for a week, and `clients.claim`
+// means it controls the pages that are already open rather than only the next
+// ones. Together they close the gap where an update had downloaded and
+// installed but nothing on the device was using it yet.
+self.addEventListener('install', () => {
+  self.skipWaiting();
+});
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(clients.claim());
+  event.waitUntil((async () => {
+    // Delete every Cache Storage entry. Nothing here writes one, so anything
+    // present was left by an older version of this file, and an orphaned cache
+    // is exactly the thing that used to serve a months-old index.html. Clearing
+    // it on activate means the first load after this version lands also
+    // permanently undoes the last one that cached.
+    try {
+      const names = await caches.keys();
+      await Promise.all(names.map((n) => caches.delete(n)));
+      if (names.length) console.log('[SW] Cleared stale caches:', names.join(', '));
+    } catch (err) {
+      console.warn('[SW] Could not clear caches:', err);
+    }
+
+    await self.clients.claim();
+
+    // Tell whatever is open which version now controls it. The app logs this,
+    // so a device running something unexpected shows up in the debug panel
+    // rather than only in somebody's description of what went wrong.
+    const all = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
+    for (const client of all) {
+      client.postMessage({ type: 'SW_ACTIVATED', version: SW_VERSION });
+    }
+  })());
+});
+
+self.addEventListener('message', (event) => {
+  const type = event.data?.type;
+  // Belt and braces: if a future version ever stops calling skipWaiting on
+  // install, the page can still push a waiting worker through rather than
+  // leaving it stranded until every tab closes.
+  if (type === 'SKIP_WAITING') {
+    self.skipWaiting();
+    return;
+  }
+  if (type === 'GET_VERSION') {
+    const reply = { type: 'SW_VERSION', version: SW_VERSION };
+    if (event.ports?.[0]) event.ports[0].postMessage(reply);
+    else event.source?.postMessage(reply);
+  }
 });
 
 // ── IndexedDB helpers for notification history ───────────────────────────────

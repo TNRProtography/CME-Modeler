@@ -4,6 +4,7 @@ import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
 import { initLogCapture } from './utils/logCapture';
 import { reportNotificationClick } from './utils/notifications';
+import { registerServiceWorker } from './utils/serviceWorker';
 import './styles.css';
 
 // Start capturing console output immediately so the debug panel
@@ -39,14 +40,8 @@ root.render(
   </React.StrictMode>
 );
 
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js', { scope: '/' })
-      .then((reg) => {
-        console.log('[SW] Registered successfully. Scope:', reg.scope, 'State:', reg.active?.state ?? 'installing');
-      })
-      .catch((err) => {
-        console.error('[SW] Registration failed:', err);
-      });
-  });
-}
+// Registers /sw.js and keeps it honest: checks for a new version on a timer
+// and when the app returns to the foreground, pushes a waiting worker through
+// rather than letting it strand, and reloads once - while the page is hidden -
+// when a new version takes control.
+registerServiceWorker();
