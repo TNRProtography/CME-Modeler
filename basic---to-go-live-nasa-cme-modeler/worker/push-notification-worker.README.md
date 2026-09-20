@@ -26,7 +26,7 @@ Check afterwards with:
 | `SUBSCRIPTIONS_KV` | KV namespace | subscribers, cooldowns, detector state |
 | `rtsw` | service binding | the IMAP/RTSW merged solar wind proxy |
 | `FORECAST_SERVICE` | service binding | the Spot The Aurora forecast worker |
-| `TRIGGER_SECRET` | secret | guards `/status`, `/diagnostics`, `/trigger-test-push`, `/run-shard`, `/run-census-shard`, `/job`, `/stats` |
+| `TRIGGER_SECRET` | secret | guards every diagnostic and internal route below |
 | `BANNER_AUTH_TOKEN` | secret | also accepted for `/send-broadcast` and `/migrate-preferences` |
 | `VAPID_PUBLIC_KEY` | secret | web push |
 | `VAPID_PRIVATE_KEY` | secret | web push |
@@ -69,6 +69,47 @@ inside the shard, unchanged from before.
     /job?secret=...&id=<id>   progress for one job
     /job?secret=...           the jobs still in flight
 
+## Who got it, and did they open it
+
+Every finished job leaves a record, so "did the M5 flare go out, and to how
+many" is answerable the next morning rather than only from live logs.
+
+    SEND_<jobId>   topic, title, when, how long the fan-out took, how many
+                   the push services accepted, failed, and dead endpoints
+                   pruned, plus how many people opened the app from it
+    SENDS          rolling index of the last 60 sends
+
+    /sends?secret=...            the ledger, newest first, rolled up per topic
+    /sends?secret=...&limit=5    fewer
+    /sends?secret=...&fold=1     recount clicks before answering
+
+**Accepted** means a push service took the message, not that a phone displayed
+it. Nothing short of the device reporting back shows that, which is what the
+click count is for.
+
+Clicks are attributed without touching the service worker, which is served from
+outside this project: the worker stamps the send id into the notification's
+deep link, the app reports it on the next load and strips it from the address
+bar. So the number means "opened the app from this alert". Each click is its
+own KV key rather than an incremented counter - two workers incrementing one
+value lose updates, and a popular alert would lose a lot of them. They are
+counted by prefix and folded into the record hourly, recomputed rather than
+accumulated, so folding twice cannot double-count.
+
+## Migration
+
+Subscriber records are brought up to the current topic list automatically, once
+per `MIGRATION_VERSION`, off the cron. It is sharded like everything else, so it
+finishes at 80,000 records instead of timing out half way.
+
+It is additive: a preference somebody actually set is never overwritten, and
+someone who turned everything off is left alone. A topic they were never asked
+about gets the same default the app's own settings screen would show them -
+which is the bug it replaced, where the worker stored `false` while the switch
+said on.
+
+    /migration?secret=...   how it went
+
 ## Subscriber counts
 
 `STATS` in KV is a single snapshot line, refreshed hourly off the cron:
@@ -77,9 +118,17 @@ inside the shard, unchanged from before.
 { "takenAt": 0, "takenAtNZ": "", "subscribers": 0,
   "subscribedToSomething": 0, "activeLast60Days": 0,
   "withLocation": 0, "withoutLocation": 0,
+  "subscribedToNothing": 0, "quietOver60Days": 0,
   "byCategory": { "overnight-watch": 0 },
-  "overnightModes": { "eye": 0, "phone": 0, "camera": 0 } }
+  "overnightModes": { "eye": 0, "phone": 0, "camera": 0 },
+  "byPushService": { "apple": 0, "google": 0 },
+  "recentSends": [{ "topic": "", "accepted": 0, "clicked": 0, "clickRate": 0 }] }
 ```
+
+`subscribers` counts saved push subscriptions. Some belong to devices that
+uninstalled long ago; those only come off the list when a send to them returns
+410, which the ledger reports as `pruned`. `byPushService` matters because
+failures cluster by platform - when a send goes badly, it says whose devices.
 
     /stats?secret=...           read the snapshot
     /stats?secret=...&force=1   take a fresh one now
@@ -108,12 +157,16 @@ cooldown stopped it. `error` means it threw.
 
 ## Testing changes
 
-`npm run test:worker` from the app directory runs the detectors against
-synthetic solar wind, including cases that must stay quiet.
+`npm run test:all` runs all four suites. Worth doing before pasting anything
+into the dashboard.
 
-`npm run test:outbox` seeds several thousand subscribers, runs a real sunset
-through the nightly path, and insists everyone who asked for it is notified
-exactly once - then throws away a quarter of the shard dispatches and checks a
-single cron sweep still reaches all of them.
+| Suite | What it covers |
+| --- | --- |
+| `test:topics` | the app and this worker agree about every topic; nothing sends into a void; no topic is live without either a toggle or a written reason |
+| `test:worker` | the detectors against synthetic solar wind, including cases that must stay quiet |
+| `test:detectors` | a full X5 flare minute by minute, a CME arrival with and without the temperature channel, a quiet day, and a half-configured worker |
+| `test:outbox` | delivery, the sweep's recovery, the ledger, click counting and the migration, at several thousand subscribers |
 
-Both are worth running before pasting anything into the dashboard.
+The topic list in this worker is generated. To add a notification, add it to
+`utils/notificationCategories.ts` and run `npm run sync:topics` - do not edit
+`ALL_TOPICS` by hand, `test:topics` will fail if you do.
