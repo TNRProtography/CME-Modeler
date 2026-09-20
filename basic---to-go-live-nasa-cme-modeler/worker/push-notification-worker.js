@@ -425,6 +425,8 @@ export default {
     if (url.pathname === '/job'                       && request.method === 'GET')  return handleJob(request, env);
     if (url.pathname === '/run-census-shard'          && request.method === 'POST') return handleRunCensusShard(request, env);
     if (url.pathname === '/stats'                     && request.method === 'GET')  return handleStats(request, env);
+    if (url.pathname === '/sends'                     && request.method === 'GET')  return handleSends(request, env);
+    if (url.pathname === '/notification-clicked'      && request.method === 'POST') return handleNotificationClicked(request, env);
     if (url.pathname === '/health')                                                  return handleHealthCheck(env);
     return new Response('Not found', { status: 404 });
   },
@@ -1362,7 +1364,8 @@ function isReservedKey(name) {
          name.startsWith('CONFIG_') || name.startsWith('COOLDOWN_') ||
          name.startsWith('LAST_') || name.startsWith('JOB_') ||
          name.startsWith('JOBSHARD_') || name.startsWith('STATSSHARD_') ||
-         name === STATS_KEY || name === SELF_ORIGIN_KEY;
+         name.startsWith('SEND_') || name.startsWith('CLK_') ||
+         name === STATS_KEY || name === SELF_ORIGIN_KEY || name === SEND_LOG_KEY;
 }
 
 async function handleCheckSubscription(request, env) {
@@ -2005,7 +2008,8 @@ async function runShard(env, jobId, ch) {
   }), { expirationTtl: JOB_TTL_SECONDS });
 
   let cursor = shard.cursor ?? undefined;
-  let sent = shard.sent ?? 0, failed = shard.failed ?? 0, budget = SEND_BUDGET;
+  let sent = shard.sent ?? 0, failed = shard.failed ?? 0;
+  let pruned = shard.pruned ?? 0, budget = SEND_BUDGET;
   let complete = false;
   let lastError = null;
 
@@ -2022,7 +2026,8 @@ async function runShard(env, jobId, ch) {
         if (!decision) continue;
 
         budget--;
-        const resp = await sendPushWithPayload(stored.subscription, decision.payload, env);
+        const resp = await sendPushWithPayload(
+          stored.subscription, stampSendId(decision.payload, jobId), env);
         if (resp.ok) {
           sent++;
           if (decision.onSent) await decision.onSent();
@@ -2030,7 +2035,7 @@ async function runShard(env, jobId, ch) {
           // A gone subscription is pruned; anything else is left for the next
           // sweep, since a push service returning 500 now may well accept it
           // in a minute.
-          if (resp.status === 410 || resp.status === 404) await kv(env).delete(key.name);
+          if (resp.status === 410 || resp.status === 404) { await kv(env).delete(key.name); pruned++; }
           else failed++;
         }
       }
@@ -2045,12 +2050,12 @@ async function runShard(env, jobId, ch) {
 
   const attempts = (shard.attempts ?? 0) + 1;
   const next = complete && !lastError
-    ? { state: 'done', cursor: null, sent, failed, attempts, leaseUntil: 0, finishedAt: Date.now() }
-    : { state: 'pending', cursor: cursor ?? null, sent, failed, attempts,
+    ? { state: 'done', cursor: null, sent, failed, pruned, attempts, leaseUntil: 0, finishedAt: Date.now() }
+    : { state: 'pending', cursor: cursor ?? null, sent, failed, pruned, attempts,
         leaseUntil: 0, nextAttemptAt: Date.now() + shardRetryDelayMs(attempts), lastError };
 
   await kv(env).put(sKey, JSON.stringify(next), { expirationTtl: JOB_TTL_SECONDS });
-  console.log(`[outbox] shard ${jobId}/${ch}: ${next.state} sent=${sent} failed=${failed} attempt=${attempts}`);
+  console.log(`[outbox] shard ${jobId}/${ch}: ${next.state} sent=${sent} failed=${failed} pruned=${pruned} attempt=${attempts}`);
 
   // More to do and budget left over means the list was long; keep going in a
   // fresh invocation rather than waiting for the sweep.
@@ -2168,17 +2173,37 @@ async function sweepJobs(env, note = () => {}) {
 
   for (const id of jobs) {
     const due = [];
+    // The sweep is already reading every shard, so total them here rather than
+    // paying for a second pass to build the ledger entry.
+    const totals = { sent: 0, failed: 0, pruned: 0 };
+    let finished = 0, gaveUp = 0;
+
     for (const ch of SHARD_CHARS) {
       const shard = await kv(env).get(shardKey(id, ch), 'json');
-      if (!shard || shard.state === 'done') continue;
+      if (!shard) continue;
+      totals.sent += shard.sent ?? 0;
+      totals.failed += shard.failed ?? 0;
+      totals.pruned += shard.pruned ?? 0;
+
+      if (shard.state === 'done') { finished++; continue; }
       if (shard.state === 'running' && shard.leaseUntil > now) { stillRunning++; continue; }
-      if ((shard.attempts ?? 0) >= MAX_SHARD_ATTEMPTS) { exhausted++; continue; }
+      if ((shard.attempts ?? 0) >= MAX_SHARD_ATTEMPTS) { exhausted++; gaveUp++; continue; }
       if (shard.nextAttemptAt && shard.nextAttemptAt > now) continue;
       due.push(ch);
     }
+
     if (due.length) {
       revived += due.length;
       await dispatchShards(env, id, due);
+      continue;
+    }
+
+    // Nothing left to do for this job: either every shard finished, or the
+    // stragglers have exhausted their attempts and never will. Record what
+    // happened either way - a partial send is exactly the thing worth seeing.
+    if (finished + gaveUp === SHARD_CHARS.length) {
+      const job = await kv(env).get(jobKey(id), 'json');
+      if (job) await recordSend(env, job, totals);
     }
   }
 
@@ -2193,11 +2218,11 @@ async function sweepJobs(env, note = () => {}) {
 async function jobProgress(env, id) {
   const job = await kv(env).get(jobKey(id), 'json');
   if (!job) return null;
-  let sent = 0, failed = 0, done = 0, pending = 0, running = 0, stuck = 0;
+  let sent = 0, failed = 0, pruned = 0, done = 0, pending = 0, running = 0, stuck = 0;
   for (const ch of SHARD_CHARS) {
     const s = await kv(env).get(shardKey(id, ch), 'json');
     if (!s) continue;
-    sent += s.sent ?? 0; failed += s.failed ?? 0;
+    sent += s.sent ?? 0; failed += s.failed ?? 0; pruned += s.pruned ?? 0;
     if (s.state === 'done') done++;
     else if (s.state === 'running') running++;
     else if ((s.attempts ?? 0) >= MAX_SHARD_ATTEMPTS) stuck++;
@@ -2206,10 +2231,196 @@ async function jobProgress(env, id) {
   return {
     id, kind: job.kind, topic: job.topic, createdAt: job.createdAt,
     ageMinutes: Math.round((Date.now() - job.createdAt) / 60000),
-    sent, failed,
+    sent, failed, pruned,
     shards: { total: SHARD_CHARS.length, done, running, pending, gaveUp: stuck },
     complete: done === SHARD_CHARS.length,
   };
+}
+
+// ── Delivery ledger ─────────────────────────────────────────────────────────
+//
+// What actually happened, every time a notification goes out.
+//
+// Before this there was no way to answer "did the M5 flare go out, and to how
+// many people" after the fact - only Cloudflare logs, which nobody reads and
+// which roll off. Each finished job leaves a small record:
+//
+//   SEND_<jobId>   one send: topic, title, when, accepted, failed, pruned,
+//                  clicked, and how long the fan-out took
+//   SENDS          a rolling index of the last SEND_LOG_LIMIT job ids, so
+//                  /sends is two reads rather than a list of the namespace
+//
+// "accepted" is the honest word: it means the push service took the message,
+// not that a phone displayed it. Nothing short of the device reporting back
+// can tell us that, which is what the click count is for.
+
+/**
+ * Tag a payload with the send it belongs to, so a click can be attributed.
+ *
+ * The id rides in the deep link because the service worker is served from
+ * outside this project: it opens data.url on click without knowing anything
+ * about the ledger, and the app reports the id on the next load. data.sendId
+ * is set too, so a future service worker can report the click directly without
+ * the round trip through the URL.
+ */
+function stampSendId(payload, jobId) {
+  if (!payload || !jobId) return payload;
+  const data = { ...(payload.data ?? {}), sendId: jobId };
+  try {
+    // data.url is app-relative ('/?page=forecast'), so give URL a base to
+    // parse against and hand back only the path it produces.
+    const u = new URL(data.url ?? '/', 'https://app.invalid');
+    u.searchParams.set('n', jobId);
+    data.url = u.pathname + u.search + u.hash;
+  } catch {
+    // A URL we cannot parse is not worth losing the notification over.
+  }
+  return { ...payload, data };
+}
+
+const SEND_LOG_KEY = 'SENDS';
+const SEND_LOG_LIMIT = 60;
+const SEND_TTL_SECONDS = 45 * 24 * 60 * 60;
+const sendKey = (id) => `SEND_${id}`;
+
+// Clicks are counted as one unique key each rather than by incrementing a
+// counter. Two workers incrementing the same KV value will lose an update, and
+// a popular alert would lose a lot of them; a unique key per click cannot
+// collide, and counting them is a single prefixed list. They expire on their
+// own, so nothing has to clean up.
+const CLICK_TTL_SECONDS = 40 * 24 * 60 * 60;
+const clickPrefix = (id) => `CLK_${id}_`;
+
+/**
+ * Roll a finished job's 64 shard records into one ledger entry.
+ * Called from the sweep, which has already read every shard.
+ */
+async function recordSend(env, job, totals) {
+  const id = job.id;
+  const existing = await kv(env).get(sendKey(id), 'json');
+  if (existing?.finishedAt) return existing;          // already recorded
+
+  const entry = {
+    id,
+    topic: job.topic ?? null,
+    kind: job.kind,
+    title: job.payload?.title ?? null,
+    startedAt: job.createdAt,
+    startedAtNZ: nzTimestamp(job.createdAt),
+    finishedAt: Date.now(),
+    tookSeconds: Math.round((Date.now() - job.createdAt) / 1000),
+    accepted: totals.sent,
+    failed: totals.failed,
+    pruned: totals.pruned,
+    clicked: existing?.clicked ?? 0,
+    clicksCountedAt: existing?.clicksCountedAt ?? null,
+    note: 'accepted = the push service took it. clicked = opened the app from the notification.',
+  };
+
+  await kv(env).put(sendKey(id), JSON.stringify(entry), { expirationTtl: SEND_TTL_SECONDS });
+
+  const index = (await kv(env).get(SEND_LOG_KEY, 'json')) ?? [];
+  const next = [id, ...index.filter(x => x !== id)].slice(0, SEND_LOG_LIMIT);
+  await kv(env).put(SEND_LOG_KEY, JSON.stringify(next));
+
+  console.log(`[ledger] ${job.topic ?? job.kind}: accepted ${totals.sent}, failed ${totals.failed}, pruned ${totals.pruned}, ${entry.tookSeconds}s`);
+  return entry;
+}
+
+/**
+ * Count the click keys for a send and fold the number into its record.
+ *
+ * Runs off the census rather than per click, so a burst of clicks costs one
+ * cheap write each and no contention. Counting the same keys again on a later
+ * pass is harmless - the count is recomputed from scratch, never accumulated.
+ */
+async function foldClicks(env, id) {
+  let cursor, clicked = 0;
+  do {
+    const res = await kv(env).list({ prefix: clickPrefix(id), cursor, limit: 1000 });
+    clicked += res.keys.length;
+    cursor = res.cursor;
+    if (res.list_complete) break;
+  } while (cursor);
+
+  const entry = await kv(env).get(sendKey(id), 'json');
+  if (!entry) return 0;
+  if (entry.clicked === clicked && entry.clicksCountedAt) return clicked;
+
+  entry.clicked = clicked;
+  entry.clicksCountedAt = Date.now();
+  entry.clickRate = entry.accepted > 0 ? Math.round((clicked / entry.accepted) * 1000) / 10 : null;
+  await kv(env).put(sendKey(id), JSON.stringify(entry), { expirationTtl: SEND_TTL_SECONDS });
+  return clicked;
+}
+
+/** Fold clicks for every send still in the index. Called from the census. */
+async function foldAllClicks(env) {
+  const index = (await kv(env).get(SEND_LOG_KEY, 'json')) ?? [];
+  let total = 0;
+  for (const id of index) total += await foldClicks(env, id);
+  return { sends: index.length, clicks: total };
+}
+
+/**
+ * A device opened the app from a notification.
+ *
+ * The service worker is served from outside this project and cannot be changed
+ * from here, so the click is not reported by the service worker itself. The
+ * send id rides in the notification's deep link instead, and the app reports it
+ * on the next load. That means this counts "opened the app from the alert",
+ * which is the number worth having anyway.
+ */
+async function handleNotificationClicked(request, env) {
+  try {
+    const { id, topic } = await request.json().catch(() => ({}));
+    if (!id || typeof id !== 'string' || id.length > 64 || !/^[a-z0-9-]+$/i.test(id)) {
+      return json({ ok: false, error: 'bad send id' }, 400);
+    }
+    const nonce = crypto.randomUUID();
+    await kv(env).put(`${clickPrefix(id)}${nonce}`, topic ?? '1', { expirationTtl: CLICK_TTL_SECONDS });
+    return json({ ok: true });
+  } catch (e) {
+    // Never let a metric break the app's startup path.
+    console.error('[ledger] click record failed:', e.message);
+    return json({ ok: false }, 200);
+  }
+}
+
+/** GET /sends - the ledger, newest first. */
+async function handleSends(request, env) {
+  const url = new URL(request.url);
+  if (url.searchParams.get('secret') !== env.TRIGGER_SECRET) return new Response('Forbidden', { status: 403 });
+
+  const index = (await kv(env).get(SEND_LOG_KEY, 'json')) ?? [];
+  const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '25', 10) || 25, SEND_LOG_LIMIT);
+
+  if (url.searchParams.get('fold') === '1') await foldAllClicks(env);
+
+  const sends = [];
+  for (const id of index.slice(0, limit)) {
+    const entry = await kv(env).get(sendKey(id), 'json');
+    if (entry) sends.push(entry);
+  }
+
+  // Per-topic rollup across everything still in the ledger.
+  const byTopic = {};
+  for (const s of sends) {
+    const key = s.topic ?? s.kind;
+    const t = byTopic[key] ??= { sends: 0, accepted: 0, failed: 0, clicked: 0 };
+    t.sends++; t.accepted += s.accepted ?? 0; t.failed += s.failed ?? 0; t.clicked += s.clicked ?? 0;
+  }
+  for (const t of Object.values(byTopic)) {
+    t.clickRate = t.accepted > 0 ? Math.round((t.clicked / t.accepted) * 1000) / 10 : null;
+  }
+
+  return json({
+    generatedAt: nzTimestamp(Date.now()),
+    counting: sends.length,
+    byTopic,
+    sends,
+    note: 'accepted = the push service took the message. clicked = opened the app from the notification, folded in hourly.',
+  });
 }
 
 // ── Subscriber census ───────────────────────────────────────────────────────
@@ -2246,6 +2457,15 @@ async function maybeRunCensus(env, note = () => {}) {
   }
   const censusId = Date.now().toString(36);
   note('census', 'started', `previous snapshot ${age === Infinity ? 'never taken' : Math.round(age / 60000) + ' min old'}`);
+
+  // Cheap, and this is the natural place for it: fold the click keys each send
+  // has accumulated into its ledger entry.
+  try {
+    const folded = await foldAllClicks(env);
+    note('clicks', 'folded', `${folded.clicks} click(s) across ${folded.sends} send(s)`);
+  } catch (e) {
+    note('clicks', 'error', e.message);
+  }
   for (const ch of SHARD_CHARS) {
     keepAlive(env, fetch(new URL('/run-census-shard', origin), {
       method: 'POST',
@@ -2453,6 +2673,13 @@ function formatNzTime(timestampMs) {
     if (isNaN(d.getTime())) return 'unknown time';
     return d.toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', hour: '2-digit', minute: '2-digit', hour12: true });
   } catch { return 'unknown time'; }
+}
+
+/** Full NZ date and time, for records a human reads in the KV browser. */
+function nzTimestamp(timestampMs) {
+  try {
+    return new Date(timestampMs).toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland' });
+  } catch { return 'unknown'; }
 }
 
 const FORECAST_API_URL = 'https://spottheaurora.thenamesrock.workers.dev/';

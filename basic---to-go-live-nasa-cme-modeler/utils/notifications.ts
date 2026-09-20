@@ -560,3 +560,58 @@ export const getLocalSubscriptionId = (): string | null => {
 };
 
 // --- END OF FILE src/utils/notifications.ts ---
+// ── Notification click-through reporting ────────────────────────────────────
+//
+// The worker stamps a send id into every notification's deep link (`?n=<id>`).
+// When the device opens the app from a notification, that id comes back in the
+// URL, and reporting it here is what turns "we accepted 12,000 messages" into
+// "4,100 people actually opened it".
+//
+// It has to work this way round because the service worker is served from
+// outside this package and cannot be changed from here. The trade-off is that
+// this counts opening the app from the alert rather than dismissing it in the
+// shade - which is the more useful number anyway.
+
+const CLICK_PARAM = 'n';
+
+/**
+ * If this page load came from a notification, tell the worker, then take the
+ * marker out of the address bar so a refresh or a shared link does not count
+ * twice.
+ *
+ * Safe to call on every boot: it does nothing at all without the parameter,
+ * never throws, and never blocks startup.
+ */
+export const reportNotificationClick = (): void => {
+  try {
+    const url = new URL(window.location.href);
+    const sendId = url.searchParams.get(CLICK_PARAM);
+    if (!sendId || !/^[a-z0-9-]{1,64}$/i.test(sendId)) return;
+
+    // Strip it first. If the request fails we would rather lose one count than
+    // report the same open again on the next refresh.
+    url.searchParams.delete(CLICK_PARAM);
+    window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+
+    const category = url.searchParams.get('category') ?? undefined;
+    const body = JSON.stringify({ id: sendId, topic: category });
+
+    // sendBeacon survives the page being navigated away from straight after
+    // launch, which is exactly what a notification tap tends to do.
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(
+        `${PUSH_WORKER_URL}/notification-clicked`,
+        new Blob([body], { type: 'application/json' }),
+      );
+      return;
+    }
+    void fetch(`${PUSH_WORKER_URL}/notification-clicked`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      keepalive: true,
+    }).catch(() => { /* a metric is never worth an error on screen */ });
+  } catch {
+    /* no-op */
+  }
+};

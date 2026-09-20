@@ -22,7 +22,8 @@ const SRC = join(HERE, '..', 'worker', 'push-notification-worker.js');
 const dir = mkdtempSync(join(tmpdir(), 'nightly-'));
 const copy = join(dir, 'w.mjs');
 writeFileSync(copy, readFileSync(SRC, 'utf8') +
-  '\nexport { checkOvernightWatch, runShard, sweepJobs, jobProgress, maybeRunCensus, runCensusShard };\n');
+  '\nexport { checkOvernightWatch, runShard, sweepJobs, jobProgress, maybeRunCensus, runCensusShard,' +
+  ' recordSend, foldAllClicks, handleSends, handleNotificationClicked, stampSendId };\n');
 const W = await import(pathToFileURL(copy).href);
 
 // ---- fake KV with real prefix/cursor semantics -------------------------
@@ -181,6 +182,62 @@ await settle();
 const camWanted = [...store.values()].filter(v => { const s = JSON.parse(v); return s.preferences?.['overnight-watch'] && s.overnight_mode === 'camera'; }).length;
 console.log(`    delivered ${new Set(delivered).size}, camera-mode subscribers wanting it ${camWanted}`);
 check(new Set(delivered).size === camWanted, 'only the lower-threshold modes were woken');
+
+// ---- 5. the ledger records what actually happened ---------------------
+console.log('\n5. the delivery ledger');
+for (const k of [...store.keys()]) {
+  if (k.startsWith('JOB_') || k.startsWith('JOBSHARD_') || k.startsWith('COOLDOWN_') ||
+      k.startsWith('SEND_') || k.startsWith('CLK_') || k === 'SENDS') store.delete(k);
+  else { const v = JSON.parse(store.get(k)); delete v.overnightWatchSentDate; store.set(k, JSON.stringify(v)); }
+}
+delivered.length = 0;
+await W.checkOvernightWatch(env, forecast, substorm, mag, plasma, () => {});
+await settle();
+// The sweep is what writes the ledger entry, the same as on a real cron tick.
+await W.sweepJobs(env, () => {});
+const ledgerId = JSON.parse(store.get('SENDS') ?? '[]')[0];
+const entry = ledgerId ? JSON.parse(store.get(`SEND_${ledgerId}`)) : null;
+console.log(`    ${entry?.topic}: accepted ${entry?.accepted}, failed ${entry?.failed}, pruned ${entry?.pruned}`);
+check(entry && entry.accepted === wantNightly && entry.failed === 0 && entry.topic === 'overnight-watch',
+      'the send is recorded with the right recipient count',
+      entry ? JSON.stringify(entry) : 'no ledger entry written');
+
+// ---- 6. clicks are counted and attributed -----------------------------
+console.log('\n6. click-through counting');
+{
+  // Every notification carries its send id in the deep link.
+  const stamped = W.stampSendId({ title: 't', data: { url: '/?page=forecast' } }, ledgerId);
+  check(stamped.data.url.includes(`n=${ledgerId}`) && stamped.data.sendId === ledgerId,
+        'the send id rides in the notification link', stamped.data.url);
+
+  // 640 people tap it. Each is one unique key, so none can clobber another.
+  const CLICKS = 640;
+  for (let i = 0; i < CLICKS; i++) {
+    const req = new Request('https://x.invalid/notification-clicked', {
+      method: 'POST', body: JSON.stringify({ id: ledgerId, topic: 'overnight-watch' }),
+    });
+    await W.handleNotificationClicked(req, env);
+  }
+  await W.foldAllClicks(env);
+  const after = JSON.parse(store.get(`SEND_${ledgerId}`));
+  const expectedRate = Math.round((CLICKS / wantNightly) * 1000) / 10;
+  console.log(`    clicked ${after.clicked} of ${after.accepted} accepted (${after.clickRate}%)`);
+  check(after.clicked === CLICKS && after.clickRate === expectedRate,
+        'every click is counted exactly once, with a rate',
+        `got ${after.clicked}, wanted ${CLICKS}`);
+
+  // Folding again must not double-count - the number is recomputed, not added.
+  await W.foldAllClicks(env);
+  const twice = JSON.parse(store.get(`SEND_${ledgerId}`));
+  check(twice.clicked === CLICKS, 'folding twice does not double-count', `got ${twice.clicked}`);
+
+  const resp = await W.handleSends(
+    new Request('https://x.invalid/sends?secret=s'), env);
+  const body = await resp.json();
+  check(body.byTopic['overnight-watch']?.clicked === CLICKS &&
+        body.byTopic['overnight-watch']?.accepted === wantNightly,
+        'the per-topic rollup matches', JSON.stringify(body.byTopic));
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

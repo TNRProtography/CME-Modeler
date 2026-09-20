@@ -3,11 +3,16 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
 import { initLogCapture } from './utils/logCapture';
+import { reportNotificationClick } from './utils/notifications';
 import './styles.css';
 
 // Start capturing console output immediately so the debug panel
 // has a full session history available from the first page load.
 initLogCapture();
+
+// If this load came from tapping a notification, report it before anything
+// else touches the URL. Does nothing on an ordinary load.
+reportNotificationClick();
 
 // Chart.js is NOT registered here - it is registered lazily inside ForecastDashboard
 // and SolarActivityDashboard via chartSetup.ts, so it never loads on the CME modeler
