@@ -18,7 +18,7 @@ import ArrivalStage from './ArrivalStage';
 import { EVENTS, matchScore, type HistoricEvent } from './events';
 import { gradeBrief, makeBrief, fmtHour, type Brief, type BriefOutcome } from './briefs';
 import {
-  darknessLabel, effectiveBoundary, formatNZ, nzHourAt, runStorm,
+  darknessAt, darknessLabel, formatNZ, nzHourAt, runStorm,
   TIER_LABEL, visibilityAcrossNZ,
   type StormInput, type StormResult, type Tier,
 } from './stormModel';
@@ -231,9 +231,10 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   // ── Result ──────────────────────────────────────────────────────────────
   const resultView = () => {
     if (!result) return null;
-    const bnd = result.hits ? effectiveBoundary(result.bestVisibleBoundaryLat, result.bestVisibleAtMs) : 90;
     const moon = brief ? brief.moon : event ? event.moon : { illumination: 0, up: false };
-    const seen = result.hits ? visibilityAcrossNZ(bnd, moon) : [];
+    const seen = result.hits
+      ? visibilityAcrossNZ(result.bestVisibleKp, moon, darknessAt(result.bestVisibleAtMs))
+      : [];
     const match = event ? matchScore(event.target, input) : null;
 
     return (

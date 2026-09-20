@@ -8,6 +8,7 @@
 
 import React, { useMemo, useRef, useEffect, useCallback } from 'react';
 import { drawSun, drawGlow, loadMilkyWay, drawMilkyWay } from '../../utils/spaceScene';
+import RopeShaper from './RopeShaper';
 import { SUN_FRAGMENT_SHADER } from '../../constants';
 import {
   clamp, darknessLabel, formatNZ, peakFraction, propagate, separationDeg,
@@ -166,64 +167,6 @@ const SunPicker: React.FC<{
   );
 };
 
-// ── The flux rope dial ─────────────────────────────────────────────────────
-// Drag the handle to set which way the field points as the rope reaches us.
-// Down the screen is southward, which is the direction that matters, and the
-// dial is coloured so that is obvious without reading anything.
-const RopeDial: React.FC<{ axialDeg: number; rotationDeg: number; onChange: (a: number) => void }> =
-({ axialDeg, rotationDeg, onChange }) => {
-  const ref = useRef<HTMLDivElement>(null);
-  const drag = useRef(false);
-
-  const set = useCallback((cx: number, cy: number) => {
-    const el = ref.current; if (!el) return;
-    const r = el.getBoundingClientRect();
-    const dx = cx - (r.left + r.width / 2);
-    const dy = cy - (r.top + r.height / 2);
-    // 0 is up (north), 180 is down (south), measured clockwise.
-    let deg = (Math.atan2(dx, -dy) * 180) / Math.PI;
-    if (deg < 0) deg += 360;
-    onChange(Math.round(deg));
-  }, [onChange]);
-
-  const rad = (d: number) => ((d - 90) * Math.PI) / 180;
-  const R = 44, cx = 56, cy = 56;
-  const endDeg = axialDeg + rotationDeg;
-  const pt = (d: number, r = R) => `${cx + Math.cos(rad(d)) * r},${cy + Math.sin(rad(d)) * r}`;
-  // cos of the angle from north gives the northward part, so negative is south.
-  const southness = -Math.cos((axialDeg * Math.PI) / 180);
-  const colour = southness > 0.15 ? '#22c55e' : southness < -0.15 ? '#ef4444' : '#878a9e';
-
-  return (
-    <div ref={ref} className="relative select-none touch-none" style={{ width: 112, height: 112 }}
-      onPointerDown={e => { drag.current = true; (e.target as HTMLElement).setPointerCapture(e.pointerId); set(e.clientX, e.clientY); }}
-      onPointerMove={e => { if (drag.current) set(e.clientX, e.clientY); }}
-      onPointerUp={() => { drag.current = false; }}
-      onPointerCancel={() => { drag.current = false; }}>
-      <svg width={112} height={112} className="cursor-grab active:cursor-grabbing">
-        <defs>
-          <linearGradient id="dialNS" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#ef4444" stopOpacity="0.30" />
-            <stop offset="50%" stopColor="#111827" stopOpacity="0.15" />
-            <stop offset="100%" stopColor="#22c55e" stopOpacity="0.30" />
-          </linearGradient>
-        </defs>
-        <circle cx={cx} cy={cy} r={R + 6} fill="url(#dialNS)" stroke="rgba(148,163,184,0.2)" />
-        <text x={cx} y={14} textAnchor="middle" fontSize="9" fill="#ef4444" opacity="0.75">north, useless</text>
-        <text x={cx} y={108} textAnchor="middle" fontSize="9" fill="#22c55e" opacity="0.75">south, this is the one</text>
-        {/* where it ends up after turning through the rope */}
-        <line x1={cx} y1={cy} x2={pt(endDeg).split(',')[0]} y2={pt(endDeg).split(',')[1]}
-              stroke="rgba(203,213,225,0.35)" strokeWidth={2} strokeDasharray="3 3" />
-        <line x1={cx} y1={cy} x2={pt(axialDeg).split(',')[0]} y2={pt(axialDeg).split(',')[1]}
-              stroke={colour} strokeWidth={3} strokeLinecap="round" />
-        <circle cx={cx + Math.cos(rad(axialDeg)) * R} cy={cy + Math.sin(rad(axialDeg)) * R} r={7}
-                fill={colour} stroke="#0b1020" strokeWidth={2} />
-        <circle cx={cx} cy={cy} r={4} fill="#0b1020" stroke="rgba(203,213,225,0.5)" />
-      </svg>
-    </div>
-  );
-};
-
 const Slider: React.FC<{
   label: string; value: number; min: number; max: number; step: number;
   display: string; hint?: string; onChange: (v: number) => void;
@@ -262,7 +205,17 @@ const BuildStage: React.FC<Props> = ({ input, onChange, onLaunch, brief }) => {
 
   const dark = darknessLabel(forecast.bestMs);
   const darkOk = dark === 'full dark' || dark === 'twilight';
-  const southness = -Math.cos((input.axialDeg * Math.PI) / 180);
+
+  // How much of the rope has its field pointing south as it passes. Read off
+  // the same shape the player is holding, not set by them.
+  const greenFraction = useMemo(() => {
+    let green = 0;
+    for (let k = 0; k <= 60; k++) {
+      const th = ((input.axialDeg + input.rotationDeg * (k / 60)) * Math.PI) / 180;
+      if (-Math.cos(th) > 0.12) green++;
+    }
+    return green / 61;
+  }, [input.axialDeg, input.rotationDeg]);
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -337,28 +290,25 @@ const BuildStage: React.FC<Props> = ({ input, onChange, onLaunch, brief }) => {
 
           {/* The rope */}
           <section className="lg:col-span-2">
-            <h3 className="text-xs font-bold tracking-wider text-neutral-400 uppercase mb-2">3. Twist it</h3>
-            <div className="card bg-neutral-950/80 p-3 flex flex-col sm:flex-row gap-4 items-center">
-              <RopeDial axialDeg={input.axialDeg} rotationDeg={input.rotationDeg}
-                        onChange={a => onChange({ axialDeg: a })} />
-              <div className="flex-1 w-full space-y-3">
-                <Slider label="How far the field turns as it passes" value={input.rotationDeg}
-                        min={-180} max={180} step={5}
-                        display={`${input.rotationDeg > 0 ? '+' : ''}${input.rotationDeg}°`}
-                        hint="A rope is twisted, so the field direction rotates while it goes past. The dashed line on the dial is where it ends up."
-                        onChange={v => onChange({ rotationDeg: v })} />
-                <Slider label="How long the rope takes to pass" value={input.ropeHours}
-                        min={6} max={30} step={1} display={`${input.ropeHours} hours`}
-                        hint="A longer rope holds the field steady for longer, and persistence is what loads the tail."
-                        onChange={v => onChange({ ropeHours: v })} />
-                <p className={`text-xs font-semibold ${southness > 0.15 ? 'text-emerald-400' : southness < -0.15 ? 'text-red-400' : 'text-neutral-400'}`}>
-                  {southness > 0.5 ? 'Hard southward. This is what you want.'
-                    : southness > 0.15 ? 'Leaning south. Some of it will couple in.'
-                    : southness > -0.15 ? 'Sideways. The field is mostly east-west, which does very little.'
-                    : 'Northward. The door stays shut, no matter how fast it is going.'}
-                </p>
+            <h3 className="text-xs font-bold tracking-wider text-neutral-400 uppercase mb-2">3. Shape it</h3>
+            <div className="card bg-neutral-950/80 p-2">
+              <div className="h-36 sm:h-44">
+                <RopeShaper axialDeg={input.axialDeg} rotationDeg={input.rotationDeg}
+                            ropeHours={input.ropeHours} onChange={onChange} />
               </div>
             </div>
+            <p className="text-[11px] text-neutral-400 mt-1.5 leading-snug">
+              Drag across the cloud to twist it, up and down to wind it tighter or looser,
+              and pull the end to make it longer. Green is where the field at that turn
+              points south, and southward field is the only kind that gets in.
+            </p>
+            <p className="text-[10px] text-neutral-500 mt-0.5 leading-snug">
+              {greenFraction > 0.72 ? 'Almost all of this one points south as it goes past.'
+                : greenFraction > 0.4 ? 'Part of it points south. Only that part will do anything.'
+                : greenFraction > 0.12 ? 'Barely any of it points south.'
+                : 'None of it points south. However fast you make it, the door stays shut.'}
+              {` It takes ${input.ropeHours} hours to pass.`}
+            </p>
           </section>
         </div>
       </div>

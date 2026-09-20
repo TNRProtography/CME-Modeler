@@ -9,7 +9,7 @@
 // whether any of it counts.
 
 import {
-  NZ_PLACES, TIER_RANK, clamp, effectiveBoundary, tierFor,
+  NZ_PLACES, TIER_RANK, clamp, darknessAt, tierFor,
   type MoonState, type Place, type StormResult, type Tier,
 } from './stormModel';
 
@@ -98,8 +98,8 @@ export function gradeBrief(brief: Brief, res: StormResult, nzHour: number): Brie
   }
 
   const inWindow = hourInWindow(nzHour, brief.window.fromHour, brief.window.toHour);
-  const bnd = effectiveBoundary(res.bestVisibleBoundaryLat, res.bestVisibleAtMs);
-  const achieved = tierFor(brief.target.lat, bnd, brief.moon);
+  const achieved = tierFor(brief.target.lat, res.bestVisibleKp, brief.moon,
+                           darknessAt(res.bestVisibleAtMs));
 
   const want = TIER_RANK[brief.tier], got = TIER_RANK[achieved];
   const hit = got >= want && inWindow;
@@ -136,7 +136,7 @@ function hoursOutside(h: number, w: { fromHour: number; toHour: number }): numbe
 function tierPhrase(t: Tier): string {
   return t === 'eye' ? 'naked eye aurora'
     : t === 'phone' ? 'a phone camera shot'
-    : t === 'camera' ? 'a long exposure only'
+    : t === 'camera' ? 'a long exposure'
     : 'nothing at all';
 }
 

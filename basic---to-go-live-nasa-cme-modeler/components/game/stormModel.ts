@@ -66,6 +66,7 @@ export interface StormResult {
   bestVisibleAtMs: number;
   bestVisibleScore: number;
   bestVisibleBoundaryLat: number;
+  bestVisibleKp: number;
   substorm:      boolean;
 }
 
@@ -265,8 +266,11 @@ export function scoreAt(smoothBz: number, smoothBy: number, smoothSpeed: number,
   // Southward field has to persist to do much. A one minute dip does nothing,
   // half an hour of it loads the tail.
   const persist     = clamp((runningSouthMin / 60) * 100, 0, 100);
-  const raw = newellScore * 0.30 + bzScore * 0.26 + speedScore * 0.12
-            + pressScore * 0.08 + persist * 0.24;
+  // Dynamic pressure is deliberately a small term. Inside a magnetic cloud the
+  // plasma is thin by definition, so weighting it heavily put a ceiling on the
+  // score that the very storms this game is about could never get past.
+  const raw = newellScore * 0.32 + bzScore * 0.28 + speedScore * 0.12
+            + pressScore * 0.04 + persist * 0.24;
   // Nothing happens at all without southward field, however fast the wind is.
   // This is the single thing the game most wants people to walk away with, so
   // the model should not quietly hand out a decent score without it.
@@ -283,7 +287,7 @@ export function boundaryLatFromScore(score: number): number {
 }
 
 export function kpFromScore(score: number): number {
-  return +clamp(score / 11.5, 0, 9).toFixed(1);
+  return +clamp(9 * Math.pow(clamp(score, 0, 100) / 100, 0.92), 0, 9).toFixed(1);
 }
 
 // Where in the rope the field is most southward, as a fraction of the way
@@ -335,7 +339,7 @@ export function runStorm(input: StormInput): StormResult {
   if (!hits) {
     return { ...base, series: [], peakBt: 0, minBz: 0, peakScore: 0, peakKp: 0,
              peakBoundaryLat: 67, peakAtMs: arrivalMs, bestVisibleAtMs: arrivalMs,
-             bestVisibleScore: 0, bestVisibleBoundaryLat: 67, substorm: false };
+             bestVisibleScore: 0, bestVisibleBoundaryLat: 67, bestVisibleKp: 0, substorm: false };
   }
 
   const series = buildSeries(input, base);
@@ -376,6 +380,7 @@ export function runStorm(input: StormInput): StormResult {
     bestVisibleAtMs,
     bestVisibleScore: +bestVisibleScore.toFixed(1),
     bestVisibleBoundaryLat: +boundaryLatFromScore(bestVisibleScore).toFixed(1),
+    bestVisibleKp: kpFromScore(bestVisibleScore),
     // A long southward stretch loads the tail until it lets go.
     substorm: peakScore > 45 && minBz < -8,
   };
@@ -407,23 +412,53 @@ export interface MoonState { illumination: number; up: boolean; }
 // How much of the sky the Moon washes out. A full Moon high in the sky will
 // take a camera-only aurora and leave you with nothing at all, which is the
 // part people forget when they drive three hours to the coast.
-export function moonPenalty(moon: MoonState): number {
-  if (!moon.up) return 0;
-  return Math.pow(clamp(moon.illumination, 0, 100) / 100, 1.35) * 22;
+// ── What it takes to see it, from where ───────────────────────────────────
+// Anchored to Kp and to what actually happens here, rather than to a boundary
+// latitude and a gap, which had the effect that the top of the North Island
+// could never reach naked eye however big the storm was. May 2024 settled that
+// argument: at Kp 9 it was naked eye the length of the country.
+//
+// Each entry is the latitude, as a distance from the equator, at which naked
+// eye becomes possible at that Kp. Further south than the number and you can
+// see it without a camera.
+//
+//   Kp 5  camera from Southland
+//   Kp 6  naked eye Southland, camera Christchurch
+//   Kp 7  naked eye to Christchurch, camera to Wellington
+//   Kp 8  naked eye to Wellington, phone into Hawke's Bay
+//   Kp 9  naked eye the whole country
+const EYE_LAT_BY_KP: [number, number][] = [
+  [0, 62], [3, 52], [4, 49], [5, 47], [6, 45.3], [7, 43.3], [8, 39.5], [9, 35.5],
+];
+
+export function eyeLatFor(kp: number): number {
+  const k = clamp(kp, 0, 9);
+  for (let i = 1; i < EYE_LAT_BY_KP.length; i++) {
+    const [k0, v0] = EYE_LAT_BY_KP[i - 1], [k1, v1] = EYE_LAT_BY_KP[i];
+    if (k <= k1) return v0 + ((k - k0) / (k1 - k0)) * (v1 - v0);
+  }
+  return EYE_LAT_BY_KP[EYE_LAT_BY_KP.length - 1][1];
 }
 
-// Aurora sits above the oval, so you can see it from well equatorward of the
-// boundary, just lower down the sky and fainter. The gap between where you are
-// and where the oval has reached is what decides whether it is a naked eye
-// show, a phone photo, or a long exposure of a faint grey smudge.
-export function tierFor(placeLat: number, boundaryLat: number, moon: MoonState): Tier {
-  // Degrees of latitude between the site and the equatorward edge of the oval.
-  const gap = boundaryLat - Math.abs(placeLat);
-  const effective = gap - moonPenalty(moon) * 0.28;
-  if (effective <= -1.5) return 'eye';      // the oval is overhead or past you
-  if (effective <= 3.5)  return 'eye';
-  if (effective <= 8)    return 'phone';
-  if (effective <= 14)   return 'camera';
+// The Moon does not move the aurora, it raises the bar for seeing it, so it
+// pushes every threshold further south rather than dimming the display.
+export function moonPenalty(moon: MoonState): number {
+  if (!moon.up) return 0;
+  return Math.pow(clamp(moon.illumination, 0, 100) / 100, 1.3) * 2.4;
+}
+
+// Twilight costs you the faint end of it. Daylight costs you all of it.
+function darknessPenalty(darkness: number): number {
+  if (darkness <= 0) return 99;
+  return (1 - darkness) * 4.5;
+}
+
+export function tierFor(placeLat: number, kp: number, moon: MoonState, darkness = 1): Tier {
+  const abs = Math.abs(placeLat);
+  const eye = eyeLatFor(kp) + moonPenalty(moon) + darknessPenalty(darkness);
+  if (abs >= eye)       return 'eye';
+  if (abs >= eye - 2.4) return 'phone';
+  if (abs >= eye - 5.2) return 'camera';
   return 'nothing';
 }
 
@@ -436,8 +471,8 @@ export const TIER_LABEL: Record<Tier, string> = {
 
 export const TIER_RANK: Record<Tier, number> = { nothing: 0, camera: 1, phone: 2, eye: 3 };
 
-export function visibilityAcrossNZ(boundaryLat: number, moon: MoonState): { place: Place; tier: Tier }[] {
-  return NZ_PLACES.map(place => ({ place, tier: tierFor(place.lat, boundaryLat, moon) }));
+export function visibilityAcrossNZ(kp: number, moon: MoonState, darkness = 1): { place: Place; tier: Tier }[] {
+  return NZ_PLACES.map(place => ({ place, tier: tierFor(place.lat, kp, moon, darkness) }));
 }
 
 // ── Time of day ────────────────────────────────────────────────────────────
@@ -480,10 +515,3 @@ export function formatNZ(ms: number): string {
   return `${h12}:${String(mm % 60).padStart(2, '0')}${ampm}`;
 }
 
-// The boundary the sky is effectively at once darkness is taken into account.
-// A storm at noon may as well not have happened.
-export function effectiveBoundary(boundaryLat: number, atMs: number): number {
-  const dark = darknessAt(atMs);
-  if (dark <= 0) return 90;      // nothing is visible at all
-  return boundaryLat + (1 - dark) * 9;
-}
