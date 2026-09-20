@@ -63,9 +63,9 @@ export const EVENTS: HistoricEvent[] = [
   {
     id: 'may-2024',
     date: '10 - 11 May 2024',
-    name: 'The Mother’s Day storm',
-    hook: 'The one that put aurora over Auckland. Region 13664 threw seven clouds at us across three days and they arrived stacked on top of each other.',
-    whatHappened: 'Kp reached 9 and Dst bottomed out at -412 nT, the strongest storm in twenty years. The field at L1 reached 73 nT with Bz down near -50, and the wind was running between 750 and 950 km/s. Aurora was photographed the length of New Zealand and seen with the naked eye well into the North Island. What made it extraordinary was not any single cloud but that there were seven of them, compressing each other on the way out, and that the field stayed south for hours rather than minutes.',
+    name: 'The Gannon storm',
+    hook: 'The one that put aurora over Auckland. Region 13664 threw seven clouds at us across three days and they arrived stacked on top of each other. It is the first geomagnetic storm ever given a name.',
+    whatHappened: 'Kp reached 9 and Dst bottomed out at -412 nT, the strongest storm in twenty years. The field at L1 reached 73 nT with Bz down near -50, and the wind was running between 750 and 950 km/s. Aurora was photographed the length of New Zealand and seen with the naked eye well into the North Island. What made it extraordinary was not any single cloud but that there were seven of them, compressing each other on the way out, and that the field stayed south for hours rather than minutes. It is named for Dr Jennifer Lea Gannon, a space weather scientist who worked on geomagnetically induced currents and on the ground disturbances that storms like this one cause. She died suddenly on 2 May 2024, eight days before it arrived, and the community named the storm after her. No geomagnetic storm had been given a name before.',
     target: { flareClass: 'X', flareMag: 4.0, lonDeg: 34, latDeg: -19, speedKms: 1550, halfWidthDeg: 85, cmeCount: 7, filament: false, axialDeg: 178, rotationDeg: 35, ropeHours: 20 },
     provenance: { flare: 'measured', position: 'measured', speed: 'derived', width: 'measured', count: 'measured', filament: 'measured', rope: 'estimated' },
     facts: { transitHours: 31.4, kp: 9, dst: -412, note: 'Bt 73 nT, Bz -50 nT, wind 750-950 km/s' },
