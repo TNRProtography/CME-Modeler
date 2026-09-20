@@ -241,7 +241,7 @@ const parseLatestShortBandFlux = (raw: any[]): number | null => {
   return latestByTimestamp.get(latestTs) ?? null;
 };
 
-const SolarSurferGame = retryLazyLoad(() => import('./components/SolarSurferGame'));
+const AuroraGame = retryLazyLoad(() => import('./components/game/AuroraGame'));
 const ImpactGraphModal = retryLazyLoad(() => import('./components/ImpactGraphModal'));
 const DebugPanel = retryLazyLoad(() => import('./components/DebugPanel'));
 
@@ -1791,7 +1791,7 @@ const App: React.FC = () => {
               data={impactGraphData}
             />
 
-            {isGameOpen && <SolarSurferGame onClose={handleCloseGame} />}
+            {isGameOpen && <AuroraGame onClose={handleCloseGame} />}
           </Suspense>
 
           {showIabBanner && (

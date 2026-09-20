@@ -1,0 +1,364 @@
+// --- START OF FILE src/components/game/AuroraGame.tsx ---
+// Storm Builder.
+//
+// You are given a job: put aurora of a certain quality over a certain town at a
+// certain time of night. All you get to touch is the Sun end. Aim the eruption,
+// choose how fast it leaves, and set how the flux rope inside it is twisted.
+// Everything after that follows, because that is how it works.
+//
+// Three modes, one progression. The daily brief is the same for everyone and
+// keeps a streak. Practice rolls a fresh brief whenever you want one. History
+// hands you a real storm and asks you to rebuild it from the clues.
+
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import CloseIcon from '../icons/CloseIcon';
+import BuildStage from './BuildStage';
+import TransitStage from './TransitStage';
+import ArrivalStage from './ArrivalStage';
+import { EVENTS, matchScore, type HistoricEvent } from './events';
+import { gradeBrief, makeBrief, fmtHour, type Brief, type BriefOutcome } from './briefs';
+import {
+  darknessLabel, effectiveBoundary, formatNZ, nzHourAt, runStorm,
+  TIER_LABEL, visibilityAcrossNZ,
+  type StormInput, type StormResult, type Tier,
+} from './stormModel';
+import { loadEarthTexture, earthTexture, renderGlobe } from '../../utils/spaceScene';
+import { dayKey, load, rankFor, recordDaily, recordRun, streakStanding, type Progress } from './progress';
+
+type Phase = 'menu' | 'build' | 'transit' | 'arrival' | 'result';
+type Mode = 'daily' | 'practice' | 'history';
+
+const DEFAULT_INPUT = (launchMs: number): StormInput => ({
+  flareClass: 'M', flareMag: 5, lonDeg: 0, latDeg: 0,
+  speedKms: 1000, halfWidthDeg: 45,
+  axialDeg: 180, rotationDeg: 60, ropeHours: 14, launchMs,
+});
+
+const TIER_COLOUR: Record<Tier, string> = {
+  nothing: 'text-neutral-600', camera: 'text-sky-400', phone: 'text-emerald-400', eye: 'text-amber-300',
+};
+
+// ── The globe, with the oval where your storm put it ───────────────────────
+const ResultGlobe: React.FC<{ boundary: number; score: number }> = ({ boundary, score }) => {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const [ready, setReady] = useState(!!earthTexture());
+  useEffect(() => { loadEarthTexture(() => setReady(true)); }, []);
+  useEffect(() => {
+    const cv = ref.current, tex = earthTexture();
+    if (!cv || !tex) return;
+    // Centred on New Zealand, and negative because this is the southern oval.
+    // The app passes it the same way round in the wind diagram.
+    renderGlobe(cv, tex, 174, -Math.abs(boundary), score, score > 60, 200);
+  }, [ready, boundary, score]);
+  return <canvas ref={ref} className="w-[200px] h-[200px] mx-auto" />;
+};
+
+const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const [progress, setProgress] = useState<Progress>(() => load());
+  const [phase, setPhase] = useState<Phase>('menu');
+  const [mode, setMode] = useState<Mode>('daily');
+  const [brief, setBrief] = useState<Brief | null>(null);
+  const [event, setEvent] = useState<HistoricEvent | null>(null);
+  const [cluesShown, setCluesShown] = useState(1);
+  const [input, setInput] = useState<StormInput>(() => DEFAULT_INPUT(Date.now()));
+  const [result, setResult] = useState<StormResult | null>(null);
+  const [outcome, setOutcome] = useState<BriefOutcome | null>(null);
+  const [gained, setGained] = useState(0);
+
+  const standing = streakStanding(progress);
+  const rank = rankFor(progress.xp);
+
+  // A launch time that puts a sensibly fast cloud into the evening, so the
+  // timing puzzle is winnable rather than a lottery.
+  const launchFor = useCallback((targetHour: number) => {
+    const now = new Date();
+    const guessTransit = 40;
+    const ms = Date.now();
+    const hourNow = nzHourAt(ms);
+    let delta = targetHour - ((hourNow + guessTransit) % 24);
+    if (delta < 0) delta += 24;
+    void now;
+    return ms + delta * 3_600_000;
+  }, []);
+
+  const startBrief = useCallback((seed: string, m: Mode) => {
+    const launch = launchFor(22);
+    const b = makeBrief(seed, launch);
+    setBrief(b); setEvent(null); setMode(m);
+    setInput(DEFAULT_INPUT(launch));
+    setResult(null); setOutcome(null); setPhase('build');
+  }, [launchFor]);
+
+  const startEvent = useCallback((ev: HistoricEvent) => {
+    const launch = launchFor(ev.targetNZHour);
+    setEvent(ev); setBrief(null); setMode('history'); setCluesShown(1);
+    setInput(DEFAULT_INPUT(launch));
+    setResult(null); setOutcome(null); setPhase('build');
+  }, [launchFor]);
+
+  const launch = useCallback(() => {
+    setResult(runStorm(input));
+    setPhase('transit');
+  }, [input]);
+
+  // Scoring happens once, when the result screen is reached.
+  const finish = useCallback(() => {
+    if (!result) return;
+    if (brief) {
+      const o = gradeBrief(brief, result, nzHourAt(result.bestVisibleAtMs));
+      setOutcome(o); setGained(o.xp);
+      setProgress(prev => mode === 'daily'
+        ? recordDaily(prev, o.score, o.xp)
+        : recordRun(prev, o.score, o.xp));
+    } else if (event) {
+      const m = matchScore(event.target, input);
+      const score = Math.round(m.overall * 100);
+      const xp = 30 + Math.round(score * 1.6);
+      setOutcome({ hit: score >= 70, inWindow: true, achieved: 'eye', score, xp, lines: [] });
+      setGained(xp);
+      setProgress(prev => recordRun(prev, score, xp, event.id));
+    }
+    setPhase('result');
+  }, [result, brief, event, input, mode]);
+
+  const patch = useCallback((p: Partial<StormInput>) => setInput(v => ({ ...v, ...p })), []);
+
+  // ── Menu ────────────────────────────────────────────────────────────────
+  const menu = (
+    <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 styled-scrollbar">
+      <div className="max-w-md mx-auto space-y-5">
+        <div>
+          <h2 className="text-2xl font-bold text-neutral-50">Storm Builder</h2>
+          <p className="text-sm text-neutral-400 mt-1 leading-snug">
+            You get the Sun end. Aim the eruption, choose its speed, twist the rope inside it.
+            Everything after that follows on its own, which is rather the point.
+          </p>
+        </div>
+
+        <div className="rounded-xl bg-black/40 border border-white/10 p-3">
+          <div className="flex items-baseline justify-between">
+            <span className="text-sm font-bold text-amber-300">{rank.rank.name}</span>
+            <span className="text-xs font-mono text-neutral-500">{progress.xp} xp</span>
+          </div>
+          <p className="text-[11px] text-neutral-500 mt-0.5 leading-snug">{rank.rank.blurb}</p>
+          <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden mt-2">
+            <div className="h-full bg-gradient-to-r from-sky-400 to-emerald-400"
+                 style={{ width: `${Math.round(rank.progress * 100)}%` }} />
+          </div>
+          {rank.next && <p className="text-[10px] text-neutral-500 mt-1">{rank.toNext} xp to {rank.next.name}</p>}
+        </div>
+
+        <button onClick={() => startBrief(`daily-${dayKey()}`, 'daily')}
+          disabled={standing.playedToday}
+          className={`w-full text-left rounded-xl p-4 border transition-all active:scale-[0.99] ${
+            standing.playedToday
+              ? 'bg-white/5 border-white/10 opacity-60'
+              : 'bg-gradient-to-r from-sky-900/50 to-emerald-900/40 border-sky-600/40'}`}>
+          <div className="flex items-baseline justify-between">
+            <span className="font-bold text-neutral-100">Today&rsquo;s brief</span>
+            <span className="text-xs text-amber-400 font-bold">
+              {progress.streak > 0 ? `${progress.streak} day streak` : 'no streak yet'}
+            </span>
+          </div>
+          <p className="text-xs text-neutral-400 mt-1 leading-snug">
+            {standing.playedToday
+              ? 'Done for today. A new one turns up after midnight.'
+              : standing.alive || progress.streak === 0
+                ? 'One job, the same for everyone, once a day.'
+                : 'Your streak has lapsed. This starts a new one.'}
+          </p>
+        </button>
+
+        <button onClick={() => startBrief(`practice-${Date.now()}`, 'practice')}
+          className="w-full text-left rounded-xl p-4 bg-white/5 border border-white/10 active:scale-[0.99]">
+          <span className="font-bold text-neutral-100">Practice</span>
+          <p className="text-xs text-neutral-400 mt-1">A fresh brief, as many as you like. Still earns experience.</p>
+        </button>
+
+        <div>
+          <h3 className="text-xs font-bold tracking-wider text-neutral-400 uppercase mb-2">Rebuild a real storm</h3>
+          <div className="space-y-2">
+            {EVENTS.map(ev => (
+              <button key={ev.id} onClick={() => startEvent(ev)}
+                className="w-full text-left rounded-xl p-3 bg-white/5 border border-white/10 active:scale-[0.99]">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="font-bold text-neutral-100 text-sm">{ev.name}</span>
+                  <span className="text-[10px] text-neutral-500 flex-shrink-0">{ev.date}</span>
+                </div>
+                <p className="text-xs text-neutral-400 mt-1 leading-snug">{ev.hook}</p>
+                {progress.seenEvents.includes(ev.id) && (
+                  <span className="text-[10px] text-emerald-400 mt-1 inline-block">rebuilt</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex justify-center gap-5 text-xs text-neutral-500 pt-1">
+          <span>Best brief: <span className="text-sky-400 font-bold">{progress.bestScore}</span></span>
+          <span>Longest streak: <span className="text-amber-400 font-bold">{progress.bestStreak}</span></span>
+          <span>Played: <span className="text-neutral-300 font-bold">{progress.played}</span></span>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── The job, pinned above the controls ──────────────────────────────────
+  const briefHeader = brief ? (
+    <div className="flex-shrink-0 px-4 py-2.5 bg-sky-950/40 border-b border-sky-800/30">
+      <p className="text-[10px] uppercase tracking-wider text-sky-500">The job</p>
+      <p className="text-sm font-bold text-neutral-100 leading-snug">{brief.title}</p>
+      <p className="text-xs text-neutral-400 mt-0.5">
+        Between {fmtHour(brief.window.fromHour)} and {fmtHour(brief.window.toHour)}. {brief.note}
+      </p>
+    </div>
+  ) : event ? (
+    <div className="flex-shrink-0 px-4 py-2.5 bg-purple-950/40 border-b border-purple-800/30">
+      <p className="text-[10px] uppercase tracking-wider text-purple-400">Rebuild</p>
+      <p className="text-sm font-bold text-neutral-100">{event.name}, {event.date}</p>
+      <ul className="mt-1 space-y-0.5">
+        {event.clues.slice(0, cluesShown).map((c, i) => (
+          <li key={i} className="text-xs text-neutral-400 leading-snug">&mdash; {c}</li>
+        ))}
+      </ul>
+      {cluesShown < event.clues.length && (
+        <button onClick={() => setCluesShown(n => n + 1)}
+          className="text-[11px] text-purple-300 underline mt-1">Another clue</button>
+      )}
+    </div>
+  ) : null;
+
+  // ── Result ──────────────────────────────────────────────────────────────
+  const resultView = () => {
+    if (!result) return null;
+    const bnd = result.hits ? effectiveBoundary(result.bestVisibleBoundaryLat, result.bestVisibleAtMs) : 90;
+    const moon = brief ? brief.moon : event ? event.moon : { illumination: 0, up: false };
+    const seen = result.hits ? visibilityAcrossNZ(bnd, moon) : [];
+    const match = event ? matchScore(event.target, input) : null;
+
+    return (
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 styled-scrollbar">
+        <div className="max-w-md mx-auto space-y-4">
+          <div className="text-center">
+            <p className="text-xs uppercase tracking-wider text-neutral-500">
+              {event ? 'How close you got' : outcome?.hit ? 'Brief met' : 'Brief not met'}
+            </p>
+            <p className="text-5xl font-bold text-neutral-50 tabular-nums">{outcome?.score ?? 0}</p>
+            <p className="text-sm text-emerald-400 font-semibold">+{gained} xp</p>
+          </div>
+
+          {result.hits ? <ResultGlobe boundary={result.bestVisibleBoundaryLat} score={result.bestVisibleScore} /> : (
+            <p className="text-center text-sm text-red-400 py-8">{result.missReason}</p>
+          )}
+
+          {result.hits && (
+            <>
+              <div className="rounded-xl bg-black/40 border border-white/10 divide-y divide-white/5">
+                {seen.map(({ place, tier }) => (
+                  <div key={place.name} className="flex items-center justify-between px-3 py-1.5">
+                    <span className="text-sm text-neutral-300">{place.name}</span>
+                    <span className={`text-xs font-semibold ${TIER_COLOUR[tier]}`}>{TIER_LABEL[tier]}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="rounded-lg bg-black/40 border border-white/10 px-3 py-2">
+                  <p className="text-neutral-500">Best of it, in the dark</p>
+                  <p className="text-neutral-100 font-mono">{formatNZ(result.bestVisibleAtMs)}</p>
+                  <p className="text-neutral-500">{darknessLabel(result.bestVisibleAtMs)}</p>
+                </div>
+                <div className="rounded-lg bg-black/40 border border-white/10 px-3 py-2">
+                  <p className="text-neutral-500">Strongest southward Bz</p>
+                  <p className="text-neutral-100 font-mono">{result.minBz} nT</p>
+                  <p className="text-neutral-500">Peaked {formatNZ(result.peakAtMs)}, Kp {result.peakKp}</p>
+                </div>
+              </div>
+            </>
+          )}
+
+          {outcome?.lines.map((l, i) => (
+            <p key={i} className="text-sm text-neutral-300 leading-snug">{l}</p>
+          ))}
+
+          {match && event && (
+            <div className="rounded-xl bg-black/40 border border-white/10 p-3 space-y-1.5">
+              {match.parts.map(p => (
+                <div key={p.label} className="flex items-center gap-2">
+                  <span className="text-xs text-neutral-400 flex-1">{p.label}</span>
+                  <span className="text-[11px] font-mono text-neutral-500">{p.yours}</span>
+                  <span className="text-[11px] font-mono text-emerald-400 w-20 text-right">{p.actual}</span>
+                  <div className="w-10 h-1.5 rounded-full bg-white/10 overflow-hidden flex-shrink-0">
+                    <div className="h-full bg-emerald-400" style={{ width: `${Math.round(p.closeness * 100)}%` }} />
+                  </div>
+                </div>
+              ))}
+              <p className="text-[10px] text-neutral-500 pt-1 leading-snug">
+                Green is what it actually was. The flare and the speed are the published figures.
+                The rope orientation is a reconstruction, because nobody can measure that until it arrives.
+              </p>
+            </div>
+          )}
+
+          {event && (
+            <div className="rounded-xl bg-purple-950/30 border border-purple-800/30 p-3">
+              <p className="text-xs font-bold text-purple-300 mb-1">What really happened</p>
+              <p className="text-sm text-neutral-300 leading-snug">{event.whatHappened}</p>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button onClick={() => { setPhase('build'); setResult(null); setOutcome(null); }}
+              className="flex-1 py-2.5 rounded-lg text-sm border border-white/15 text-neutral-200 active:scale-95">
+              Try again
+            </button>
+            <button onClick={() => setPhase('menu')}
+              className="flex-1 py-2.5 rounded-lg text-sm font-bold text-black bg-gradient-to-r from-sky-400 to-emerald-400 active:scale-95">
+              Back to menu
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="fixed inset-0 z-[5000] bg-neutral-950 flex flex-col">
+      <header className="flex-shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-white/10">
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-neutral-100 truncate">
+            {phase === 'menu' ? 'Storm Builder'
+              : phase === 'build' ? 'Build it'
+              : phase === 'transit' ? 'In transit'
+              : phase === 'arrival' ? 'Arriving' : 'Result'}
+          </p>
+          {phase !== 'menu' && (
+            <p className="text-[10px] text-neutral-500 truncate">{rank.rank.name} &middot; {progress.xp} xp</p>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {phase !== 'menu' && phase !== 'result' && (
+            <button onClick={() => setPhase('menu')} className="text-xs text-neutral-400 px-2 py-1">Give up</button>
+          )}
+          <button onClick={onClose} aria-label="Close"
+            className="p-1.5 rounded-lg text-neutral-400 hover:text-white active:scale-95">
+            <CloseIcon className="w-5 h-5" />
+          </button>
+        </div>
+      </header>
+
+      {phase === 'menu' && menu}
+      {phase === 'build' && (
+        <BuildStage input={input} onChange={patch} onLaunch={launch} brief={briefHeader} />
+      )}
+      {phase === 'transit' && result && (
+        <TransitStage input={input} result={result}
+          onDone={() => { if (result.hits) setPhase('arrival'); else finish(); }} />
+      )}
+      {phase === 'arrival' && result && <ArrivalStage result={result} onDone={finish} />}
+      {phase === 'result' && resultView()}
+    </div>
+  );
+};
+
+export default AuroraGame;
+// --- END OF FILE src/components/game/AuroraGame.tsx ---

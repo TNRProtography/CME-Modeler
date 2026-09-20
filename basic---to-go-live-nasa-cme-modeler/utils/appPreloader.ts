@@ -13,7 +13,7 @@ const preloadRequests = [
 ];
 
 const preloadBundles = [
-  () => import('../components/SolarSurferGame'),
+  () => import('../components/game/AuroraGame'),
   () => import('../components/ImpactGraphModal'),
 ];
 
