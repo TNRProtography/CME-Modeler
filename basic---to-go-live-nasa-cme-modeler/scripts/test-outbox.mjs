@@ -25,7 +25,7 @@ writeFileSync(copy, readFileSync(SRC, 'utf8') +
   '\nexport { checkOvernightWatch, runShard, sweepJobs, jobProgress, maybeRunCensus, runCensusShard,' +
   ' recordSend, foldAllClicks, handleSends, handleNotificationClicked, stampSendId,' +
   ' maybeRunMigration, runMigrationShard, migrationTotals, TOPIC_DEFAULT_ON, ALL_TOPICS,' +
-  ' pushServiceOf, enqueueDelivery, OP_BUDGET };\n');
+  ' pushServiceOf, enqueueDelivery, OP_BUDGET, isRetryablePushStatus, fitPushPayload };\n');
 const W = await import(pathToFileURL(copy).href);
 
 // ---- fake KV with real prefix/cursor semantics -------------------------
@@ -496,6 +496,83 @@ console.log('\n10. a shard too big for a single invocation');
         `${got.length} sends for ${BIG} people - ${got.length - unique.size} duplicates`);
 
   globalThis.fetch = realFetch;
+}
+
+// ---- 11. a push service having a bad minute ---------------------------
+// A 429 or a 503 used to be counted as failed and forgotten: the shard
+// finished and those people never got the notification at all.
+console.log('\n11. a push service that rate-limits, then recovers');
+{
+  await settle();
+  for (const k of [...store.keys()]) store.delete(k);
+  delivered.length = 0;
+
+  const N = 300;
+  for (let i = 0; i < N; i++) {
+    const endpoint = `https://push.example/rl-${i}`;
+    store.set(`B${String(i).padStart(6, '0')}`, JSON.stringify({
+      subscription: { endpoint, keys: { p256dh: P256DH, auth: b64u(webcrypto.getRandomValues(new Uint8Array(16))) } },
+      preferences: { 'admin-broadcast': true },
+    }));
+  }
+
+  // The first attempt rate-limits a third of them; after that the service is
+  // healthy again.
+  let throttling = true;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input.url ?? String(input);
+    if (url.includes('/run-shard')) return new Response('{}', { status: 200 });
+    if (url.includes('push.example')) {
+      const n = Number(url.split('rl-')[1]);
+      if (throttling && n % 3 === 0) return new Response(null, { status: 429 });
+      delivered.push(url);
+      return new Response('', { status: 201 });
+    }
+    return realFetch(input, init);
+  };
+
+  check(W.isRetryablePushStatus(429) && W.isRetryablePushStatus(503) &&
+        !W.isRetryablePushStatus(400) && !W.isRetryablePushStatus(403),
+        'only the statuses worth retrying are retried');
+
+  const jobId = await W.enqueueDelivery(env, {
+    kind: 'topic', topic: 'admin-broadcast',
+    payload: { title: 'T', body: 'B', tag: 'admin-broadcast', data: { url: '/' } },
+  });
+
+  let state = await W.runShard(env, jobId, 'B');
+  const afterFirst = new Set(delivered.filter(u => u.includes('/rl-'))).size;
+  console.log(`    first pass: ${afterFirst} of ${N} delivered, shard is ${state.state}`);
+  check(state.state !== 'done', 'the shard stays open while people are owed a retry', state.state);
+
+  throttling = false;
+  let runs = 1;
+  while (state.state !== 'done' && runs < 12) { state = await W.runShard(env, jobId, 'B'); runs++; }
+
+  const got = delivered.filter(u => u.includes('/rl-'));
+  const unique = new Set(got);
+  console.log(`    after recovery: ${unique.size} of ${N} delivered in ${runs} run(s)`);
+  check(state.state === 'done', 'the shard finishes once the service recovers', state.state);
+  check(unique.size === N, 'everyone the service rejected got it on the retry', `${unique.size} of ${N}`);
+  check(got.length === N, 'and nobody got it twice', `${got.length} sends, ${got.length - unique.size} duplicates`);
+
+  globalThis.fetch = realFetch;
+}
+
+// ---- 12. an oversized notification ------------------------------------
+console.log('\n12. a notification too big for web push');
+{
+  const huge = { title: 'Aurora', body: 'x'.repeat(9000), tag: 'overnight-watch', data: { url: '/' } };
+  const fitted = W.fitPushPayload(huge);
+  const bytes = new TextEncoder().encode(fitted).length;
+  console.log(`    ${9000} char body -> ${bytes} bytes on the wire`);
+  check(bytes <= 3800, 'it is brought under the 4KB ceiling', `${bytes} bytes`);
+  const parsed = JSON.parse(fitted);
+  check(parsed.title === 'Aurora' && parsed.body.endsWith('\u2026'),
+        'the title survives and the body is visibly truncated');
+  const small = { title: 'A', body: 'short', tag: 't', data: { url: '/' } };
+  check(W.fitPushPayload(small) === JSON.stringify(small), 'a normal notification is untouched');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -2234,8 +2234,39 @@ async function runShard(env, jobId, ch) {
   let ops = OP_BUDGET;
   let complete = false;
   let lastError = null;
+  // Subscribers whose push failed for a reason worth trying again. A 429 or a
+  // 503 used to be counted and forgotten: the shard finished, and those people
+  // simply never got the notification.
+  let retry = new Set(shard.retry ?? []);
 
   try {
+    // Anyone left over from a previous attempt goes first, so a push service
+    // having a bad minute does not cost them the alert entirely.
+    if (retry.size) {
+      for (const keyName of [...retry]) {
+        if (ops < OPS_PER_SUBSCRIBER) break;
+        retry.delete(keyName);
+        const stored = await kv(env).get(keyName, 'json');
+        ops--;
+        if (!stored?.subscription) continue;
+        const meter = { ops: 0 };
+        const decision = await decideForSubscriber(env, job, keyName, stored, meter);
+        ops -= meter.ops;
+        if (!decision) continue;
+        const resp = await sendPushWithPayload(
+          stored.subscription, stampSendId(decision.payload, jobId), env);
+        ops--;
+        if (resp.ok) {
+          sent++;
+          if (decision.onSent) { await decision.onSent(); ops -= 2; }
+        } else if (resp.status === 410 || resp.status === 404) {
+          await kv(env).delete(keyName); ops--; pruned++;
+        } else if (isRetryablePushStatus(resp.status)) {
+          retry.add(keyName);
+        } else failed++;
+      }
+    }
+
     outer:
     while (ops > 0) {
       const listRes = await kv(env).list({ prefix: ch, cursor, limit: LIST_PAGE });
@@ -2275,6 +2306,8 @@ async function runShard(env, jobId, ch) {
           // in a minute.
           if (resp.status === 410 || resp.status === 404) {
             await kv(env).delete(key.name); ops--; pruned++;
+          } else if (isRetryablePushStatus(resp.status)) {
+            retry.add(key.name);
           } else failed++;
         }
       }
@@ -2291,14 +2324,26 @@ async function runShard(env, jobId, ch) {
   }
 
   const attempts = (shard.attempts ?? 0) + 1;
-  const next = complete && !lastError
-    ? { state: 'done', cursor: null, lastKey: null, sent, failed, pruned, attempts,
+  // Out of retries: stop holding the shard open and record them as failed, so
+  // the ledger says what really happened rather than the job hanging forever.
+  if (attempts >= MAX_SHARD_ATTEMPTS && retry.size) {
+    console.warn(`[outbox] shard ${jobId}/${ch}: giving up on ${retry.size} subscriber(s) after ${attempts} attempts`);
+    failed += retry.size;
+    retry = new Set();
+  }
+
+  const finished = complete && !lastError && retry.size === 0;
+  const next = finished
+    ? { state: 'done', cursor: null, lastKey: null, retry: [], sent, failed, pruned, attempts,
         leaseUntil: 0, finishedAt: Date.now() }
-    : { state: 'pending', cursor: cursor ?? null, lastKey, sent, failed, pruned, attempts,
-        leaseUntil: 0,
+    : { state: 'pending', cursor: cursor ?? null, lastKey, retry: [...retry],
+        sent, failed, pruned, attempts, leaseUntil: 0,
         // Running out of budget is normal progress, not a failure, so it goes
-        // straight back into the queue rather than waiting out a backoff.
-        nextAttemptAt: lastError ? Date.now() + shardRetryDelayMs(attempts) : 0,
+        // straight back into the queue. A push service that just rejected us
+        // gets a moment before we ask again.
+        nextAttemptAt: (lastError || retry.size)
+          ? Date.now() + shardRetryDelayMs(attempts)
+          : 0,
         lastError };
 
   await kv(env).put(sKey, JSON.stringify(next), { expirationTtl: JOB_TTL_SECONDS });
@@ -2306,7 +2351,7 @@ async function runShard(env, jobId, ch) {
 
   // More to do and budget left over means the list was long; keep going in a
   // fresh invocation rather than waiting for the sweep.
-  if (next.state === 'pending' && !lastError) {
+  if (next.state === 'pending' && !lastError && !retry.size) {
     keepAlive(env, dispatchShards(env, jobId, [ch]).catch(() => {}));
   }
   return next;
@@ -2869,21 +2914,100 @@ async function notifyTopic(topic, title, body, env, data = { url: '/' }) {
   return enqueueDelivery(env, { kind: 'topic', topic, payload });
 }
 
+// Web push caps the encrypted payload at 4096 bytes. aes128gcm adds a record
+// header and a 16 byte tag, so keep the plaintext clear of the ceiling - going
+// over earns a 413 that looks like any other failure.
+const MAX_PUSH_PAYLOAD_BYTES = 3800;
+
+/**
+ * Is this push worth trying again?
+ *
+ * 429 is the push service asking us to slow down and 5xx is it having a
+ * problem - both mean "later", not "never". 400 and 403 mean the request or
+ * our VAPID key is wrong, which will be just as wrong next time; 404 and 410
+ * mean the subscription is gone and are handled separately by pruning it.
+ */
+function isRetryablePushStatus(status) {
+  return status === 429 || status === 408 || (status >= 500 && status <= 599);
+}
+
 async function sendPushWithPayload(subscription, payload, env) {
   try {
     const aud      = new URL(subscription.endpoint).origin;
-    const vapidJWT = await createVapidJWT(aud, env);
-    const { body } = await encryptWebPushPayload(subscription, JSON.stringify(payload));
-    return fetch(subscription.endpoint, { method: 'POST', headers: { 'TTL': '86400', 'Authorization': `vapid t=${vapidJWT}, k=${env.VAPID_PUBLIC_KEY}`, 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream' }, body });
+    const vapidJWT = await getVapidJWT(aud, env);
+    const json     = fitPushPayload(payload);
+    const { body } = await encryptWebPushPayload(subscription, json);
+
+    // Awaited on purpose. Returning the promise let a network-level rejection
+    // escape this try/catch, and the caller then threw on resp.ok - which
+    // aborted the rest of that shard's run over one unreachable endpoint.
+    return await fetch(subscription.endpoint, {
+      method: 'POST',
+      headers: {
+        'TTL': '86400',
+        'Authorization': `vapid t=${vapidJWT}, k=${env.VAPID_PUBLIC_KEY}`,
+        'Content-Encoding': 'aes128gcm',
+        'Content-Type': 'application/octet-stream',
+      },
+      body,
+    });
   } catch (err) {
-    reportError(err, env, { handler: 'sendPushWithPayload' });
+    // 500 rather than a throw, so one broken subscription costs one send
+    // instead of everyone after it in the shard. Retryable, so the shard will
+    // come back to it.
+    console.error('[push] send failed for one subscriber:', err.message);
     return new Response(null, { status: 500, statusText: err.message });
   }
 }
 
+/**
+ * Keep a notification under the 4KB ceiling.
+ *
+ * Truncating the body is worse than the full text and much better than the
+ * silent 413 that used to happen instead, which was indistinguishable from a
+ * push service having a bad minute.
+ */
+function fitPushPayload(payload) {
+  const enc = new TextEncoder();
+  let json = JSON.stringify(payload);
+  if (enc.encode(json).length <= MAX_PUSH_PAYLOAD_BYTES) return json;
+
+  const trimmed = { ...payload };
+  let body = String(trimmed.body ?? '');
+  while (body.length > 40 && enc.encode(JSON.stringify({ ...trimmed, body })).length > MAX_PUSH_PAYLOAD_BYTES) {
+    body = body.slice(0, Math.floor(body.length * 0.9));
+  }
+  trimmed.body = body.trimEnd() + '\u2026';
+  json = JSON.stringify(trimmed);
+  console.warn(`[push] payload for ${payload.tag} was over ${MAX_PUSH_PAYLOAD_BYTES} bytes and was truncated`);
+  return json;
+}
+
+/**
+ * VAPID tokens, cached per push service.
+ *
+ * The token depends only on the audience - the push service origin, of which
+ * there are about three - and is good for hours. Signing one per subscriber
+ * meant an ECDSA key import and signature for every single send: at 80,000
+ * that is 80,000 of each, for three distinct results.
+ */
+const vapidTokens = new Map();
+const VAPID_TTL_SECONDS = 6 * 3600;
+
+async function getVapidJWT(audience, env) {
+  const hit = vapidTokens.get(audience);
+  // Re-sign well before expiry; a token that lapses mid-send is a 401 for
+  // everyone left in the shard.
+  if (hit && hit.expiresAt - Date.now() > 30 * 60 * 1000) return hit.token;
+
+  const token = await createVapidJWT(audience, env);
+  vapidTokens.set(audience, { token, expiresAt: Date.now() + VAPID_TTL_SECONDS * 1000 });
+  return token;
+}
+
 async function createVapidJWT(audience, env) {
   const header  = { typ: 'JWT', alg: 'ES256' };
-  const payload = { aud: audience, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: env.VAPID_SUBJECT };
+  const payload = { aud: audience, exp: Math.floor(Date.now() / 1000) + VAPID_TTL_SECONDS, sub: env.VAPID_SUBJECT };
   const toSign  = new TextEncoder().encode(`${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(payload))}`);
   const key     = await importVapidPrivateKeyFlexible(env.VAPID_PRIVATE_KEY, env.VAPID_PUBLIC_KEY);
   const sig     = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, toSign);
