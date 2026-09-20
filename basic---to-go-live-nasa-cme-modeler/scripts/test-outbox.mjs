@@ -103,6 +103,22 @@ for (let i = 0; i < N; i++) {
 }
 console.log(`seeded ${N} subscribers, ${wantNightly} want the nightly`);
 
+/**
+ * Move a job's pending shards past the dispatch grace window.
+ *
+ * A freshly queued shard is deliberately left alone for a minute or so, so a
+ * cron tick cannot race the dispatch that is already on its way. Real sweeps
+ * run minutes later; these tests sweep immediately, so they have to stand in
+ * for that passage of time.
+ */
+const ageJob = (jobId) => {
+  for (const k of [...store.keys()]) {
+    if (!k.startsWith(`JOBSHARD_${jobId}_`)) continue;
+    const v = JSON.parse(store.get(k));
+    if (v.state === 'pending') { v.nextAttemptAt = 0; store.set(k, JSON.stringify(v)); }
+  }
+};
+
 let pass = 0, fail = 0;
 const check = (ok, label, detail) => {
   if (ok) { pass++; console.log(`  PASS  ${label}`); }
@@ -162,6 +178,7 @@ await settle();
 let p3 = await W.jobProgress(env, jobId3);
 console.log(`    after the lost dispatches: ${p3.shards.done}/${p3.shards.total} shards, ${new Set(delivered).size} recipients`);
 const before = new Set(delivered).size;
+ageJob(jobId3);
 await W.sweepJobs(env, () => {});
 await settle();
 p3 = await W.jobProgress(env, jobId3);
@@ -573,6 +590,63 @@ console.log('\n12. a notification too big for web push');
         'the title survives and the body is visibly truncated');
   const small = { title: 'A', body: 'short', tag: 't', data: { url: '/' } };
   check(W.fitPushPayload(small) === JSON.stringify(small), 'a normal notification is untouched');
+}
+
+// ---- 13. a cron tick landing mid-enqueue ------------------------------
+// enqueueDelivery writes 64 pending shards and then dispatches them. A sweep
+// running in that instant used to see them pending and dispatch them as well,
+// putting two runners on each shard - and everyone in it got the alert twice.
+console.log('\n13. a cron tick in the same moment as a send');
+{
+  await settle();
+  for (const k of [...store.keys()]) store.delete(k);
+  delivered.length = 0;
+
+  const N = 200;
+  for (let i = 0; i < N; i++) {
+    const endpoint = `https://push.example/race-${i}`;
+    store.set(`C${String(i).padStart(6, '0')}`, JSON.stringify({
+      subscription: { endpoint, keys: { p256dh: P256DH, auth: b64u(webcrypto.getRandomValues(new Uint8Array(16))) } },
+      preferences: { 'admin-broadcast': true },
+    }));
+  }
+
+  // Count how many times each shard is actually dispatched.
+  const dispatches = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input.url ?? String(input);
+    if (url.includes('/run-shard')) {
+      const { jobId, shard } = JSON.parse(init.body);
+      dispatches.push(shard);
+      const p = W.runShard(env, jobId, shard);
+      inflight.push(p); await p;
+      return new Response('{}', { status: 200 });
+    }
+    return realFetch(input, init);
+  };
+
+  const jobId = await W.enqueueDelivery(env, {
+    kind: 'topic', topic: 'admin-broadcast',
+    payload: { title: 'T', body: 'B', tag: 'admin-broadcast', data: { url: '/' } },
+  });
+  await settle();
+
+  // The cron fires straight afterwards, as it will several times an hour.
+  const before = dispatches.length;
+  await W.sweepJobs(env, () => {});
+  await settle();
+  const swept = dispatches.length - before;
+
+  const got = delivered.filter(u => u.includes('/race-'));
+  const unique = new Set(got);
+  console.log(`    ${before} dispatch(es) from the send, ${swept} more from the sweep`);
+  console.log(`    ${got.length} sends to ${unique.size} people`);
+  check(got.length === N && unique.size === N,
+        'a sweep during a send does not double up',
+        `${got.length} sends for ${N} people - ${got.length - unique.size} duplicates`);
+
+  globalThis.fetch = realFetch;
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -521,13 +521,25 @@ async function runScheduledTasks(env) {
 
   const loadingState = await updateTailLoadingState(env, substormData, magPoints, plasmaPoints);
 
-  await Promise.allSettled([
-    checkSubstormActivity(env, thresholds.substorm, substormData, loadingState, note),
-    checkSolarFlares(env, xrayData, note),
-    checkShockDetection(env, magPoints, plasmaPoints, tempAvailable, note),
-    checkOvernightWatch(env, forecastData, substormData, magPoints, plasmaPoints, note),
-    checkVisibilityNotifications(env, substormData, forecastData, magPoints, plasmaPoints, note),
-  ]);
+  const detectors = [
+    ['substorm',   checkSubstormActivity(env, thresholds.substorm, substormData, loadingState, note)],
+    ['flare',      checkSolarFlares(env, xrayData, note)],
+    ['shock',      checkShockDetection(env, magPoints, plasmaPoints, tempAvailable, note)],
+    ['overnight',  checkOvernightWatch(env, forecastData, substormData, magPoints, plasmaPoints, note)],
+    ['visibility', checkVisibilityNotifications(env, substormData, forecastData, magPoints, plasmaPoints, note)],
+  ];
+  const results = await Promise.allSettled(detectors.map(([, p]) => p));
+
+  // allSettled swallows rejections. Each detector catches its own errors, but
+  // anything thrown outside that try would otherwise disappear without a
+  // trace - which is precisely how this worker used to fail.
+  results.forEach((r, i) => {
+    if (r.status === 'rejected') {
+      const name = detectors[i][0];
+      note(name, 'error', `threw outside its own handler: ${r.reason?.message ?? r.reason}`);
+      reportError(r.reason, env, { handler: `detector:${name}` });
+    }
+  });
 
   // The outbox's durability guarantee: pick up anything that was dropped,
   // stalled or is due a retry. Without this a lost dispatch is a lost alert.
@@ -2108,6 +2120,9 @@ const OPS_PER_SUBSCRIBER = 6;
 const LIST_PAGE = 1000;
 // How long a shard may be claimed before the sweep assumes the worker died.
 const SHARD_LEASE_MS = 90 * 1000;
+// How long the sweep leaves a freshly queued shard alone, so it does not race
+// the direct dispatch that is already on its way.
+const DISPATCH_GRACE_MS = 75 * 1000;
 const MAX_SHARD_ATTEMPTS = 8;
 const JOB_TTL_SECONDS = 6 * 60 * 60;
 // Retry backoff per attempt, capped.
@@ -2144,7 +2159,15 @@ async function enqueueDelivery(env, { kind, topic = null, payload = null, params
   await kv(env).put(jobKey(id), JSON.stringify(job), { expirationTtl: JOB_TTL_SECONDS });
   await Promise.all(SHARD_CHARS.map(ch => kv(env).put(
     shardKey(id, ch),
-    JSON.stringify({ state: 'pending', cursor: null, sent: 0, failed: 0, attempts: 0, leaseUntil: 0 }),
+    JSON.stringify({
+      state: 'pending', cursor: null, sent: 0, failed: 0, attempts: 0, leaseUntil: 0,
+      // Hold the sweep off briefly. The direct dispatch below is about to run
+      // these; a cron tick landing in the same moment would see them pending
+      // and dispatch them too, and two runners on one shard means everybody in
+      // it gets the notification twice. The sweep is the backstop for a
+      // dispatch that did not happen, so it only needs to care a minute later.
+      nextAttemptAt: Date.now() + DISPATCH_GRACE_MS,
+    }),
     { expirationTtl: JOB_TTL_SECONDS },
   )));
   console.log(`[outbox] job ${id} queued: kind=${kind} topic=${topic ?? '-'} across ${SHARD_CHARS.length} shards`);
@@ -2460,7 +2483,7 @@ function buildVisibilityPayload(tier, statsLine) {
  */
 async function sweepJobs(env, note = /** @type {(name?: string, status?: string, detail?: string) => void} */ (() => {})) {
   const now = Date.now();
-  let cursor, jobs = [], revived = 0, stillRunning = 0, exhausted = 0;
+  let cursor, jobs = [], revived = 0, stillRunning = 0, exhausted = 0, retired = 0;
 
   do {
     const res = await kv(env).list({ prefix: 'JOB_', cursor, limit: 1000 });
@@ -2502,14 +2525,23 @@ async function sweepJobs(env, note = /** @type {(name?: string, status?: string,
     if (finished + gaveUp === SHARD_CHARS.length) {
       const job = await kv(env).get(jobKey(id), 'json');
       if (job) await recordSend(env, job, totals);
+
+      // Retire it. The records carry a six hour TTL, and until now the sweep
+      // re-read all sixty-four shards of every finished job on every tick for
+      // those six hours - hundreds of KV reads a minute buying nothing, out of
+      // the same budget the live jobs need.
+      await kv(env).delete(jobKey(id));
+      for (const ch of SHARD_CHARS) await kv(env).delete(shardKey(id, ch));
+      retired++;
     }
   }
 
   if (jobs.length) {
     note('outbox', revived ? 'resumed' : 'draining',
-         `${jobs.length} job(s), ${revived} shard(s) re-dispatched, ${stillRunning} in flight, ${exhausted} gave up`);
+         `${jobs.length} job(s), ${revived} shard(s) re-dispatched, ${stillRunning} in flight, ` +
+         `${exhausted} gave up, ${retired} finished and cleared`);
   }
-  return { jobs: jobs.length, revived, stillRunning, exhausted };
+  return { jobs: jobs.length, revived, stillRunning, exhausted, retired };
 }
 
 /** Roll the per-shard records up into something readable. */
