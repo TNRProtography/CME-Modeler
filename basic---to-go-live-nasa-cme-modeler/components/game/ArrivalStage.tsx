@@ -12,12 +12,12 @@
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import FluxRopeAnalyzer from '../FluxRopeAnalyzer';
+import StormTimeline, { BASE_RATE } from './StormTimeline';
 import { formatNZ, type L1Point, type StormResult } from './stormModel';
 
 interface Props { result: StormResult; onDone: () => void; }
 
-// Sim minutes that pass per second of real time.
-const RATE = 26;
+
 // The analyser is re-run on this granularity rather than every frame. It is a
 // real analysis over the whole series so far, so running it five times a second
 // was both wasteful and a fresh chance to change its mind every time.
@@ -39,8 +39,12 @@ const ArrivalStage: React.FC<Props> = ({ result, onDone }) => {
     () => Math.max(0, series.findIndex(p => p.tMs >= result.arrivalMs)), [series, result.arrivalMs]);
   const [idx, setIdx] = useState(Math.max(0, shockIdx - 30));
   const [playing, setPlaying] = useState(true);
+  const [rate, setRate] = useState(BASE_RATE);
   const raf = useRef(0);
   const last = useRef(0);
+  // Read inside the loop so changing speed does not restart playback.
+  const rateRef = useRef(rate);
+  rateRef.current = rate;
 
   useEffect(() => {
     if (!playing) return;
@@ -51,7 +55,7 @@ const ArrivalStage: React.FC<Props> = ({ result, onDone }) => {
       const dt = (now - last.current) / 1000;
       last.current = now;
       setIdx(prev => {
-        const next = prev + dt * RATE;
+        const next = prev + dt * rateRef.current;
         if (next >= series.length - 1) { setPlaying(false); return series.length - 1; }
         return next;
       });
@@ -174,19 +178,19 @@ const ArrivalStage: React.FC<Props> = ({ result, onDone }) => {
       </div>
 
       <div className="flex-shrink-0 p-3 border-t border-neutral-700/80 bg-neutral-950/90 space-y-2">
-        <input type="range" min={0} max={series.length - 1} step={1} value={i}
-               onChange={e => { setPlaying(false); setIdx(parseInt(e.target.value, 10)); }}
-               className="w-full accent-sky-400" />
-        <div className="flex gap-2">
-          <button onClick={() => setPlaying(v => !v)}
-            className="px-4 py-2 rounded-lg text-sm border border-neutral-700/80 text-neutral-200 active:scale-95">
-            {playing ? 'Pause' : 'Play'}
-          </button>
-          <button onClick={onDone}
-            className="flex-1 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-semibold transition-colors active:scale-[0.99]">
-            See what New Zealand got
-          </button>
-        </div>
+        <StormTimeline
+          series={series}
+          index={i}
+          onScrub={v => { setPlaying(false); setIdx(v); }}
+          playing={playing}
+          onTogglePlay={() => setPlaying(v => !v)}
+          rate={rate}
+          onRate={setRate}
+        />
+        <button onClick={onDone}
+          className="w-full py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-semibold transition-colors active:scale-[0.99]">
+          See what New Zealand got
+        </button>
       </div>
     </div>
   );

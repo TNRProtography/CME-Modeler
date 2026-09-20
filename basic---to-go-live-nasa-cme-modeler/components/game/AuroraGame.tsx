@@ -394,13 +394,21 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             </div>
           )}
 
-          <div className="flex gap-2 pt-1">
+          <div className="flex flex-wrap gap-2 pt-1">
+            {result.hits && (
+              // Straight back to the timeline. Sitting through the transit
+              // again to re-read an arrival is the annoying way round.
+              <button onClick={() => setPhase('arrival')}
+                className="flex-1 py-2.5 rounded-lg text-sm border border-neutral-700/80 text-neutral-200 active:scale-95">
+                Replay the arrival
+              </button>
+            )}
             <button onClick={() => {
                 if (mode === 'playback' && event) watchEvent(event);
                 else { setPhase('build'); setResult(null); setOutcome(null); }
               }}
               className="flex-1 py-2.5 rounded-lg text-sm border border-neutral-700/80 text-neutral-200 active:scale-95">
-              {mode === 'playback' ? 'Watch again' : 'Try again'}
+              {mode === 'playback' ? 'From the start' : 'Try again'}
             </button>
             <button onClick={() => setPhase('menu')}
               className="flex-1 py-2.5 rounded-lg text-sm bg-sky-600 hover:bg-sky-500 text-white font-semibold transition-colors active:scale-95">
