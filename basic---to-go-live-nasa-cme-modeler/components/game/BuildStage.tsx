@@ -7,7 +7,7 @@
 // field direction go from useless to useful.
 
 import React, { useMemo, useRef, useEffect, useCallback } from 'react';
-import { drawSun, drawGlow } from '../../utils/spaceScene';
+import { drawSun, drawGlow, loadMilkyWay, drawMilkyWay } from '../../utils/spaceScene';
 import { SUN_FRAGMENT_SHADER } from '../../constants';
 import {
   clamp, darknessLabel, formatNZ, peakFraction, propagate, separationDeg,
@@ -51,6 +51,8 @@ const SunPicker: React.FC<{
     onPick(+lon.toFixed(1), +lat.toFixed(1));
   }, [onPick]);
 
+  useEffect(() => { loadMilkyWay(); }, []);
+
   useEffect(() => {
     const cv = ref.current; if (!cv) return;
     const ctx = cv.getContext('2d'); if (!ctx) return;
@@ -67,6 +69,8 @@ const SunPicker: React.FC<{
       ctx.clearRect(0, 0, w, h);
       const cx = w / 2, cy = h / 2, R = Math.min(cx, cy) * 0.78;
 
+      // Same backdrop as every other space scene in the app.
+      drawMilkyWay(ctx, w, h, performance.now() / 1000, 0.28);
       drawSun(ctx, cx, cy, R, performance.now() / 1000, SUN_FRAGMENT_SHADER);
 
       // A light heliographic grid, so "45 degrees east" means something you can
@@ -131,18 +135,18 @@ const SunPicker: React.FC<{
       }
       ctx.globalCompositeOperation = 'source-over';
 
+      ctx.strokeStyle = 'rgba(140,200,255,0.5)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(cx - 6, cy); ctx.lineTo(cx + 6, cy);
+      ctx.moveTo(cx, cy - 6); ctx.lineTo(cx, cy + 6); ctx.stroke();
+
       drawGlow(ctx, '255,255,255', px, py, 7, 0.9);
       ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 1.6;
       ctx.beginPath(); ctx.arc(px, py, 7, 0, Math.PI * 2); ctx.stroke();
 
       // Earth's direction is straight out of the screen, so it gets a marker at
       // disk centre rather than an arrow that would point nowhere useful.
-      ctx.strokeStyle = 'rgba(140,200,255,0.55)'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(cx - 7, cy); ctx.lineTo(cx + 7, cy);
-      ctx.moveTo(cx, cy - 7); ctx.lineTo(cx, cy + 7); ctx.stroke();
-      ctx.fillStyle = 'rgba(140,200,255,0.65)'; ctx.font = '9px system-ui'; ctx.textAlign = 'center';
-      ctx.fillText('facing Earth', cx, cy + 26);
+      ctx.fillStyle = 'rgba(140,200,255,0.6)'; ctx.font = '9px system-ui'; ctx.textAlign = 'center';
+      ctx.fillText('disk centre faces Earth', cx, cy + R + 16);
 
       raf.current = requestAnimationFrame(frame);
     };
@@ -263,12 +267,12 @@ const BuildStage: React.FC<Props> = ({ input, onChange, onLaunch, brief }) => {
   return (
     <div className="flex flex-col h-full min-h-0">
       {brief}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 styled-scrollbar">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* Aim */}
           <section>
             <h3 className="text-xs font-bold tracking-wider text-neutral-400 uppercase mb-2">1. Aim it</h3>
-            <div className="h-56 sm:h-64 rounded-lg bg-black/40 border border-white/10 overflow-hidden">
+            <div className="h-56 sm:h-64 card bg-neutral-950/80 overflow-hidden">
               <SunPicker lonDeg={input.lonDeg} latDeg={input.latDeg}
                          halfWidthDeg={input.halfWidthDeg}
                          onPick={(lon, lat) => onChange({ lonDeg: lon, latDeg: lat })} />
@@ -289,7 +293,7 @@ const BuildStage: React.FC<Props> = ({ input, onChange, onLaunch, brief }) => {
           {/* Energy and speed */}
           <section>
             <h3 className="text-xs font-bold tracking-wider text-neutral-400 uppercase mb-2">2. Time it</h3>
-            <div className="rounded-lg bg-black/40 border border-white/10 p-3 space-y-3">
+            <div className="card bg-neutral-950/80 p-3 space-y-3">
               <div>
                 <span className="text-xs font-semibold text-neutral-300">Flare size</span>
                 <div className="flex gap-1.5 mt-1">
@@ -298,7 +302,7 @@ const BuildStage: React.FC<Props> = ({ input, onChange, onLaunch, brief }) => {
                       className={`flex-1 py-1.5 rounded text-sm font-bold transition-all active:scale-95 border ${
                         input.flareClass === c
                           ? 'bg-amber-500/25 border-amber-400/60 text-amber-200'
-                          : 'bg-white/5 border-white/10 text-neutral-400'}`}>{c}</button>
+                          : 'bg-neutral-900/70 border-neutral-700/80 text-neutral-400'}`}>{c}</button>
                   ))}
                 </div>
                 <input type="range" min={1} max={9.9} step={0.1} value={input.flareMag}
@@ -334,7 +338,7 @@ const BuildStage: React.FC<Props> = ({ input, onChange, onLaunch, brief }) => {
           {/* The rope */}
           <section className="lg:col-span-2">
             <h3 className="text-xs font-bold tracking-wider text-neutral-400 uppercase mb-2">3. Twist it</h3>
-            <div className="rounded-lg bg-black/40 border border-white/10 p-3 flex flex-col sm:flex-row gap-4 items-center">
+            <div className="card bg-neutral-950/80 p-3 flex flex-col sm:flex-row gap-4 items-center">
               <RopeDial axialDeg={input.axialDeg} rotationDeg={input.rotationDeg}
                         onChange={a => onChange({ axialDeg: a })} />
               <div className="flex-1 w-full space-y-3">
@@ -359,9 +363,9 @@ const BuildStage: React.FC<Props> = ({ input, onChange, onLaunch, brief }) => {
         </div>
       </div>
 
-      <div className="flex-shrink-0 p-3 border-t border-white/10 bg-black/40">
+      <div className="flex-shrink-0 p-3 border-t border-neutral-700/80 bg-neutral-950/90">
         <button onClick={onLaunch}
-          className="w-full py-3 rounded-xl font-bold text-black bg-gradient-to-r from-amber-400 to-orange-400 active:scale-[0.99] transition-transform">
+          className="w-full py-3 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold transition-colors active:scale-[0.99]">
           Launch it
         </button>
       </div>

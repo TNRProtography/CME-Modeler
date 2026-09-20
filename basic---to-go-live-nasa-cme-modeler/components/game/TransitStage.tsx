@@ -107,7 +107,7 @@ const TransitStage: React.FC<Props> = ({ input, result, onDone }) => {
       <div className="flex-1 min-h-0"><canvas ref={ref} className="w-full h-full" /></div>
       <div className="flex-shrink-0 p-3">
         <button onClick={onDone}
-          className="w-full py-2 rounded-lg text-sm text-neutral-400 border border-white/10 active:scale-[0.99]">
+          className="w-full py-2 rounded-lg text-sm text-neutral-400 border border-neutral-800/90 active:scale-[0.99]">
           Skip ahead
         </button>
       </div>

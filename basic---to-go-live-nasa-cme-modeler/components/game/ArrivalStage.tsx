@@ -23,7 +23,7 @@ const STEP = 5;
 
 const Readout: React.FC<{ label: string; value: string; tone?: string; sub?: string }> =
 ({ label, value, tone = 'text-neutral-100', sub }) => (
-  <div className="flex-1 min-w-0 rounded-lg bg-black/40 border border-white/10 px-2.5 py-2">
+  <div className="flex-1 min-w-0 card bg-neutral-950/80 px-2.5 py-2">
     <p className="text-[10px] uppercase tracking-wider text-neutral-500 truncate">{label}</p>
     <p className={`text-lg font-bold font-mono tabular-nums leading-tight ${tone}`}>{value}</p>
     {sub && <p className="text-[10px] text-neutral-500 leading-tight">{sub}</p>}
@@ -101,16 +101,31 @@ const ArrivalStage: React.FC<Props> = ({ result, onDone }) => {
       </div>
 
       <div className="flex-shrink-0 px-4 pt-2">
-        <div className="rounded-lg bg-black/40 border border-white/10 px-3 py-2">
+        <div className="card bg-neutral-950/80 px-3 py-2">
           <p className="text-xs font-bold text-sky-300">{region}</p>
           <p className="text-[11px] text-neutral-400 leading-snug mt-0.5">{regionNote}</p>
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 styled-scrollbar">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
         <p className="text-[10px] text-neutral-500 mb-1.5 leading-snug">
           Below is the app&rsquo;s own flux rope analyser, the same one you get on a real arrival, reading the storm you just built.
         </p>
+        {p.region !== 'rope' && (
+          // The analyser draws nothing until it has found a rope, which is how
+          // it behaves on live data too. Saying so is better than a blank box,
+          // and it is the point: the shock and the sheath are not the show.
+          <div className="card bg-neutral-950/80 p-4 text-center">
+            <p className="text-sm font-semibold text-neutral-400">No rope found yet</p>
+            <p className="text-xs text-neutral-500 mt-1 leading-snug">
+              {p.region === 'ambient' && p.tMs < result.arrivalMs
+                ? 'Nothing has arrived. The analyser needs a shock and then a smooth rotation before it has anything to say.'
+                : p.region === 'sheath'
+                  ? 'The field here is thrashing about, not turning. That is a sheath, not a cloud, and the analyser will not call it one.'
+                  : 'The cloud has gone past. Back to ordinary solar wind.'}
+            </p>
+          </div>
+        )}
         <FluxRopeAnalyzer
           magneticData={fed.magneticData}
           speedData={fed.speedData}
@@ -119,17 +134,17 @@ const ArrivalStage: React.FC<Props> = ({ result, onDone }) => {
         />
       </div>
 
-      <div className="flex-shrink-0 p-3 border-t border-white/10 bg-black/40 space-y-2">
+      <div className="flex-shrink-0 p-3 border-t border-neutral-700/80 bg-neutral-950/90 space-y-2">
         <input type="range" min={0} max={series.length - 1} step={1} value={i}
                onChange={e => { setPlaying(false); setIdx(parseInt(e.target.value, 10)); }}
                className="w-full accent-sky-400" />
         <div className="flex gap-2">
           <button onClick={() => setPlaying(v => !v)}
-            className="px-4 py-2 rounded-lg text-sm border border-white/15 text-neutral-200 active:scale-95">
+            className="px-4 py-2 rounded-lg text-sm border border-neutral-700/80 text-neutral-200 active:scale-95">
             {playing ? 'Pause' : 'Play'}
           </button>
           <button onClick={onDone}
-            className="flex-1 py-2 rounded-lg font-bold text-black bg-gradient-to-r from-sky-400 to-emerald-400 active:scale-[0.99]">
+            className="flex-1 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-semibold transition-colors active:scale-[0.99]">
             See what New Zealand got
           </button>
         </div>

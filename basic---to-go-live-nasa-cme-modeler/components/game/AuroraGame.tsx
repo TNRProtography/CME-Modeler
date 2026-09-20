@@ -125,7 +125,7 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
   // ── Menu ────────────────────────────────────────────────────────────────
   const menu = (
-    <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 styled-scrollbar">
+    <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
       <div className="max-w-md mx-auto space-y-5">
         <div>
           <h2 className="text-2xl font-bold text-neutral-50">Storm Builder</h2>
@@ -135,14 +135,14 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           </p>
         </div>
 
-        <div className="rounded-xl bg-black/40 border border-white/10 p-3">
+        <div className="card bg-neutral-950/80 p-3">
           <div className="flex items-baseline justify-between">
             <span className="text-sm font-bold text-amber-300">{rank.rank.name}</span>
             <span className="text-xs font-mono text-neutral-500">{progress.xp} xp</span>
           </div>
           <p className="text-[11px] text-neutral-500 mt-0.5 leading-snug">{rank.rank.blurb}</p>
           <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden mt-2">
-            <div className="h-full bg-gradient-to-r from-sky-400 to-emerald-400"
+            <div className="h-full bg-gradient-to-r from-sky-400 via-cyan-300 to-emerald-300"
                  style={{ width: `${Math.round(rank.progress * 100)}%` }} />
           </div>
           {rank.next && <p className="text-[10px] text-neutral-500 mt-1">{rank.toNext} xp to {rank.next.name}</p>}
@@ -152,7 +152,7 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           disabled={standing.playedToday}
           className={`w-full text-left rounded-xl p-4 border transition-all active:scale-[0.99] ${
             standing.playedToday
-              ? 'bg-white/5 border-white/10 opacity-60'
+              ? 'bg-neutral-900/70 border-neutral-800/90 opacity-60'
               : 'bg-gradient-to-r from-sky-900/50 to-emerald-900/40 border-sky-600/40'}`}>
           <div className="flex items-baseline justify-between">
             <span className="font-bold text-neutral-100">Today&rsquo;s brief</span>
@@ -170,7 +170,7 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         </button>
 
         <button onClick={() => startBrief(`practice-${Date.now()}`, 'practice')}
-          className="w-full text-left rounded-xl p-4 bg-white/5 border border-white/10 active:scale-[0.99]">
+          className="w-full text-left card bg-neutral-950/80 p-4 active:scale-[0.99]">
           <span className="font-bold text-neutral-100">Practice</span>
           <p className="text-xs text-neutral-400 mt-1">A fresh brief, as many as you like. Still earns experience.</p>
         </button>
@@ -180,7 +180,7 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           <div className="space-y-2">
             {EVENTS.map(ev => (
               <button key={ev.id} onClick={() => startEvent(ev)}
-                className="w-full text-left rounded-xl p-3 bg-white/5 border border-white/10 active:scale-[0.99]">
+                className="w-full text-left card bg-neutral-950/80 p-3 active:scale-[0.99]">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="font-bold text-neutral-100 text-sm">{ev.name}</span>
                   <span className="text-[10px] text-neutral-500 flex-shrink-0">{ev.date}</span>
@@ -237,7 +237,7 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const match = event ? matchScore(event.target, input) : null;
 
     return (
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 styled-scrollbar">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
         <div className="max-w-md mx-auto space-y-4">
           <div className="text-center">
             <p className="text-xs uppercase tracking-wider text-neutral-500">
@@ -253,7 +253,7 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
           {result.hits && (
             <>
-              <div className="rounded-xl bg-black/40 border border-white/10 divide-y divide-white/5">
+              <div className="card bg-neutral-950/80 divide-y divide-neutral-800/80">
                 {seen.map(({ place, tier }) => (
                   <div key={place.name} className="flex items-center justify-between px-3 py-1.5">
                     <span className="text-sm text-neutral-300">{place.name}</span>
@@ -262,12 +262,12 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 ))}
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="rounded-lg bg-black/40 border border-white/10 px-3 py-2">
+                <div className="card bg-neutral-950/80 px-3 py-2">
                   <p className="text-neutral-500">Best of it, in the dark</p>
                   <p className="text-neutral-100 font-mono">{formatNZ(result.bestVisibleAtMs)}</p>
                   <p className="text-neutral-500">{darknessLabel(result.bestVisibleAtMs)}</p>
                 </div>
-                <div className="rounded-lg bg-black/40 border border-white/10 px-3 py-2">
+                <div className="card bg-neutral-950/80 px-3 py-2">
                   <p className="text-neutral-500">Strongest southward Bz</p>
                   <p className="text-neutral-100 font-mono">{result.minBz} nT</p>
                   <p className="text-neutral-500">Peaked {formatNZ(result.peakAtMs)}, Kp {result.peakKp}</p>
@@ -281,7 +281,7 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           ))}
 
           {match && event && (
-            <div className="rounded-xl bg-black/40 border border-white/10 p-3 space-y-1.5">
+            <div className="card bg-neutral-950/80 p-3 space-y-1.5">
               {match.parts.map(p => (
                 <div key={p.label} className="flex items-center gap-2">
                   <span className="text-xs text-neutral-400 flex-1">{p.label}</span>
@@ -300,7 +300,7 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           )}
 
           {event && (
-            <div className="rounded-xl bg-purple-950/30 border border-purple-800/30 p-3">
+            <div className="card bg-purple-950/40 p-3">
               <p className="text-xs font-bold text-purple-300 mb-1">What really happened</p>
               <p className="text-sm text-neutral-300 leading-snug">{event.whatHappened}</p>
             </div>
@@ -308,11 +308,11 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
           <div className="flex gap-2 pt-1">
             <button onClick={() => { setPhase('build'); setResult(null); setOutcome(null); }}
-              className="flex-1 py-2.5 rounded-lg text-sm border border-white/15 text-neutral-200 active:scale-95">
+              className="flex-1 py-2.5 rounded-lg text-sm border border-neutral-700/80 text-neutral-200 active:scale-95">
               Try again
             </button>
             <button onClick={() => setPhase('menu')}
-              className="flex-1 py-2.5 rounded-lg text-sm font-bold text-black bg-gradient-to-r from-sky-400 to-emerald-400 active:scale-95">
+              className="flex-1 py-2.5 rounded-lg text-sm bg-sky-600 hover:bg-sky-500 text-white font-semibold transition-colors active:scale-95">
               Back to menu
             </button>
           </div>
@@ -322,8 +322,14 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[5000] bg-neutral-950 flex flex-col">
-      <header className="flex-shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-white/10">
+    // The app's other modals are a dark scrim with a bounded panel on top, so
+    // this one is too. The scrim is opaque rather than blurred: behind it sits
+    // the 3D lab, still animating, and a full screen backdrop-filter over a
+    // live WebGL canvas re-blurs every frame, which is exactly the budget the
+    // game's own canvases need. At this opacity the two are indistinguishable.
+    <div className="fixed inset-0 z-[5000] bg-black/85 flex justify-center items-center sm:p-4">
+      <div className="relative w-full h-full sm:h-[92vh] sm:max-h-[900px] sm:max-w-2xl bg-neutral-950/95 border border-neutral-800/90 sm:rounded-lg shadow-2xl text-neutral-300 flex flex-col overflow-hidden">
+      <header className="flex-shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-neutral-700/80">
         <div className="min-w-0">
           <p className="text-sm font-bold text-neutral-100 truncate">
             {phase === 'menu' ? 'Storm Builder'
@@ -356,6 +362,7 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       )}
       {phase === 'arrival' && result && <ArrivalStage result={result} onDone={finish} />}
       {phase === 'result' && resultView()}
+      </div>
     </div>
   );
 };
