@@ -409,6 +409,8 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (request.method === 'OPTIONS') return handleOptions();
+    // Learn where we live, in case SELF_URL was never configured.
+    await rememberSelfOrigin(env, request);
     if (url.pathname === '/save-subscription'         && request.method === 'POST') return handleSaveSubscription(request, env);
     if (url.pathname === '/update-location'           && request.method === 'POST') return handleUpdateLocation(request, env);
     if (url.pathname === '/check-subscription'        && request.method === 'POST') return handleCheckSubscription(request, env);
@@ -1351,10 +1353,16 @@ async function checkVisibilityNotifications(env, substormData, forecastData, mag
 // ── Request handlers ────────────────────────────────────────────────────────
 
 /** KV keys that are worker state, not subscribers. */
+// Everything in the namespace that is not a subscriber. Job, shard and census
+// keys begin with J and S, which are also shard characters, so a shard listing
+// will walk straight over them; the `.subscription` guard downstream catches
+// them anyway, but naming them here saves the read.
 function isReservedKey(name) {
   return name.startsWith('STATE_') || name.startsWith('LATEST_') ||
          name.startsWith('CONFIG_') || name.startsWith('COOLDOWN_') ||
-         name.startsWith('LAST_');
+         name.startsWith('LAST_') || name.startsWith('JOB_') ||
+         name.startsWith('JOBSHARD_') || name.startsWith('STATSSHARD_') ||
+         name === STATS_KEY || name === SELF_ORIGIN_KEY;
 }
 
 async function handleCheckSubscription(request, env) {
@@ -1876,6 +1884,7 @@ const JOB_TTL_SECONDS = 6 * 60 * 60;
 // Retry backoff per attempt, capped.
 const shardRetryDelayMs = (attempts) => Math.min(15 * 60 * 1000, 30 * 1000 * Math.pow(2, attempts));
 
+const SELF_ORIGIN_KEY = 'SELF_ORIGIN';
 const jobKey   = (id) => `JOB_${id}`;
 const shardKey = (id, ch) => `JOBSHARD_${id}_${ch}`;
 
@@ -1906,23 +1915,57 @@ async function enqueueDelivery(env, { kind, topic, payload, params }) {
     { expirationTtl: JOB_TTL_SECONDS },
   )));
   console.log(`[outbox] job ${id} queued: kind=${kind} topic=${topic ?? '-'} across ${SHARD_CHARS.length} shards`);
-  dispatchShards(env, id, SHARD_CHARS);
+  await dispatchShards(env, id, SHARD_CHARS);
   return id;
 }
 
 /** Fire one invocation per shard. Each gets its own subrequest budget. */
-function dispatchShards(env, jobId, chars) {
-  if (!env.SELF_URL) {
-    console.error('[outbox] SELF_URL is not set - shards can only be drained by the cron sweep.');
+async function dispatchShards(env, jobId, chars) {
+  const origin = await resolveSelfUrl(env);
+  if (!origin) {
+    console.error('[outbox] no self origin known - shards can only be drained by the cron sweep.');
     return;
   }
   for (const ch of chars) {
-    keepAlive(env, fetch(new URL('/run-shard', env.SELF_URL), {
+    keepAlive(env, fetch(new URL('/run-shard', origin), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ secret: env.TRIGGER_SECRET, jobId, shard: ch }),
     }).catch(e => console.error(`[outbox] dispatch ${jobId}/${ch} failed:`, e.message)));
   }
+}
+
+/**
+ * Where to call ourselves to fan a job out.
+ *
+ * SELF_URL is the supported way to configure this, but it is a plain var that
+ * is easy to forget, and forgetting it is silent and total: the September 2026
+ * audit found it had never been set in production, which on its own capped
+ * every automatic notification at the first forty matching subscribers. So the
+ * origin of any inbound request is cached in KV as a fallback. A cron-only
+ * invocation has no request to learn from, but by the time one runs the worker
+ * has almost certainly served a /save-subscription or a /health.
+ */
+async function resolveSelfUrl(env) {
+  if (env.SELF_URL) return env.SELF_URL;
+  try {
+    const cached = await kv(env).get(SELF_ORIGIN_KEY);
+    if (cached) return cached;
+  } catch { /* KV unavailable; the sweep is still the backstop */ }
+  return null;
+}
+
+/** Remember the origin we were reached on, so dispatch works without SELF_URL. */
+async function rememberSelfOrigin(env, request) {
+  if (env.SELF_URL) return;
+  try {
+    const origin = new URL(request.url).origin;
+    if (!origin.startsWith('https://')) return;
+    const known = await kv(env).get(SELF_ORIGIN_KEY);
+    if (known === origin) return;                 // no write on the hot path
+    await kv(env).put(SELF_ORIGIN_KEY, origin);
+    console.log(`[outbox] learned self origin ${origin} (SELF_URL is not set)`);
+  } catch { /* never let this break a request */ }
 }
 
 /**
@@ -1998,7 +2041,9 @@ async function runShard(env, jobId, ch) {
 
   // More to do and budget left over means the list was long; keep going in a
   // fresh invocation rather than waiting for the sweep.
-  if (next.state === 'pending' && !lastError) dispatchShards(env, jobId, [ch]);
+  if (next.state === 'pending' && !lastError) {
+    keepAlive(env, dispatchShards(env, jobId, [ch]).catch(() => {}));
+  }
   return next;
 }
 
@@ -2120,7 +2165,7 @@ async function sweepJobs(env, note = () => {}) {
     }
     if (due.length) {
       revived += due.length;
-      dispatchShards(env, id, due);
+      await dispatchShards(env, id, due);
     }
   }
 
@@ -2181,14 +2226,15 @@ async function maybeRunCensus(env, note = () => {}) {
   const existing = await kv(env).get(STATS_KEY, 'json');
   const age = existing?.takenAt ? Date.now() - existing.takenAt : Infinity;
   if (age < CENSUS_INTERVAL_MS) return;
-  if (!env.SELF_URL) {
-    console.warn('[census] SELF_URL is not set - cannot dispatch census shards.');
+  const origin = await resolveSelfUrl(env);
+  if (!origin) {
+    console.warn('[census] no self origin known - cannot dispatch census shards.');
     return;
   }
   const censusId = Date.now().toString(36);
   note('census', 'started', `previous snapshot ${age === Infinity ? 'never taken' : Math.round(age / 60000) + ' min old'}`);
   for (const ch of SHARD_CHARS) {
-    keepAlive(env, fetch(new URL('/run-census-shard', env.SELF_URL), {
+    keepAlive(env, fetch(new URL('/run-census-shard', origin), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ secret: env.TRIGGER_SECRET, censusId, shard: ch }),
