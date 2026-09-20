@@ -15,6 +15,8 @@
 //   -> coupling into the magnetosphere
 //   -> how far north the aurora oval pushes, and who in New Zealand sees it.
 
+import { cmeSpeedAt, cmeTransitSeconds, MIN_CME_SPEED_KMS } from '../../utils/cmePropagation';
+
 export type FlareClass = 'C' | 'M' | 'X';
 
 export interface StormInput {
@@ -70,8 +72,6 @@ export interface StormResult {
   substorm:      boolean;
 }
 
-const AU_KM        = 149_597_870;
-const L1_KM        = AU_KM * 0.99;
 const AMBIENT_WIND = 400;      // km/s
 const HOUR_MS      = 3_600_000;
 
@@ -93,28 +93,19 @@ export function separationDeg(lonDeg: number, latDeg: number): number {
   return (Math.acos(clamp(cos, -1, 1)) * 180) / Math.PI;
 }
 
-// Drag based propagation, in the spirit of the model the app uses for real
-// CMEs: a cloud faster than the wind around it is dragged back, a slow one is
-// pushed along, and both tend toward the ambient speed on the way out.
-// Returns transit time to L1 and the speed on arrival.
-export function propagate(speedKms: number, halfWidthDeg: number): { hours: number; arrivalSpeed: number } {
-  // Wider clouds sweep up more wind, so they are dragged harder. The range here
-  // is set so the transit times land where real ones do: roughly 18 hours for
-  // the very fastest events, two days for a middling one, and the better part
-  // of four days for something barely quicker than the wind itself.
-  const gamma = (0.18 + 0.30 * (halfWidthDeg / 70)) * 1e-8; // per km
-  let v = speedKms, x = 0;
-  const dt = 60; // seconds
-  let t = 0;
-  // Guard the loop: even a very slow cloud is at L1 inside a fortnight.
-  const maxT = 14 * 24 * 3600;
-  while (x < L1_KM && t < maxT) {
-    const dv = -gamma * (v - AMBIENT_WIND) * Math.abs(v - AMBIENT_WIND);
-    v += dv * dt;
-    x += v * dt;
-    t += dt;
+// Propagation is the visualisation's own model, imported rather than repeated.
+// The game used to have its own, tuned separately, and the two disagreed: the
+// cloud reached Earth on screen while the caption still had hours to run. There
+// is one model now, and the arrival time quoted here is by construction the
+// moment the front of the cloud touches Earth's orbit in the scene.
+export function propagate(speedKms: number): { hours: number; arrivalSpeed: number } {
+  const secs = cmeTransitSeconds(speedKms, 1.0);
+  if (secs === null) {
+    // Slower than it needs to be to get here inside a fortnight. Quote the edge
+    // of that window rather than pretending it arrives.
+    return { hours: 14 * 24, arrivalSpeed: Math.max(MIN_CME_SPEED_KMS, speedKms) };
   }
-  return { hours: t / 3600, arrivalSpeed: Math.max(280, v) };
+  return { hours: secs / 3600, arrivalSpeed: cmeSpeedAt(speedKms, secs) };
 }
 
 // How strong the field in the cloud is when it gets here. Energy sets how much
@@ -319,10 +310,10 @@ export function runStorm(input: StormInput): StormResult {
   // Straight down the middle is a full hit, the very edge is a graze.
   const impact = hits ? clamp(Math.cos((sep / Math.max(1, input.halfWidthDeg)) * (Math.PI / 2)), 0, 1) : 0;
 
-  const { hours, arrivalSpeed } = propagate(input.speedKms, input.halfWidthDeg);
-  // A glancing blow takes longer to reach us, because we are catching the flank
-  // rather than the nose.
-  const transitHours = hours * (1 + 0.22 * (1 - impact));
+  // No fudge for a glancing blow here. The scene draws the front of the cloud
+  // reaching Earth's orbit at one time, and a caption that says something else
+  // is simply wrong, whatever the reasoning behind it.
+  const { hours: transitHours, arrivalSpeed } = propagate(input.speedKms);
   const arrivalMs = input.launchMs + transitHours * HOUR_MS;
 
   const base = {

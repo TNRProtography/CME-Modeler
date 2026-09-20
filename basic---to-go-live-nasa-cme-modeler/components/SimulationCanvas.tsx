@@ -1,5 +1,6 @@
 // --- START OF FILE SimulationCanvas.tsx ---
 
+import { cmeDistanceAU } from '../utils/cmePropagation';
 import React, { useRef, useEffect, useCallback, useImperativeHandle, useState, useMemo } from 'react';
 import {
   ProcessedCME, ViewMode, FocusTarget, CelestialBody, PlanetLabelInfo, POIData, PlanetData,
@@ -593,30 +594,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   // Uses empirical formula: a (m/s²) = 1.41 - 0.0035 * speed_kms
   // CME decelerates until it reaches MIN_CME_SPEED_KMS, then coasts.
   const calculateDistanceWithDeceleration = useCallback((cme: ProcessedCME, timeSinceEventSeconds: number): number => {
-    const u_kms = cme.speed;
-    const t_s = Math.max(0, timeSinceEventSeconds);
-
-    if (u_kms <= MIN_CME_SPEED_KMS) {
-      return (u_kms * t_s / AU_IN_KM) * SCENE_SCALE;
-    }
-
-    const a_ms2 = 1.41 - 0.0035 * u_kms;
-    const a_kms2 = a_ms2 / 1000.0;
-
-    if (a_kms2 >= 0) {
-      return ((u_kms * t_s) + (0.5 * a_kms2 * t_s * t_s)) / AU_IN_KM * SCENE_SCALE;
-    }
-
-    // Decelerating CME - find when it hits the floor speed then coast
-    const time_to_floor_s = (MIN_CME_SPEED_KMS - u_kms) / a_kms2;
-
-    if (t_s < time_to_floor_s) {
-      return ((u_kms * t_s) + (0.5 * a_kms2 * t_s * t_s)) / AU_IN_KM * SCENE_SCALE;
-    }
-
-    const dist_decel = (u_kms * time_to_floor_s) + (0.5 * a_kms2 * time_to_floor_s * time_to_floor_s);
-    const dist_coast = MIN_CME_SPEED_KMS * (t_s - time_to_floor_s);
-    return (dist_decel + dist_coast) / AU_IN_KM * SCENE_SCALE;
+    // The maths lives in utils/cmePropagation so that anything quoting an
+    // arrival time uses the same model the scene draws with.
+    return cmeDistanceAU(cme.speed, timeSinceEventSeconds) * SCENE_SCALE;
   }, []);
 
   const calculateDistanceByInterpolation = useCallback((cme: ProcessedCME, timeSinceEventSeconds: number): number => {

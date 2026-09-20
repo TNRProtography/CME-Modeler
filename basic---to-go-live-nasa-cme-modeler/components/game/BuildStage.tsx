@@ -190,9 +190,7 @@ const BuildStage: React.FC<Props> = ({ input, onChange, onLaunch, brief }) => {
   // The live prediction. This is the teaching surface: it moves while you drag,
   // so cause and effect are impossible to miss.
   const forecast = useMemo(() => {
-    const { hours, arrivalSpeed } = propagate(input.speedKms, input.halfWidthDeg);
-    const impactPenalty = aimed ? 1 + 0.22 * (1 - Math.cos((sep / Math.max(1, input.halfWidthDeg)) * (Math.PI / 2))) : 1;
-    const transit = hours * impactPenalty;
+    const { hours: transit, arrivalSpeed } = propagate(input.speedKms);
     const arriveMs = input.launchMs + transit * 3_600_000;
     // Where the good part of the storm falls. The shock is not the show: the
     // field has to turn south, and in a twisted rope that happens somewhere in
