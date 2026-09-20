@@ -261,10 +261,10 @@ export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
   // ── Retired ──────────────────────────────────────────────────────────────
   // Nothing on the worker sends these. Kept so preferences saved by old app
   // versions still round-trip instead of being dropped on the floor.
-  { id: 'aurora-40percent', ui: 'retired', defaultOn: true, sentBy: 'nothing', icon: '/icons/icon-aurora.png' },
-  { id: 'aurora-50percent', ui: 'retired', defaultOn: true, sentBy: 'nothing', icon: '/icons/icon-aurora.png' },
-  { id: 'aurora-60percent', ui: 'retired', defaultOn: true, sentBy: 'nothing', icon: '/icons/icon-aurora.png' },
-  { id: 'aurora-80percent', ui: 'retired', defaultOn: true, sentBy: 'nothing', icon: '/icons/icon-aurora.png' },
+  { id: 'aurora-40percent', ui: 'retired', defaultOn: true, sentBy: 'nothing', icon: '/icons/icon_aurora.png' },
+  { id: 'aurora-50percent', ui: 'retired', defaultOn: true, sentBy: 'nothing', icon: '/icons/icon_aurora.png' },
+  { id: 'aurora-60percent', ui: 'retired', defaultOn: true, sentBy: 'nothing', icon: '/icons/icon_aurora.png' },
+  { id: 'aurora-80percent', ui: 'retired', defaultOn: true, sentBy: 'nothing', icon: '/icons/icon_aurora.png' },
 ];
 
 // ── Derived views ──────────────────────────────────────────────────────────

@@ -14,7 +14,7 @@
 // nothing declares, a preset naming an id that does not exist, and a topic
 // with no icon.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadManifest, workerTopics, workerSentTopics } from './topic-manifest.mjs';
@@ -98,6 +98,34 @@ console.log('\nThe manifest is internally sound');
   check(hiddenNoNote.length === 0,
         'every toggle-less topic explains why it has no toggle',
         hiddenNoNote.join(', '));
+}
+
+console.log('\nEvery icon exists');
+{
+  // The icons folder was removed from the build at some point and nothing
+  // noticed, so every notification fell back to the platform's default bell
+  // for as long as that lasted. A missing icon is now a failing test rather
+  // than a mystery on somebody's phone.
+  const missing = [];
+  const wrongSize = [];
+  for (const c of m.categories) {
+    for (const [what, rel] of [['icon', c.icon], ['badge', c.badge]]) {
+      if (!rel) continue;
+      const file = join(APP, 'public', rel.replace(/^\//, ''));
+      if (!existsSync(file)) { missing.push(`${c.id} ${what} -> ${rel}`); continue; }
+      // A notification icon below 192px looks soft on a modern phone; the
+      // badge is deliberately smaller.
+      const bytes = statSync(file).size;
+      if (bytes < 200) wrongSize.push(`${rel} is only ${bytes} bytes`);
+    }
+  }
+  check(missing.length === 0,
+        'every icon the manifest names is in public/icons',
+        missing.join('\n        '));
+  check(wrongSize.length === 0, 'and none of them is an empty file', wrongSize.join(', '));
+
+  const badgeFile = join(APP, 'public', 'icons', 'icon-badge.png');
+  check(existsSync(badgeFile), 'the Android status-bar badge exists');
 }
 
 console.log('\nPresets only name real topics');
