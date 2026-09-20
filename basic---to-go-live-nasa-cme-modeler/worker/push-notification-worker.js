@@ -430,6 +430,7 @@ export default {
     if (url.pathname === '/run-migration-shard'       && request.method === 'POST') return handleRunMigrationShard(request, env);
     if (url.pathname === '/notification-clicked'      && request.method === 'POST') return handleNotificationClicked(request, env);
     if (url.pathname === '/health')                                                  return handleHealthCheck(env);
+    if (url.pathname === '/')                                                        return handleRoot(env);
     return new Response('Not found', { status: 404 });
   },
   async scheduled(_evt, env, ctx) {
@@ -1976,6 +1977,40 @@ async function handleJob(request, env) {
   } while (cursor);
   out.sort((a, b) => b.createdAt - a.createdAt);
   return json({ jobs: out });
+}
+
+/**
+ * The bare URL. Opening it to check the worker is alive is the obvious thing
+ * to do, and a plain 404 answers that badly - it looks identical to a broken
+ * deploy. This says what this is and whether the cron is still ticking.
+ *
+ * Public, so it names no secrets and lists no internal routes.
+ */
+async function handleRoot(env) {
+  let lastRun = null, healthy = false;
+  try {
+    const ts = Number(await kv(env).get('LAST_SUCCESSFUL_RUN_TIMESTAMP')) || 0;
+    if (ts) {
+      lastRun = nzTimestamp(ts);
+      healthy = (Date.now() - ts) <= HEALTH_CHECK_THRESHOLD_MS;
+    }
+  } catch { /* the page is still worth serving */ }
+
+  const body = [
+    'Spot The Aurora - push notification worker',
+    '',
+    healthy ? 'Status:   running' : 'Status:   the scheduled run is overdue',
+    `Last run: ${lastRun ?? 'never'}`,
+    '',
+    'This worker has no public pages. /health returns the same as JSON.',
+    'Everything else needs a secret.',
+    '',
+  ].join('\n');
+
+  return new Response(body, {
+    status: healthy ? 200 : 503,
+    headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },
+  });
 }
 
 async function handleHealthCheck(env) {
