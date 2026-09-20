@@ -649,5 +649,58 @@ console.log('\n13. a cron tick in the same moment as a send');
   globalThis.fetch = realFetch;
 }
 
+// ---- 14. records nothing can deliver to --------------------------------
+// Four places in the worker skip a record that does not match the expected
+// shape, silently. If any real record differs - an older app version, a
+// partial write - those people never receive anything and nothing says so.
+console.log('\n14. subscribers the worker cannot deliver to');
+{
+  await settle();
+  for (const k of [...store.keys()]) store.delete(k);
+
+  const good = 40;
+  for (let i = 0; i < good; i++) {
+    const endpoint = `https://push.example/ok-${i}`;
+    store.set(`D${String(i).padStart(4, '0')}`, JSON.stringify({
+      subscription: { endpoint, keys: { p256dh: P256DH, auth: b64u(webcrypto.getRandomValues(new Uint8Array(16))) } },
+      preferences: { 'admin-broadcast': true },
+    }));
+  }
+  // The shapes that would go unnoticed: no keys at all, no endpoint, and a
+  // record from some older format entirely.
+  store.set('E0001', JSON.stringify({ subscription: { endpoint: 'https://push.example/nokeys' }, preferences: {} }));
+  store.set('E0002', JSON.stringify({ subscription: { keys: { p256dh: P256DH, auth: 'x' } }, preferences: {} }));
+  store.set('E0003', JSON.stringify({ endpoint: 'https://push.example/flat', prefs: {} }));
+
+  store.delete('STATS');
+  for (const ch of [...'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'])
+    store.delete(`STATSSHARD_${ch}`);
+
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input.url ?? String(input);
+    if (url.includes('/run-census-shard')) {
+      const { censusId, shard } = JSON.parse(init.body);
+      const p = W.runCensusShard(env, censusId, shard); inflight.push(p); await p;
+      return new Response('{}', { status: 200 });
+    }
+    return realFetch(input, init);
+  };
+  await W.maybeRunCensus(env, () => {});
+  await settle();
+
+  const snap = JSON.parse(store.get('STATS'));
+  console.log(`    ${snap.subscribers} deliverable, ${snap.undeliverable} not`);
+  console.log(`    shapes: ${JSON.stringify(snap.undeliverableShapes)}`);
+  check(snap.subscribers === good, 'the good records are counted', `${snap.subscribers} of ${good}`);
+  check(snap.undeliverable === 3,
+        'the broken ones are counted rather than passed over',
+        `${snap.undeliverable} of 3`);
+  check(snap.undeliverableShapes && Object.keys(snap.undeliverableShapes).length > 0,
+        'and their shape is reported, so you can tell what is wrong with them');
+
+  globalThis.fetch = realFetch;
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

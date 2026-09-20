@@ -2848,6 +2848,12 @@ async function runCensusShard(env, censusId, ch) {
   const counts = {};
   for (const t of ALL_TOPICS) counts[t] = 0;
   let subscribers = 0, withGps = 0, active = 0, anyTopic = 0;
+  // Records that are not reserved keys but that nothing can deliver to. Four
+  // places in this worker skip these silently, so without counting them here a
+  // subscriber whose record has an unexpected shape would simply never receive
+  // anything and nothing would ever say so.
+  let unreadable = 0;
+  const unreadableShapes = {};
   const overnightModes = {};
   const services = {};
   const activeCutoff = Date.now() - ACTIVE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
@@ -2858,7 +2864,17 @@ async function runCensusShard(env, censusId, ch) {
     for (const key of res.keys) {
       if (isReservedKey(key.name)) continue;
       const stored = await kv(env).get(key.name, 'json');
-      if (!stored?.subscription) continue;
+
+      if (!stored?.subscription?.endpoint || !stored?.subscription?.keys?.p256dh) {
+        unreadable++;
+        // The field names present, not the values - enough to recognise an old
+        // record shape without putting anyone's data in a stats key.
+        const shape = stored && typeof stored === 'object'
+          ? Object.keys(stored).sort().join(',').slice(0, 80) || '(empty object)'
+          : `(${stored === null ? 'unparseable' : typeof stored})`;
+        unreadableShapes[shape] = (unreadableShapes[shape] ?? 0) + 1;
+        continue;
+      }
       subscribers++;
 
       if (isFinite(parseFloat(stored.location?.latitude))) withGps++;
@@ -2883,7 +2899,7 @@ async function runCensusShard(env, censusId, ch) {
 
   await kv(env).put(statsShardKey(ch), JSON.stringify({
     censusId, shard: ch, subscribers, withGps, active, anyTopic, counts, overnightModes, services,
-    at: Date.now(),
+    unreadable, unreadableShapes, at: Date.now(),
   }), { expirationTtl: CENSUS_SHARD_TTL });
 
   // Whoever finishes last does the roll-up.
@@ -2901,9 +2917,10 @@ async function tryFinishCensus(env, censusId) {
 
   const counts = {};
   for (const t of ALL_TOPICS) counts[t] = 0;
-  let subscribers = 0, withGps = 0, active = 0, anyTopic = 0;
+  let subscribers = 0, withGps = 0, active = 0, anyTopic = 0, unreadable = 0;
   const overnightModes = {};
   const services = {};
+  const unreadableShapes = {};
   for (const p of parts) {
     subscribers += p.subscribers; withGps += p.withGps;
     active += p.active; anyTopic += p.anyTopic;
@@ -2913,6 +2930,10 @@ async function tryFinishCensus(env, censusId) {
     }
     for (const [svc, n] of Object.entries(p.services ?? {})) {
       services[svc] = (services[svc] ?? 0) + n;
+    }
+    unreadable += p.unreadable ?? 0;
+    for (const [shape, n] of Object.entries(p.unreadableShapes ?? {})) {
+      unreadableShapes[shape] = (unreadableShapes[shape] ?? 0) + n;
     }
   }
 
@@ -2933,6 +2954,10 @@ async function tryFinishCensus(env, censusId) {
     byCategory,
     overnightModes,
     byPushService: Object.fromEntries(Object.entries(services).sort((a, b) => b[1] - a[1])),
+    // Should be zero. Anything here is somebody who can never be sent to,
+    // and the shape says what is wrong with their record.
+    undeliverable: unreadable,
+    undeliverableShapes: unreadable ? unreadableShapes : undefined,
     recentSends: await recentSendSummary(env),
     note: 'Counted by walking every subscriber record. Refreshed about once an hour. '
         + 'subscribers counts saved push subscriptions; some belong to devices that have '
