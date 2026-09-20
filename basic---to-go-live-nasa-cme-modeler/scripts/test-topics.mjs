@@ -150,6 +150,37 @@ console.log('\nEvery icon exists');
         `${badgeBytes} bytes`);
 }
 
+console.log('\nThe site ships what it promises');
+{
+  // public/ went missing entirely once. These are the files whose absence is
+  // silent but consequential, so name them rather than trust that somebody
+  // will notice the next time.
+  const required = [
+    ['sw.js',         'push notifications do not work without it'],
+    ['manifest.json', 'the app cannot be installed to a home screen'],
+    ['_headers',      'sets /sw.js to no-cache, without which updates never reach anyone'],
+    ['_redirects',    'the SPA fallback, without which every deep link 404s'],
+    ['robots.txt',    'search'],
+    ['sitemap.xml',   'search'],
+  ];
+  const absent = required.filter(([f]) => !existsSync(join(APP, 'public', f)));
+  check(absent.length === 0,
+        'every file the deploy depends on is in public/',
+        absent.map(([f, why]) => `${f} - ${why}`).join('\n        '));
+
+  // Anything _redirects points at at a fixed path has to be there too.
+  if (existsSync(join(APP, 'public', '_redirects'))) {
+    const rules = readFileSync(join(APP, 'public', '_redirects'), 'utf8');
+    const targets = [...rules.matchAll(/^\S+\s+(\/[A-Za-z0-9._-]+)\s+200/gm)]
+      .map(x => x[1])
+      .filter(t => t !== '/index.html' && !t.includes(':splat'));
+    const missing = targets.filter(t => !existsSync(join(APP, 'public', t.replace(/^\//, ''))));
+    check(missing.length === 0,
+          `every page _redirects points at exists (${targets.length} checked)`,
+          missing.join(', '));
+  }
+}
+
 console.log('\nPresets only name real topics');
 {
   const presetSrc = readFileSync(join(APP, 'utils', 'notificationPresets.ts'), 'utf8');
