@@ -328,7 +328,7 @@ const AppTutorial: React.FC<AppTutorialProps> = ({
           isBottom ? 'bottom-0' : 'top-0'
         } ${isTransitioning ? 'opacity-40 pointer-events-none' : 'opacity-100'}`}
       >
-        <div className="max-w-lg mx-auto bg-neutral-950/95 backdrop-blur-xl border border-neutral-700/80 rounded-xl shadow-2xl overflow-hidden">
+        <div className="max-w-lg mx-auto bg-neutral-950/95 border border-neutral-700/80 rounded-xl shadow-2xl overflow-hidden">
           {/* Header */}
           <div className="flex items-center justify-between px-4 pt-3 pb-1">
             <div className="flex items-center gap-2">

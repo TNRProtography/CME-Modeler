@@ -27,7 +27,8 @@ import React from 'react';
  *  - `mix-blend-mode: screen` so layers add light rather than paint
  *    over the photo.
  *  - `pointer-events: none` so nothing under is blocked.
- *  - Only transform/opacity/filter animate - GPU only.
+ *  - Only transform and opacity animate. Blurs are set once and left
+ *    alone: animating a filter re-runs the blur every frame.
  */
 const AuroraOverlay: React.FC = () => {
   return (
@@ -49,9 +50,14 @@ const AuroraOverlay: React.FC = () => {
           70%  { transform: translate3d( 0%, 0, 0) skewX(-1deg);   opacity: 0.85; }
           100% { transform: translate3d(-1.5%, 0, 0) skewX(-2deg); opacity: 0.7;  }
         }
+        /* This used to tween the blur radius from 60px to 78px. Animating a
+           filter re-runs the whole filter chain every frame, and a blur that
+           wide over a layer this size is the most expensive thing on the page,
+           running forever whether or not anyone is looking at it. A brightness
+           pulse reads as the same slow breathing and is composited. */
         @keyframes aurora-shimmer {
-          0%,100% { filter: blur(60px) hue-rotate(0deg); }
-          50%     { filter: blur(78px) hue-rotate(14deg); }
+          0%,100% { opacity: 0.82; }
+          50%     { opacity: 1; }
         }
       `}</style>
 
@@ -75,7 +81,7 @@ const AuroraOverlay: React.FC = () => {
             filter: 'blur(60px)',
             animation:
               'aurora-drift-a 14s ease-in-out infinite, aurora-shimmer 9s ease-in-out infinite',
-            willChange: 'transform, opacity, filter',
+            willChange: 'transform, opacity',
           }}
         />
 

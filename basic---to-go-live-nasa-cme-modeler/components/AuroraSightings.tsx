@@ -515,6 +515,13 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
   // 30-min average IMF By for the Russell-McPherron term in the oval physics
   const latestBy = useMemo(() => avgBy30m(allMagneticData), [allMagneticData]);
     const [sightings, setSightings] = useState<SightingReport[]>([]);
+    // Leaflet is heavy to start: it builds a tile grid, a heat layer and a
+    // marker cluster, and then does work on every scroll and resize. The map
+    // sits well down the forecast page, so it is not built until it has been
+    // scrolled to. The sightings themselves still load straight away, because
+    // the visibility panel at the top of the page is fed from them.
+    const mapHostRef = useRef<HTMLDivElement>(null);
+    const [mapWanted, setMapWanted] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
@@ -523,6 +530,18 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
     const [gpsError, setGpsError] = useState<string | null>(null);
     const [gpsFailed, setGpsFailed] = useState(false);
     const [selectedStatus, setSelectedStatus] = useState<SightingStatus | null>(null);
+
+    useEffect(() => {
+        const host = mapHostRef.current;
+        if (!host || mapWanted) return;
+        if (typeof IntersectionObserver === 'undefined') { setMapWanted(true); return; }
+        // rootMargin so the map is ready by the time it is actually scrolled to.
+        const io = new IntersectionObserver(entries => {
+            if (entries[0]?.isIntersecting) { setMapWanted(true); io.disconnect(); }
+        }, { rootMargin: '300px' });
+        io.observe(host);
+        return () => io.disconnect();
+    }, [mapWanted]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [pendingReport, setPendingReport] = useState<SightingReport | null>(null);
     const [lastReportInfo, setLastReportInfo] = useState<{timestamp: number, key: string} | null>(null);
@@ -828,7 +847,12 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                             <span className="text-[10px] text-neutral-400">Visibility horizon - expands during storms</span>
                         </div>
                     </div>
-                    <div className="flex-1 min-h-0">
+                    <div className="flex-1 min-h-0" ref={mapHostRef}>
+                    {!mapWanted ? (
+                      <div className="h-full w-full bg-neutral-800 flex items-center justify-center">
+                        <span className="text-xs text-neutral-500">Loading map</span>
+                      </div>
+                    ) : (
                     <MapContainer
                         center={[-41, 172]}
                         zoom={MAP_ZOOM}
@@ -877,6 +901,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                         </>
                         {pendingReport && <Marker position={[pendingReport.lat, pendingReport.lng]} icon={createSightingIcon(pendingReport)} zIndexOffset={99999999999999} />}
                     </MapContainer>
+                    )}
                     </div>
                     {/* Oval forecast timeline slider */}
                     <OvalForecastTimeline

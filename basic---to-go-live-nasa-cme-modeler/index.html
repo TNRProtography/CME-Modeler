@@ -215,10 +215,13 @@
       100% { transform: translateX(160%); opacity: 0; }
     }
 
+    /* Only transform is animated here. box-shadow is not a composited property,
+       so tweening it repainted every panel on the page on every frame, forever,
+       which is the single most expensive thing the dashboard was doing. */
     @keyframes cardFloat {
-      0% { transform: translateY(0px); box-shadow: 0 14px 36px rgba(0,0,0,0.36); }
-      50% { transform: translateY(-4px); box-shadow: 0 18px 40px rgba(0,0,0,0.32); }
-      100% { transform: translateY(0px); box-shadow: 0 14px 36px rgba(0,0,0,0.36); }
+      0% { transform: translateY(0px); }
+      50% { transform: translateY(-4px); }
+      100% { transform: translateY(0px); }
     }
 
     @keyframes fadeUpSoft {
@@ -255,7 +258,9 @@
     .floating-panel {
       position: relative;
       box-shadow: 0 16px 36px rgba(0,0,0,0.28);
-      backdrop-filter: blur(14px);
+      /* No backdrop-filter. These panels are full width and stacked down a long
+         page, and they sit on a near black background behind a background that
+         is already 80% opaque, so the blur cost nothing but frames. */
       border: 1px solid rgba(255,255,255,0.08);
       animation: cardFloat 18s ease-in-out infinite;
       transition: transform 180ms ease, box-shadow 180ms ease;
@@ -286,7 +291,7 @@
       overflow: hidden;
       border: 1px solid rgba(255,255,255,0.06);
       box-shadow: 0 14px 28px rgba(0,0,0,0.25);
-      backdrop-filter: blur(14px);
+      /* See .floating-panel: the blur was invisible here and very expensive. */
       transform-origin: center;
       transition: transform 160ms ease, box-shadow 160ms ease;
     }

@@ -1074,21 +1074,66 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
 
   useEffect(() => {
     if (!canvasRef.current || !result) return;
+    const wrap = wrapRef.current;
     // Scale real omega (rad/min) to display rate (rad/s), preserving direction.
     // Clamp so even a fast-rotating rope doesn't spin dizzyingly.
     const rawDisp = result.omega * 55;
     const DISP_OMEGA = Math.sign(rawDisp) * Math.min(Math.abs(rawDisp), 0.32);
-    const tick = (t: number) => {
+
+    // This scene is by far the most expensive thing drawn on the forecast page:
+    // several thousand sprite blits, a shader Sun and a depth sort, every frame.
+    // The rope turns slowly enough that half rate is indistinguishable, and the
+    // saved frames matter on a phone.
+    const MIN_FRAME_MS = 1000 / 30;
+    let lastDraw = 0;
+    let running = false;
+    let raf = 0;
+
+    const draw = (t: number) => {
       if (lastTRef.current === null) lastTRef.current = t;
       const dt = Math.min((t - lastTRef.current) / 1000, 0.05);
       lastTRef.current = t;
       if (Math.abs(DISP_OMEGA) > 0.001) angleRef.current += DISP_OMEGA * dt;
       drawScene(canvasRef.current!, canvasW, result, angleRef.current);
-      animRef.current = requestAnimationFrame(tick);
     };
-    lastTRef.current = null;
-    animRef.current = requestAnimationFrame(tick);
-    return () => { cancelAnimationFrame(animRef.current); };
+
+    const tick = (t: number) => {
+      if (!running) return;
+      raf = requestAnimationFrame(tick);
+      if (t - lastDraw < MIN_FRAME_MS) return;
+      lastDraw = t;
+      draw(t);
+    };
+
+    const start = () => {
+      if (running) return;
+      running = true;
+      lastTRef.current = null;
+      raf = requestAnimationFrame(tick);
+    };
+    const stop = () => { running = false; cancelAnimationFrame(raf); };
+
+    // Paint once so the panel is never an empty box, then only keep drawing
+    // while it is actually on screen and the tab is in front. The panel sits
+    // well down a long page, and the whole page stays mounted when you switch
+    // to another tab of the app, so an ungated loop here runs forever.
+    draw(performance.now());
+
+    const io = typeof IntersectionObserver !== 'undefined' && wrap
+      ? new IntersectionObserver(entries => {
+          if (entries[0]?.isIntersecting && !document.hidden) start(); else stop();
+        }, { threshold: 0.05 })
+      : null;
+    if (io && wrap) io.observe(wrap); else start();
+
+    const onVis = () => { if (document.hidden) stop(); };
+    document.addEventListener('visibilitychange', onVis);
+
+    return () => {
+      stop();
+      if (io) io.disconnect();
+      document.removeEventListener('visibilitychange', onVis);
+    };
   }, [result, canvasW]);
 
   if (!result) return null;
