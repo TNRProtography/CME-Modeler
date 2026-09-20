@@ -15,7 +15,7 @@ import CloseIcon from '../icons/CloseIcon';
 import BuildStage from './BuildStage';
 import TransitStage from './TransitStage';
 import ArrivalStage from './ArrivalStage';
-import { EVENTS, matchScore, type HistoricEvent } from './events';
+import { EVENTS, dataSourceFor, matchScore, targetInput, type HistoricEvent } from './events';
 import { gradeBrief, makeBrief, fmtHour, type Brief, type BriefOutcome } from './briefs';
 import {
   darknessAt, darknessLabel, formatNZ, nzHourAt, runStorm,
@@ -26,7 +26,11 @@ import { loadEarthTexture, earthTexture, renderGlobe } from '../../utils/spaceSc
 import { dayKey, load, rankFor, recordDaily, recordRun, streakStanding, type Progress } from './progress';
 
 type Phase = 'menu' | 'build' | 'transit' | 'arrival' | 'result';
-type Mode = 'daily' | 'practice' | 'history';
+// 'playback' is not a challenge. The preset storms are real events, and the
+// first thing you should be able to do with a real event is watch it happen
+// rather than be quizzed on it. Rebuilding one is still there, as the second
+// thing you might want to do with it.
+type Mode = 'daily' | 'practice' | 'history' | 'playback';
 
 const DEFAULT_INPUT = (launchMs: number): StormInput => ({
   clouds: [{
@@ -91,6 +95,16 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     setResult(null); setOutcome(null); setPhase('build');
   }, [launchFor]);
 
+  // Watch the real thing, with its real clouds, straight through.
+  const watchEvent = useCallback((ev: HistoricEvent) => {
+    const launch = launchFor(ev.targetNZHour);
+    setEvent(ev); setBrief(null); setMode('playback'); setCluesShown(0);
+    const real = targetInput(ev, launch);
+    setInput(real);
+    setResult(runStorm(real));
+    setOutcome(null); setPhase('transit');
+  }, [launchFor]);
+
   const startEvent = useCallback((ev: HistoricEvent) => {
     const launch = launchFor(ev.targetNZHour);
     setEvent(ev); setBrief(null); setMode('history'); setCluesShown(1);
@@ -112,6 +126,11 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       setProgress(prev => mode === 'daily'
         ? recordDaily(prev, o.score, o.xp)
         : recordRun(prev, o.score, o.xp));
+    } else if (event && mode === 'playback') {
+      // Nothing to score. You get a little for having sat through it, and the
+      // event is marked as seen.
+      setOutcome(null); setGained(20);
+      setProgress(prev => recordRun(prev, 0, 20, event.id));
     } else if (event) {
       const m = matchScore(event, input);
       const score = Math.round(m.overall * 100);
@@ -178,21 +197,42 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         </button>
 
         <div>
-          <h3 className="text-xs font-bold tracking-wider text-neutral-400 uppercase mb-2">Rebuild a real storm</h3>
+          <h3 className="text-xs font-bold tracking-wider text-neutral-400 uppercase mb-2">Real storms</h3>
+          <p className="text-[11px] text-neutral-500 mb-2 leading-snug">
+            Watch one happen, cloud by cloud, with the figures it actually had. Or build
+            it yourself from the clues and see how close you land.
+          </p>
           <div className="space-y-2">
-            {EVENTS.map(ev => (
-              <button key={ev.id} onClick={() => startEvent(ev)}
-                className="w-full text-left card bg-neutral-950/80 p-3 active:scale-[0.99]">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="font-bold text-neutral-100 text-sm">{ev.name}</span>
-                  <span className="text-[10px] text-neutral-500 flex-shrink-0">{ev.date}</span>
+            {EVENTS.map(ev => {
+              const data = dataSourceFor(ev);
+              return (
+                <div key={ev.id} className="card bg-neutral-950/80 p-3">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="font-bold text-neutral-100 text-sm">{ev.name}</span>
+                    <span className="text-[10px] text-neutral-500 flex-shrink-0">{ev.date}</span>
+                  </div>
+                  <p className="text-xs text-neutral-400 mt-1 leading-snug">{ev.hook}</p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <button onClick={() => watchEvent(ev)}
+                      className="flex-1 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold transition-colors active:scale-95">
+                      Watch it
+                    </button>
+                    <button onClick={() => startEvent(ev)}
+                      className="flex-1 py-1.5 rounded border border-neutral-700/80 text-neutral-300 text-xs font-semibold active:scale-95">
+                      Rebuild it
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-neutral-600 mt-1.5">
+                    {data.clouds.length} {data.clouds.length === 1 ? 'cloud' : 'clouds'}
+                    {' \u00b7 '}
+                    {data.source === 'donki'
+                      ? 'figures from NASA\u2019s DONKI catalogue'
+                      : 'figures reconstructed from the published summaries'}
+                    {progress.seenEvents.includes(ev.id) && ' \u00b7 seen'}
+                  </p>
                 </div>
-                <p className="text-xs text-neutral-400 mt-1 leading-snug">{ev.hook}</p>
-                {progress.seenEvents.includes(ev.id) && (
-                  <span className="text-[10px] text-emerald-400 mt-1 inline-block">rebuilt</span>
-                )}
-              </button>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -237,16 +277,26 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const seen = result.hits
       ? visibilityAcrossNZ(result.bestVisibleKp, moon, darknessAt(result.bestVisibleAtMs))
       : [];
-    const match = event ? matchScore(event, input) : null;
+    const match = event && mode !== 'playback' ? matchScore(event, input) : null;
 
     return (
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
         <div className="max-w-md mx-auto space-y-4">
           <div className="text-center">
-            <p className="text-xs uppercase tracking-wider text-neutral-500">
-              {event ? 'How close you got' : outcome?.hit ? 'Brief met' : 'Brief not met'}
-            </p>
-            <p className="text-5xl font-bold text-neutral-50 tabular-nums">{outcome?.score ?? 0}</p>
+            {mode === 'playback' && event ? (
+              <>
+                <p className="text-xs uppercase tracking-wider text-neutral-500">What it did</p>
+                <p className="text-2xl font-bold text-neutral-50">{event.name}</p>
+                <p className="text-sm text-neutral-400">{event.date}</p>
+              </>
+            ) : (
+              <>
+                <p className="text-xs uppercase tracking-wider text-neutral-500">
+                  {event ? 'How close you got' : outcome?.hit ? 'Brief met' : 'Brief not met'}
+                </p>
+                <p className="text-5xl font-bold text-neutral-50 tabular-nums">{outcome?.score ?? 0}</p>
+              </>
+            )}
             <p className="text-sm text-emerald-400 font-semibold">+{gained} xp</p>
           </div>
 
@@ -283,7 +333,36 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <p key={i} className="text-sm text-neutral-300 leading-snug">{l}</p>
           ))}
 
-          {match && event && (
+          {mode === 'playback' && event && (
+            <div className="card bg-neutral-950/80 p-3">
+              <p className="text-xs font-bold text-sky-300 mb-1.5">What it was made of</p>
+              <div className="space-y-1">
+                {result.outcomes.map((o, i) => (
+                  <div key={i} className="flex items-center gap-2 text-[11px]">
+                    <span className={`w-10 flex-shrink-0 font-semibold ${o.hits ? 'text-emerald-400' : 'text-neutral-600'}`}>
+                      {o.hits ? 'hit' : 'missed'}
+                    </span>
+                    <span className="flex-1 text-neutral-300 truncate">{o.spec.label || `Cloud ${i + 1}`}</span>
+                    <span className="font-mono text-neutral-500">{Math.round(o.spec.speedKms)} km/s</span>
+                    <span className="font-mono text-neutral-600 w-9 text-right">{Math.round(o.spec.halfWidthDeg)}&deg;</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[10px] text-neutral-500 mt-2 leading-snug">
+                {dataSourceFor(event).source === 'donki'
+                  ? `Straight from NASA\u2019s DONKI catalogue, the same one the CME visualisation runs on.`
+                  : 'Reconstructed from the published storm summaries. Running the DONKI fetch replaces these with the catalogue\u2019s own figures.'}
+              </p>
+              <div className="grid grid-cols-3 gap-2 mt-2 text-[11px]">
+                <div><p className="text-neutral-500">It reached</p><p className="text-neutral-100 font-mono">Kp {event.facts.kp}</p></div>
+                <div><p className="text-neutral-500">Dst</p><p className="text-neutral-100 font-mono">{event.facts.dst} nT</p></div>
+                <div><p className="text-neutral-500">First shock</p><p className="text-neutral-100 font-mono">{event.facts.transitHours}h</p></div>
+              </div>
+              <p className="text-[10px] text-neutral-500 mt-1.5 leading-snug">{event.facts.note}</p>
+            </div>
+          )}
+
+          {match && mode !== 'playback' && event && (
             <div className="card bg-neutral-950/80 p-3 space-y-1.5">
               {match.parts.map(p => (
                 <div key={p.label} className="flex items-center gap-2">
@@ -316,9 +395,12 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           )}
 
           <div className="flex gap-2 pt-1">
-            <button onClick={() => { setPhase('build'); setResult(null); setOutcome(null); }}
+            <button onClick={() => {
+                if (mode === 'playback' && event) watchEvent(event);
+                else { setPhase('build'); setResult(null); setOutcome(null); }
+              }}
               className="flex-1 py-2.5 rounded-lg text-sm border border-neutral-700/80 text-neutral-200 active:scale-95">
-              Try again
+              {mode === 'playback' ? 'Watch again' : 'Try again'}
             </button>
             <button onClick={() => setPhase('menu')}
               className="flex-1 py-2.5 rounded-lg text-sm bg-sky-600 hover:bg-sky-500 text-white font-semibold transition-colors active:scale-95">
@@ -341,7 +423,9 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       <header className="flex-shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-neutral-700/80">
         <div className="min-w-0">
           <p className="text-sm font-bold text-neutral-100 truncate">
-            {phase === 'menu' ? 'Storm Builder'
+            {mode === 'playback' && event && phase !== 'menu'
+              ? event.name
+              : phase === 'menu' ? 'Storm Builder'
               : phase === 'build' ? 'Build it'
               : phase === 'transit' ? 'In transit'
               : phase === 'arrival' ? 'Arriving' : 'Result'}
@@ -352,7 +436,9 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         </div>
         <div className="flex items-center gap-2">
           {phase !== 'menu' && phase !== 'result' && (
-            <button onClick={() => setPhase('menu')} className="text-xs text-neutral-400 px-2 py-1">Give up</button>
+            <button onClick={() => setPhase('menu')} className="text-xs text-neutral-400 px-2 py-1">
+              {mode === 'playback' ? 'Stop' : 'Give up'}
+            </button>
           )}
           <button onClick={onClose} aria-label="Close"
             className="p-1.5 rounded-lg text-neutral-400 hover:text-white active:scale-95">
