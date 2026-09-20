@@ -20,29 +20,15 @@ import {
   type PromptLocation,
   type PermissionState,
 } from './analytics';
+import {
+  TOPIC_ICONS,
+  LIVE_TOPIC_IDS,
+  DEFAULT_ON_IDS,
+} from './notificationCategories';
 
-// Icon map - mirrors TOPIC_ICONS in sw.js so local test notifications
-// also show the correct icon. Must be kept in sync with public/sw.js.
-const TOPIC_ICONS: Record<string, string> = {
-  'visibility-dslr':   '/icons/icon-visibility-dslr.png',
-  'visibility-phone':  '/icons/icon-visibility-phone.png',
-  'visibility-naked':  '/icons/icon-visibility-naked.png',
-  'overnight-watch':   '/icons/icon-overnight-watch.png',
-  'flare-event':       '/icons/icon-flare-event.png',
-  'flare-peak':        '/icons/icon-flare-peak.png',
-  'flare-M1':          '/icons/icon-flare-event.png',
-  'flare-M5':          '/icons/icon-flare-event.png',
-  'flare-X1':          '/icons/icon-flare-event.png',
-  'flare-X5':          '/icons/icon-flare-event.png',
-  'flare-X10':         '/icons/icon-flare-event.png',
-  'shock-ff':          '/icons/icon-shock-detection.png',
-  'aurora-40percent':  '/icons/icon-aurora.png',
-  'aurora-50percent':  '/icons/icon-aurora.png',
-  'aurora-60percent':  '/icons/icon-aurora.png',
-  'aurora-80percent':  '/icons/icon-aurora.png',
-  'substorm-forecast': '/icons/icon-substorm.png',
-  'admin-broadcast':   '/icons/icon-default.png',
-};
+// Icon map. Derived from the category manifest so a new topic cannot end up
+// with a missing icon. Still needs mirroring into public/sw.js by hand - the
+// service worker is served from outside this package and cannot import.
 const DEFAULT_ICON = '/icons/icon-default.png';
 
 function getNotificationIcon(tag?: string): string {
@@ -55,27 +41,9 @@ function getNotificationIcon(tag?: string): string {
   return DEFAULT_ICON;
 }
 
-// All notification topic keys - kept in sync with the worker.
-// Existing topics are preserved for backwards compatibility.
-// New topics added here are opt-out by default (undefined = send).
-const NOTIFICATION_CATEGORIES = [
-  // Aurora visibility - new location-aware notifications
-  'visibility-dslr',
-  'visibility-phone',
-  'visibility-naked',
-  // Overnight watch
-  'overnight-watch',
-  // Solar flare event (replaces flare-peak in UI - old topic still runs on worker)
-  'flare-event',
-  // Shock detection - CME arrival (fast forward shock)
-  'shock-ff',
-  // Legacy topics - kept for backwards compat, hidden from UI but still respected
-  'aurora-40percent', 'aurora-50percent', 'aurora-60percent', 'aurora-80percent',
-  'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'flare-peak',
-  'substorm-forecast',
-  // Admin broadcast
-  'admin-broadcast',
-];
+// Every topic the worker may send. Written out on subscribe so the worker
+// has an explicit true/false for each one rather than having to guess.
+const NOTIFICATION_CATEGORIES = LIVE_TOPIC_IDS;
 
 export const requestNotificationPermission = async (
   location: PromptLocation = 'unknown',
@@ -460,27 +428,9 @@ export const sendNotificationWithCooldown = async (tag: string, cooldownMs: numb
 const NOTIFICATION_PREF_PREFIX = 'notification_pref_';
 // Categories that default to ON when not explicitly set by the user.
 // These are high-value actionable alerts that subscribers almost certainly want.
-const DEFAULT_ON_CATEGORIES = new Set([
-  'overnight-watch',
+// What a brand-new subscriber gets before touching anything.
+const DEFAULT_ON_CATEGORIES = DEFAULT_ON_IDS;
 
-  'visibility-naked',
-  'visibility-phone',
-  'visibility-dslr',
-  'admin-broadcast',
-  // Legacy topics - controlled server-side, should appear ON in debug
-  'flare-event',
-  'flare-M1',
-  'flare-M5',
-  'flare-X1',
-  'flare-X5',
-  'flare-X10',
-  'flare-peak',
-  'aurora-40percent',
-  'aurora-50percent',
-  'aurora-60percent',
-  'aurora-80percent',
-  'substorm-forecast',
-]);
 const LEGACY_PREF_FALLBACKS: Record<string, string[]> = {
   'flare-M1': ['flare-event', 'flare-peak'],
   'flare-M5': ['flare-event', 'flare-peak'],

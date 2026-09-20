@@ -10,6 +10,7 @@
 
 import type { OvernightMode } from './notifications';
 import { trackPresetSelected, type PromptLocation } from './analytics';
+import { COMING_SOON_IDS } from './notificationCategories';
 
 export type PresetId = 'naked' | 'phone' | 'dslr' | 'everything' | 'custom';
 
@@ -27,12 +28,9 @@ export interface NotificationPreset {
 }
 
 /** Shock types that are still "coming soon" - excluded from presets and
- *  forced off regardless of what's applied. shock-ff is now live. */
-export const SHOCK_IDS = new Set<string>([
-  'shock-sf',
-  'shock-fr',
-  'shock-sr',
-]);
+ *  forced off regardless of what's applied. Declared in the category
+ *  manifest so this list cannot drift from the settings screen's. */
+export const SHOCK_IDS = COMING_SOON_IDS;
 
 export const NOTIFICATION_PRESETS: NotificationPreset[] = [
   {

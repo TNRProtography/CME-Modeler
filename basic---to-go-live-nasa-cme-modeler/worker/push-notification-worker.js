@@ -1388,13 +1388,26 @@ async function handleCheckSubscription(request, env) {
   }
 }
 
+// <generated:topics>
+// Generated from utils/notificationCategories.ts by `npm run sync:topics`.
+// Do not edit by hand - add the topic to the manifest and re-run the script.
+// `npm run test:topics` fails if this block and the manifest disagree.
 const ALL_TOPICS = [
+  // visibility
   'visibility-dslr', 'visibility-phone', 'visibility-naked',
-  'shock-ff', 'shock-sf', 'shock-fr', 'shock-sr', 'shock-imf',
-  'admin-broadcast', 'flare-M1', 'flare-M5',
-  'flare-X1', 'flare-X5', 'flare-X10', 'flare-peak', 'flare-event',
-  'substorm-forecast', 'overnight-watch',
+  // forecast
+  'overnight-watch',
+  // solar
+  'flare-M1', 'flare-M5', 'flare-X1',
+  'flare-X5', 'flare-X10', 'shock-ff',
+  'shock-sf', 'shock-fr', 'shock-sr',
+  // announcements
+  'admin-broadcast',
+  // no group - live but not shown in the app
+  'flare-event', 'flare-peak', 'substorm-forecast',
+  'shock-imf',
 ];
+// </generated:topics>
 
 async function runPreferenceMigration(env) {
   let migrated = 0, skipped = 0, errors = 0;

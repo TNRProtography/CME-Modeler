@@ -9,7 +9,10 @@
     "preview": "vite preview",
     "fetch-storms": "node scripts/fetch-storms.mjs",
     "test:worker": "node scripts/test-worker.mjs",
-    "test:outbox": "node scripts/test-outbox.mjs"
+    "test:outbox": "node scripts/test-outbox.mjs",
+    "test:topics": "node scripts/test-topics.mjs",
+    "sync:topics": "node scripts/sync-topics.mjs",
+    "test:all": "npm run test:topics && npm run test:worker && npm run test:outbox"
   },
   "dependencies": {
     "chart.js": "^4.4.3",

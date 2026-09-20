@@ -19,6 +19,7 @@ import {
   updatePushSubscriptionPreferences // IMPORT THE NEW FUNCTION
 } from '../utils/notifications.ts';
 import { PageViewStats } from '../utils/pageViews';
+import { COMING_SOON_IDS, GROUPED_FOR_UI } from '../utils/notificationCategories';
 import {
   NOTIFICATION_PRESETS,
   NOTIFICATION_TEMPLATE_KEY,
@@ -157,101 +158,22 @@ interface SettingsModalProps {
   pageViewStorageMode: 'server' | 'local';
 }
 
-// Shock types that are still "coming soon" - forced off in UI.
-// shock-ff is now live and user-controllable.
-const SHOCK_NOTIFICATION_IDS = new Set(['shock-sf', 'shock-fr', 'shock-sr']);
+// Categories, their grouping, labels and tooltips all come from the manifest
+// in utils/notificationCategories.ts. Nothing about a notification is defined
+// in this file any more, so the screen cannot drift out of step with what the
+// worker actually sends.
+const SHOCK_NOTIFICATION_IDS = COMING_SOON_IDS;
 
-// Notification categories shown in the UI - grouped for clarity.
-// Legacy topic IDs (aurora-Xpercent, substorm-forecast etc) are intentionally
-// NOT shown here - they still run on the worker but users manage them by
-// turning off the new equivalent notifications instead.
-const NOTIFICATION_GROUPS = [
-  {
-    group: 'Aurora Visibility',
-    description: 'Location-aware alerts sent when the aurora oval reaches your area. Requires GPS for accuracy.',
-    items: [
-      {
-        id: 'visibility-dslr',
-        label: 'DSLR camera visible',
-        description: 'Aurora detectable with a DSLR on a tripod - furthest early warning.',
-        tooltip: 'The earliest warning - sent when aurora is just becoming detectable from your location using a DSLR camera on a tripod with a long exposure (5–15 seconds). This is the first sign conditions are developing toward something worth watching. Great if you want maximum lead time to get to a dark spot.',
-      },
-      {
-        id: 'visibility-phone',
-        label: 'Phone camera visible',
-        description: 'Aurora bright enough for a modern smartphone night mode.',
-        tooltip: 'Sent when aurora is bright enough to show up on a modern smartphone camera using night mode. You may not see it with the naked eye yet, but pointing your phone south should reveal green or pink hues. A good middle-ground alert for most users.',
-      },
-      {
-        id: 'visibility-naked',
-        label: 'Naked eye visible',
-        description: 'Aurora visible to the naked eye from your location.',
-        tooltip: 'Sent when aurora should be visible to the naked eye from your location - no camera needed. Go outside, look south, and you should see it directly. This is the strongest visibility threshold and the most exciting alert.',
-      },
-    ],
-  },
-  {
-    group: 'Forecast',
-    description: 'Advance planning alerts to help you prepare for a potential display tonight.',
-    items: [
-      {
-        id: 'overnight-watch',
-        label: 'Worth watching tonight',
-        description: 'Sent around sunset when solar wind conditions are elevated.',
-        tooltip: 'Sent once per day around sunset (6–9 PM NZST) when solar wind conditions are elevated enough to be worth monitoring tonight. Includes Bz direction, solar wind speed, and moon illumination so you can decide whether to head out. Not sent on quiet nights.',
-      },
-    ],
-  },
-  {
-    group: 'Solar Events',
-    description: 'Space weather events that may affect aurora conditions in the hours ahead.',
-    items: [
-      {
-        id: 'flare-M1',
-        label: 'Solar flare M1+',
-        description: 'Early flare heads-up for moderate events and above.',
-        tooltip: 'Sent when a flare reaches at least M1.0. This is the broadest flare alert and gives the earliest warning that activity is ramping up.',
-      },
-      {
-        id: 'flare-M5',
-        label: 'Solar flare M5+',
-        description: 'Stronger M-class flare threshold.',
-        tooltip: 'Sent only when a flare reaches at least M5.0. Useful if you want fewer alerts and only stronger M-class events.',
-      },
-      {
-        id: 'flare-X1',
-        label: 'Solar flare X1+',
-        description: 'Major flare threshold.',
-        tooltip: 'Sent when a flare reaches X1.0 or stronger. X-class flares are major events and often associated with significant space-weather impacts.',
-      },
-      {
-        id: 'flare-X5',
-        label: 'Solar flare X5+',
-        description: 'Extreme flare threshold.',
-        tooltip: 'Sent only for very strong X5.0+ flares. High signal, very low noise.',
-      },
-      {
-        id: 'flare-X10',
-        label: 'Solar flare X10+',
-        description: 'Rare extreme-event threshold.',
-        tooltip: 'Sent only for rare, exceptional X10+ flares. Best for users who only want top-tier extreme events.',
-      },
-      {
-        id: 'shock-ff',
-        label: 'CME arrival - fast forward shock',
-        description: 'A CME or solar wind stream has slammed into the L1 satellites. Aurora conditions may change within 45–60 minutes.',
-        tooltip: 'A fast forward shock (FF) is the most common and impactful type of interplanetary shock. It happens when a fast-moving CME or solar wind stream ploughs into slower wind ahead of it, compressing everything - speed, density, temperature, and magnetic field all jump up simultaneously. This is the classic "CME has arrived" signature and is one of the most actionable alerts. Conditions on Earth can shift from quiet to active within an hour.',
-      },
-    ],
-  },
-  {
-    group: 'Announcements',
-    description: 'Direct messages from Spot The Aurora - aurora event alerts, tips, and important updates.',
-    items: [
-      { id: 'admin-broadcast', label: 'Announcements', description: 'Occasional messages sent directly by Spot The Aurora about aurora events, tips, or updates.', tooltip: 'Occasional direct messages from the Spot The Aurora team - sent manually when there is something genuinely worth knowing. This might be a heads-up about an active aurora event happening right now, a tip about upcoming conditions, or an important app update. We send these sparingly, only when it matters.' },
-    ],
-  },
-];
+const NOTIFICATION_GROUPS = GROUPED_FOR_UI.map(g => ({
+  group: g.title,
+  description: g.description,
+  items: g.items.map(i => ({
+    id: i.id,
+    label: i.label ?? i.id,
+    description: i.description ?? '',
+    tooltip: i.tooltip ?? '',
+  })),
+}));
 
 // Flat list for preference loading
 const ALL_NOTIFICATION_IDS = NOTIFICATION_GROUPS.flatMap(g => g.items.map(i => i.id));
