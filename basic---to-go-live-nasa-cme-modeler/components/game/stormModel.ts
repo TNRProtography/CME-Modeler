@@ -19,43 +19,66 @@ import { cmeSpeedAt, cmeTransitSeconds, MIN_CME_SPEED_KMS } from '../../utils/cm
 
 export type FlareClass = 'C' | 'M' | 'X';
 
+/**
+ * One cloud. A storm is a list of these, because the big ones are not a single
+ * eruption: the Gannon storm of May 2024 was a run of them over three days,
+ * each with its own speed, width and direction, arriving on top of each other.
+ * Modelling that as one average cloud threw away the thing that made it what
+ * it was.
+ */
+export interface CloudSpec {
+  flareClass:   FlareClass;
+  flareMag:     number;   // 1 - 9.9 within the class
+  lonDeg:       number;   // Stonyhurst longitude, 0 faces Earth
+  latDeg:       number;   // Stonyhurst latitude
+  speedKms:     number;   // launch speed
+  halfWidthDeg: number;   // angular half width
+  /** Hours after the first cloud in the run that this one left the Sun. */
+  offsetHours:  number;
+  /** Where this one came from, when it is a real catalogued event. */
+  label?:       string;
+}
+
 export interface StormInput {
-  flareClass: FlareClass;
-  flareMag:   number;    // 1 - 9.9 within the class
-  lonDeg:     number;    // Stonyhurst longitude, 0 is facing Earth
-  latDeg:     number;    // Stonyhurst latitude
-  speedKms:   number;    // launch speed
-  halfWidthDeg: number;  // angular half width of the cloud
-  // The flux rope. axialDeg is the orientation of the field as the rope's
-  // leading edge reaches us, measured clockwise from north in the GSM Y-Z
-  // plane, so 180 is fully southward. rotationDeg is how far the field turns
-  // as the rope passes, signed by the rope's handedness.
-  axialDeg:   number;
-  rotationDeg: number;
-  ropeHours:  number;    // how long the rope itself takes to pass
+  clouds: CloudSpec[];
   /**
-   * How many clouds went out in the run. Big storms are usually not one cloud
-   * but several, launched over a day or two, piling into each other on the way.
-   * That is what made May 2024 what it was. Each extra cloud compresses the one
-   * ahead of it, so the field that gets here is stronger.
-   *
-   * It deliberately does not change the transit time. The scene draws the front
-   * of the first cloud arriving at one moment, and anything that moved the
-   * quoted time away from that would put the caption back out of step with the
-   * picture, which is the bug this all came from.
+   * The flux rope inside the cloud that does the damage. axialDeg is the field
+   * orientation as its leading edge reaches us, clockwise from north in the GSM
+   * Y-Z plane, so 180 is fully southward. rotationDeg is how far it turns as it
+   * passes, signed by the rope's handedness.
    */
-  cmeCount:   number;
+  axialDeg:    number;
+  rotationDeg: number;
+  ropeHours:   number;
   /**
    * Whether a filament went up with the flare. The magnetic flux in a cloud
    * comes from the erupting structure, not from the flare's X-ray output, so
    * flare class is a poor guide to how strong the field will be when it gets
    * here. April 2023 is the standing counter-example: only an M1.7, and it
    * produced the first severe storm of the cycle, because a filament went with
-   * it. Without this the model cannot reproduce that event, and it is the most
-   * useful thing that event has to teach.
+   * it.
    */
-  filament:   boolean;
-  launchMs:   number;    // when it left the Sun
+  filament:    boolean;
+  /** When the first cloud in the run left the Sun. */
+  launchMs:    number;
+}
+
+/** One cloud's fate, worked out on its own terms. */
+export interface CloudOutcome {
+  spec:          CloudSpec;
+  hits:          boolean;
+  separationDeg: number;
+  impact:        number;
+  transitHours:  number;
+  arrivalMs:     number;
+  arrivalSpeed:  number;
+}
+
+// Convenience for the builder, which edits one cloud and clones it.
+export function cloudsFrom(spec: CloudSpec, count: number, staggerHours = 5): CloudSpec[] {
+  return Array.from({ length: Math.max(1, Math.round(count)) }, (_, i) => ({
+    ...spec, offsetHours: i * staggerHours,
+  }));
 }
 
 export interface L1Point {
@@ -86,6 +109,10 @@ export interface StormResult {
   peakKp:        number;
   peakBoundaryLat: number; // equatorward edge of the oval, degrees south
   peakAtMs:      number;
+  /** What became of every cloud in the run, whether it got here or not. */
+  outcomes:      CloudOutcome[];
+  /** How many of them arrived close enough together to have merged. */
+  mergedCount:   number;
   /** The best moment that actually fell in darkness over New Zealand. */
   bestVisibleAtMs: number;
   bestVisibleScore: number;
@@ -130,20 +157,29 @@ export function propagate(speedKms: number): { hours: number; arrivalSpeed: numb
   return { hours: secs / 3600, arrivalSpeed: cmeSpeedAt(speedKms, secs) };
 }
 
-// How strong the field in the cloud is when it gets here. Energy sets how much
-// flux was launched, speed compresses it, and hitting us off centre means we
-// only sample the weaker flank.
-function arrivalBt(input: StormInput, impact: number, arrivalSpeed: number): number {
-  const e = flareEnergy(input.flareClass, input.flareMag);
-  const fromEnergy = 7 * Math.pow(e / 10, 0.24);
-  const fromSpeed  = Math.pow(arrivalSpeed / 600, 0.80);
-  // Wide clouds have spread their flux over more sky by the time they arrive.
-  const spread = Math.pow(35 / Math.max(15, input.halfWidthDeg), 0.35);
-  // Clouds arriving on top of each other compress the field between them.
-  const stacked = 1 + 0.17 * (Math.max(1, input.cmeCount) - 1);
-  // A filament carries far more flux than its flare class suggests.
-  const fromFilament = input.filament ? 1.85 : 1;
-  return clamp(fromEnergy * fromSpeed * spread * stacked * fromFilament * (0.35 + 0.65 * impact), 2, 95);
+// How strong the field is when the merged cloud gets here. A run of eruptions
+// arriving together is not the same as the biggest of them arriving alone: they
+// compress each other, and the flux adds up. The dominant cloud sets the scale
+// and the rest add to it with diminishing returns, which is why seven modest
+// clouds in May 2024 beat any single one of them by a long way.
+function arrivalBt(group: CloudOutcome[], filament: boolean): number {
+  if (!group.length) return 2;
+  const each = group.map(c => {
+    const e = flareEnergy(c.spec.flareClass, c.spec.flareMag);
+    const fromEnergy = 7 * Math.pow(e / 10, 0.24);
+    const fromSpeed  = Math.pow(c.arrivalSpeed / 600, 0.80);
+    // A wider cloud has spread the same flux over more sky by the time it gets
+    // here, so it arrives weaker for the same eruption.
+    const spread = Math.pow(35 / Math.max(15, c.spec.halfWidthDeg), 0.35);
+    return fromEnergy * fromSpeed * spread * (0.35 + 0.65 * c.impact);
+  }).sort((a, b) => b - a);
+
+  // Dominant cloud in full, the rest at a declining share.
+  let total = each[0];
+  for (let k = 1; k < each.length; k++) total += each[k] * Math.pow(0.55, k);
+
+  const fromFilament = filament ? 1.85 : 1;
+  return clamp(total * fromFilament, 2, 95);
 }
 
 // The Newell coupling function, the same one the app uses on real data. It is
@@ -163,9 +199,9 @@ export function newellCoupling(bz: number, by: number, speed: number): number {
 // panels can be pointed straight at it.
 export function buildSeries(input: StormInput, res: {
   impact: number; arrivalMs: number; arrivalSpeed: number;
-}): L1Point[] {
+}, group: CloudOutcome[]): L1Point[] {
   const out: L1Point[] = [];
-  const bt0 = arrivalBt(input, res.impact, res.arrivalSpeed);
+  const bt0 = arrivalBt(group, input.filament);
   // A faster cloud drives a thicker, more violent sheath ahead of itself.
   const sheathHours = sheathHoursFor(res.arrivalSpeed);
   const ropeHours   = input.ropeHours;
@@ -175,7 +211,7 @@ export function buildSeries(input: StormInput, res: {
   const totalMin = Math.round((preHours + sheathHours + ropeHours + postHours) * 60);
 
   // Deterministic wobble, so replaying the same storm gives the same series.
-  let seed = Math.round(input.axialDeg * 7 + input.speedKms + input.lonDeg * 13) || 1;
+  let seed = Math.round(input.axialDeg * 7 + res.arrivalSpeed + group.length * 13) || 1;
   const noise = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff - 0.5; };
 
   for (let m = 0; m < totalMin; m++) {
@@ -330,42 +366,76 @@ export function sheathHoursFor(arrivalSpeed: number): number {
   return clamp(2 + (arrivalSpeed - 400) / 220, 1.5, 7);
 }
 
+/** Work out, cloud by cloud, whether it reaches us and when. */
+export function outcomesFor(input: StormInput): CloudOutcome[] {
+  return input.clouds.map(spec => {
+    const sep = separationDeg(spec.lonDeg, spec.latDeg);
+    const hits = sep < spec.halfWidthDeg;
+    // Straight down the middle is a full hit, the very edge is a graze.
+    const impact = hits ? clamp(Math.cos((sep / Math.max(1, spec.halfWidthDeg)) * (Math.PI / 2)), 0, 1) : 0;
+    // No fudge for a glancing blow. The scene draws the front of each cloud
+    // reaching Earth's orbit at one time, and a caption saying otherwise is
+    // simply wrong whatever the reasoning behind it.
+    const { hours: transitHours, arrivalSpeed } = propagate(spec.speedKms);
+    return {
+      spec, hits, separationDeg: sep, impact, transitHours, arrivalSpeed,
+      arrivalMs: input.launchMs + (spec.offsetHours + transitHours) * HOUR_MS,
+    };
+  });
+}
+
+/** Clouds close enough behind the first to have merged with it by the time
+ *  they get here. Beyond about a day they are separate storms. */
+const MERGE_WINDOW_HOURS = 30;
+
 export function runStorm(input: StormInput): StormResult {
-  const sep = separationDeg(input.lonDeg, input.latDeg);
-  const hits = sep < input.halfWidthDeg;
-  // Straight down the middle is a full hit, the very edge is a graze.
-  const impact = hits ? clamp(Math.cos((sep / Math.max(1, input.halfWidthDeg)) * (Math.PI / 2)), 0, 1) : 0;
+  const outcomes = outcomesFor(input);
+  const landed = outcomes.filter(o => o.hits).sort((a, b) => a.arrivalMs - b.arrivalMs);
 
-  // No fudge for a glancing blow here. The scene draws the front of the cloud
-  // reaching Earth's orbit at one time, and a caption that says something else
-  // is simply wrong, whatever the reasoning behind it.
-  const { hours: transitHours, arrivalSpeed } = propagate(input.speedKms);
-  const arrivalMs = input.launchMs + transitHours * HOUR_MS;
-
-  const base = {
-    hits,
-    missReason: hits ? null
-      : `Erupted ${Math.round(sep)}° from the Sun-Earth line, and the cloud is only ${Math.round(input.halfWidthDeg)}° wide. It went past us.`,
-    separationDeg: sep,
-    impact,
-    transitHours,
-    arrivalMs,
-    arrivalSpeed,
-  };
-
-  if (!hits) {
-    return { ...base, series: [], peakBt: 0, minBz: 0, peakScore: 0, peakKp: 0,
-             peakBoundaryLat: 67, peakAtMs: arrivalMs, bestVisibleAtMs: arrivalMs,
-             bestVisibleScore: 0, bestVisibleBoundaryLat: 67, bestVisibleKp: 0, substorm: false };
+  if (!landed.length) {
+    const worst = outcomes.reduce((a, b) => (a.separationDeg <= b.separationDeg ? a : b), outcomes[0]);
+    const arrivalMs = worst ? worst.arrivalMs : input.launchMs;
+    return {
+      hits: false,
+      missReason: outcomes.length > 1
+        ? `None of the ${outcomes.length} clouds were aimed well enough. The closest erupted ${Math.round(worst.separationDeg)}\u00b0 from the Sun-Earth line and was only ${Math.round(worst.spec.halfWidthDeg)}\u00b0 wide.`
+        : `Erupted ${Math.round(worst.separationDeg)}\u00b0 from the Sun-Earth line, and the cloud is only ${Math.round(worst.spec.halfWidthDeg)}\u00b0 wide. It went past us.`,
+      separationDeg: worst ? worst.separationDeg : 180,
+      impact: 0, transitHours: worst ? worst.transitHours : 0,
+      arrivalMs, arrivalSpeed: worst ? worst.arrivalSpeed : 400,
+      outcomes, mergedCount: 0,
+      series: [], peakBt: 0, minBz: 0, peakScore: 0, peakKp: 0,
+      peakBoundaryLat: 67, peakAtMs: arrivalMs, bestVisibleAtMs: arrivalMs,
+      bestVisibleScore: 0, bestVisibleBoundaryLat: 67, bestVisibleKp: 0, substorm: false,
+    };
   }
 
-  const series = buildSeries(input, base);
+  // The first to get here drives the shock. Everything arriving inside the
+  // merge window has piled into it and adds to the field.
+  const first = landed[0];
+  const group = landed.filter(o => (o.arrivalMs - first.arrivalMs) / HOUR_MS <= MERGE_WINDOW_HOURS);
+  // The rope belongs to whichever of them hit us most squarely.
+  const dominant = group.reduce((a, b) => (b.impact > a.impact ? b : a), group[0]);
 
-  let peakScore = 0, peakAtMs = arrivalMs, minBz = 0, peakBt = 0;
+  const base = {
+    hits: true,
+    missReason: null as string | null,
+    separationDeg: dominant.separationDeg,
+    impact: dominant.impact,
+    transitHours: first.transitHours,
+    arrivalMs: first.arrivalMs,
+    arrivalSpeed: first.arrivalSpeed,
+    outcomes,
+    mergedCount: group.length,
+  };
+
+  const series = buildSeries(input, base, group);
+
+  let peakScore = 0, peakAtMs = base.arrivalMs, minBz = 0, peakBt = 0;
   // Tracked separately: the strongest moment that actually fell in darkness.
   // A storm that peaks at one in the afternoon did not happen as far as anyone
   // standing in a paddock is concerned, and the brief is graded on this.
-  let bestVisible = -1, bestVisibleAtMs = arrivalMs, bestVisibleScore = 0;
+  let bestVisible = -1, bestVisibleAtMs = base.arrivalMs, bestVisibleScore = 0;
   let southMin = 0;
   const WIN = 20;   // minutes the magnetosphere is taken to average over
   for (let i = 0; i < series.length; i++) {

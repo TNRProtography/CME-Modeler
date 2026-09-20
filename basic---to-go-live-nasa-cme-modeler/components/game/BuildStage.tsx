@@ -11,8 +11,8 @@ import { drawSun, drawGlow, loadMilkyWay, drawMilkyWay } from '../../utils/space
 import RopeShaper from './RopeShaper';
 import { SUN_FRAGMENT_SHADER } from '../../constants';
 import {
-  clamp, darknessLabel, formatNZ, peakFraction, propagate, separationDeg,
-  sheathHoursFor, type FlareClass, type StormInput,
+  clamp, cloudsFrom, darknessLabel, formatNZ, peakFraction, propagate,
+  separationDeg, sheathHoursFor, type CloudSpec, type FlareClass, type StormInput,
 } from './stormModel';
 
 interface Props {
@@ -184,13 +184,22 @@ const Slider: React.FC<{
 );
 
 const BuildStage: React.FC<Props> = ({ input, onChange, onLaunch, brief }) => {
-  const sep = separationDeg(input.lonDeg, input.latDeg);
-  const aimed = sep < input.halfWidthDeg;
+  // The builder shapes one cloud and sends a run of them. A real run comes from
+  // one active region, so they share a source and a speed; the presets carry
+  // the real per-cloud figures instead.
+  const cloud: CloudSpec = input.clouds[0];
+  const count = input.clouds.length;
+  const setCloud = (patch: Partial<CloudSpec>) =>
+    onChange({ clouds: cloudsFrom({ ...cloud, ...patch }, count) });
+  const setCount = (n: number) => onChange({ clouds: cloudsFrom(cloud, n) });
+
+  const sep = separationDeg(cloud.lonDeg, cloud.latDeg);
+  const aimed = sep < cloud.halfWidthDeg;
 
   // The live prediction. This is the teaching surface: it moves while you drag,
   // so cause and effect are impossible to miss.
   const forecast = useMemo(() => {
-    const { hours: transit, arrivalSpeed } = propagate(input.speedKms);
+    const { hours: transit, arrivalSpeed } = propagate(cloud.speedKms);
     const arriveMs = input.launchMs + transit * 3_600_000;
     // Where the good part of the storm falls. The shock is not the show: the
     // field has to turn south, and in a twisted rope that happens somewhere in
@@ -198,7 +207,7 @@ const BuildStage: React.FC<Props> = ({ input, onChange, onLaunch, brief }) => {
     const f = peakFraction(input.axialDeg, input.rotationDeg);
     const bestMs = arriveMs + (sheathHoursFor(arrivalSpeed) + f * input.ropeHours) * 3_600_000;
     return { transit, arriveMs, arrivalSpeed, bestMs };
-  }, [input.speedKms, input.halfWidthDeg, input.launchMs, input.axialDeg,
+  }, [cloud.speedKms, cloud.halfWidthDeg, input.launchMs, input.axialDeg,
       input.rotationDeg, input.ropeHours, sep, aimed]);
 
   const dark = darknessLabel(forecast.bestMs);
@@ -224,20 +233,20 @@ const BuildStage: React.FC<Props> = ({ input, onChange, onLaunch, brief }) => {
           <section>
             <h3 className="text-xs font-bold tracking-wider text-neutral-400 uppercase mb-2">1. Aim it</h3>
             <div className="h-56 sm:h-64 card bg-neutral-950/80 overflow-hidden">
-              <SunPicker lonDeg={input.lonDeg} latDeg={input.latDeg}
-                         halfWidthDeg={input.halfWidthDeg}
-                         onPick={(lon, lat) => onChange({ lonDeg: lon, latDeg: lat })} />
+              <SunPicker lonDeg={cloud.lonDeg} latDeg={cloud.latDeg}
+                         halfWidthDeg={cloud.halfWidthDeg}
+                         onPick={(lon, lat) => setCloud({ lonDeg: lon, latDeg: lat })} />
             </div>
             <p className={`text-xs mt-1.5 ${aimed ? 'text-emerald-400' : 'text-red-400'}`}>
               {aimed
-                ? `${Math.round(sep)}° off the Sun-Earth line, inside a ${Math.round(input.halfWidthDeg)}° cloud. It will reach us.`
-                : `${Math.round(sep)}° off the Sun-Earth line and the cloud is only ${Math.round(input.halfWidthDeg)}° wide. It will go straight past.`}
+                ? `${Math.round(sep)}° off the Sun-Earth line, inside a ${Math.round(cloud.halfWidthDeg)}° cloud. It will reach us.`
+                : `${Math.round(sep)}° off the Sun-Earth line and the cloud is only ${Math.round(cloud.halfWidthDeg)}° wide. It will go straight past.`}
             </p>
             <div className="mt-3 space-y-3">
-              <Slider label="Cloud width" value={input.halfWidthDeg} min={15} max={80} step={1}
-                      display={`${Math.round(input.halfWidthDeg)}°`}
+              <Slider label="Cloud width" value={cloud.halfWidthDeg} min={15} max={80} step={1}
+                      display={`${Math.round(cloud.halfWidthDeg)}°`}
                       hint="Wider clouds are easier to hit us with, but they spread the same flux over more sky, so they arrive weaker."
-                      onChange={v => onChange({ halfWidthDeg: v })} />
+                      onChange={v => setCloud({ halfWidthDeg: v })} />
             </div>
           </section>
 
@@ -249,36 +258,36 @@ const BuildStage: React.FC<Props> = ({ input, onChange, onLaunch, brief }) => {
                 <span className="text-xs font-semibold text-neutral-300">Flare size</span>
                 <div className="flex gap-1.5 mt-1">
                   {FLARE_CLASSES.map(c => (
-                    <button key={c} onClick={() => onChange({ flareClass: c })}
+                    <button key={c} onClick={() => setCloud({ flareClass: c })}
                       className={`flex-1 py-1.5 rounded text-sm font-bold transition-all active:scale-95 border ${
-                        input.flareClass === c
+                        cloud.flareClass === c
                           ? 'bg-amber-500/25 border-amber-400/60 text-amber-200'
                           : 'bg-neutral-900/70 border-neutral-700/80 text-neutral-400'}`}>{c}</button>
                   ))}
                 </div>
-                <input type="range" min={1} max={9.9} step={0.1} value={input.flareMag}
-                       onChange={e => onChange({ flareMag: parseFloat(e.target.value) })}
+                <input type="range" min={1} max={9.9} step={0.1} value={cloud.flareMag}
+                       onChange={e => setCloud({ flareMag: parseFloat(e.target.value) })}
                        className="w-full accent-amber-400 mt-2" />
                 <p className="text-[10px] text-neutral-500 leading-snug">
-                  {input.flareClass}{input.flareMag.toFixed(1)}. Each letter is ten times the one below it. Bigger flares carry more magnetic flux, so the field arrives stronger.
+                  {cloud.flareClass}{cloud.flareMag.toFixed(1)}. Each letter is ten times the one below it. Bigger flares carry more magnetic flux, so the field arrives stronger.
                 </p>
               </div>
-              <Slider label="Launch speed" value={input.speedKms} min={350} max={3000} step={10}
-                      display={`${Math.round(input.speedKms)} km/s`}
+              <Slider label="Launch speed" value={cloud.speedKms} min={350} max={3000} step={10}
+                      display={`${Math.round(cloud.speedKms)} km/s`}
                       hint="This is what decides when it gets here. The wind drags it back on the way, so it always arrives slower than it left."
-                      onChange={v => onChange({ speedKms: v })} />
+                      onChange={v => setCloud({ speedKms: v })} />
               <div>
                 <div className="flex items-baseline justify-between mb-1">
                   <span className="text-xs font-semibold text-neutral-300">How many clouds</span>
                   <span className="text-xs font-mono text-sky-300">
-                    {input.cmeCount === 1 ? 'one' : `${input.cmeCount} in a row`}
+                    {count === 1 ? 'one' : `${count} in a row`}
                   </span>
                 </div>
                 <div className="flex gap-1">
                   {[1, 2, 3, 4, 5, 6, 7].map(n => (
-                    <button key={n} onClick={() => onChange({ cmeCount: n })}
+                    <button key={n} onClick={() => setCount(n)}
                       className={`flex-1 py-1.5 rounded text-xs font-bold transition-all active:scale-95 border ${
-                        input.cmeCount === n
+                        count === n
                           ? 'bg-sky-600/30 border-sky-400/60 text-sky-200'
                           : 'bg-neutral-900/70 border-neutral-700/80 text-neutral-400'}`}>{n}</button>
                   ))}

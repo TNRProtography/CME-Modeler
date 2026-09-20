@@ -29,9 +29,11 @@ type Phase = 'menu' | 'build' | 'transit' | 'arrival' | 'result';
 type Mode = 'daily' | 'practice' | 'history';
 
 const DEFAULT_INPUT = (launchMs: number): StormInput => ({
-  flareClass: 'M', flareMag: 5, lonDeg: 0, latDeg: 0,
-  speedKms: 1000, halfWidthDeg: 45, cmeCount: 1, filament: false,
-  axialDeg: 180, rotationDeg: 60, ropeHours: 14, launchMs,
+  clouds: [{
+    flareClass: 'M', flareMag: 5, lonDeg: 0, latDeg: 0,
+    speedKms: 1000, halfWidthDeg: 45, offsetHours: 0,
+  }],
+  axialDeg: 180, rotationDeg: 60, ropeHours: 14, filament: false, launchMs,
 });
 
 const TIER_COLOUR: Record<Tier, string> = {

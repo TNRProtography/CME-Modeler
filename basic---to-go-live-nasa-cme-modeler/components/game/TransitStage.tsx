@@ -24,34 +24,34 @@ const TransitStage: React.FC<Props> = ({ input, result, onDone }) => {
   const doneRef = useRef(false);
   const clockStart = useRef(performance.now());
 
-  // The player's storm, in the shape the visualisation already understands. A
-  // run of clouds is drawn as a run of clouds, because that is what it is. The
-  // first leaves at the launch time, so the arrival the caption quotes is the
-  // first shock, and the rest go out behind it and pile in afterwards.
-  const STAGGER_HOURS = 5;
-  const count = Math.max(1, Math.round(input.cmeCount));
+  // Every cloud in the run, each drawn with its own speed, width and direction,
+  // because that is what they had. The outcomes have already worked out when
+  // each one gets here, so the scene and the caption are reading the same sums.
+  const count = result.outcomes.length;
   const cmeData = useMemo<ProcessedCME[]>(() =>
-    Array.from({ length: count }, (_, i) => ({
+    result.outcomes.map((o, i) => ({
       id: `storm-builder-${i}`,
-      startTime: new Date(input.launchMs + i * STAGGER_HOURS * 3_600_000),
-      speed: input.speedKms,
-      longitude: input.lonDeg,
-      latitude: input.latDeg,
-      isEarthDirected: result.hits,
-      note: 'Built in Storm Builder',
-      predictedArrivalTime: result.hits
-        ? new Date(result.arrivalMs + i * STAGGER_HOURS * 3_600_000) : null,
+      startTime: new Date(input.launchMs + o.spec.offsetHours * 3_600_000),
+      speed: o.spec.speedKms,
+      longitude: o.spec.lonDeg,
+      latitude: o.spec.latDeg,
+      isEarthDirected: o.hits,
+      note: o.spec.label || 'Built in Storm Builder',
+      predictedArrivalTime: o.hits ? new Date(o.arrivalMs) : null,
       link: '',
       instruments: 'Storm Builder',
-      sourceLocation: `${input.lonDeg.toFixed(0)}°, ${input.latDeg.toFixed(0)}°`,
-      halfAngle: input.halfWidthDeg,
-    })), [input, result, count]);
+      sourceLocation: `${o.spec.lonDeg.toFixed(0)}\u00b0, ${o.spec.latDeg.toFixed(0)}\u00b0`,
+      halfAngle: o.spec.halfWidthDeg,
+    })), [input.launchMs, result.outcomes]);
+
+  // Far enough out to see the last of the run get here as well as the first.
+  const lastArrivalHours = result.outcomes.reduce(
+    (m, o) => Math.max(m, o.spec.offsetHours + o.transitHours), result.transitHours);
 
   // The window runs from launch to a little past arrival, so the cloud is seen
   // leaving, crossing and getting here rather than appearing halfway out.
   const minDate = input.launchMs - 3 * 3_600_000;
-  // Long enough to see the last of the run get here as well as the first.
-  const maxDate = input.launchMs + (result.transitHours + (count - 1) * STAGGER_HOURS + 4) * 3_600_000;
+  const maxDate = input.launchMs + (lastArrivalHours + 4) * 3_600_000;
   const spanHours = (maxDate - minDate) / 3_600_000;
   // SimulationCanvas advances the scrubber by 3 * speed hours per second.
   const timelineSpeed = spanHours / (3 * PLAY_SECONDS);
