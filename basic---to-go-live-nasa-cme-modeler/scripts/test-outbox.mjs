@@ -702,5 +702,68 @@ console.log('\n14. subscribers the worker cannot deliver to');
   globalThis.fetch = realFetch;
 }
 
+// ---- 15. a dry run --------------------------------------------------
+// Rehearsing a send to 80,000 people by actually sending to them is not a
+// rehearsal. A dry run does the whole walk and counts who would receive it.
+console.log('\n15. a dry run reaches everyone and delivers nothing');
+{
+  await settle();
+  for (const k of [...store.keys()]) store.delete(k);
+  delivered.length = 0;
+
+  const N = 500, onFraction = 3;
+  let want = 0;
+  for (let i = 0; i < N; i++) {
+    const on = i % onFraction !== 0;
+    if (on) want++;
+    const endpoint = `https://push.example/dry-${i}`;
+    store.set(`F${String(i).padStart(5, '0')}`, JSON.stringify({
+      subscription: { endpoint, keys: { p256dh: P256DH, auth: b64u(webcrypto.getRandomValues(new Uint8Array(16))) } },
+      preferences: { 'admin-broadcast': on },
+    }));
+  }
+
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input.url ?? String(input);
+    if (url.includes('/run-shard')) {
+      const { jobId, shard } = JSON.parse(init.body);
+      const p = W.runShard(env, jobId, shard); inflight.push(p); await p;
+      return new Response('{}', { status: 200 });
+    }
+    return realFetch(input, init);
+  };
+
+  const jobId = await W.enqueueDelivery(env, {
+    kind: 'topic', topic: 'admin-broadcast', dryRun: true,
+    payload: { title: 'T', body: 'B', tag: 'admin-broadcast', data: { url: '/' } },
+  });
+  await settle();
+  const prog = await W.jobProgress(env, jobId);
+  const sentForReal = delivered.filter(u => u.includes('/dry-')).length;
+
+  console.log(`    would reach ${prog.sent} of ${want} who want it; actually delivered ${sentForReal}`);
+  check(prog.complete, 'the dry run completes like a real one', JSON.stringify(prog.shards));
+  check(prog.sent === want, 'it counts exactly who would receive it', `${prog.sent} vs ${want}`);
+  check(sentForReal === 0, 'and not one notification was actually sent', `${sentForReal} sent`);
+  check(!store.has('LATEST_ALERT_admin-broadcast'),
+        'it leaves no trace that looks like a real alert went out');
+
+  // And a real send straight afterwards is unaffected by the rehearsal.
+  const realJob = await W.enqueueDelivery(env, {
+    kind: 'topic', topic: 'admin-broadcast',
+    payload: { title: 'T', body: 'B', tag: 'admin-broadcast', data: { url: '/' } },
+  });
+  await settle();
+  const realProg = await W.jobProgress(env, realJob);
+  const got = new Set(delivered.filter(u => u.includes('/dry-')));
+  console.log(`    the real send afterwards: ${got.size} delivered`);
+  check(realProg.sent === want && got.size === want,
+        'the real send afterwards still reaches everyone',
+        `${realProg.sent} sent, ${got.size} unique`);
+
+  globalThis.fetch = realFetch;
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

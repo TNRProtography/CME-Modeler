@@ -81,6 +81,24 @@ inside the shard, unchanged from before.
     /job?secret=...&id=<id>   progress for one job
     /job?secret=...           the jobs still in flight
 
+## Rehearsing a send
+
+Testing a send to 80,000 people by sending to 80,000 people is not a test.
+
+    /dry-run?secret=...&topic=flare-X1
+
+walks every subscriber exactly as a real send would, applies the same
+preference checks, and reports how many people it *would* reach - with nothing
+delivered and no cooldown or once-a-night marker written, so a real send
+straight afterwards behaves as though the rehearsal never happened. Read the
+count from `/job?id=...&secret=...`; `sent` is the reach.
+
+`/send-broadcast` takes `"dryRun": true` in its body for the same thing.
+
+That proves the fan-out. To prove a real notification arrives on a real phone,
+use the per-category **Test** buttons in the app's own settings screen - those
+go to your device only.
+
 ## Who got it, and did they open it
 
 Every finished job leaves a record, so "did the M5 flare go out, and to how

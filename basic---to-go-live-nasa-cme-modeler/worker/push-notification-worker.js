@@ -435,6 +435,7 @@ export default {
     if (url.pathname === '/run-census-shard'          && request.method === 'POST') return handleRunCensusShard(request, env);
     if (url.pathname === '/stats'                     && request.method === 'GET')  return handleStats(request, env);
     if (url.pathname === '/sends'                     && request.method === 'GET')  return handleSends(request, env);
+    if (url.pathname === '/dry-run'                   && request.method === 'GET')  return handleDryRun(request, env);
     if (url.pathname === '/migration'                 && request.method === 'GET')  return handleMigrationStatus(request, env);
     if (url.pathname === '/run-migration-shard'       && request.method === 'POST') return handleRunMigrationShard(request, env);
     if (url.pathname === '/notification-clicked'      && request.method === 'POST') return handleNotificationClicked(request, env);
@@ -1670,17 +1671,25 @@ async function handleDiagnostics(request, env) {
 
 async function handleSendBroadcast(request, env) {
   try {
-    const { secret, title, body, url } = await request.json();
+    const { secret, title, body, url, dryRun = false } = await request.json();
     const validSecrets = [env.TRIGGER_SECRET, env.BANNER_AUTH_TOKEN].filter(Boolean);
     if (!secret || !validSecrets.includes(secret)) return json({ error: 'Unauthorized' }, 401);
     if (!title || !body) return json({ error: 'title and body are required' }, 400);
     const topic = 'admin-broadcast';
     const payload = { title, body, tag: topic, data: { url: url || '/', category: topic }, ts: Date.now() };
-    await kv(env).put(`LATEST_ALERT_${topic}`, JSON.stringify(payload), { expirationTtl: 86400 });
+    // A dry run must not leave a trace that looks like a real alert went out.
+    if (!dryRun) {
+      await kv(env).put(`LATEST_ALERT_${topic}`, JSON.stringify(payload), { expirationTtl: 86400 });
+    }
     // Delivery is now a job rather than a single pass, so this returns
     // immediately with an id. Watch it with /job?id=...&secret=...
-    const jobId = await enqueueDelivery(env, { kind: 'topic', topic, payload });
-    return json({ success: true, queued: true, jobId, watch: `/job?id=${jobId}` });
+    const jobId = await enqueueDelivery(env, { kind: 'topic', topic, payload, dryRun: !!dryRun });
+    return json({
+      success: true, queued: true, dryRun, jobId, watch: `/job?id=${jobId}`,
+      note: dryRun
+        ? 'DRY RUN - walks every subscriber and counts who would receive this. No notification is sent.'
+        : 'Live send. Watch /job for progress.',
+    });
   } catch (e) {
     reportError(e, env, { handler: 'handleSendBroadcast' });
     return json({ error: e.message }, 500);
@@ -2152,12 +2161,17 @@ function newJobId() {
  * @param {any} env
  * @param {{ kind: string, topic?: string|null, payload?: any, params?: any }} job
  */
-async function enqueueDelivery(env, { kind, topic = null, payload = null, params = null }) {
+async function enqueueDelivery(env, { kind, topic = null, payload = null, params = null, dryRun = false }) {
   const id = newJobId();
   const job = {
     id, kind, topic,
     payload: payload ?? null,
     params: params ?? null,
+    // A dry run does everything except the push itself: the same sharding, the
+    // same walk of every record, the same preference checks. It answers "how
+    // many people would this reach" without anybody's phone lighting up, which
+    // is the only honest way to rehearse a send to eighty thousand people.
+    dryRun: !!dryRun,
     createdAt: Date.now(),
   };
   await kv(env).put(jobKey(id), JSON.stringify(job), { expirationTtl: JOB_TTL_SECONDS });
@@ -2174,7 +2188,7 @@ async function enqueueDelivery(env, { kind, topic = null, payload = null, params
     }),
     { expirationTtl: JOB_TTL_SECONDS },
   )));
-  console.log(`[outbox] job ${id} queued: kind=${kind} topic=${topic ?? '-'} across ${SHARD_CHARS.length} shards`);
+  console.log(`[outbox] job ${id} queued: kind=${kind} topic=${topic ?? '-'}${dryRun ? ' (DRY RUN - nothing will be sent)' : ''} across ${SHARD_CHARS.length} shards`);
   await dispatchShards(env, id, SHARD_CHARS);
   return id;
 }
@@ -2320,6 +2334,11 @@ async function runShard(env, jobId, ch) {
         const decision = await decideForSubscriber(env, job, key.name, stored, meter);
         ops -= meter.ops;
         if (!decision) continue;
+
+        // A dry run stops here: counted as reached, nothing sent, and none of
+        // the cooldowns or once-a-night markers are written, so a real send
+        // straight afterwards behaves exactly as it would have.
+        if (job.dryRun) { sent++; continue; }
 
         const resp = await sendPushWithPayload(
           stored.subscription, stampSendId(decision.payload, jobId), env);
@@ -2741,6 +2760,45 @@ async function handleNotificationClicked(request, env) {
     console.error('[ledger] click record failed:', e.message);
     return json({ ok: false }, 200);
   }
+}
+
+/**
+ * GET /dry-run?secret=...&topic=flare-X1
+ *
+ * Rehearse any category. Walks every subscriber exactly as a real send would,
+ * applies the same preference checks, and reports how many people it would
+ * reach - without a single notification going out.
+ *
+ * This is the pre-flight check for "is anyone actually going to get this",
+ * answerable before the sun does something rather than after.
+ */
+async function handleDryRun(request, env) {
+  const url = new URL(request.url);
+  if (url.searchParams.get('secret') !== env.TRIGGER_SECRET) return new Response('Forbidden', { status: 403 });
+
+  const topic = url.searchParams.get('topic');
+  if (!topic) {
+    return json({
+      error: 'topic is required',
+      topics: ALL_TOPICS,
+      example: '/dry-run?secret=...&topic=flare-X1',
+    }, 400);
+  }
+  if (!ALL_TOPICS.includes(topic)) {
+    return json({ error: `unknown topic '${topic}'`, topics: ALL_TOPICS }, 400);
+  }
+
+  const jobId = await enqueueDelivery(env, {
+    kind: 'topic', topic, dryRun: true,
+    payload: { title: 'Dry run', body: 'Nobody receives this.', tag: topic, data: { url: '/' } },
+  });
+
+  return json({
+    dryRun: true, topic, jobId,
+    watch: `/job?id=${jobId}&secret=...`,
+    note: 'Walking every subscriber now. Nothing is sent. Read /job in a few '
+        + 'seconds - "sent" is how many people a real alert on this topic would reach.',
+  });
 }
 
 /** GET /sends - the ledger, newest first. */
