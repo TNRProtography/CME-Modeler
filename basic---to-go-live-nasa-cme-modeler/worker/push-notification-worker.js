@@ -1475,7 +1475,23 @@ const DEFAULT_ICON = '/icons/icon-default.png';
 // it has to be white-on-transparent or it renders as a solid blob.
 const DEFAULT_BADGE = '/icons/icon-badge.png';
 const TOPIC_BADGES = {
-
+  'visibility-dslr': '/icons/icon-badge-dslr.png',
+  'visibility-phone': '/icons/icon-badge-phone.png',
+  'visibility-naked': '/icons/icon-badge-naked.png',
+  'overnight-watch': '/icons/icon-badge-moon.png',
+  'flare-M1': '/icons/icon-badge-flare.png',
+  'flare-M5': '/icons/icon-badge-flare.png',
+  'flare-X1': '/icons/icon-badge-flare.png',
+  'flare-X5': '/icons/icon-badge-flare.png',
+  'flare-X10': '/icons/icon-badge-flare.png',
+  'shock-ff': '/icons/icon-badge-shock.png',
+  'flare-event': '/icons/icon-badge-flare.png',
+  'flare-peak': '/icons/icon-badge-flare.png',
+  'substorm-forecast': '/icons/icon-badge-shock.png',
+  'shock-imf': '/icons/icon-badge-shock.png',
+  'shock-sf': '/icons/icon-badge-shock.png',
+  'shock-fr': '/icons/icon-badge-shock.png',
+  'shock-sr': '/icons/icon-badge-shock.png',
 };
 // </generated:topics>
 
