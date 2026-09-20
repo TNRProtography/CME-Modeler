@@ -126,6 +126,28 @@ console.log('\nEvery icon exists');
 
   const badgeFile = join(APP, 'public', 'icons', 'icon-badge.png');
   check(existsSync(badgeFile), 'the Android status-bar badge exists');
+
+  // The service worker and the PWA manifest name their own assets, and those
+  //404 just as quietly. manifest.json pointed at a maskable icon that had
+  // never existed.
+  for (const [label, file] of [['the service worker', join(APP, 'public', 'sw.js')],
+                               ['the web app manifest', join(APP, 'public', 'manifest.json')]]) {
+    if (!existsSync(file)) { check(false, `${label} is in public/`); continue; }
+    const text = readFileSync(file, 'utf8');
+    const refs = [...new Set([...text.matchAll(/['"](\/icons\/[A-Za-z0-9._-]+)['"]/g)].map(x => x[1]))];
+    const gone = refs.filter(r => !existsSync(join(APP, 'public', r.replace(/^\//, ''))));
+    check(gone.length === 0,
+          `every icon ${label} names exists (${refs.length} referenced)`,
+          gone.join(', '));
+  }
+
+  // The badge has to be mostly transparent. Android masks it to a silhouette,
+  // so a full-colour square renders as a solid blob - which is what the
+  // service worker used to pass.
+  const badgeBytes = statSync(badgeFile).size;
+  check(badgeBytes > 200 && badgeBytes < 40000,
+        'the badge is a small silhouette rather than a full-colour image',
+        `${badgeBytes} bytes`);
 }
 
 console.log('\nPresets only name real topics');

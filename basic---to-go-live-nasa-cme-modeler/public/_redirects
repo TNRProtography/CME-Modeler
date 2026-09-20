@@ -1,0 +1,10 @@
+/icons/*        /icons/:splat   200
+/assets/*       /assets/:splat  200
+/sw.js          /sw.js          200
+/manifest.json  /manifest.json  200
+/robots.txt     /robots.txt     200
+/sitemap.xml    /sitemap.xml    200
+/fonts/*        /fonts/:splat   200
+/faq            /faq.html       200
+/tutorial-*.png  /tutorial-:splat.png  200
+/*              /index.html     200
