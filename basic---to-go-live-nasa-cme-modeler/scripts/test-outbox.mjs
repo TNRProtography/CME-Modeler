@@ -25,7 +25,7 @@ writeFileSync(copy, readFileSync(SRC, 'utf8') +
   '\nexport { checkOvernightWatch, runShard, sweepJobs, jobProgress, maybeRunCensus, runCensusShard,' +
   ' recordSend, foldAllClicks, handleSends, handleNotificationClicked, stampSendId,' +
   ' maybeRunMigration, runMigrationShard, migrationTotals, TOPIC_DEFAULT_ON, ALL_TOPICS,' +
-  ' pushServiceOf };\n');
+  ' pushServiceOf, enqueueDelivery, OP_BUDGET };\n');
 const W = await import(pathToFileURL(copy).href);
 
 // ---- fake KV with real prefix/cursor semantics -------------------------
@@ -435,6 +435,67 @@ console.log('\n9. fan-out from an HTTP request is kept alive');
   check(kept.length > 0,
         'a broadcast hands its shard dispatches to waitUntil',
         `${kept.length} kept alive`);
+}
+
+// ---- 10. a shard bigger than one invocation can handle -----------------
+// Every KV read, write and delete is a subrequest and a Worker gets about a
+// thousand per invocation. A shard holding thousands of subscribers cannot
+// finish in one go, and the page cursor only moves a page at a time - so a
+// shard that stopped mid-page used to resume at the top of it and send to
+// everyone it had already reached a second time.
+console.log('\n10. a shard too big for a single invocation');
+{
+  // Test 9 left waitUntil promises running, and they drain into the shared
+  // `delivered` array. Let them finish, then count only this test's endpoints
+  // so a straggler cannot be mistaken for a duplicate.
+  await settle();
+  for (const k of [...store.keys()]) store.delete(k);
+  delivered.length = 0;
+  const mine = () => delivered.filter(u => u.includes('/big-'));
+
+  // Put them all in one shard on purpose. Real keys are hashes and spread
+  // evenly; this is the tail case where one shard is far larger than the rest.
+  const BIG = 2600;
+  for (let i = 0; i < BIG; i++) {
+    const endpoint = `https://push.example/big-${i}`;
+    store.set(`A${String(i).padStart(6, '0')}`, JSON.stringify({
+      subscription: { endpoint, keys: { p256dh: P256DH, auth: b64u(webcrypto.getRandomValues(new Uint8Array(16))) } },
+      preferences: { 'admin-broadcast': true },
+    }));
+  }
+  console.log(`    ${BIG} subscribers in shard A, budget is ${W.OP_BUDGET} operations`);
+
+  // Dispatches are swallowed so the test can step the shard by hand and count
+  // how many invocations it really takes.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input.url ?? String(input);
+    if (url.includes('/run-shard')) return new Response('{}', { status: 200 });
+    return realFetch(input, init);
+  };
+
+  const jobId = await W.enqueueDelivery(env, {
+    kind: 'topic', topic: 'admin-broadcast',
+    payload: { title: 'T', body: 'B', tag: 'admin-broadcast', data: { url: '/' } },
+  });
+
+  let runs = 0, state;
+  do {
+    state = await W.runShard(env, jobId, 'A');
+    runs++;
+  } while (state.state !== 'done' && runs < 20);
+
+  const got = mine();
+  const unique = new Set(got);
+  console.log(`    finished in ${runs} invocation(s): ${got.length} sends, ${unique.size} unique`);
+  check(runs > 1, 'it took more than one invocation, so the budget really bit', `${runs} runs`);
+  check(state.state === 'done', 'the shard finished instead of throwing forever', state.state);
+  check(unique.size === BIG, 'every subscriber was reached', `${unique.size} of ${BIG}`);
+  check(got.length === BIG,
+        'and nobody was sent to twice when it resumed',
+        `${got.length} sends for ${BIG} people - ${got.length - unique.size} duplicates`);
+
+  globalThis.fetch = realFetch;
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -2092,9 +2092,20 @@ function isUserInPlausibleZone(latitude) {
 // by reading and rewriting one shared job object.
 
 const SHARD_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'.split('');
-// Each push is one subrequest and the paid limit is 1000 per invocation. Leave
-// headroom for the KV reads and the self-dispatch calls.
-const SEND_BUDGET = 700;
+// A Worker gets roughly a thousand subrequests per invocation, and every KV
+// read, write and delete counts against that alongside the pushes themselves.
+// The old budget only counted sends, so a shard holding 1,250 subscribers
+// spent its whole allowance on reads before it had sent anything and threw -
+// in the same place, every retry, forever.
+//
+// Budget the operations instead and stop early with the cursor saved. A shard
+// then takes two or three invocations instead of one, which costs nothing: it
+// redispatches itself the moment it stops.
+const OP_BUDGET = 850;
+// Worst case for one subscriber: the record read, a cooldown read inside
+// decideForSubscriber, the push, and two writes in onSent.
+const OPS_PER_SUBSCRIBER = 6;
+const LIST_PAGE = 1000;
 // How long a shard may be claimed before the sweep assumes the worker died.
 const SHARD_LEASE_MS = 90 * 1000;
 const MAX_SHARD_ATTEMPTS = 8;
@@ -2214,40 +2225,65 @@ async function runShard(env, jobId, ch) {
   }), { expirationTtl: JOB_TTL_SECONDS });
 
   let cursor = shard.cursor ?? undefined;
+  // Where we got to inside the current page. KV list cursors only move a page
+  // at a time, so without this a shard that ran out of budget mid-page would
+  // resume at the top of that page and send to everyone in it a second time.
+  let lastKey = shard.lastKey ?? null;
   let sent = shard.sent ?? 0, failed = shard.failed ?? 0;
-  let pruned = shard.pruned ?? 0, budget = SEND_BUDGET;
+  let pruned = shard.pruned ?? 0;
+  let ops = OP_BUDGET;
   let complete = false;
   let lastError = null;
 
   try {
-    while (budget > 0) {
-      const listRes = await kv(env).list({ prefix: ch, cursor, limit: 1000 });
+    outer:
+    while (ops > 0) {
+      const listRes = await kv(env).list({ prefix: ch, cursor, limit: LIST_PAGE });
+      ops--;
+
       for (const key of listRes.keys) {
-        if (budget <= 0) break;
+        // Resuming: skip everything this shard already got through. Keys come
+        // back sorted, so a plain comparison is enough.
+        if (lastKey && key.name <= lastKey) continue;
         if (isReservedKey(key.name)) continue;
+
+        // Every read, send and delete below is a subrequest, and a Worker only
+        // gets about a thousand per invocation. Stopping before the ceiling and
+        // picking up where we left off is the difference between a shard that
+        // finishes and one that throws in the same place forever.
+        if (ops < OPS_PER_SUBSCRIBER) break outer;
+
         const stored = await kv(env).get(key.name, 'json');
+        ops--;
+        lastKey = key.name;
         if (!stored?.subscription) continue;
 
-        const decision = await decideForSubscriber(env, job, key.name, stored);
+        const meter = { ops: 0 };
+        const decision = await decideForSubscriber(env, job, key.name, stored, meter);
+        ops -= meter.ops;
         if (!decision) continue;
 
-        budget--;
         const resp = await sendPushWithPayload(
           stored.subscription, stampSendId(decision.payload, jobId), env);
+        ops--;
         if (resp.ok) {
           sent++;
-          if (decision.onSent) await decision.onSent();
+          if (decision.onSent) { await decision.onSent(); ops -= 2; }
         } else {
           // A gone subscription is pruned; anything else is left for the next
           // sweep, since a push service returning 500 now may well accept it
           // in a minute.
-          if (resp.status === 410 || resp.status === 404) { await kv(env).delete(key.name); pruned++; }
-          else failed++;
+          if (resp.status === 410 || resp.status === 404) {
+            await kv(env).delete(key.name); ops--; pruned++;
+          } else failed++;
         }
       }
+
       if (listRes.list_complete) { complete = true; break; }
+      // A whole page is behind us, so the page cursor is now the record of
+      // progress and the within-page marker resets.
       cursor = listRes.cursor;
-      if (budget <= 0) break;
+      lastKey = null;
     }
   } catch (e) {
     lastError = e.message;
@@ -2256,9 +2292,14 @@ async function runShard(env, jobId, ch) {
 
   const attempts = (shard.attempts ?? 0) + 1;
   const next = complete && !lastError
-    ? { state: 'done', cursor: null, sent, failed, pruned, attempts, leaseUntil: 0, finishedAt: Date.now() }
-    : { state: 'pending', cursor: cursor ?? null, sent, failed, pruned, attempts,
-        leaseUntil: 0, nextAttemptAt: Date.now() + shardRetryDelayMs(attempts), lastError };
+    ? { state: 'done', cursor: null, lastKey: null, sent, failed, pruned, attempts,
+        leaseUntil: 0, finishedAt: Date.now() }
+    : { state: 'pending', cursor: cursor ?? null, lastKey, sent, failed, pruned, attempts,
+        leaseUntil: 0,
+        // Running out of budget is normal progress, not a failure, so it goes
+        // straight back into the queue rather than waiting out a backoff.
+        nextAttemptAt: lastError ? Date.now() + shardRetryDelayMs(attempts) : 0,
+        lastError };
 
   await kv(env).put(sKey, JSON.stringify(next), { expirationTtl: JOB_TTL_SECONDS });
   console.log(`[outbox] shard ${jobId}/${ch}: ${next.state} sent=${sent} failed=${failed} pruned=${pruned} attempt=${attempts}`);
@@ -2275,8 +2316,11 @@ async function runShard(env, jobId, ch) {
  * Decide whether this subscriber gets this job, and with what payload.
  * Returns null to skip. This is where the per-user topics keep their logic.
  */
-async function decideForSubscriber(env, job, keyName, stored) {
+async function decideForSubscriber(env, job, keyName, stored, meter = { ops: 0 }) {
   const prefs = stored.preferences || {};
+  // Counts the KV calls this makes so the shard can budget honestly. A
+  // subscriber who is skipped after a cooldown read still costs a subrequest.
+  const count = (n = 1) => { meter.ops += n; };
 
   if (job.kind === 'topic') {
     if (prefs[job.topic] !== true) return null;
@@ -2293,6 +2337,7 @@ async function decideForSubscriber(env, job, keyName, stored) {
     if (p.auroraScore < threshold) return null;
     const cooldownKey = `COOLDOWN_overnight_${keyName}`;
     const lastSent = await kv(env).get(cooldownKey);
+    count();
     if (lastSent && (Date.now() - Number(lastSent)) < 3 * 60 * 60 * 1000) return null;
     return {
       payload: job.payload,
@@ -2321,6 +2366,7 @@ async function decideForSubscriber(env, job, keyName, stored) {
 
     if (!newTier && prevTier) {
       await kv(env).put(keyName, JSON.stringify({ ...stored, visibilityTier: null }));
+      count();
       return null;
     }
     if (newRank <= currentRank) return null;
@@ -2330,6 +2376,7 @@ async function decideForSubscriber(env, job, keyName, stored) {
 
     const cooldownKey = `COOLDOWN_vis_${newTier}_${keyName}`;
     const lastSent = await kv(env).get(cooldownKey);
+    count();
     if (lastSent && (Date.now() - Number(lastSent)) < 2 * 60 * 60 * 1000) return null;
 
     return {
