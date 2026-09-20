@@ -38,33 +38,41 @@ export interface StormData {
 // Seven clouds over three days, every one a full halo. The flare classes are
 // from the record; the individual speeds and widths are not, which is exactly
 // what the fetch replaces.
+//
+// A note on widths, because this was wrong here first time round. "Full halo"
+// does not mean the cloud is enormous. It means it is coming more or less
+// straight at us, so its expanding shell appears in a coronagraph to surround
+// the occulting disk. That is a projection, not a measurement of size. Real
+// half angles in the catalogue sit around 30 to 60 degrees even for halos, and
+// the visualisation scales a cloud by the tangent of this, so putting 85 in
+// here drew something twenty times the size of a normal CME.
 const GANNON: CloudSpec[] = [
-  { flareClass: 'X', flareMag: 1.0,  lonDeg: 12, latDeg: -19, speedKms: 1100, halfWidthDeg: 80, offsetHours: 0,  label: 'X1.0, 8 May' },
-  { flareClass: 'M', flareMag: 8.0,  lonDeg: 18, latDeg: -19, speedKms: 1250, halfWidthDeg: 78, offsetHours: 12, label: 'M8.0, 8 May' },
-  { flareClass: 'X', flareMag: 2.25, lonDeg: 25, latDeg: -19, speedKms: 1550, halfWidthDeg: 85, offsetHours: 25, label: 'X2.25, 9 May' },
-  { flareClass: 'X', flareMag: 1.12, lonDeg: 29, latDeg: -19, speedKms: 1400, halfWidthDeg: 82, offsetHours: 32, label: 'X1.12, 9 May' },
-  { flareClass: 'M', flareMag: 9.8,  lonDeg: 34, latDeg: -19, speedKms: 1350, halfWidthDeg: 80, offsetHours: 40, label: 'M9.8, 9 May' },
-  { flareClass: 'X', flareMag: 3.98, lonDeg: 41, latDeg: -19, speedKms: 1600, halfWidthDeg: 85, offsetHours: 50, label: 'X3.98, 10 May' },
-  { flareClass: 'X', flareMag: 5.8,  lonDeg: 48, latDeg: -19, speedKms: 1700, halfWidthDeg: 85, offsetHours: 64, label: 'X5.8, 11 May' },
+  { flareClass: 'X', flareMag: 1.0,  lonDeg: 8,  latDeg: -19, speedKms: 1100, halfWidthDeg: 45, offsetHours: 0,  label: 'X1.0, 8 May' },
+  { flareClass: 'M', flareMag: 8.0,  lonDeg: 12, latDeg: -19, speedKms: 1250, halfWidthDeg: 40, offsetHours: 12, label: 'M8.0, 8 May' },
+  { flareClass: 'X', flareMag: 2.25, lonDeg: 18, latDeg: -19, speedKms: 1550, halfWidthDeg: 52, offsetHours: 25, label: 'X2.25, 9 May' },
+  { flareClass: 'X', flareMag: 1.12, lonDeg: 22, latDeg: -19, speedKms: 1400, halfWidthDeg: 46, offsetHours: 32, label: 'X1.12, 9 May' },
+  { flareClass: 'M', flareMag: 9.8,  lonDeg: 26, latDeg: -19, speedKms: 1350, halfWidthDeg: 44, offsetHours: 40, label: 'M9.8, 9 May' },
+  { flareClass: 'X', flareMag: 3.98, lonDeg: 30, latDeg: -19, speedKms: 1600, halfWidthDeg: 55, offsetHours: 50, label: 'X3.98, 10 May' },
+  { flareClass: 'X', flareMag: 5.8,  lonDeg: 36, latDeg: -19, speedKms: 1700, halfWidthDeg: 50, offsetHours: 64, label: 'X5.8, 11 May' },
 ];
 
 const OCT_2024: CloudSpec[] = [
-  { flareClass: 'X', flareMag: 1.8, lonDeg: 8, latDeg: 12, speedKms: 1346, halfWidthDeg: 80, offsetHours: 0, label: 'X1.8, 9 Oct' },
+  { flareClass: 'X', flareMag: 1.8, lonDeg: 8, latDeg: 12, speedKms: 1346, halfWidthDeg: 48, offsetHours: 0, label: 'X1.8, 9 Oct' },
 ];
 
 const APR_2023: CloudSpec[] = [
-  { flareClass: 'M', flareMag: 1.7, lonDeg: -6, latDeg: 18, speedKms: 1326, halfWidthDeg: 80, offsetHours: 0, label: 'M1.7 with a filament, 21 Apr' },
+  { flareClass: 'M', flareMag: 1.7, lonDeg: -6, latDeg: 18, speedKms: 1326, halfWidthDeg: 50, offsetHours: 0, label: 'M1.7 with a filament, 21 Apr' },
 ];
 
 // Pre-DONKI. Both are reconstructions and will stay that way.
 const MAR_1989: CloudSpec[] = [
-  { flareClass: 'X', flareMag: 4.5, lonDeg: -10, latDeg: -26, speedKms: 951,  halfWidthDeg: 75, offsetHours: 0,  label: 'X4.5, 10 March' },
-  { flareClass: 'M', flareMag: 7.3, lonDeg: 8,   latDeg: -26, speedKms: 1546, halfWidthDeg: 80, offsetHours: 48, label: 'M7.3, 12 March' },
+  { flareClass: 'X', flareMag: 4.5, lonDeg: -10, latDeg: -26, speedKms: 951,  halfWidthDeg: 45, offsetHours: 0,  label: 'X4.5, 10 March' },
+  { flareClass: 'M', flareMag: 7.3, lonDeg: 8,   latDeg: -26, speedKms: 1546, halfWidthDeg: 50, offsetHours: 48, label: 'M7.3, 12 March' },
 ];
 
 const CARRINGTON: CloudSpec[] = [
-  { flareClass: 'X', flareMag: 6.0, lonDeg: -6, latDeg: -8, speedKms: 1500, halfWidthDeg: 80, offsetHours: 0,  label: 'The cloud that cleared the path, 28 Aug' },
-  { flareClass: 'X', flareMag: 9.5, lonDeg: 0,  latDeg: -8, speedKms: 2605, halfWidthDeg: 85, offsetHours: 44, label: 'The white light flare, 1 Sept' },
+  { flareClass: 'X', flareMag: 6.0, lonDeg: -6, latDeg: -8, speedKms: 1500, halfWidthDeg: 50, offsetHours: 0,  label: 'The cloud that cleared the path, 28 Aug' },
+  { flareClass: 'X', flareMag: 9.5, lonDeg: 0,  latDeg: -8, speedKms: 2605, halfWidthDeg: 55, offsetHours: 44, label: 'The white light flare, 1 Sept' },
 ];
 
 export const STORM_DATA: Record<string, StormData> = {

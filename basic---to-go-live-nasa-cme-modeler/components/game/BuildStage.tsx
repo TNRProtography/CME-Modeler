@@ -243,9 +243,9 @@ const BuildStage: React.FC<Props> = ({ input, onChange, onLaunch, brief }) => {
                 : `${Math.round(sep)}° off the Sun-Earth line and the cloud is only ${Math.round(cloud.halfWidthDeg)}° wide. It will go straight past.`}
             </p>
             <div className="mt-3 space-y-3">
-              <Slider label="Cloud width" value={cloud.halfWidthDeg} min={15} max={80} step={1}
+              <Slider label="Cloud width" value={cloud.halfWidthDeg} min={15} max={60} step={1}
                       display={`${Math.round(cloud.halfWidthDeg)}°`}
-                      hint="Wider clouds are easier to hit us with, but they spread the same flux over more sky, so they arrive weaker."
+                      hint="Wider clouds are easier to hit us with, but they spread the same flux over more sky, so they arrive weaker. Even a full halo is only 30 to 60 degrees; a halo means it is pointed at us, not that it is huge."
                       onChange={v => setCloud({ halfWidthDeg: v })} />
             </div>
           </section>

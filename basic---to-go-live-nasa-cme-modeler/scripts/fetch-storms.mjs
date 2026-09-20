@@ -115,9 +115,11 @@ async function fetchEvent(ev) {
       lonDeg:     a.longitude ?? (fromFlare ? fromFlare.lonDeg : 0),
       latDeg:     a.latitude  ?? (fromFlare ? fromFlare.latDeg : 0),
       speedKms:   Math.round(a.speed),
-      // DONKI's halfAngle is the half width. A halo has no meaningful one, so
-      // fall back to something wide rather than dropping the cloud.
-      halfWidthDeg: Math.round(a.halfAngle ?? 80),
+      // DONKI's halfAngle is the half width in degrees. Where it is missing,
+      // fall back to the same 30 the visualisation itself assumes rather than
+      // to something huge: a halo is a cloud pointed at us, not a wide one,
+      // and the scene scales a cloud by the tangent of this.
+      halfWidthDeg: Math.max(12, Math.min(70, Math.round(a.halfAngle ?? 30))),
       flareLabel: flare ? `${flare.classType}, ${new Date(tStart).toUTCString().slice(5, 16)}` : null,
       activityID: cme.activityID,
       note: (cme.note || '').slice(0, 200),
