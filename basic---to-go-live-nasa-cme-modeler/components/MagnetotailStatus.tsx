@@ -19,7 +19,7 @@ import React, { useMemo, useEffect, useRef, useState, useCallback } from 'react'
 import { computeOvalBoundary as computeOvalBoundaryPhysics, avgBy30m, loadingMinutesFromSeries } from '../utils/ovalPhysics';
 import {
   EARTH_TEX, renderGlobe, drawParticle,
-  loadMilkyWay, drawMilkyWay,
+  loadMilkyWay, drawMilkyWay, drawEarthDisc,
 } from '../utils/spaceScene';
 
 
@@ -465,19 +465,10 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
       ctx!.globalAlpha = 1;
       ctx!.globalCompositeOperation = 'source-over';
 
-      // Earth: atmosphere rim + globe sprite
-      const atm = ctx!.createRadialGradient(EX, EY, ER * 0.9, EX, EY, ER * 1.22);
-      atm.addColorStop(0, 'rgba(80,150,255,0)');
-      atm.addColorStop(0.75, `rgba(90,160,255,${(0.10 + curtainE * 0.06).toFixed(3)})`);
-      atm.addColorStop(1, 'rgba(90,160,255,0)');
-      ctx!.fillStyle = atm;
-      ctx!.beginPath(); ctx!.arc(EX, EY, ER * 1.22, 0, Math.PI * 2); ctx!.fill();
-      if (globeReadyRef.current && globeCanvasRef.current) {
-        ctx!.drawImage(globeCanvasRef.current, EX - ER, EY - ER, ER * 2, ER * 2);
-      } else {
-        ctx!.fillStyle = '#14304f';
-        ctx!.beginPath(); ctx!.arc(EX, EY, ER, 0, Math.PI * 2); ctx!.fill();
-      }
+      // Earth: atmosphere rim + globe sprite. Shared with the Russell-McPherron
+      // diagram, so the two draw the same planet.
+      drawEarthDisc(ctx!, EX, EY, ER,
+        globeReadyRef.current ? globeCanvasRef.current : null, curtainE);
 
       // Aurora curtains: vertical rays blooming off the southern region
       if (curtainE > 0.02) {

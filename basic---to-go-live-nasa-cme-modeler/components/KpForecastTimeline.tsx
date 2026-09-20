@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
+import { kpIndex, gScale, gColor } from '../utils/kpScale';
 
 const NOAA_KP_URL   = 'https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json';
 // NOAA republishes this forecast roughly 3-hourly. Re-fetching every 5 minutes
@@ -10,6 +11,7 @@ const NOAA_KP_URL   = 'https://services.swpc.noaa.gov/products/noaa-planetary-k-
 const KP_REFRESH_MS = 5 * 60 * 1000;
 const KP_THRESHOLD  = 4.33; // below this: no aurora overlay
 const NZ_TIME_ZONE  = 'Pacific/Auckland';
+
 
 const getNzOffsetHours = (atMs: number): number => {
   const parts = new Intl.DateTimeFormat('en-NZ', {
@@ -179,7 +181,8 @@ function auroraGrad(
   const g = ctx.createLinearGradient(x, topY, x, botY);
   const a = (v: number) => Math.min(1, v * op).toFixed(3);
 
-  if (kp >= 8) {                              // G4+ - all three bold
+  const g5 = kpIndex(kp);
+  if (g5 >= 8) {                              // G4+ - all three bold
     g.addColorStop(0,    `rgba(80,130,255,${a(0)})`);
     g.addColorStop(0.04, `rgba(80,130,255,${a(0.80)})`);
     g.addColorStop(0.28, `rgba(80,130,255,${a(0.85)})`);
@@ -188,7 +191,7 @@ function auroraGrad(
     g.addColorStop(0.72, `rgba(0,220,65,${a(0.90)})`);
     g.addColorStop(0.90, `rgba(0,220,65,${a(0.92)})`);
     g.addColorStop(1,    `rgba(0,220,65,${a(0.10)})`);
-  } else if (kp >= 7) {                       // G3 - blue cap, good pink, green main
+  } else if (g5 >= 7) {                       // G3 - blue cap, good pink, green main
     g.addColorStop(0,    `rgba(80,125,255,${a(0)})`);
     g.addColorStop(0.08, `rgba(80,125,255,${a(0.65)})`);
     g.addColorStop(0.28, `rgba(80,125,255,${a(0.70)})`);
@@ -197,7 +200,7 @@ function auroraGrad(
     g.addColorStop(0.72, `rgba(0,218,62,${a(0.85)})`);
     g.addColorStop(0.90, `rgba(0,218,62,${a(0.88)})`);
     g.addColorStop(1,    `rgba(0,218,62,${a(0.10)})`);
-  } else if (kp >= 6) {                       // G2 - hint of blue, pink band, green main
+  } else if (g5 >= 6) {                       // G2 - hint of blue, pink band, green main
     g.addColorStop(0,    `rgba(80,118,255,${a(0)})`);
     g.addColorStop(0.10, `rgba(80,118,255,${a(0.40)})`);
     g.addColorStop(0.25, `rgba(80,118,255,${a(0.42)})`);
@@ -267,7 +270,9 @@ function getVis(kp: number, moon: number, lat: number | null | undefined, sky: S
       : 'Activity is too low - aurora not expected to reach New Zealand.',
   };
 
-  if (kp >= 8) return {
+  const g = kpIndex(kp);
+
+  if (g >= 8) return {
     headline: 'Visible across all of New Zealand',
     detail:   'Major geomagnetic storm. Aurora visible nationwide - Northland to Invercargill - even from suburban areas. Expect greens, pinks, and vivid blue/purple higher in the sky.',
     regions:  ['Northland','Auckland','Waikato','Bay of Plenty','Wellington','Nelson','Canterbury','Otago','Southland'],
@@ -276,7 +281,7 @@ function getVis(kp: number, moon: number, lat: number | null | undefined, sky: S
     summary: 'Major storm - aurora visible across all of New Zealand, moon is no obstacle.',
   };
 
-  if (kp >= 7) {
+  if (g >= 7) {
     const northNote = moon > 80
       ? 'North Island: find a dark hilltop away from city lights - full moon may reduce visibility.'
       : moon > 55
@@ -295,7 +300,7 @@ function getVis(kp: number, moon: number, lat: number | null | undefined, sky: S
     };
   }
 
-  if (kp >= 6) {
+  if (g >= 6) {
     if (moon > 80) return {
       headline: 'South Island likely, North Island difficult',
       detail:   'Moderate storm. South Island should see clear aurora. Full moon will wash out fainter aurora for North Island - very dark sites needed.',
@@ -317,7 +322,7 @@ function getVis(kp: number, moon: number, lat: number | null | undefined, sky: S
     };
   }
 
-  if (kp >= 5) {
+  if (g >= 5) {
     if (moon > 80) return {
       headline: 'Southland and Otago - dark sites only',
       detail:   'Minor storm. Full moon makes conditions difficult. Only the very south of New Zealand is likely to see aurora, and only from truly dark locations.',
@@ -345,7 +350,7 @@ function getVis(kp: number, moon: number, lat: number | null | undefined, sky: S
     };
   }
 
-  // KP 4.34–4.99
+  // Kp index 4 and below - "4+" (4.333) and under, which is beneath G1.
   return {
     headline: 'Marginal - very unlikely from New Zealand',
     detail:   'Just above the minimum threshold but below what is needed to reach NZ latitudes. A faint glow might theoretically appear from extreme southern locations under perfect conditions, but is not expected.',
@@ -813,14 +818,6 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   const fmtEnd = (h: number) => fmt((h+1)%24);
   const nzTimeLabel = getNzTimeLabel(sel?.utcMs ?? Date.now());
 
-  function gScale(kp: number) {
-    if (kp>=9) return 'G5'; if (kp>=8) return 'G4'; if (kp>=7) return 'G3';
-    if (kp>=6) return 'G2'; if (kp>=5) return 'G1'; return '';
-  }
-  function gColor(kp: number) {
-    if (kp>=8) return '#ff6060'; if (kp>=7) return '#ff9944';
-    if (kp>=6) return '#508cff'; if (kp>=5) return '#44dd88'; return '#888';
-  }
 
   return (
     <div className="col-span-12 card bg-neutral-950/80 p-4">

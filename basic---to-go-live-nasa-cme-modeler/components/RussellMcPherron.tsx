@@ -11,6 +11,10 @@
 
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { rmAngles, gsmToGseqBy } from '../utils/rmEffect';
+import {
+  loadMilkyWay, drawMilkyWay, loadEarthTexture, earthTexture,
+  renderGlobe, drawEarthDisc,
+} from '../utils/spaceScene';
 
 const D2R = Math.PI / 180;
 
@@ -38,6 +42,15 @@ function equinoxContext(now: Date): string {
 }
 
 const VB = 360;
+
+// The Earth in the diagram. Slightly larger than the flat disc it replaces,
+// because a texture needs a few more pixels to read as a planet rather than a
+// smudge - but still small enough that the axes stay the subject.
+const EARTH_R = 24;
+const GLOBE_SPRITE = 192;   // offscreen sprite resolution, as the magnetotail uses
+// New Zealand faces us, the same longitude the magnetotail scene centres on, so
+// the two Earths in the app are recognisably the same planet.
+const CENTRE_LON = 172;
 
 const RussellMcPherron: React.FC<Props> = ({ magneticData, onOpenModal }) => {
   const [now, setNow] = useState(() => new Date());
@@ -116,6 +129,84 @@ const RussellMcPherron: React.FC<Props> = ({ magneticData, onOpenModal }) => {
     tipT.current = setTimeout(() => setTip(null), 4000);
   }, []);
   const hideTip = useCallback(() => { if (tipT.current) clearTimeout(tipT.current); setTip(null); }, []);
+
+  // ── Space backdrop ────────────────────────────────────────────────────────
+  // This diagram used to sit on a flat card with a blue radial gradient for
+  // Earth, which made it the one visualisation in the app that did not look
+  // like it was in space - the magnetotail, the solar wind structure and the
+  // flux rope analyser all share a Milky Way backdrop and a textured globe.
+  //
+  // The scenery goes on a canvas *underneath* the SVG rather than replacing it:
+  // the axes, the arrows and the tooltips stay vector, crisp at any size and
+  // still hit-testable, while the planet and the sky come from the same
+  // spaceScene helpers everything else uses.
+  const sceneRef = useRef<HTMLCanvasElement>(null);
+  const globeRef = useRef<HTMLCanvasElement | null>(null);
+  // Textures load once per page and may already be warm from another panel, so
+  // a tick is the simplest way to redraw whenever one arrives.
+  const [sceneTick, setSceneTick] = useState(0);
+
+  useEffect(() => {
+    if (!showScience) return;
+    loadMilkyWay(() => setSceneTick(t => t + 1));
+    loadEarthTexture(() => setSceneTick(t => t + 1));
+  }, [showScience]);
+
+  useEffect(() => {
+    if (!showScience) return;
+    const tex = earthTexture();
+    if (!tex) return;
+    if (!globeRef.current) globeRef.current = document.createElement('canvas');
+    // Scenery rather than a readout: the live oval and the NZ marker belong on
+    // the magnetotail's Earth, not on a 48px one anchoring a geometry diagram.
+    renderGlobe(globeRef.current, tex, CENTRE_LON, 0, 0, false, GLOBE_SPRITE,
+                { oval: false, nzDot: false });
+  }, [showScience, sceneTick]);
+
+  useEffect(() => {
+    if (!showScience) return;
+    const cv = sceneRef.current;
+    const ctx = cv?.getContext('2d');
+    if (!cv || !ctx) return;
+
+    const reduced = typeof window !== 'undefined'
+      && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+    let raf = 0;
+    const t0 = performance.now();
+
+    const frame = (t: number) => {
+      const box = cv.getBoundingClientRect();
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const px = Math.max(1, Math.round(box.width * dpr));
+      if (cv.width !== px || cv.height !== px) { cv.width = px; cv.height = px; }
+      // The canvas and the SVG share a square box, so one scale converts the
+      // diagram's viewBox units into device pixels and the two stay registered.
+      const S = cv.width / VB;
+
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = '#05070d';
+      ctx.fillRect(0, 0, cv.width, cv.height);
+
+      const elapsed = reduced ? 0 : (t - t0) / 1000;
+      // Dimmer than the full-width scenes use. This backdrop sits behind hairline
+      // axes and 8pt labels, which a starfield at full strength swallows.
+      drawMilkyWay(ctx, cv.width, cv.height, elapsed, 0.22);
+
+      const half = cv.width / 2;
+      const vig = ctx.createRadialGradient(half, half, cv.width * 0.24, half, half, cv.width * 0.62);
+      vig.addColorStop(0, 'rgba(5,7,13,0)');
+      vig.addColorStop(1, 'rgba(5,7,13,0.74)');
+      ctx.fillStyle = vig;
+      ctx.fillRect(0, 0, cv.width, cv.height);
+
+      drawEarthDisc(ctx, cx * S, cy * S, EARTH_R * S, globeRef.current, 0);
+
+      if (!reduced) raf = requestAnimationFrame(frame);
+    };
+    frame(t0);
+    return () => { if (raf) cancelAnimationFrame(raf); };
+  }, [showScience, sceneTick, cx, cy]);
 
   return (
     <div className="col-span-12 card bg-neutral-950/80 p-3 sm:p-4 flex flex-col overflow-hidden">
@@ -201,15 +292,14 @@ const RussellMcPherron: React.FC<Props> = ({ magneticData, onOpenModal }) => {
         <div className="mt-3 border-t border-neutral-800 pt-3">
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_240px] gap-3">
             {/* Diagram */}
-            <div className="relative w-full mx-auto" style={{ maxWidth: 380, aspectRatio: '1 / 1' }}>
+            <div className="relative w-full mx-auto overflow-hidden rounded-lg border border-neutral-800/70"
+                 style={{ maxWidth: 380, aspectRatio: '1 / 1' }}>
+              <canvas ref={sceneRef} className="absolute inset-0 w-full h-full" aria-hidden="true" />
               <svg ref={svgRef} viewBox={`0 0 ${VB} ${VB}`} className="absolute inset-0 w-full h-full">
                 <defs>
-                  <radialGradient id="rm-earth" cx="42%" cy="38%" r="62%">
-                    <stop offset="0%" stopColor="#3a6fa5" /><stop offset="60%" stopColor="#244a72" /><stop offset="100%" stopColor="#0f2438" />
-                  </radialGradient>
                   <marker id="rm-arr" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="context-stroke" /></marker>
                 </defs>
-                <text x={cx} y={16} textAnchor="middle" fill="#7e8794" fontSize="9" letterSpacing="0.1em" style={{ textTransform: 'uppercase' as const, fontFamily: 'system-ui,sans-serif' }}>View from the Sun</text>
+                <text x={cx} y={16} textAnchor="middle" fill="#9aa6b5" fontSize="9" letterSpacing="0.1em" style={{ textTransform: 'uppercase' as const, fontFamily: 'system-ui,sans-serif' }}>View from the Sun</text>
                 {/* GSEQ ref */}
                 <g className="rm-h" onMouseMove={e => showTip(e, 'Dashed lines: the solar wind\'s natural frame. Its field mostly points along the horizontal (dawn-dusk) direction.')} onMouseLeave={hideTip} onClick={e => showTip(e, 'The solar wind\'s natural frame. Field mostly points horizontal (dawn-dusk).')}>
                   <line x1={cx - axLen} y1={cy} x2={cx + axLen} y2={cy} stroke="#4b5563" strokeWidth="1" strokeDasharray="3 4" />
@@ -223,7 +313,9 @@ const RussellMcPherron: React.FC<Props> = ({ magneticData, onOpenModal }) => {
                   <text x={gsmZx + (ang.beta >= 0 ? 8 : -8)} y={gsmZy - 4} textAnchor={ang.beta >= 0 ? 'start' : 'end'} fill="#aeb7c6" fontSize="9" fontWeight="600" style={{ fontFamily: 'system-ui,sans-serif' }}>up/down (Bz)</text>
                 </g>
                 <path d={`M ${cx} ${cy - 40} A 40 40 0 0 ${ang.beta >= 0 ? 1 : 0} ${cx + 40 * Math.sin(b)} ${cy - 40 * Math.cos(b)}`} fill="none" stroke={status.colour} strokeWidth="1.5" className="rm-pulse" />
-                <circle cx={cx} cy={cy} r={20} fill="url(#rm-earth)" stroke="#2a4258" strokeWidth="0.5" />
+                {/* Earth itself is the textured globe on the canvas below. This is
+                    just a limb, so its edge stays defined against the backdrop. */}
+                <circle cx={cx} cy={cy} r={EARTH_R} fill="none" stroke="#6d89a8" strokeWidth="0.6" opacity="0.5" />
                 {haveIMF && (
                   <g className="rm-h"
                     onMouseMove={e => showTip(e, `Live field: sideways ${fmt(byGsm!,1)}, up/down ${fmt(bzGsm!,1)} nT. The thick line is the part that lands on our up/down axis.`)} onMouseLeave={hideTip}

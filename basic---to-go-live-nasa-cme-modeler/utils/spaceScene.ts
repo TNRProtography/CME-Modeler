@@ -122,10 +122,27 @@ function gmagToGeoLat(gmagLat: number, lonDeg: number): number {
   return (lo + hi) / 2;
 }
 
+/**
+ * Options for a globe that is scenery rather than the subject.
+ *
+ * The magnetotail scene's Earth is the thing being explained, so it carries the
+ * live oval and the NZ marker. A globe drawn at 40px to anchor a geometry
+ * diagram is not, and at that size the oval is a green smear and the NZ dot is
+ * bigger than New Zealand. Turning them off keeps the same texture, the same
+ * lighting and the same terminator, which is what makes the scenes look
+ * related - without implying the small one is showing live data.
+ */
+export interface GlobeOptions {
+  oval?: boolean;
+  nzDot?: boolean;
+}
+
 export function renderGlobe(
   canvas: HTMLCanvasElement, tex: HTMLImageElement,
   centreLon: number, ovalBound: number, score: number, hot: boolean, sizePx: number,
+  opts: GlobeOptions = {},
 ) {
+  const { oval = true, nzDot = true } = opts;
   const size = sizePx;
   canvas.width = size; canvas.height = size;
   const ctx = canvas.getContext('2d');
@@ -176,6 +193,7 @@ export function renderGlobe(
   ctx.fillStyle = term; ctx.fillRect(0, 0, size, size);
 
   // Live aurora oval band
+  if (oval) {
   const DR = Math.PI / 180;
   function ringPts(gmagLat: number) {
     const pts: { x: number; y: number; vis: boolean }[] = [];
@@ -229,12 +247,48 @@ export function renderGlobe(
   ctx.filter = 'none';
   ctx.restore();
   ctx.globalCompositeOperation = 'source-over';
+  }
+
   // NZ dot
+  if (nzDot) {
   const nzLatR = (-43.5 * Math.PI) / 180, nzDlon = ((172 - centreLon) * Math.PI) / 180;
   const nzX = half + half * Math.cos(nzLatR) * Math.sin(nzDlon), nzY = half - half * Math.sin(nzLatR);
   ctx.globalAlpha = 0.9; ctx.fillStyle = '#5fb47a'; ctx.beginPath(); ctx.arc(nzX, nzY, size * 0.018, 0, Math.PI * 2); ctx.fill();
   ctx.globalAlpha = 0.45; ctx.strokeStyle = '#5fb47a'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.arc(nzX, nzY, size * 0.036, 0, Math.PI * 2); ctx.stroke();
   ctx.globalAlpha = 1;
+  }
+}
+
+/**
+ * Blit a prepared globe sprite into a scene, with the atmosphere rim.
+ *
+ * The rim is what stops the globe reading as a sticker: it is a faint blue
+ * halo just outside the disc, brightening a little when the scene is active.
+ * Both the magnetotail and the Russell-McPherron diagram draw their Earth
+ * through here, so the two cannot drift apart.
+ *
+ * `glow` is 0..1 and lifts the halo when something is happening. A sprite that
+ * has not loaded yet falls back to the flat blue disc rather than a hole.
+ */
+export function drawEarthDisc(
+  ctx: CanvasRenderingContext2D,
+  cx: number, cy: number, r: number,
+  sprite: HTMLCanvasElement | null,
+  glow = 0,
+) {
+  const atm = ctx.createRadialGradient(cx, cy, r * 0.9, cx, cy, r * 1.22);
+  atm.addColorStop(0, 'rgba(80,150,255,0)');
+  atm.addColorStop(0.75, `rgba(90,160,255,${(0.10 + glow * 0.06).toFixed(3)})`);
+  atm.addColorStop(1, 'rgba(90,160,255,0)');
+  ctx.fillStyle = atm;
+  ctx.beginPath(); ctx.arc(cx, cy, r * 1.22, 0, Math.PI * 2); ctx.fill();
+
+  if (sprite) {
+    ctx.drawImage(sprite, cx - r, cy - r, r * 2, r * 2);
+  } else {
+    ctx.fillStyle = '#14304f';
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  }
 }
 // --- END OF FILE utils/spaceScene.ts ---
 
