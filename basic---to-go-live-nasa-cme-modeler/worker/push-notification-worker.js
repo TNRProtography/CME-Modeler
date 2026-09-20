@@ -426,6 +426,8 @@ export default {
     if (url.pathname === '/run-census-shard'          && request.method === 'POST') return handleRunCensusShard(request, env);
     if (url.pathname === '/stats'                     && request.method === 'GET')  return handleStats(request, env);
     if (url.pathname === '/sends'                     && request.method === 'GET')  return handleSends(request, env);
+    if (url.pathname === '/migration'                 && request.method === 'GET')  return handleMigrationStatus(request, env);
+    if (url.pathname === '/run-migration-shard'       && request.method === 'POST') return handleRunMigrationShard(request, env);
     if (url.pathname === '/notification-clicked'      && request.method === 'POST') return handleNotificationClicked(request, env);
     if (url.pathname === '/health')                                                  return handleHealthCheck(env);
     return new Response('Not found', { status: 404 });
@@ -529,6 +531,8 @@ async function runScheduledTasks(env) {
   // stalled or is due a retry. Without this a lost dispatch is a lost alert.
   await sweepJobs(env, note);
   await maybeRunCensus(env, note);
+  // Runs itself once per version and then costs one KV read a tick.
+  await maybeRunMigration(env, note);
 
   await kv(env).put('LAST_SUCCESSFUL_RUN_TIMESTAMP', Date.now().toString());
   await kv(env).put(DIAG_KEY, JSON.stringify(diag), { expirationTtl: 86400 });
@@ -1365,6 +1369,7 @@ function isReservedKey(name) {
          name.startsWith('LAST_') || name.startsWith('JOB_') ||
          name.startsWith('JOBSHARD_') || name.startsWith('STATSSHARD_') ||
          name.startsWith('SEND_') || name.startsWith('CLK_') ||
+         name.startsWith('MIGSHARD_') || name === MIGRATION_KEY ||
          name === STATS_KEY || name === SELF_ORIGIN_KEY || name === SEND_LOG_KEY;
 }
 
@@ -1410,39 +1415,184 @@ const ALL_TOPICS = [
   'flare-event', 'flare-peak', 'substorm-forecast',
   'shock-imf',
 ];
+
+// What a subscriber gets for a topic they have never been asked about. This
+// has to match the app's own defaults: the settings screen shows a topic the
+// user has never touched as on if it is in here, so storing false would mean
+// the switch says one thing and the worker does another.
+const TOPIC_DEFAULT_ON = new Set([
+  'visibility-dslr', 'visibility-phone', 'visibility-naked',
+  'overnight-watch', 'flare-M1', 'flare-M5',
+  'flare-X1', 'flare-X5', 'flare-X10',
+  'admin-broadcast', 'flare-event', 'flare-peak',
+  'substorm-forecast',
+]);
 // </generated:topics>
 
-async function runPreferenceMigration(env) {
-  let migrated = 0, skipped = 0, errors = 0;
+// ── Subscriber migration ────────────────────────────────────────────────────
+//
+// Brings every stored subscriber up to the current set of topics without
+// anybody having to re-subscribe, re-grant permission, or notice.
+//
+// It fixes a real disagreement between the two halves of the system. The old
+// migration wrote `false` for any topic a subscriber had never been asked
+// about, but the app's settings screen shows an untouched topic as ON when it
+// is in the default set. So the switch said one thing and the worker did
+// another, and the user had no way to tell. Defaults now come from the same
+// manifest the app uses, generated into TOPIC_DEFAULT_ON above.
+//
+// Three properties it has to have, given it runs across 80,000 records:
+//
+//   sharded     the same 64 prefixes delivery uses, so no invocation has to
+//               walk the whole namespace and time out half way
+//   idempotent  running it twice changes nothing the second time, so a retry
+//               after a failure is always safe
+//   additive    a preference a user has actually set is never overwritten.
+//               Only keys that are absent get filled in.
+
+const MIGRATION_VERSION = 2;
+const MIGRATION_KEY = 'MIGRATION';
+const migrationShardKey = (ch) => `MIGSHARD_${ch}`;
+
+/**
+ * Bring one shard's subscribers up to date.
+ * Returns how many records it changed.
+ */
+async function runMigrationShard(env, ch) {
+  let changedCount = 0, seen = 0, errors = 0;
   let cursor;
+
   do {
-    const listRes = await kv(env).list({ cursor, limit: KV_LIST_LIMIT });
-    for (const key of listRes.keys) {
+    const res = await kv(env).list({ prefix: ch, cursor, limit: 1000 });
+    for (const key of res.keys) {
       if (isReservedKey(key.name)) continue;
       try {
         const stored = await kv(env).get(key.name, 'json');
         if (!stored?.subscription) continue;
-        const prefs = stored.preferences || {};
+        seen++;
+
+        const prefs = { ...(stored.preferences || {}) };
         let changed = false;
 
+        // Anyone who opted into the old catch-all shock topic keeps that
+        // choice across the split into per-type shocks.
         if (prefs['shock-detection'] === true || prefs['ips-shock'] === true) {
-          for (const st of ['shock-ff','shock-sf','shock-fr','shock-sr','shock-imf']) {
+          for (const st of ['shock-ff', 'shock-sf', 'shock-fr', 'shock-sr', 'shock-imf']) {
             if (prefs[st] === undefined) { prefs[st] = true; changed = true; }
           }
         }
+
+        // Fill in anything they have never been asked about, using the same
+        // default the app would show them. Never touch a key they have set.
         for (const topic of ALL_TOPICS) {
-          if (prefs[topic] === undefined) { prefs[topic] = false; changed = true; }
+          if (prefs[topic] === undefined) {
+            prefs[topic] = TOPIC_DEFAULT_ON.has(topic);
+            changed = true;
+          }
         }
+
         if (changed) {
           await kv(env).put(key.name, JSON.stringify({ ...stored, preferences: prefs }));
-          migrated++;
-        } else skipped++;
-      } catch (e) { errors++; console.error('Migration error for key', key.name, e.message); }
+          changedCount++;
+        }
+      } catch (e) {
+        errors++;
+        console.error('[migrate] error on', key.name, e.message);
+      }
     }
-    cursor = listRes.cursor;
-    if (listRes.list_complete) break;
+    cursor = res.cursor;
+    if (res.list_complete) break;
   } while (cursor);
-  return { migrated, skipped, errors };
+
+  await kv(env).put(migrationShardKey(ch), JSON.stringify({
+    version: MIGRATION_VERSION, seen, changed: changedCount, errors, at: Date.now(),
+  }));
+  console.log(`[migrate] shard ${ch}: ${changedCount} of ${seen} updated, ${errors} error(s)`);
+  return { seen, changed: changedCount, errors };
+}
+
+/**
+ * Run the migration once per version, automatically, off the cron.
+ *
+ * Deploying is pasting a file into a dashboard, so anything that needs a
+ * follow-up curl is something that will eventually be forgotten. Bumping
+ * MIGRATION_VERSION is all a future change needs.
+ */
+async function maybeRunMigration(env, note = () => {}) {
+  const state = await kv(env).get(MIGRATION_KEY, 'json');
+  if (state?.version >= MIGRATION_VERSION && state?.complete) return;
+
+  const origin = await resolveSelfUrl(env);
+  if (!origin) {
+    note('migrate', 'skipped', 'no self origin known yet');
+    return;
+  }
+
+  if (!state || state.version < MIGRATION_VERSION) {
+    await kv(env).put(MIGRATION_KEY, JSON.stringify({
+      version: MIGRATION_VERSION, startedAt: Date.now(), complete: false,
+    }));
+    // Clear the previous version's shard markers so this run is judged on its
+    // own results rather than inheriting the last one's.
+    for (const ch of SHARD_CHARS) await kv(env).delete(migrationShardKey(ch));
+    note('migrate', 'started', `version ${MIGRATION_VERSION}`);
+  }
+
+  // Dispatch only the shards that have not reported in for this version, so a
+  // sweep after a partial run finishes the job rather than redoing it.
+  const due = [];
+  for (const ch of SHARD_CHARS) {
+    const done = await kv(env).get(migrationShardKey(ch), 'json');
+    if (done?.version !== MIGRATION_VERSION) due.push(ch);
+  }
+
+  if (!due.length) {
+    const totals = await migrationTotals(env);
+    await kv(env).put(MIGRATION_KEY, JSON.stringify({
+      version: MIGRATION_VERSION, complete: true, finishedAt: Date.now(),
+      finishedAtNZ: nzTimestamp(Date.now()), ...totals,
+    }));
+    note('migrate', 'complete', `${totals.changed} of ${totals.seen} records updated`);
+    return;
+  }
+
+  note('migrate', 'running', `${due.length} shard(s) left`);
+  for (const ch of due) {
+    keepAlive(env, fetch(new URL('/run-migration-shard', origin), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret: env.TRIGGER_SECRET, shard: ch }),
+    }).catch(e => console.error(`[migrate] dispatch ${ch} failed:`, e.message)));
+  }
+}
+
+async function migrationTotals(env) {
+  let seen = 0, changed = 0, errors = 0, shards = 0;
+  for (const ch of SHARD_CHARS) {
+    const s = await kv(env).get(migrationShardKey(ch), 'json');
+    if (s?.version !== MIGRATION_VERSION) continue;
+    shards++; seen += s.seen ?? 0; changed += s.changed ?? 0; errors += s.errors ?? 0;
+  }
+  return { shards, seen, changed, errors };
+}
+
+async function handleRunMigrationShard(request, env) {
+  const { secret, shard } = await request.json().catch(() => ({}));
+  if (!secret || secret !== env.TRIGGER_SECRET) return new Response('Forbidden', { status: 403 });
+  if (!SHARD_CHARS.includes(shard)) return json({ error: 'bad shard' }, 400);
+  return json(await runMigrationShard(env, shard));
+}
+
+/** GET /migration - how the migration went, without digging through logs. */
+async function handleMigrationStatus(request, env) {
+  const url = new URL(request.url);
+  if (url.searchParams.get('secret') !== env.TRIGGER_SECRET) return new Response('Forbidden', { status: 403 });
+  const state = await kv(env).get(MIGRATION_KEY, 'json');
+  return json({
+    version: MIGRATION_VERSION,
+    state: state ?? 'never run',
+    progress: await migrationTotals(env),
+  });
 }
 
 async function handleMigratePreferences(request, env) {
@@ -1450,8 +1600,12 @@ async function handleMigratePreferences(request, env) {
     const { secret } = await request.json();
     const validSecrets = [env.TRIGGER_SECRET, env.BANNER_AUTH_TOKEN].filter(Boolean);
     if (!secret || !validSecrets.includes(secret)) return json({ error: 'Unauthorized' }, 401);
-    const result = await runPreferenceMigration(env);
-    return json({ success: true, ...result });
+    // Force a re-run even if this version already completed.
+    await kv(env).delete(MIGRATION_KEY);
+    for (const ch of SHARD_CHARS) await kv(env).delete(migrationShardKey(ch));
+    await maybeRunMigration(env);
+    return json({ success: true, started: true, version: MIGRATION_VERSION,
+                  watch: '/migration?secret=...' });
   } catch (e) {
     reportError(e, env, { handler: 'handleMigratePreferences' });
     return json({ error: e.message }, 500);

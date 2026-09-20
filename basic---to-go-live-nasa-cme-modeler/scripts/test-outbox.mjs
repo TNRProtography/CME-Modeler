@@ -23,7 +23,8 @@ const dir = mkdtempSync(join(tmpdir(), 'nightly-'));
 const copy = join(dir, 'w.mjs');
 writeFileSync(copy, readFileSync(SRC, 'utf8') +
   '\nexport { checkOvernightWatch, runShard, sweepJobs, jobProgress, maybeRunCensus, runCensusShard,' +
-  ' recordSend, foldAllClicks, handleSends, handleNotificationClicked, stampSendId };\n');
+  ' recordSend, foldAllClicks, handleSends, handleNotificationClicked, stampSendId,' +
+  ' maybeRunMigration, runMigrationShard, migrationTotals, TOPIC_DEFAULT_ON, ALL_TOPICS };\n');
 const W = await import(pathToFileURL(copy).href);
 
 // ---- fake KV with real prefix/cursor semantics -------------------------
@@ -237,6 +238,95 @@ console.log('\n6. click-through counting');
   check(body.byTopic['overnight-watch']?.clicked === CLICKS &&
         body.byTopic['overnight-watch']?.accepted === wantNightly,
         'the per-topic rollup matches', JSON.stringify(body.byTopic));
+}
+
+// ---- 7. the migration brings old subscribers forward invisibly --------
+console.log('\n7. migrating existing subscribers');
+{
+  for (const k of [...store.keys()]) {
+    if (!k.startsWith('JOB') && !k.startsWith('SEND') && !k.startsWith('CLK') &&
+        !k.startsWith('COOLDOWN') && !k.startsWith('MIG') && k !== 'SENDS') continue;
+    store.delete(k);
+  }
+
+  // Three shapes of record that really exist in the namespace: someone from
+  // before the shock split, someone who has deliberately turned things off,
+  // and someone already current.
+  const mk = async (n, prefs, extra = {}) => {
+    const endpoint = `https://push.example/legacy-${n}`;
+    const key = await sha(endpoint);
+    store.set(key, JSON.stringify({
+      subscription: { endpoint, keys: { p256dh: P256DH, auth: b64u(webcrypto.getRandomValues(new Uint8Array(16))) } },
+      preferences: prefs, ...extra,
+    }));
+    return key;
+  };
+  const oldShock = await mk('shock', { 'shock-detection': true, 'flare-M1': true });
+  // Somebody from before several topics existed, with no legacy shock opt-in.
+  const plain    = await mk('plain', { 'flare-M1': true });
+  const optedOut = await mk('off', Object.fromEntries(W.ALL_TOPICS.map(t => [t, false])));
+  const current  = await mk('now', Object.fromEntries(W.ALL_TOPICS.map(t => [t, W.TOPIC_DEFAULT_ON.has(t)])));
+  const before = { optedOut: store.get(optedOut), current: store.get(current) };
+
+  globalThis.fetch = (orig => async (input, init) => {
+    const url = typeof input === 'string' ? input : input.url ?? String(input);
+    if (url.includes('/run-migration-shard')) {
+      const p = W.runMigrationShard(env, JSON.parse(init.body).shard);
+      inflight.push(p); await p;
+      return new Response('{}', { status: 200 });
+    }
+    return orig(input, init);
+  })(globalThis.fetch);
+
+  await W.maybeRunMigration(env, () => {});
+  await settle();
+  await W.maybeRunMigration(env, () => {});   // second pass finalises
+  await settle();
+
+  const shock = JSON.parse(store.get(oldShock)).preferences;
+  check(shock['shock-ff'] === true && shock['flare-M1'] === true,
+        'an old shock-detection opt-in carries across the split',
+        JSON.stringify({ ff: shock['shock-ff'], m1: shock['flare-M1'] }));
+
+  // The topic they never saw gets the same default the app would show them -
+  // not false, which is what used to make the switch and the worker disagree.
+  // The old catch-all opt-in covers every shock subtype, shock-imf included -
+  // they asked for shock alerts, so they get shock alerts.
+  check(shock['shock-imf'] === true && shock['shock-sr'] === true,
+        'the old opt-in covers every shock subtype');
+
+  // The topic they were never asked about takes the same default the app
+  // would show them - not false, which is what used to make the switch in
+  // settings and the worker's stored preference disagree.
+  const plainPrefs = JSON.parse(store.get(plain)).preferences;
+  check(plainPrefs['overnight-watch'] === true && plainPrefs['visibility-naked'] === true,
+        'never-seen topics take the app\'s own default rather than false',
+        JSON.stringify({ overnight: plainPrefs['overnight-watch'], naked: plainPrefs['visibility-naked'] }));
+  check(plainPrefs['shock-imf'] === false && plainPrefs['shock-ff'] === false,
+        'a topic the app defaults to off stays off',
+        JSON.stringify({ imf: plainPrefs['shock-imf'], ff: plainPrefs['shock-ff'] }));
+  check(plainPrefs['flare-M1'] === true, 'their one real choice is preserved');
+
+  check(store.get(optedOut) === before.optedOut,
+        'somebody who turned everything off is left completely alone');
+  check(store.get(current) === before.current,
+        'an already-current record is not rewritten');
+
+  // Everything in the namespace that is a subscriber, and nothing that is not.
+  const subscriberCount = [...store].filter(([k, v]) => {
+    try { return !!JSON.parse(v)?.subscription; } catch { return false; }
+  }).length;
+  const totals = await W.migrationTotals(env);
+  check(totals.seen === subscriberCount && totals.errors === 0,
+        'every subscriber was visited, and nothing else was',
+        `${totals.seen} seen vs ${subscriberCount} subscribers, ${totals.errors} errors`);
+
+  // Idempotence: a forced re-run must change nothing.
+  const snapshot = new Map([...store].filter(([k]) => !k.startsWith('MIG') && k !== 'MIGRATION'));
+  for (const ch of [...'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'])
+    await W.runMigrationShard(env, ch);
+  const unchanged = [...snapshot].every(([k, v]) => store.get(k) === v);
+  check(unchanged, 'running it again changes nothing');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

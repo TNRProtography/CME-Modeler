@@ -37,6 +37,12 @@ for (const group of order) {
   }
 }
 
+const defaults = live.filter(c => c.defaultOn).map(c => c.id);
+const defaultLines = [];
+for (let i = 0; i < defaults.length; i += 3) {
+  defaultLines.push('  ' + defaults.slice(i, i + 3).map(id => `'${id}',`).join(' '));
+}
+
 const block = `// <generated:topics>
 // Generated from utils/notificationCategories.ts by \`npm run sync:topics\`.
 // Do not edit by hand - add the topic to the manifest and re-run the script.
@@ -44,6 +50,14 @@ const block = `// <generated:topics>
 const ALL_TOPICS = [
 ${lines.join('\n')}
 ];
+
+// What a subscriber gets for a topic they have never been asked about. This
+// has to match the app's own defaults: the settings screen shows a topic the
+// user has never touched as on if it is in here, so storing false would mean
+// the switch says one thing and the worker does another.
+const TOPIC_DEFAULT_ON = new Set([
+${defaultLines.join('\n')}
+]);
 // </generated:topics>`;
 
 const next = src.slice(0, match.index) + block + src.slice(match.index + match[0].length);
@@ -58,4 +72,4 @@ if (check) {
 }
 
 writeFileSync(WORKER, next);
-console.log(`Rewrote ALL_TOPICS with ${live.length} topics.`);
+console.log(`Rewrote ALL_TOPICS with ${live.length} topics (${defaults.length} default on).`);
