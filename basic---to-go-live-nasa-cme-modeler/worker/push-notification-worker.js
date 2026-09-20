@@ -419,7 +419,10 @@ export default {
     if (url.pathname === '/diagnostics'               && request.method === 'GET')  return handleDiagnostics(request, env);
     if (url.pathname === '/trigger-test-push'         && request.method === 'GET')  return handleTriggerTestPush(request, env);
     if (url.pathname === '/trigger-test-push-for-me'  && request.method === 'POST') return handleTriggerSelfTest(request, env);
-    if (url.pathname === '/broadcast-batch'           && request.method === 'POST') return handleBroadcastBatch(request, env);
+    if (url.pathname === '/run-shard'                 && request.method === 'POST') return handleRunShard(request, env);
+    if (url.pathname === '/job'                       && request.method === 'GET')  return handleJob(request, env);
+    if (url.pathname === '/run-census-shard'          && request.method === 'POST') return handleRunCensusShard(request, env);
+    if (url.pathname === '/stats'                     && request.method === 'GET')  return handleStats(request, env);
     if (url.pathname === '/health')                                                  return handleHealthCheck(env);
     return new Response('Not found', { status: 404 });
   },
@@ -517,6 +520,11 @@ async function runScheduledTasks(env) {
     checkOvernightWatch(env, forecastData, substormData, magPoints, plasmaPoints, note),
     checkVisibilityNotifications(env, substormData, forecastData, magPoints, plasmaPoints, note),
   ]);
+
+  // The outbox's durability guarantee: pick up anything that was dropped,
+  // stalled or is due a retry. Without this a lost dispatch is a lost alert.
+  await sweepJobs(env, note);
+  await maybeRunCensus(env, note);
 
   await kv(env).put('LAST_SUCCESSFUL_RUN_TIMESTAMP', Date.now().toString());
   await kv(env).put(DIAG_KEY, JSON.stringify(diag), { expirationTtl: 86400 });
@@ -1093,44 +1101,22 @@ async function checkOvernightWatch(env, forecastData, substormData, magPoints = 
     const condition = classifyOvernightConditions({ hp, bt, bz, speed, southMin, trend, auroraScore, moonPct });
     const body = condition.buildBody();
 
-    let cursor;
-    let totalSent = 0;
-    let totalSkipped = 0;
-
-    do {
-      const listRes = await kv(env).list({ cursor, limit: KV_LIST_LIMIT });
-      for (const key of listRes.keys) {
-        if (isReservedKey(key.name)) continue;
-        const stored = await kv(env).get(key.name, 'json');
-        if (!stored?.subscription) continue;
-        if (stored?.preferences?.['overnight-watch'] !== true) { totalSkipped++; continue; }
-        if (stored.overnightWatchSentDate === sunsetDate) { totalSkipped++; continue; }
-
-        const mode      = stored.overnight_mode || 'phone';
-        const threshold = OVERNIGHT_MODE_THRESHOLDS[mode] ?? OVERNIGHT_MODE_THRESHOLDS['phone'];
-        if (auroraScore < threshold) { totalSkipped++; continue; }
-
-        const cooldownKey = `COOLDOWN_overnight_${key.name}`;
-        const lastSent = await kv(env).get(cooldownKey);
-        if (lastSent && (Date.now() - Number(lastSent)) < 3 * 60 * 60 * 1000) { totalSkipped++; continue; }
-
-        const payload = {
-          title: `🌌 Tonight's aurora outlook: ${condition.label}`,
-          body,
-          tag: 'overnight-watch',
-          data: { url: '/?page=forecast', category: 'overnight-watch' },
-          ts: Date.now(),
-        };
-        await sendPushWithPayload(stored.subscription, payload, env);
-        await kv(env).put(cooldownKey, Date.now().toString(), { expirationTtl: 3 * 60 * 60 });
-        await kv(env).put(key.name, JSON.stringify({ ...stored, overnightWatchSentDate: sunsetDate }));
-        totalSent++;
-      }
-      cursor = listRes.cursor;
-      if (listRes.list_complete) break;
-    } while (cursor);
-
-    note('overnight', totalSent ? 'fired' : 'quiet', `tier ${condition.tier}, sent ${totalSent}, skipped ${totalSkipped}`);
+    // Queued rather than sent inline. At this subscriber count a single
+    // invocation cannot get through the list, and the per-subscriber checks
+    // (mode, score, the three hour cooldown, the once-a-night marker) move
+    // into the shard worker unchanged.
+    const payload = {
+      title: `\uD83C\uDF0C Tonight's aurora outlook: ${condition.label}`,
+      body,
+      tag: 'overnight-watch',
+      data: { url: '/?page=forecast', category: 'overnight-watch' },
+      ts: Date.now(),
+    };
+    const jobId = await enqueueDelivery(env, {
+      kind: 'overnight', topic: 'overnight-watch', payload,
+      params: { sunsetDate, auroraScore },
+    });
+    note('overnight', 'queued', `tier ${condition.tier}, job ${jobId}`);
   } catch (e) {
     note('overnight', 'error', e.message);
     reportError(e, env, { handler: 'checkOvernightWatch' });
@@ -1344,73 +1330,18 @@ async function checkVisibilityNotifications(env, substormData, forecastData, mag
     const triggers = moonAdjustedTriggers(moonIllumGlobal, moonUpGlobal);
     const visHorizonGmag = boundary + visDeg;
 
-    let missingGpsCount = 0, sent = 0, noPref = 0, noEscalation = 0, examined = 0;
-    let visCursor;
-    do {
-      const listRes = await kv(env).list({ cursor: visCursor, limit: KV_LIST_LIMIT });
-      for (const key of listRes.keys) {
-        if (isReservedKey(key.name)) continue;
-        const stored = await kv(env).get(key.name, 'json');
-        if (!stored?.subscription) continue;
-        examined++;
-
-        const lat = parseFloat(stored.location?.latitude);
-        const lon = parseFloat(stored.location?.longitude);
-        if (!isFinite(lat) || !isFinite(lon)) { missingGpsCount++; continue; }
-
-        const gmagLat = geoToGmag(lat, lon);
-        const distToVis      = gmagLat - visHorizonGmag;
-        const distToBoundary = gmagLat - boundary;
-        const prevTier = stored.visibilityTier ?? null;
-        const newTier  = pickVisibilityTier(distToVis, distToBoundary, triggers);
-
-        const tierRank = { dslr: 1, phone: 2, naked: 3 };
-        const currentRank = tierRank[prevTier] ?? 0;
-        const newRank     = tierRank[newTier]  ?? 0;
-
-        if (!newTier && prevTier) {
-          await kv(env).put(key.name, JSON.stringify({ ...stored, visibilityTier: null }));
-          continue;
-        }
-        if (newRank <= currentRank) { noEscalation++; continue; }
-
-        const topicMap = { dslr: 'visibility-dslr', phone: 'visibility-phone', naked: 'visibility-naked' };
-        const topic = topicMap[newTier];
-        if (stored?.preferences?.[topic] !== true) { noPref++; continue; }
-
-        const cooldownKey = `COOLDOWN_vis_${newTier}_${key.name}`;
-        const lastSent = await kv(env).get(cooldownKey);
-        if (lastSent && (Date.now() - Number(lastSent)) < 2 * 60 * 60 * 1000) continue;
-
-        const statsLine = `Bz ${Number(bz).toFixed(1)} nT · Speed ${Math.round(speed)} km/s`;
-        let title, body;
-        if (newTier === 'naked') {
-          title = '👁️ Aurora, Naked Eye Visible';
-          body  = `Aurora should be visible to the naked eye from your location. Head outside and look south.\n\n${statsLine}`;
-        } else if (newTier === 'phone') {
-          title = '📱 Aurora, Phone Camera Visible';
-          body  = `Aurora is bright enough for your phone camera. Point it south and try night mode.\n\n${statsLine}`;
-        } else {
-          title = '📷 Aurora, DSLR Camera Visible';
-          body  = `Aurora is detectable from your location with a camera on a tripod. Point south and try a long exposure.\n\n${statsLine}`;
-        }
-        const payload = { title, body, tag: topic, data: { url: '/?page=forecast', category: topic }, ts: Date.now() };
-        await sendPushWithPayload(stored.subscription, payload, env);
-        await kv(env).put(cooldownKey, Date.now().toString(), { expirationTtl: 2 * 60 * 60 });
-        await kv(env).put(key.name, JSON.stringify({ ...stored, visibilityTier: newTier }));
-        sent++;
-      }
-      visCursor = listRes.cursor;
-      if (listRes.list_complete) break;
-    } while (visCursor);
-
-    note('visibility', sent ? 'fired' : 'quiet',
-      `boundary ${boundary.toFixed(1)} horizon ${visHorizonGmag.toFixed(1)}${usingFallback ? ' (RTSW fallback)' : ''}; ` +
-      `examined ${examined}, sent ${sent}, no GPS ${missingGpsCount}, not opted in ${noPref}, no escalation ${noEscalation}`);
-
-    if (missingGpsCount > 0) {
-      console.warn(`[visibility] ${missingGpsCount} subscriber(s) skipped - no stored GPS coordinates.`);
-    }
+    // Queued, for the same reason as the nightly outlook. Everything that
+    // decides whether a given person hears about it - their location, which
+    // tier they reach, whether that is an escalation on last time, their opt
+    // in and their two hour cooldown - happens per subscriber in the shard
+    // worker, exactly as it did in this loop.
+    const statsLine = `Bz ${Number(bz).toFixed(1)} nT \u00b7 Speed ${Math.round(speed)} km/s`;
+    const jobId = await enqueueDelivery(env, {
+      kind: 'visibility', topic: 'visibility', payload: null,
+      params: { boundary, visHorizonGmag, triggers, statsLine },
+    });
+    note('visibility', 'queued',
+      `boundary ${boundary.toFixed(1)} horizon ${visHorizonGmag.toFixed(1)}${usingFallback ? ' (RTSW fallback)' : ''}, job ${jobId}`);
   } catch (e) {
     note('visibility', 'error', e.message);
     reportError(e, env, { handler: 'checkVisibilityNotifications' });
@@ -1517,24 +1448,9 @@ async function handleDiagnostics(request, env) {
     const diag = await kv(env).get(DIAG_KEY, 'json');
     const lastRun = await kv(env).get('LAST_SUCCESSFUL_RUN_TIMESTAMP');
 
-    const counts = {};
-    for (const t of ALL_TOPICS) counts[t] = 0;
-    let subscribers = 0, withGps = 0;
-    let cursor;
-    do {
-      const listRes = await kv(env).list({ cursor, limit: KV_LIST_LIMIT });
-      for (const key of listRes.keys) {
-        if (isReservedKey(key.name)) continue;
-        const stored = await kv(env).get(key.name, 'json');
-        if (!stored?.subscription) continue;
-        subscribers++;
-        const lat = parseFloat(stored.location?.latitude);
-        if (isFinite(lat)) withGps++;
-        for (const t of ALL_TOPICS) if (stored?.preferences?.[t] === true) counts[t]++;
-      }
-      cursor = listRes.cursor;
-      if (listRes.list_complete) break;
-    } while (cursor);
+    // Reads the census snapshot rather than walking every subscriber, which
+    // at this volume would be 80,000 KV reads per call to /diagnostics.
+    const stats = await kv(env).get(STATS_KEY, 'json');
 
     const cooldowns = {};
     for (const t of [...ALL_TOPICS, 'flare-peak', 'flare-event']) {
@@ -1545,11 +1461,13 @@ async function handleDiagnostics(request, env) {
     return json({
       lastRun: lastRun ? Number(lastRun) : null,
       lastRunAgo: lastRun ? `${Math.round((Date.now() - Number(lastRun)) / 60000)} min ago` : 'never',
-      subscribers,
-      withGps,
-      withoutGps: subscribers - withGps,
-      optedIn: counts,
+      subscribers: stats ? stats.subscribers : 'no census yet',
+      subscribedToSomething: stats ? stats.subscribedToSomething : null,
+      withLocation: stats ? stats.withLocation : null,
+      optedIn: stats ? stats.byCategory : 'no census yet',
+      statsTakenAt: stats ? stats.takenAtNZ : null,
       activeCooldowns: cooldowns,
+      outbox: await handleJobSummary(env),
       lastScheduledRun: diag ?? 'no diagnostics recorded yet',
       state: await getCurrentStatus(env),
     });
@@ -1567,8 +1485,10 @@ async function handleSendBroadcast(request, env) {
     const topic = 'admin-broadcast';
     const payload = { title, body, tag: topic, data: { url: url || '/', category: topic }, ts: Date.now() };
     await kv(env).put(`LATEST_ALERT_${topic}`, JSON.stringify(payload), { expirationTtl: 86400 });
-    const result = await startBroadcast({ mode: 'topic', topic, overridePayload: payload }, env);
-    return json({ success: true, sent: result.successCount ?? 0, failed: result.failCount ?? 0, processed: result.processed ?? 0 });
+    // Delivery is now a job rather than a single pass, so this returns
+    // immediately with an id. Watch it with /job?id=...&secret=...
+    const jobId = await enqueueDelivery(env, { kind: 'topic', topic, payload });
+    return json({ success: true, queued: true, jobId, watch: `/job?id=${jobId}` });
   } catch (e) {
     reportError(e, env, { handler: 'handleSendBroadcast' });
     return json({ error: e.message }, 500);
@@ -1638,6 +1558,9 @@ async function handleSaveSubscription(request, env) {
       preferences,
       location,
       overnight_mode: overnight_mode || existing.overnight_mode || 'phone',
+      // Additive. Lets the census report how many subscriptions are still
+      // being refreshed by a live app rather than just how many rows exist.
+      lastSeenAt: Date.now(),
     };
     await kv(env).put(id, JSON.stringify(record));
     // The app stores this id so a single device can be targeted for testing.
@@ -1687,8 +1610,8 @@ async function handleTriggerTestPush(request, env) {
     const type = (url.searchParams.get('type') || 'test').toLowerCase();
     const snapshot = await buildStatusSnapshot(env);
     const payload  = buildTestPayloadByType(type, url, snapshot);
-    await startBroadcast({ mode: 'topic', topic: payload.topic, overridePayload: payload }, env);
-    return json({ message: `Test push broadcast started for topic '${payload.topic}'.` });
+    const jobId = await enqueueDelivery(env, { kind: 'topic', topic: payload.topic, payload });
+    return json({ message: `Test push queued for topic '${payload.topic}'.`, jobId, watch: `/job?id=${jobId}` });
   } catch (err) {
     reportError(err, env, { handler: 'handleTriggerTestPush' });
     return json({ error: 'Failed.', message: err.message }, 500);
@@ -1816,22 +1739,73 @@ async function handleTriggerSelfTest(request, env) {
   }
 }
 
-async function handleBroadcastBatch(request, env) {
-  const { secret, mode, topic, cursor, startIndex, chain = 1, overridePayload } = await request.json().catch(() => ({}));
+async function handleRunShard(request, env) {
+  const { secret, jobId, shard } = await request.json().catch(() => ({}));
   if (!secret || secret !== env.TRIGGER_SECRET) return new Response('Forbidden', { status: 403 });
-  const res = await doBroadcastBatch({ mode, topic, cursor, startIndex, overridePayload }, env);
-  if (!res.list_complete && chain < MAX_CHAIN) {
-    if (!env.SELF_URL) {
-      console.error('[broadcast] SELF_URL env var is not set - batch chaining is disabled.');
-    } else {
-      keepAlive(env, fetch(new URL('/broadcast-batch', env.SELF_URL), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ secret, mode, topic, cursor: res.next_cursor, startIndex: res.next_start_index, chain: chain + 1, overridePayload }),
-      }).catch(e => console.error('[broadcast] chain fetch failed:', e.message)));
+  if (!jobId || !shard) return json({ error: 'jobId and shard are required' }, 400);
+  const res = await runShard(env, jobId, shard);
+  return json({ jobId, shard, ...res });
+}
+
+async function handleJobSummary(env) {
+  const out = [];
+  let cursor;
+  do {
+    const res = await kv(env).list({ prefix: 'JOB_', cursor, limit: 1000 });
+    for (const k of res.keys) {
+      const p = await jobProgress(env, k.name.slice(4));
+      if (p) out.push({ id: p.id, topic: p.topic ?? p.kind, sent: p.sent, failed: p.failed,
+                        shardsDone: `${p.shards.done}/${p.shards.total}`, complete: p.complete });
     }
+    cursor = res.cursor;
+    if (res.list_complete) break;
+  } while (cursor);
+  return out.length ? out : 'no jobs in flight';
+}
+
+async function handleRunCensusShard(request, env) {
+  const { secret, censusId, shard } = await request.json().catch(() => ({}));
+  if (!secret || secret !== env.TRIGGER_SECRET) return new Response('Forbidden', { status: 403 });
+  if (!censusId || !shard) return json({ error: 'censusId and shard are required' }, 400);
+  return json(await runCensusShard(env, censusId, shard));
+}
+
+/** The STATS key, served over HTTP. Also readable straight from the KV browser. */
+async function handleStats(request, env) {
+  const url = new URL(request.url);
+  if (url.searchParams.get('secret') !== env.TRIGGER_SECRET) return new Response('Forbidden', { status: 403 });
+  const snap = await kv(env).get(STATS_KEY, 'json');
+  if (!snap) return json({ error: 'No census has completed yet. One runs within the hour, or force it with ?force=1.' }, 404);
+  if (url.searchParams.get('force') === '1') {
+    await kv(env).delete(STATS_KEY);
+    await maybeRunCensus(env);
+    return json({ ...snap, note: 'A fresh census has been started; these numbers are the previous one.' });
   }
-  return json(res);
+  return json(snap);
+}
+
+async function handleJob(request, env) {
+  const url = new URL(request.url);
+  if (url.searchParams.get('secret') !== env.TRIGGER_SECRET) return new Response('Forbidden', { status: 403 });
+  const id = url.searchParams.get('id');
+  if (id) {
+    const p = await jobProgress(env, id);
+    return p ? json(p) : json({ error: 'job not found or expired' }, 404);
+  }
+  // No id: list every job still in flight.
+  const out = [];
+  let cursor;
+  do {
+    const res = await kv(env).list({ prefix: 'JOB_', cursor, limit: 1000 });
+    for (const k of res.keys) {
+      const p = await jobProgress(env, k.name.slice(4));
+      if (p) out.push(p);
+    }
+    cursor = res.cursor;
+    if (res.list_complete) break;
+  } while (cursor);
+  out.sort((a, b) => b.createdAt - a.createdAt);
+  return json({ jobs: out });
 }
 
 async function handleHealthCheck(env) {
@@ -1844,31 +1818,6 @@ async function handleHealthCheck(env) {
   } catch (e) {
     return json({ ok: false, error: 'health check failed' }, 500);
   }
-}
-
-async function notifyTopic(topic, title, body, env, data = { url: '/' }) {
-  const payload = { title, body, tag: topic, data: { ...data, category: topic }, ts: Date.now() };
-  await kv(env).put(`LATEST_ALERT_${topic}`, JSON.stringify(payload), { expirationTtl: 3600 });
-  await startBroadcast({ mode: 'topic', topic, overridePayload: payload }, env);
-}
-
-async function startBroadcast(options, env) {
-  const res = await doBroadcastBatch({ ...options, cursor: undefined, startIndex: 0 }, env);
-  if (!res.list_complete) {
-    if (!env.SELF_URL) {
-      console.error('[broadcast] SELF_URL env var is not set - batch chaining disabled.');
-    } else {
-      // FIX 7: registered with waitUntil so a scheduled run is not torn down
-      // after the first batch of 40, which used to cap every automatic
-      // notification at the first 40 matching subscribers.
-      keepAlive(env, fetch(new URL('/broadcast-batch', env.SELF_URL), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ secret: env.TRIGGER_SECRET, mode: options.mode, topic: options.topic, cursor: res.next_cursor, startIndex: res.next_start_index, chain: 2, overridePayload: options.overridePayload }),
-      }).catch(e => console.error('[broadcast] chain fetch failed:', e.message)));
-    }
-  }
-  return res;
 }
 
 function geoToGmagLatAdj(latDeg, lonDeg) {
@@ -1886,52 +1835,454 @@ function isUserInPlausibleZone(latitude) {
   return isNaN(lat) ? true : Math.abs(lat) > 30;
 }
 
-async function doBroadcastBatch(options, env) {
-  const { topic, cursor, startIndex = 0, overridePayload } = options || {};
-  let successCount = 0, failCount = 0, processed = 0;
+// ── Delivery: a durable, sharded, resumable outbox ──────────────────────────
+//
+// The old fan-out sent 40 and then fire-and-forget fetched the worker's own
+// /broadcast-batch to do the next 40, up to 50 links. Three problems, and at
+// 80k subscribers the first is fatal on its own:
+//
+//   1. 50 links x 40 = 2000 recipients. Everyone past that got nothing, ever.
+//   2. Nothing awaited or recorded the chain. One dropped link and the rest of
+//      the list silently missed the alert, with no way to know it happened.
+//   3. Any push failure that was not a 410 or 404 was counted and forgotten.
+//
+// This replaces it with an outbox. An alert writes a job, and the job is
+// carved into 64 shards that drain independently and in parallel.
+//
+// The sharding is free: subscriber keys are base64url SHA-256 of the endpoint,
+// so the first character is uniform over the 64 character alphabet. That means
+// kv.list({ prefix }) gives 64 disjoint slices with no cursor coordination
+// between them, and each slice can be worked by its own invocation with its
+// own subrequest budget.
+//
+// Durability comes from the cron sweep rather than from the dispatch. Every
+// scheduled run looks for shards that are pending, or leased but stale, or
+// failed and due a retry, and dispatches them again. So a dropped dispatch, an
+// evicted worker or a push service having a bad minute costs a delay, not a
+// missed alert. Shard progress is a cursor, so a resumed shard picks up where
+// it stopped instead of starting over.
+//
+// Per-shard state lives in its own key so 64 workers never clobber each other
+// by reading and rewriting one shared job object.
 
-  const listRes = await kv(env).list({ cursor, limit: KV_LIST_LIMIT });
-  const keys = listRes.keys || [];
+const SHARD_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'.split('');
+// Each push is one subrequest and the paid limit is 1000 per invocation. Leave
+// headroom for the KV reads and the self-dispatch calls.
+const SEND_BUDGET = 700;
+// How long a shard may be claimed before the sweep assumes the worker died.
+const SHARD_LEASE_MS = 90 * 1000;
+const MAX_SHARD_ATTEMPTS = 8;
+const JOB_TTL_SECONDS = 6 * 60 * 60;
+// Retry backoff per attempt, capped.
+const shardRetryDelayMs = (attempts) => Math.min(15 * 60 * 1000, 30 * 1000 * Math.pow(2, attempts));
 
-  let skipNoSub = 0, skipPref = 0, skipZone = 0;
-  let i = startIndex;
+const jobKey   = (id) => `JOB_${id}`;
+const shardKey = (id, ch) => `JOBSHARD_${id}_${ch}`;
 
-  for (; i < keys.length; i++) {
-    if (processed >= BATCH_SIZE) break;
-    const key = keys[i];
-    if (isReservedKey(key.name)) continue;
-    const stored = await kv(env).get(key.name, 'json');
-    if (!stored?.subscription) { skipNoSub++; continue; }
-    if (stored?.preferences?.[topic] !== true) { skipPref++; continue; }
+function newJobId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
-    const userLocation = stored.location || {};
-    if (topic?.startsWith('substorm-') && !isUserInPlausibleZone(userLocation.latitude)) { skipZone++; continue; }
+/**
+ * Queue an alert for delivery and kick off the shards.
+ *
+ * kind decides how each subscriber is judged inside the shard worker:
+ *   'topic'      send payload to everyone with preferences[topic] === true
+ *   'overnight'  per subscriber, by their overnight mode, score and cooldown
+ *   'visibility' per subscriber, by their location and which tier they reach
+ */
+async function enqueueDelivery(env, { kind, topic, payload, params }) {
+  const id = newJobId();
+  const job = {
+    id, kind, topic,
+    payload: payload ?? null,
+    params: params ?? null,
+    createdAt: Date.now(),
+  };
+  await kv(env).put(jobKey(id), JSON.stringify(job), { expirationTtl: JOB_TTL_SECONDS });
+  await Promise.all(SHARD_CHARS.map(ch => kv(env).put(
+    shardKey(id, ch),
+    JSON.stringify({ state: 'pending', cursor: null, sent: 0, failed: 0, attempts: 0, leaseUntil: 0 }),
+    { expirationTtl: JOB_TTL_SECONDS },
+  )));
+  console.log(`[outbox] job ${id} queued: kind=${kind} topic=${topic ?? '-'} across ${SHARD_CHARS.length} shards`);
+  dispatchShards(env, id, SHARD_CHARS);
+  return id;
+}
 
-    const payload = overridePayload || { title: 'Spot The Aurora', body: 'New data available.', tag: 'update', ts: Date.now() };
-    const resp = await sendPushWithPayload(stored.subscription, payload, env);
-    if (!resp.ok) {
-      const errBody = await resp.text();
-      console.error(`Push failed: ${stored.subscription.endpoint.slice(0, 50)}... ${resp.status}`, errBody);
-      if (resp.status === 410 || resp.status === 404) await kv(env).delete(key.name);
-      failCount++;
-    } else successCount++;
-    processed++;
+/** Fire one invocation per shard. Each gets its own subrequest budget. */
+function dispatchShards(env, jobId, chars) {
+  if (!env.SELF_URL) {
+    console.error('[outbox] SELF_URL is not set - shards can only be drained by the cron sweep.');
+    return;
+  }
+  for (const ch of chars) {
+    keepAlive(env, fetch(new URL('/run-shard', env.SELF_URL), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret: env.TRIGGER_SECRET, jobId, shard: ch }),
+    }).catch(e => console.error(`[outbox] dispatch ${jobId}/${ch} failed:`, e.message)));
+  }
+}
+
+/**
+ * Work one shard until its budget is spent or it runs out of subscribers.
+ * Safe to call twice: the lease keeps two workers off the same shard, and the
+ * cursor means a resumed shard does not start over.
+ */
+async function runShard(env, jobId, ch) {
+  const job = await kv(env).get(jobKey(jobId), 'json');
+  if (!job) { console.warn(`[outbox] job ${jobId} is gone; shard ${ch} abandoned`); return { state: 'gone' }; }
+
+  const sKey = shardKey(jobId, ch);
+  const shard = await kv(env).get(sKey, 'json');
+  if (!shard) return { state: 'gone' };
+  if (shard.state === 'done') return shard;
+
+  const now = Date.now();
+  if (shard.state === 'running' && shard.leaseUntil > now) {
+    return { ...shard, state: 'busy' };
   }
 
-  const stoppedMidPage = i < keys.length;
-  let next_cursor, next_start_index, list_complete;
-  if (stoppedMidPage) {
-    next_cursor = cursor;
-    next_start_index = i;
-    list_complete = false;
+  await kv(env).put(sKey, JSON.stringify({
+    ...shard, state: 'running', leaseUntil: now + SHARD_LEASE_MS,
+  }), { expirationTtl: JOB_TTL_SECONDS });
+
+  let cursor = shard.cursor ?? undefined;
+  let sent = shard.sent ?? 0, failed = shard.failed ?? 0, budget = SEND_BUDGET;
+  let complete = false;
+  let lastError = null;
+
+  try {
+    while (budget > 0) {
+      const listRes = await kv(env).list({ prefix: ch, cursor, limit: 1000 });
+      for (const key of listRes.keys) {
+        if (budget <= 0) break;
+        if (isReservedKey(key.name)) continue;
+        const stored = await kv(env).get(key.name, 'json');
+        if (!stored?.subscription) continue;
+
+        const decision = await decideForSubscriber(env, job, key.name, stored);
+        if (!decision) continue;
+
+        budget--;
+        const resp = await sendPushWithPayload(stored.subscription, decision.payload, env);
+        if (resp.ok) {
+          sent++;
+          if (decision.onSent) await decision.onSent();
+        } else {
+          // A gone subscription is pruned; anything else is left for the next
+          // sweep, since a push service returning 500 now may well accept it
+          // in a minute.
+          if (resp.status === 410 || resp.status === 404) await kv(env).delete(key.name);
+          else failed++;
+        }
+      }
+      if (listRes.list_complete) { complete = true; break; }
+      cursor = listRes.cursor;
+      if (budget <= 0) break;
+    }
+  } catch (e) {
+    lastError = e.message;
+    console.error(`[outbox] shard ${jobId}/${ch} threw:`, e.message);
+  }
+
+  const attempts = (shard.attempts ?? 0) + 1;
+  const next = complete && !lastError
+    ? { state: 'done', cursor: null, sent, failed, attempts, leaseUntil: 0, finishedAt: Date.now() }
+    : { state: 'pending', cursor: cursor ?? null, sent, failed, attempts,
+        leaseUntil: 0, nextAttemptAt: Date.now() + shardRetryDelayMs(attempts), lastError };
+
+  await kv(env).put(sKey, JSON.stringify(next), { expirationTtl: JOB_TTL_SECONDS });
+  console.log(`[outbox] shard ${jobId}/${ch}: ${next.state} sent=${sent} failed=${failed} attempt=${attempts}`);
+
+  // More to do and budget left over means the list was long; keep going in a
+  // fresh invocation rather than waiting for the sweep.
+  if (next.state === 'pending' && !lastError) dispatchShards(env, jobId, [ch]);
+  return next;
+}
+
+/**
+ * Decide whether this subscriber gets this job, and with what payload.
+ * Returns null to skip. This is where the per-user topics keep their logic.
+ */
+async function decideForSubscriber(env, job, keyName, stored) {
+  const prefs = stored.preferences || {};
+
+  if (job.kind === 'topic') {
+    if (prefs[job.topic] !== true) return null;
+    if (job.topic?.startsWith('substorm-') && !isUserInPlausibleZone(stored.location?.latitude)) return null;
+    return { payload: job.payload };
+  }
+
+  if (job.kind === 'overnight') {
+    if (prefs['overnight-watch'] !== true) return null;
+    const p = job.params;
+    if (stored.overnightWatchSentDate === p.sunsetDate) return null;
+    const mode = stored.overnight_mode || 'phone';
+    const threshold = OVERNIGHT_MODE_THRESHOLDS[mode] ?? OVERNIGHT_MODE_THRESHOLDS['phone'];
+    if (p.auroraScore < threshold) return null;
+    const cooldownKey = `COOLDOWN_overnight_${keyName}`;
+    const lastSent = await kv(env).get(cooldownKey);
+    if (lastSent && (Date.now() - Number(lastSent)) < 3 * 60 * 60 * 1000) return null;
+    return {
+      payload: job.payload,
+      onSent: async () => {
+        await kv(env).put(cooldownKey, Date.now().toString(), { expirationTtl: 3 * 60 * 60 });
+        await kv(env).put(keyName, JSON.stringify({ ...stored, overnightWatchSentDate: p.sunsetDate }));
+      },
+    };
+  }
+
+  if (job.kind === 'visibility') {
+    const p = job.params;
+    const lat = parseFloat(stored.location?.latitude);
+    const lon = parseFloat(stored.location?.longitude);
+    if (!isFinite(lat) || !isFinite(lon)) return null;
+
+    const gmagLat = geoToGmag(lat, lon);
+    const distToVis      = gmagLat - p.visHorizonGmag;
+    const distToBoundary = gmagLat - p.boundary;
+    const prevTier = stored.visibilityTier ?? null;
+    const newTier  = pickVisibilityTier(distToVis, distToBoundary, p.triggers);
+
+    const tierRank = { dslr: 1, phone: 2, naked: 3 };
+    const currentRank = tierRank[prevTier] ?? 0;
+    const newRank     = tierRank[newTier]  ?? 0;
+
+    if (!newTier && prevTier) {
+      await kv(env).put(keyName, JSON.stringify({ ...stored, visibilityTier: null }));
+      return null;
+    }
+    if (newRank <= currentRank) return null;
+
+    const topic = { dslr: 'visibility-dslr', phone: 'visibility-phone', naked: 'visibility-naked' }[newTier];
+    if (prefs[topic] !== true) return null;
+
+    const cooldownKey = `COOLDOWN_vis_${newTier}_${keyName}`;
+    const lastSent = await kv(env).get(cooldownKey);
+    if (lastSent && (Date.now() - Number(lastSent)) < 2 * 60 * 60 * 1000) return null;
+
+    return {
+      payload: buildVisibilityPayload(newTier, p.statsLine),
+      onSent: async () => {
+        await kv(env).put(cooldownKey, Date.now().toString(), { expirationTtl: 2 * 60 * 60 });
+        await kv(env).put(keyName, JSON.stringify({ ...stored, visibilityTier: newTier }));
+      },
+    };
+  }
+
+  return null;
+}
+
+function buildVisibilityPayload(tier, statsLine) {
+  const topic = { dslr: 'visibility-dslr', phone: 'visibility-phone', naked: 'visibility-naked' }[tier];
+  let title, body;
+  if (tier === 'naked') {
+    title = '👁️ Aurora, Naked Eye Visible';
+    body  = `Aurora should be visible to the naked eye from your location. Head outside and look south.\n\n${statsLine}`;
+  } else if (tier === 'phone') {
+    title = '📱 Aurora, Phone Camera Visible';
+    body  = `Aurora is bright enough for your phone camera. Point it south and try night mode.\n\n${statsLine}`;
   } else {
-    next_cursor = listRes.cursor;
-    next_start_index = 0;
-    list_complete = listRes.list_complete;
+    title = '📷 Aurora, DSLR Camera Visible';
+    body  = `Aurora is detectable from your location with a camera on a tripod. Point south and try a long exposure.\n\n${statsLine}`;
+  }
+  return { title, body, tag: topic, data: { url: '/?page=forecast', category: topic }, ts: Date.now() };
+}
+
+/**
+ * The durability guarantee. Every cron tick, re-dispatch any shard that is
+ * pending and due, or that has been leased for longer than a worker could
+ * plausibly live. Without this, a dropped dispatch is a permanently missed
+ * alert, which is exactly what was happening before.
+ */
+async function sweepJobs(env, note = () => {}) {
+  const now = Date.now();
+  let cursor, jobs = [], revived = 0, stillRunning = 0, exhausted = 0;
+
+  do {
+    const res = await kv(env).list({ prefix: 'JOB_', cursor, limit: 1000 });
+    for (const k of res.keys) jobs.push(k.name.slice(4));
+    cursor = res.cursor;
+    if (res.list_complete) break;
+  } while (cursor);
+
+  for (const id of jobs) {
+    const due = [];
+    for (const ch of SHARD_CHARS) {
+      const shard = await kv(env).get(shardKey(id, ch), 'json');
+      if (!shard || shard.state === 'done') continue;
+      if (shard.state === 'running' && shard.leaseUntil > now) { stillRunning++; continue; }
+      if ((shard.attempts ?? 0) >= MAX_SHARD_ATTEMPTS) { exhausted++; continue; }
+      if (shard.nextAttemptAt && shard.nextAttemptAt > now) continue;
+      due.push(ch);
+    }
+    if (due.length) {
+      revived += due.length;
+      dispatchShards(env, id, due);
+    }
   }
 
-  console.log(`[broadcast] batch done: topic=${topic} sent=${successCount} failed=${failCount} skipPref=${skipPref} skipNoSub=${skipNoSub} skipZone=${skipZone} pageSize=${keys.length} resumeIndex=${next_start_index} list_complete=${list_complete}`);
-  return { successCount, failCount, processed, list_complete, next_cursor, next_start_index };
+  if (jobs.length) {
+    note('outbox', revived ? 'resumed' : 'draining',
+         `${jobs.length} job(s), ${revived} shard(s) re-dispatched, ${stillRunning} in flight, ${exhausted} gave up`);
+  }
+  return { jobs: jobs.length, revived, stillRunning, exhausted };
+}
+
+/** Roll the per-shard records up into something readable. */
+async function jobProgress(env, id) {
+  const job = await kv(env).get(jobKey(id), 'json');
+  if (!job) return null;
+  let sent = 0, failed = 0, done = 0, pending = 0, running = 0, stuck = 0;
+  for (const ch of SHARD_CHARS) {
+    const s = await kv(env).get(shardKey(id, ch), 'json');
+    if (!s) continue;
+    sent += s.sent ?? 0; failed += s.failed ?? 0;
+    if (s.state === 'done') done++;
+    else if (s.state === 'running') running++;
+    else if ((s.attempts ?? 0) >= MAX_SHARD_ATTEMPTS) stuck++;
+    else pending++;
+  }
+  return {
+    id, kind: job.kind, topic: job.topic, createdAt: job.createdAt,
+    ageMinutes: Math.round((Date.now() - job.createdAt) / 60000),
+    sent, failed,
+    shards: { total: SHARD_CHARS.length, done, running, pending, gaveUp: stuck },
+    complete: done === SHARD_CHARS.length,
+  };
+}
+
+// ── Subscriber census ───────────────────────────────────────────────────────
+//
+// One KV key, `STATS`, holding how many people are subscribed and to what.
+// Open it in the KV browser in the dashboard and it reads as plain JSON.
+//
+// It is a periodic census rather than live counters because counters in KV
+// cannot be incremented safely: two workers reading, adding one and writing
+// back will lose an update, and at this volume that drifts badly within days.
+// A census walks the real records, so the number is always the truth as of
+// when it ran rather than an accumulated guess.
+//
+// The walk is sharded the same way delivery is, so no single invocation has to
+// read all 80,000 records. Each shard writes its own partial, and whichever
+// shard finishes last rolls the 64 partials up into STATS.
+
+const STATS_KEY = 'STATS';
+const statsShardKey = (ch) => `STATSSHARD_${ch}`;
+const CENSUS_INTERVAL_MS = 60 * 60 * 1000;
+const CENSUS_SHARD_TTL   = 2 * 60 * 60;
+// A subscription counts as active if the app has checked in within this long.
+// Older ones are still sent to; this is only for reporting.
+const ACTIVE_WINDOW_DAYS = 60;
+
+async function maybeRunCensus(env, note = () => {}) {
+  const existing = await kv(env).get(STATS_KEY, 'json');
+  const age = existing?.takenAt ? Date.now() - existing.takenAt : Infinity;
+  if (age < CENSUS_INTERVAL_MS) return;
+  if (!env.SELF_URL) {
+    console.warn('[census] SELF_URL is not set - cannot dispatch census shards.');
+    return;
+  }
+  const censusId = Date.now().toString(36);
+  note('census', 'started', `previous snapshot ${age === Infinity ? 'never taken' : Math.round(age / 60000) + ' min old'}`);
+  for (const ch of SHARD_CHARS) {
+    keepAlive(env, fetch(new URL('/run-census-shard', env.SELF_URL), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret: env.TRIGGER_SECRET, censusId, shard: ch }),
+    }).catch(e => console.error(`[census] dispatch ${ch} failed:`, e.message)));
+  }
+}
+
+async function runCensusShard(env, censusId, ch) {
+  const counts = {};
+  for (const t of ALL_TOPICS) counts[t] = 0;
+  let subscribers = 0, withGps = 0, active = 0, anyTopic = 0;
+  const overnightModes = {};
+  const activeCutoff = Date.now() - ACTIVE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+
+  let cursor;
+  do {
+    const res = await kv(env).list({ prefix: ch, cursor, limit: 1000 });
+    for (const key of res.keys) {
+      if (isReservedKey(key.name)) continue;
+      const stored = await kv(env).get(key.name, 'json');
+      if (!stored?.subscription) continue;
+      subscribers++;
+
+      if (isFinite(parseFloat(stored.location?.latitude))) withGps++;
+      const seen = Number(stored.lastSeenAt ?? stored.location?.locationUpdatedAt ?? 0);
+      if (seen >= activeCutoff) active++;
+
+      const mode = stored.overnight_mode || 'phone';
+      overnightModes[mode] = (overnightModes[mode] ?? 0) + 1;
+
+      let on = 0;
+      for (const t of ALL_TOPICS) if (stored?.preferences?.[t] === true) { counts[t]++; on++; }
+      if (on > 0) anyTopic++;
+    }
+    cursor = res.cursor;
+    if (res.list_complete) break;
+  } while (cursor);
+
+  await kv(env).put(statsShardKey(ch), JSON.stringify({
+    censusId, shard: ch, subscribers, withGps, active, anyTopic, counts, overnightModes, at: Date.now(),
+  }), { expirationTtl: CENSUS_SHARD_TTL });
+
+  // Whoever finishes last does the roll-up.
+  await tryFinishCensus(env, censusId);
+  return { shard: ch, subscribers };
+}
+
+async function tryFinishCensus(env, censusId) {
+  const parts = [];
+  for (const ch of SHARD_CHARS) {
+    const p = await kv(env).get(statsShardKey(ch), 'json');
+    if (!p || p.censusId !== censusId) return false;   // not everyone is in yet
+    parts.push(p);
+  }
+
+  const counts = {};
+  for (const t of ALL_TOPICS) counts[t] = 0;
+  let subscribers = 0, withGps = 0, active = 0, anyTopic = 0;
+  const overnightModes = {};
+  for (const p of parts) {
+    subscribers += p.subscribers; withGps += p.withGps;
+    active += p.active; anyTopic += p.anyTopic;
+    for (const t of ALL_TOPICS) counts[t] += p.counts[t] ?? 0;
+    for (const [m, n] of Object.entries(p.overnightModes ?? {})) {
+      overnightModes[m] = (overnightModes[m] ?? 0) + n;
+    }
+  }
+
+  const byCategory = Object.fromEntries(
+    Object.entries(counts).sort((a, b) => b[1] - a[1])
+  );
+
+  const snapshot = {
+    takenAt: Date.now(),
+    takenAtNZ: new Date().toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland' }),
+    subscribers,
+    subscribedToSomething: anyTopic,
+    activeLast60Days: active,
+    withLocation: withGps,
+    withoutLocation: subscribers - withGps,
+    byCategory,
+    overnightModes,
+    note: 'Counted by walking every subscriber record. Refreshed about once an hour.',
+  };
+  await kv(env).put(STATS_KEY, JSON.stringify(snapshot, null, 2));
+  console.log(`[census] ${subscribers} subscribers, ${anyTopic} with at least one topic on`);
+  return true;
+}
+
+/** Every detector still calls this; only what happens underneath changed. */
+async function notifyTopic(topic, title, body, env, data = { url: '/' }) {
+  const payload = { title, body, tag: topic, data: { ...data, category: topic }, ts: Date.now() };
+  await kv(env).put(`LATEST_ALERT_${topic}`, JSON.stringify(payload), { expirationTtl: 3600 });
+  return enqueueDelivery(env, { kind: 'topic', topic, payload });
 }
 
 async function sendPushWithPayload(subscription, payload, env) {

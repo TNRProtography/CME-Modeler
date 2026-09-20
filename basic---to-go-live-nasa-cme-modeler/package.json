@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "fetch-storms": "node scripts/fetch-storms.mjs",
-    "test:worker": "node scripts/test-worker.mjs"
+    "test:worker": "node scripts/test-worker.mjs",
+    "test:outbox": "node scripts/test-outbox.mjs"
   },
   "dependencies": {
     "chart.js": "^4.4.3",

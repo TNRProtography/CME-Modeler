@@ -5,7 +5,9 @@ Source of truth for `push-notification-worker.thenamesrock.workers.dev`.
 Until now this worker existed only in the Cloudflare dashboard, with no
 history and nothing to roll back to. It holds the subscriber list, so that was
 the riskiest file in the whole system to have untracked. `push-notification-worker.js`
-is that worker, with the September 2026 fixes applied.
+is that worker, with the September 2026 fixes applied and delivery rebuilt as
+a durable outbox so an alert reaches every subscriber rather than the first
+couple of thousand.
 
 ## Deploying
 
@@ -24,12 +26,12 @@ Check afterwards with:
 | `SUBSCRIPTIONS_KV` | KV namespace | subscribers, cooldowns, detector state |
 | `rtsw` | service binding | the IMAP/RTSW merged solar wind proxy |
 | `FORECAST_SERVICE` | service binding | the Spot The Aurora forecast worker |
-| `TRIGGER_SECRET` | secret | guards `/status`, `/diagnostics`, `/trigger-test-push`, `/broadcast-batch` |
+| `TRIGGER_SECRET` | secret | guards `/status`, `/diagnostics`, `/trigger-test-push`, `/run-shard`, `/run-census-shard`, `/job`, `/stats` |
 | `BANNER_AUTH_TOKEN` | secret | also accepted for `/send-broadcast` and `/migrate-preferences` |
 | `VAPID_PUBLIC_KEY` | secret | web push |
 | `VAPID_PRIVATE_KEY` | secret | web push |
 | `VAPID_SUBJECT` | secret | web push, a `mailto:` |
-| `SELF_URL` | var | the worker's own origin, used to chain broadcast batches |
+| `SELF_URL` | var | the worker's own origin. **Required.** Without it nothing fans out except on the cron sweep |
 
 `CONFIG_THRESHOLDS` must exist in KV as JSON or the scheduled run aborts
 before it does anything. It should carry at least:
@@ -37,6 +39,54 @@ before it does anything. It should carry at least:
 ```json
 { "substorm": { "cooldownMinutes": 30 } }
 ```
+
+## How an alert gets delivered
+
+A detector never sends anything itself. It writes a job and returns:
+
+    JOB_<id>              the alert, and what kind of judgement each
+                          subscriber needs (topic, overnight, visibility)
+    JOBSHARD_<id>_<ch>    64 of these, one per shard: state, cursor,
+                          sent, failed, attempts, lease
+
+Subscriber keys are the base64url SHA-256 of the push endpoint, so their first
+character is uniform across the 64-character alphabet. That gives 64 disjoint
+`list({ prefix })` slices for free. Each one is drained by its own `/run-shard`
+invocation with its own subrequest budget, so the fan-out is 64 times wider
+than a single invocation could ever be, and a shard that runs out of budget
+saves its cursor and dispatches itself again.
+
+Durability is the cron sweep, not the dispatch. Every scheduled run
+re-dispatches any shard that is pending, or leased past the point a worker
+could still be alive, or failed and due a retry. So a dropped dispatch, an
+evicted worker or a push service having a bad minute costs a delay, not a
+missed alert. Jobs expire after six hours.
+
+Per-subscriber rules (overnight mode and score, visibility tier and location,
+the cooldowns, the once-a-night marker) live in `decideForSubscriber` and run
+inside the shard, unchanged from before.
+
+    /job?secret=...&id=<id>   progress for one job
+    /job?secret=...           the jobs still in flight
+
+## Subscriber counts
+
+`STATS` in KV is a single snapshot line, refreshed hourly off the cron:
+
+```json
+{ "takenAt": 0, "takenAtNZ": "", "subscribers": 0,
+  "subscribedToSomething": 0, "activeLast60Days": 0,
+  "withLocation": 0, "withoutLocation": 0,
+  "byCategory": { "overnight-watch": 0 },
+  "overnightModes": { "eye": 0, "phone": 0, "camera": 0 } }
+```
+
+    /stats?secret=...           read the snapshot
+    /stats?secret=...&force=1   take a fresh one now
+
+The census shards the same way as delivery, so it never walks the whole list
+in one invocation. `/diagnostics` reads this snapshot rather than counting
+subscribers itself.
 
 ## Telling whether it is working
 
@@ -59,5 +109,11 @@ cooldown stopped it. `error` means it threw.
 ## Testing changes
 
 `npm run test:worker` from the app directory runs the detectors against
-synthetic solar wind, including cases that must stay quiet. Worth running
-before pasting anything into the dashboard.
+synthetic solar wind, including cases that must stay quiet.
+
+`npm run test:outbox` seeds several thousand subscribers, runs a real sunset
+through the nightly path, and insists everyone who asked for it is notified
+exactly once - then throws away a quarter of the shard dispatches and checks a
+single cron sweep still reaches all of them.
+
+Both are worth running before pasting anything into the dashboard.
