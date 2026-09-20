@@ -150,6 +150,26 @@ console.log('\nEvery icon exists');
         `${badgeBytes} bytes`);
 }
 
+console.log('\nThe service worker agrees about badges');
+{
+  // sw.js picks the badge itself as well as accepting one from the server,
+  // because a test push and any older payload skip the server's stamping. Two
+  // maps means they can disagree, so check them.
+  const sw = readFileSync(join(APP, 'public', 'sw.js'), 'utf8');
+  const block = sw.match(/const TOPIC_BADGES = \{([\s\S]*?)\};/);
+  check(!!block, 'sw.js has a badge map');
+  if (block) {
+    const swBadges = Object.fromEntries(
+      [...block[1].matchAll(/'([^']+)':\s*'([^']+)'/g)].map(x => [x[1], x[2]]));
+    const wrong = m.categories
+      .filter(c => c.badge && swBadges[c.id] !== c.badge)
+      .map(c => `${c.id}: manifest ${c.badge}, sw.js ${swBadges[c.id] ?? 'missing'}`);
+    check(wrong.length === 0,
+          'every badge in sw.js matches the manifest',
+          wrong.join('\n        '));
+  }
+}
+
 console.log('\nThe site ships what it promises');
 {
   // public/ went missing entirely once. These are the files whose absence is

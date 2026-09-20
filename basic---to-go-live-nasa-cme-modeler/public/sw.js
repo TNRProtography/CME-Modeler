@@ -1,7 +1,7 @@
 /**
  * Spot The Aurora — Browser Service Worker
  * Handles Web Push notifications and notification click events.
- * @version 2.1.0
+ * @version 2.2.0
  *
  * The icon now comes from the push payload when the worker sends one, so the
  * category manifest in the app is the single place an icon is chosen. The map
@@ -34,6 +34,29 @@ const TOPIC_ICONS = {
   'admin-broadcast':   '/icons/icon-default.png',
 };
 
+// The small status-bar icon, per topic. Android masks these to a silhouette
+// and discards colour, so they are drawn as bold white glyphs rather than
+// being the colour artwork shrunk down.
+const TOPIC_BADGES = {
+  'visibility-dslr':   '/icons/icon-badge-dslr.png',
+  'visibility-phone':  '/icons/icon-badge-phone.png',
+  'visibility-naked':  '/icons/icon-badge-naked.png',
+  'overnight-watch':   '/icons/icon-badge-moon.png',
+  'flare-event':       '/icons/icon-badge-flare.png',
+  'flare-peak':        '/icons/icon-badge-flare.png',
+  'flare-M1':          '/icons/icon-badge-flare.png',
+  'flare-M5':          '/icons/icon-badge-flare.png',
+  'flare-X1':          '/icons/icon-badge-flare.png',
+  'flare-X5':          '/icons/icon-badge-flare.png',
+  'flare-X10':         '/icons/icon-badge-flare.png',
+  'shock-ff':          '/icons/icon-badge-shock.png',
+  'shock-sf':          '/icons/icon-badge-shock.png',
+  'shock-fr':          '/icons/icon-badge-shock.png',
+  'shock-sr':          '/icons/icon-badge-shock.png',
+  'shock-imf':         '/icons/icon-badge-shock.png',
+  'substorm-forecast': '/icons/icon-badge-shock.png',
+};
+
 const DEFAULT_ICON  = '/icons/icon-default.png';
 // The badge is the small mark Android draws in the status bar. It is masked to
 // a silhouette and its colour is discarded, so a full-colour icon comes out as
@@ -41,14 +64,28 @@ const DEFAULT_ICON  = '/icons/icon-default.png';
 const DEFAULT_BADGE = '/icons/icon-badge.png';
 
 function getIcon(tag) {
-  if (!tag) return DEFAULT_ICON;
+  return lookup(TOPIC_ICONS, tag, DEFAULT_ICON);
+}
+
+/**
+ * The status-bar glyph for a topic.
+ *
+ * Looked up here as well as being sent by the server, because the two paths
+ * that skip the server's stamping - a test push, and any older payload - would
+ * otherwise all fall back to the app mark, which is the same silhouette for
+ * every alert and tells you nothing about which one arrived.
+ */
+function getBadge(tag) {
+  return lookup(TOPIC_BADGES, tag, DEFAULT_BADGE);
+}
+
+function lookup(map, tag, fallback) {
+  if (!tag) return fallback;
   // Handle tags like "test-visibility-dslr-1234567" — extract the topic
-  for (const topic of Object.keys(TOPIC_ICONS)) {
-    if (tag === topic || tag.startsWith(`test-${topic}`)) {
-      return TOPIC_ICONS[topic];
-    }
+  for (const topic of Object.keys(map)) {
+    if (tag === topic || tag.startsWith(`test-${topic}`)) return map[topic];
   }
-  return DEFAULT_ICON;
+  return fallback;
 }
 
 self.addEventListener('install', () => self.skipWaiting());
@@ -119,7 +156,7 @@ self.addEventListener('push', (event) => {
   // Prefer what the server sent. It is generated from the category manifest,
   // so an icon changed there takes effect without this file being touched.
   const icon  = data.icon  || data.data?.icon  || getIcon(tag);
-  const badge = data.badge || data.data?.badge || DEFAULT_BADGE;
+  const badge = data.badge || data.data?.badge || getBadge(tag);
   const title = data.title || 'Spot The Aurora';
   const ts    = data.ts || Date.now();
 
