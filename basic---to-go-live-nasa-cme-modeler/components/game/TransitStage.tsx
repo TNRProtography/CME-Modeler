@@ -24,26 +24,34 @@ const TransitStage: React.FC<Props> = ({ input, result, onDone }) => {
   const doneRef = useRef(false);
   const clockStart = useRef(performance.now());
 
-  // The player's storm, in the shape the visualisation already understands.
-  const cmeData = useMemo<ProcessedCME[]>(() => [{
-    id: 'storm-builder',
-    startTime: new Date(input.launchMs),
-    speed: input.speedKms,
-    longitude: input.lonDeg,
-    latitude: input.latDeg,
-    isEarthDirected: result.hits,
-    note: 'Built in Storm Builder',
-    predictedArrivalTime: result.hits ? new Date(result.arrivalMs) : null,
-    link: '',
-    instruments: 'Storm Builder',
-    sourceLocation: `${input.lonDeg.toFixed(0)}°, ${input.latDeg.toFixed(0)}°`,
-    halfAngle: input.halfWidthDeg,
-  }], [input, result]);
+  // The player's storm, in the shape the visualisation already understands. A
+  // run of clouds is drawn as a run of clouds, because that is what it is. The
+  // first leaves at the launch time, so the arrival the caption quotes is the
+  // first shock, and the rest go out behind it and pile in afterwards.
+  const STAGGER_HOURS = 5;
+  const count = Math.max(1, Math.round(input.cmeCount));
+  const cmeData = useMemo<ProcessedCME[]>(() =>
+    Array.from({ length: count }, (_, i) => ({
+      id: `storm-builder-${i}`,
+      startTime: new Date(input.launchMs + i * STAGGER_HOURS * 3_600_000),
+      speed: input.speedKms,
+      longitude: input.lonDeg,
+      latitude: input.latDeg,
+      isEarthDirected: result.hits,
+      note: 'Built in Storm Builder',
+      predictedArrivalTime: result.hits
+        ? new Date(result.arrivalMs + i * STAGGER_HOURS * 3_600_000) : null,
+      link: '',
+      instruments: 'Storm Builder',
+      sourceLocation: `${input.lonDeg.toFixed(0)}°, ${input.latDeg.toFixed(0)}°`,
+      halfAngle: input.halfWidthDeg,
+    })), [input, result, count]);
 
   // The window runs from launch to a little past arrival, so the cloud is seen
   // leaving, crossing and getting here rather than appearing halfway out.
   const minDate = input.launchMs - 3 * 3_600_000;
-  const maxDate = input.launchMs + (result.transitHours + 4) * 3_600_000;
+  // Long enough to see the last of the run get here as well as the first.
+  const maxDate = input.launchMs + (result.transitHours + (count - 1) * STAGGER_HOURS + 4) * 3_600_000;
   const spanHours = (maxDate - minDate) / 3_600_000;
   // SimulationCanvas advances the scrubber by 3 * speed hours per second.
   const timelineSpeed = spanHours / (3 * PLAY_SECONDS);
@@ -80,7 +88,7 @@ const TransitStage: React.FC<Props> = ({ input, result, onDone }) => {
         </p>
         <p className="text-xs text-neutral-400 mt-0.5">
           {result.hits
-            ? `Arriving ${formatNZ(result.arrivalMs)} New Zealand time`
+            ? `First shock ${formatNZ(result.arrivalMs)} New Zealand time${count > 1 ? `, ${count - 1} more behind it` : ''}`
             : 'This one is going to miss'}
         </p>
       </div>
@@ -112,7 +120,7 @@ const TransitStage: React.FC<Props> = ({ input, result, onDone }) => {
           coronalHoles={[]}
           chDetectedAtMs={null}
           chEvolutions={[]}
-          dataVersion={1}
+          dataVersion={count}
           interactionMode={InteractionMode.MOVE}
           bzSouth={result.minBz < 0}
           measuredWindSpeedKms={400}

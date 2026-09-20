@@ -267,6 +267,45 @@ const BuildStage: React.FC<Props> = ({ input, onChange, onLaunch, brief }) => {
                       display={`${Math.round(input.speedKms)} km/s`}
                       hint="This is what decides when it gets here. The wind drags it back on the way, so it always arrives slower than it left."
                       onChange={v => onChange({ speedKms: v })} />
+              <div>
+                <div className="flex items-baseline justify-between mb-1">
+                  <span className="text-xs font-semibold text-neutral-300">How many clouds</span>
+                  <span className="text-xs font-mono text-sky-300">
+                    {input.cmeCount === 1 ? 'one' : `${input.cmeCount} in a row`}
+                  </span>
+                </div>
+                <div className="flex gap-1">
+                  {[1, 2, 3, 4, 5, 6, 7].map(n => (
+                    <button key={n} onClick={() => onChange({ cmeCount: n })}
+                      className={`flex-1 py-1.5 rounded text-xs font-bold transition-all active:scale-95 border ${
+                        input.cmeCount === n
+                          ? 'bg-sky-600/30 border-sky-400/60 text-sky-200'
+                          : 'bg-neutral-900/70 border-neutral-700/80 text-neutral-400'}`}>{n}</button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-neutral-500 mt-0.5 leading-snug">
+                  The big ones are rarely a single cloud. A run of them compresses the field
+                  between them, so what arrives is stronger than any one of them would have been.
+                  Seven went out before May 2024.
+                </p>
+              </div>
+              <button onClick={() => onChange({ filament: !input.filament })}
+                className={`w-full text-left rounded border px-2.5 py-2 transition-all active:scale-[0.99] ${
+                  input.filament
+                    ? 'bg-fuchsia-900/30 border-fuchsia-500/50'
+                    : 'bg-neutral-900/70 border-neutral-700/80'}`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-neutral-300">Send a filament up with it</span>
+                  <span className={`text-xs font-bold ${input.filament ? 'text-fuchsia-300' : 'text-neutral-500'}`}>
+                    {input.filament ? 'yes' : 'no'}
+                  </span>
+                </div>
+                <p className="text-[10px] text-neutral-500 mt-0.5 leading-snug">
+                  The field in a cloud comes from the structure that erupted, not from the flare&rsquo;s
+                  X-rays, so a filament going up carries far more than its flare class suggests.
+                  April 2023 was only an M1.7 and it gave the cycle its first severe storm.
+                </p>
+              </button>
             </div>
             <div className={`mt-2 rounded-lg border p-2.5 ${darkOk ? 'bg-emerald-950/40 border-emerald-700/40' : 'bg-amber-950/40 border-amber-700/40'}`}>
               <p className="text-xs text-neutral-300">

@@ -33,6 +33,28 @@ export interface StormInput {
   axialDeg:   number;
   rotationDeg: number;
   ropeHours:  number;    // how long the rope itself takes to pass
+  /**
+   * How many clouds went out in the run. Big storms are usually not one cloud
+   * but several, launched over a day or two, piling into each other on the way.
+   * That is what made May 2024 what it was. Each extra cloud compresses the one
+   * ahead of it, so the field that gets here is stronger.
+   *
+   * It deliberately does not change the transit time. The scene draws the front
+   * of the first cloud arriving at one moment, and anything that moved the
+   * quoted time away from that would put the caption back out of step with the
+   * picture, which is the bug this all came from.
+   */
+  cmeCount:   number;
+  /**
+   * Whether a filament went up with the flare. The magnetic flux in a cloud
+   * comes from the erupting structure, not from the flare's X-ray output, so
+   * flare class is a poor guide to how strong the field will be when it gets
+   * here. April 2023 is the standing counter-example: only an M1.7, and it
+   * produced the first severe storm of the cycle, because a filament went with
+   * it. Without this the model cannot reproduce that event, and it is the most
+   * useful thing that event has to teach.
+   */
+  filament:   boolean;
   launchMs:   number;    // when it left the Sun
 }
 
@@ -117,7 +139,11 @@ function arrivalBt(input: StormInput, impact: number, arrivalSpeed: number): num
   const fromSpeed  = Math.pow(arrivalSpeed / 600, 0.80);
   // Wide clouds have spread their flux over more sky by the time they arrive.
   const spread = Math.pow(35 / Math.max(15, input.halfWidthDeg), 0.35);
-  return clamp(fromEnergy * fromSpeed * spread * (0.35 + 0.65 * impact), 2, 75);
+  // Clouds arriving on top of each other compress the field between them.
+  const stacked = 1 + 0.17 * (Math.max(1, input.cmeCount) - 1);
+  // A filament carries far more flux than its flare class suggests.
+  const fromFilament = input.filament ? 1.85 : 1;
+  return clamp(fromEnergy * fromSpeed * spread * stacked * fromFilament * (0.35 + 0.65 * impact), 2, 95);
 }
 
 // The Newell coupling function, the same one the app uses on real data. It is

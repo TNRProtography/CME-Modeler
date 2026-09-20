@@ -30,7 +30,7 @@ type Mode = 'daily' | 'practice' | 'history';
 
 const DEFAULT_INPUT = (launchMs: number): StormInput => ({
   flareClass: 'M', flareMag: 5, lonDeg: 0, latDeg: 0,
-  speedKms: 1000, halfWidthDeg: 45,
+  speedKms: 1000, halfWidthDeg: 45, cmeCount: 1, filament: false,
   axialDeg: 180, rotationDeg: 60, ropeHours: 14, launchMs,
 });
 
@@ -111,7 +111,7 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         ? recordDaily(prev, o.score, o.xp)
         : recordRun(prev, o.score, o.xp));
     } else if (event) {
-      const m = matchScore(event.target, input);
+      const m = matchScore(event, input);
       const score = Math.round(m.overall * 100);
       const xp = 30 + Math.round(score * 1.6);
       setOutcome({ hit: score >= 70, inWindow: true, achieved: 'eye', score, xp, lines: [] });
@@ -235,7 +235,7 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const seen = result.hits
       ? visibilityAcrossNZ(result.bestVisibleKp, moon, darknessAt(result.bestVisibleAtMs))
       : [];
-    const match = event ? matchScore(event.target, input) : null;
+    const match = event ? matchScore(event, input) : null;
 
     return (
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
@@ -285,7 +285,10 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <div className="card bg-neutral-950/80 p-3 space-y-1.5">
               {match.parts.map(p => (
                 <div key={p.label} className="flex items-center gap-2">
-                  <span className="text-xs text-neutral-400 flex-1">{p.label}</span>
+                  <span className="text-xs text-neutral-400 flex-1">
+                    {p.label}
+                    {p.from === 'estimated' && <span className="text-neutral-600"> *</span>}
+                  </span>
                   <span className="text-[11px] font-mono text-neutral-500">{p.yours}</span>
                   <span className="text-[11px] font-mono text-emerald-400 w-20 text-right">{p.actual}</span>
                   <div className="w-10 h-1.5 rounded-full bg-white/10 overflow-hidden flex-shrink-0">
@@ -294,8 +297,11 @@ const AuroraGame: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 </div>
               ))}
               <p className="text-[10px] text-neutral-500 pt-1 leading-snug">
-                Green is what it actually was. The flare and the speed are the published figures.
-                The rope orientation is a reconstruction, because nobody can measure that until it arrives.
+                Green is what it actually was. The flare, the position, the width and the number
+                of clouds are from the record. The launch speed is solved backwards from the
+                published Sun to Earth transit time, so the cloud gets here when the real one did.
+                Anything marked * is an estimate, because the twist of the field inside a cloud
+                cannot be measured until it is already going past.
               </p>
             </div>
           )}
