@@ -462,6 +462,7 @@ function keepAlive(env, promise) {
 }
 
 async function runScheduledTasks(env) {
+  /** @type {Record<string, any>} */
   const diag = {
     ranAt: Date.now(),
     detectors: {},
@@ -567,7 +568,7 @@ const FLARE_M1_THRESHOLD = 1e-5;
 const FLARE_DECLINE_MS = 3 * 60 * 1000;
 const FLARE_STALE_MS   = 4 * 60 * 60 * 1000;
 
-async function checkSolarFlares(env, allData = null, note = /** @type {(name?: string, status?: string, detail?: string) => void} */ (() => {})) {
+async function checkSolarFlares(env, /** @type {any[]|null} */ allData = null, note = /** @type {(name?: string, status?: string, detail?: string) => void} */ (() => {})) {
   try {
     if (!allData) {
       const response = await fetchWithRetry(NOAA_XRAY_URL);
@@ -809,7 +810,7 @@ function tailLoadingSentence(loadingState) {
 // swallowed the error, and substorm alerts silently never sent. Default it.
 const SUBSTORM_DEFAULT_COOLDOWN_MIN = 30;
 
-async function checkSubstormActivity(env, substormThresholds, substormData, loadingState = null, note = /** @type {(name?: string, status?: string, detail?: string) => void} */ (() => {})) {
+async function checkSubstormActivity(env, substormThresholds, substormData, /** @type {any} */ loadingState = null, note = /** @type {(name?: string, status?: string, detail?: string) => void} */ (() => {})) {
   try {
     if (!substormData?.current) {
       note('substorm', 'skipped', 'substorm worker unavailable');
@@ -1218,7 +1219,7 @@ function pressureAverageFromSeries(plasmaPoints, minutes) {
   return vals.reduce((s, v) => s + v, 0) / vals.length;
 }
 
-function ovalBoundary(substormData, latestBy = null, fallback = null) {
+function ovalBoundary(substormData, latestBy = null, /** @type {any} */ fallback = null) {
   const sw = substormData?.metrics?.solar_wind;
   let newell60 = sw?.newell_avg_60m;
   let newell30 = sw?.newell_avg_30m;
@@ -1304,6 +1305,7 @@ async function checkVisibilityNotifications(env, substormData, forecastData, mag
     // FIX 4: build a fallback from RTSW rather than bailing out when the
     // substorm worker is unreachable.
     let usingFallback = false;
+    /** @type {any} */
     let fallback = null;
     if (!substormData?.metrics?.solar_wind) {
       const newell60 = newellAverageFromSeries(magPoints, plasmaPoints, 60);
@@ -2159,7 +2161,7 @@ function newJobId() {
  */
 /**
  * @param {any} env
- * @param {{ kind: string, topic?: string|null, payload?: any, params?: any }} job
+ * @param {{ kind: string, topic?: string|null, payload?: any, params?: any, dryRun?: boolean }} job
  */
 async function enqueueDelivery(env, { kind, topic = null, payload = null, params = null, dryRun = false }) {
   const id = newJobId();
@@ -2451,9 +2453,10 @@ async function decideForSubscriber(env, job, keyName, stored, meter = { ops: 0 }
     const prevTier = stored.visibilityTier ?? null;
     const newTier  = pickVisibilityTier(distToVis, distToBoundary, p.triggers);
 
+    /** @type {Record<string, number>} */
     const tierRank = { dslr: 1, phone: 2, naked: 3 };
-    const currentRank = tierRank[prevTier] ?? 0;
-    const newRank     = tierRank[newTier]  ?? 0;
+    const currentRank = prevTier ? (tierRank[prevTier] ?? 0) : 0;
+    const newRank     = newTier  ? (tierRank[newTier]  ?? 0) : 0;
 
     if (!newTier && prevTier) {
       await kv(env).put(keyName, JSON.stringify({ ...stored, visibilityTier: null }));
@@ -2462,8 +2465,10 @@ async function decideForSubscriber(env, job, keyName, stored, meter = { ops: 0 }
     }
     if (newRank <= currentRank) return null;
 
-    const topic = { dslr: 'visibility-dslr', phone: 'visibility-phone', naked: 'visibility-naked' }[newTier];
-    if (prefs[topic] !== true) return null;
+    /** @type {Record<string, string>} */
+    const topicForTier = { dslr: 'visibility-dslr', phone: 'visibility-phone', naked: 'visibility-naked' };
+    const topic = newTier ? topicForTier[newTier] : null;
+    if (!topic || prefs[topic] !== true) return null;
 
     const cooldownKey = `COOLDOWN_vis_${newTier}_${keyName}`;
     const lastSent = await kv(env).get(cooldownKey);
@@ -3199,7 +3204,7 @@ function b64urlToBytes(b64urlStr) {
 
 function utf8(str) { return new TextEncoder().encode(str); }
 
-function concatBytes(...arrays) {
+function concatBytes(/** @type {Uint8Array[]} */ ...arrays) {
   let len = 0;
   for (const a of arrays) len += a.length;
   const out = new Uint8Array(len);
