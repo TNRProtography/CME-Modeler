@@ -149,7 +149,7 @@ export function buildSeries(input: StormInput, res: {
   const out: L1Point[] = [];
   const bt0 = arrivalBt(input, res.impact, res.arrivalSpeed);
   // A faster cloud drives a thicker, more violent sheath ahead of itself.
-  const sheathHours = clamp(2 + (res.arrivalSpeed - 400) / 110, 1.5, 12);
+  const sheathHours = sheathHoursFor(res.arrivalSpeed);
   const ropeHours   = input.ropeHours;
   const preHours    = 6;
   const postHours   = 6;
@@ -182,7 +182,13 @@ export function buildSeries(input: StormInput, res: {
       // part people mistake for the storm proper.
       region = 'sheath';
       const f = hoursFromShock / sheathHours;
-      bt = bt0 * (0.75 + 0.35 * Math.sin(f * Math.PI)) + noise() * bt0 * 0.28;
+      // Sheath field is gusty minute to minute, not just variable in direction.
+      // That variability is exactly what tells a sheath apart from a cloud, so
+      // getting it wrong here makes the whole structure unreadable.
+      const gust = 1 + 0.42 * Math.sin(hoursFromShock * 31.7)
+                     + 0.30 * Math.sin(hoursFromShock * 11.3 + 1.7)
+                     + noise() * 0.85;
+      bt = bt0 * (0.70 + 0.30 * Math.sin(f * Math.PI)) * clamp(gust, 0.22, 2.1);
       // The sheath field is ambient wind draped around the nose of the cloud,
       // so it leans the way the rope's leading edge does, with turbulence piled
       // on top. It swings far too quickly to load the tail the way the rope
@@ -296,7 +302,11 @@ export function peakFraction(axialDeg: number, rotationDeg: number): number {
 }
 
 export function sheathHoursFor(arrivalSpeed: number): number {
-  return clamp(2 + (arrivalSpeed - 400) / 110, 1.5, 12);
+  // Capped at seven hours. A faster cloud does drive a thicker sheath, but the
+  // analyser only looks for the cloud within eight hours of the shock, so a
+  // longer one here would mean it never finds the rope on exactly the big
+  // storms people most want to build. Seven is well inside the real range.
+  return clamp(2 + (arrivalSpeed - 400) / 220, 1.5, 7);
 }
 
 export function runStorm(input: StormInput): StormResult {
