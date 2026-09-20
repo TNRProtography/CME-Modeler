@@ -2508,6 +2508,28 @@ async function foldClicks(env, id) {
   return clicked;
 }
 
+/**
+ * The last few sends, condensed, for the stats snapshot - so opening STATS in
+ * the KV browser answers both "how many subscribers" and "is anything actually
+ * getting through" without a second lookup.
+ */
+async function recentSendSummary(env, limit = 5) {
+  try {
+    const index = (await kv(env).get(SEND_LOG_KEY, 'json')) ?? [];
+    const out = [];
+    for (const id of index.slice(0, limit)) {
+      const e = await kv(env).get(sendKey(id), 'json');
+      if (!e) continue;
+      out.push({
+        topic: e.topic ?? e.kind, at: e.startedAtNZ,
+        accepted: e.accepted, failed: e.failed, clicked: e.clicked,
+        clickRate: e.clickRate ?? null,
+      });
+    }
+    return out;
+  } catch { return []; }
+}
+
 /** Fold clicks for every send still in the index. Called from the census. */
 async function foldAllClicks(env) {
   const index = (await kv(env).get(SEND_LOG_KEY, 'json')) ?? [];
@@ -2592,6 +2614,19 @@ async function handleSends(request, env) {
 // read all 80,000 records. Each shard writes its own partial, and whichever
 // shard finishes last rolls the 64 partials up into STATS.
 
+/** Which push service an endpoint belongs to, for the platform breakdown. */
+function pushServiceOf(endpoint) {
+  if (!endpoint) return 'unknown';
+  try {
+    const host = new URL(endpoint).hostname;
+    if (host.endsWith('push.apple.com')) return 'apple';
+    if (host.includes('googleapis.com') || host.includes('android.com')) return 'google';
+    if (host.endsWith('mozilla.com') || host.includes('mozaws')) return 'mozilla';
+    if (host.includes('windows.com') || host.includes('microsoft')) return 'microsoft';
+    return host;
+  } catch { return 'unknown'; }
+}
+
 const STATS_KEY = 'STATS';
 const statsShardKey = (ch) => `STATSSHARD_${ch}`;
 const CENSUS_INTERVAL_MS = 60 * 60 * 1000;
@@ -2634,6 +2669,7 @@ async function runCensusShard(env, censusId, ch) {
   for (const t of ALL_TOPICS) counts[t] = 0;
   let subscribers = 0, withGps = 0, active = 0, anyTopic = 0;
   const overnightModes = {};
+  const services = {};
   const activeCutoff = Date.now() - ACTIVE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
   let cursor;
@@ -2652,6 +2688,11 @@ async function runCensusShard(env, censusId, ch) {
       const mode = stored.overnight_mode || 'phone';
       overnightModes[mode] = (overnightModes[mode] ?? 0) + 1;
 
+      // Which push service this device uses. Worth having because failures
+      // cluster by platform - if a send goes badly, this says whose.
+      const svc = pushServiceOf(stored.subscription?.endpoint);
+      services[svc] = (services[svc] ?? 0) + 1;
+
       let on = 0;
       for (const t of ALL_TOPICS) if (stored?.preferences?.[t] === true) { counts[t]++; on++; }
       if (on > 0) anyTopic++;
@@ -2661,7 +2702,8 @@ async function runCensusShard(env, censusId, ch) {
   } while (cursor);
 
   await kv(env).put(statsShardKey(ch), JSON.stringify({
-    censusId, shard: ch, subscribers, withGps, active, anyTopic, counts, overnightModes, at: Date.now(),
+    censusId, shard: ch, subscribers, withGps, active, anyTopic, counts, overnightModes, services,
+    at: Date.now(),
   }), { expirationTtl: CENSUS_SHARD_TTL });
 
   // Whoever finishes last does the roll-up.
@@ -2681,12 +2723,16 @@ async function tryFinishCensus(env, censusId) {
   for (const t of ALL_TOPICS) counts[t] = 0;
   let subscribers = 0, withGps = 0, active = 0, anyTopic = 0;
   const overnightModes = {};
+  const services = {};
   for (const p of parts) {
     subscribers += p.subscribers; withGps += p.withGps;
     active += p.active; anyTopic += p.anyTopic;
     for (const t of ALL_TOPICS) counts[t] += p.counts[t] ?? 0;
     for (const [m, n] of Object.entries(p.overnightModes ?? {})) {
       overnightModes[m] = (overnightModes[m] ?? 0) + n;
+    }
+    for (const [svc, n] of Object.entries(p.services ?? {})) {
+      services[svc] = (services[svc] ?? 0) + n;
     }
   }
 
@@ -2699,12 +2745,18 @@ async function tryFinishCensus(env, censusId) {
     takenAtNZ: new Date().toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland' }),
     subscribers,
     subscribedToSomething: anyTopic,
+    subscribedToNothing: subscribers - anyTopic,
     activeLast60Days: active,
+    quietOver60Days: subscribers - active,
     withLocation: withGps,
     withoutLocation: subscribers - withGps,
     byCategory,
     overnightModes,
-    note: 'Counted by walking every subscriber record. Refreshed about once an hour.',
+    byPushService: Object.fromEntries(Object.entries(services).sort((a, b) => b[1] - a[1])),
+    recentSends: await recentSendSummary(env),
+    note: 'Counted by walking every subscriber record. Refreshed about once an hour. '
+        + 'subscribers counts saved push subscriptions; some belong to devices that have '
+        + 'since uninstalled - those are pruned when a send to them comes back 410.',
   };
   await kv(env).put(STATS_KEY, JSON.stringify(snapshot, null, 2));
   console.log(`[census] ${subscribers} subscribers, ${anyTopic} with at least one topic on`);

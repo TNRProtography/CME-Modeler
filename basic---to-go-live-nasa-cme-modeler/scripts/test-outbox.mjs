@@ -24,7 +24,8 @@ const copy = join(dir, 'w.mjs');
 writeFileSync(copy, readFileSync(SRC, 'utf8') +
   '\nexport { checkOvernightWatch, runShard, sweepJobs, jobProgress, maybeRunCensus, runCensusShard,' +
   ' recordSend, foldAllClicks, handleSends, handleNotificationClicked, stampSendId,' +
-  ' maybeRunMigration, runMigrationShard, migrationTotals, TOPIC_DEFAULT_ON, ALL_TOPICS };\n');
+  ' maybeRunMigration, runMigrationShard, migrationTotals, TOPIC_DEFAULT_ON, ALL_TOPICS,' +
+  ' pushServiceOf };\n');
 const W = await import(pathToFileURL(copy).href);
 
 // ---- fake KV with real prefix/cursor semantics -------------------------
@@ -327,6 +328,77 @@ console.log('\n7. migrating existing subscribers');
     await W.runMigrationShard(env, ch);
   const unchanged = [...snapshot].every(([k, v]) => store.get(k) === v);
   check(unchanged, 'running it again changes nothing');
+}
+
+// ---- 8. the stats snapshot ---------------------------------------------
+console.log('\n8. the subscriber stats snapshot');
+{
+  globalThis.fetch = (orig => async (input, init) => {
+    const url = typeof input === 'string' ? input : input.url ?? String(input);
+    if (url.includes('/run-census-shard')) {
+      const { censusId, shard } = JSON.parse(init.body);
+      const p = W.runCensusShard(env, censusId, shard);
+      inflight.push(p); await p;
+      return new Response('{}', { status: 200 });
+    }
+    return orig(input, init);
+  })(globalThis.fetch);
+
+  // Test 7 cleared the ledger, so put a real send through first - the point
+  // of the digest is that one read of STATS shows both halves.
+  for (const k of [...store.keys()]) {
+    if (k.startsWith('JOB') || k.startsWith('COOLDOWN')) store.delete(k);
+    else if (!k.startsWith('MIG') && k !== 'MIGRATION' && k !== 'STATS' && !k.startsWith('STATSSHARD')) {
+      try { const v = JSON.parse(store.get(k)); if (v.subscription) { delete v.overnightWatchSentDate; store.set(k, JSON.stringify(v)); } } catch {}
+    }
+  }
+  delivered.length = 0;
+  await W.checkOvernightWatch(env, forecast, substorm, mag, plasma, () => {});
+  await settle();
+  await W.sweepJobs(env, () => {});
+  const digestId = JSON.parse(store.get('SENDS') ?? '[]')[0];
+  for (let i = 0; i < 12; i++) {
+    await W.handleNotificationClicked(new Request('https://x.invalid/notification-clicked', {
+      method: 'POST', body: JSON.stringify({ id: digestId, topic: 'overnight-watch' }),
+    }), env);
+  }
+
+  store.delete('STATS');
+  for (const ch of [...'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'])
+    store.delete(`STATSSHARD_${ch}`);
+  await W.maybeRunCensus(env, () => {});
+  await settle();
+  const snap = JSON.parse(store.get('STATS'));
+  console.log(`    ${snap.subscribers} subscribers, ${snap.subscribedToSomething} with a topic on`);
+  console.log(`    overnight-watch ${snap.byCategory['overnight-watch']}, services ${JSON.stringify(snap.byPushService)}`);
+  console.log(`    recent sends: ${snap.recentSends.map(r => `${r.topic} ${r.accepted} sent ${r.clicked} clicked (${r.clickRate}%)`).join('; ') || 'none'}`);
+
+  const subscriberCount = [...store].filter(([k, v]) => {
+    try { return !!JSON.parse(v)?.subscription; } catch { return false; }
+  }).length;
+  check(snap.subscribers === subscriberCount,
+        'the census counts every subscriber and nothing else',
+        `${snap.subscribers} vs ${subscriberCount}`);
+  check(snap.subscribedToSomething + snap.subscribedToNothing === snap.subscribers &&
+        snap.withLocation + snap.withoutLocation === snap.subscribers,
+        'the totals add up');
+  // Every subscriber record that actually has the topic on, counted directly.
+  const reallyOn = [...store].filter(([k, v]) => {
+    try { const r = JSON.parse(v); return r?.subscription && r.preferences?.['overnight-watch'] === true; }
+    catch { return false; }
+  }).length;
+  check(snap.byCategory['overnight-watch'] === reallyOn,
+        'per-category counts match the records',
+        `${snap.byCategory['overnight-watch']} vs ${reallyOn}`);
+  check(snap.recentSends.length > 0 &&
+        snap.recentSends[0].accepted > 0 &&
+        snap.recentSends[0].clicked === 12,
+        'the snapshot carries the recent send digest, clicks included',
+        JSON.stringify(snap.recentSends[0] ?? null));
+  check(W.pushServiceOf('https://web.push.apple.com/abc') === 'apple' &&
+        W.pushServiceOf('https://fcm.googleapis.com/fcm/send/x') === 'google' &&
+        W.pushServiceOf('rubbish') === 'unknown',
+        'push services are identified');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
