@@ -43,7 +43,14 @@ export interface NotificationCategory {
   defaultOn: boolean;
   /** Which worker detector emits it. 'nothing' means retired. Checked by the drift test. */
   sentBy: string;
+  /** The full-colour image shown in the notification body. 192x192 or larger. */
   icon: string;
+  /**
+   * The small status-bar icon Android draws beside the clock. It is masked to
+   * a silhouette, so it must be white-on-transparent - a colour image comes
+   * out as a white blob. Defaults to the app mark.
+   */
+  badge?: string;
   group?: CategoryGroup;
   label?: string;
   description?: string;
@@ -51,6 +58,15 @@ export interface NotificationCategory {
   /** Anything a future reader needs to know about this topic's odd status. */
   note?: string;
 }
+
+/**
+ * The status-bar badge, used for every category unless one overrides it.
+ *
+ * Android masks this to a silhouette and ignores colour entirely, so there is
+ * little point drawing a different one per category - it is the app mark, and
+ * it must be white shapes on transparency or it renders as a solid blob.
+ */
+export const DEFAULT_BADGE = '/icons/icon-badge.png';
 
 export const CATEGORY_GROUPS: Record<CategoryGroup, { title: string; description: string }> = {
   visibility: {
@@ -289,6 +305,11 @@ export const DEFAULT_ON_IDS: Set<string> = new Set(
 /** Mirrors the icon map the service worker uses to pick a notification icon. */
 export const TOPIC_ICONS: Record<string, string> = Object.fromEntries(
   NOTIFICATION_CATEGORIES.map(c => [c.id, c.icon]),
+);
+
+/** The status-bar badge per topic. */
+export const TOPIC_BADGES: Record<string, string> = Object.fromEntries(
+  NOTIFICATION_CATEGORIES.map(c => [c.id, c.badge ?? DEFAULT_BADGE]),
 );
 
 /**

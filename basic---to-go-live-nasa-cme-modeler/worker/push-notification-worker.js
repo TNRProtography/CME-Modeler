@@ -1444,6 +1444,39 @@ const TOPIC_DEFAULT_ON = new Set([
   'admin-broadcast', 'flare-event', 'flare-peak',
   'substorm-forecast',
 ]);
+
+// The icon a notification shows, by topic. Sent with the payload rather than
+// looked up on the device, so changing one here changes it everywhere without
+// anyone having to edit the service worker's own copy to match.
+const TOPIC_ICONS = {
+  'visibility-dslr': '/icons/icon-visibility-dslr.png',
+  'visibility-phone': '/icons/icon-visibility-phone.png',
+  'visibility-naked': '/icons/icon-visibility-naked.png',
+  'overnight-watch': '/icons/icon-overnight-watch.png',
+  'flare-M1': '/icons/icon-flare-event.png',
+  'flare-M5': '/icons/icon-flare-event.png',
+  'flare-X1': '/icons/icon-flare-event.png',
+  'flare-X5': '/icons/icon-flare-event.png',
+  'flare-X10': '/icons/icon-flare-event.png',
+  'shock-ff': '/icons/icon-shock-detection.png',
+  'admin-broadcast': '/icons/icon-default.png',
+  'flare-event': '/icons/icon-flare-event.png',
+  'flare-peak': '/icons/icon-flare-peak.png',
+  'substorm-forecast': '/icons/icon-substorm.png',
+  'shock-imf': '/icons/icon-shock-detection.png',
+  'shock-sf': '/icons/icon-shock-detection.png',
+  'shock-fr': '/icons/icon-shock-detection.png',
+  'shock-sr': '/icons/icon-shock-detection.png',
+};
+const DEFAULT_ICON = '/icons/icon-default.png';
+
+// The small status-bar icon. Android masks it to a silhouette and ignores
+// colour, so it is the app mark for every topic unless one overrides it, and
+// it has to be white-on-transparent or it renders as a solid blob.
+const DEFAULT_BADGE = '/icons/icon-badge.png';
+const TOPIC_BADGES = {
+
+};
 // </generated:topics>
 
 // ── Subscriber migration ────────────────────────────────────────────────────
@@ -2633,7 +2666,16 @@ function stampSendId(payload, jobId) {
   } catch {
     // A URL we cannot parse is not worth losing the notification over.
   }
-  return { ...payload, data };
+  // The icon travels with the notification rather than being looked up on the
+  // device. The service worker keeps its own copy of this map, and two maps in
+  // two repositories that nothing checks is how shock-imf and flare-event went
+  // wrong. Sending it means changing an icon in the manifest changes it
+  // everywhere. `icon` is where the Notification API expects it; data.icon is
+  // a fallback for a service worker that reads it from there.
+  const topic = payload.tag ?? data.category;
+  const icon  = (topic && TOPIC_ICONS[topic]) || DEFAULT_ICON;
+  const badge = (topic && TOPIC_BADGES[topic]) || DEFAULT_BADGE;
+  return { ...payload, icon, badge, data: { ...data, icon, badge } };
 }
 
 const SEND_LOG_KEY = 'SENDS';

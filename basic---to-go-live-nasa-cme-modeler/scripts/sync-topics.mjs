@@ -43,6 +43,14 @@ for (let i = 0; i < defaults.length; i += 3) {
   defaultLines.push('  ' + defaults.slice(i, i + 3).map(id => `'${id}',`).join(' '));
 }
 
+// The icon each topic's notification should show. Generated too, so the
+// manifest is genuinely the one place an icon is chosen rather than one of
+// three copies that have to be kept in step by hand.
+const iconLines = live.map(c => `  '${c.id}': '${c.icon}',`);
+const badgeLines = live
+  .filter(c => c.badge)
+  .map(c => `  '${c.id}': '${c.badge}',`);
+
 const block = `// <generated:topics>
 // Generated from utils/notificationCategories.ts by \`npm run sync:topics\`.
 // Do not edit by hand - add the topic to the manifest and re-run the script.
@@ -58,6 +66,22 @@ ${lines.join('\n')}
 const TOPIC_DEFAULT_ON = new Set([
 ${defaultLines.join('\n')}
 ]);
+
+// The icon a notification shows, by topic. Sent with the payload rather than
+// looked up on the device, so changing one here changes it everywhere without
+// anyone having to edit the service worker's own copy to match.
+const TOPIC_ICONS = {
+${iconLines.join('\n')}
+};
+const DEFAULT_ICON = '/icons/icon-default.png';
+
+// The small status-bar icon. Android masks it to a silhouette and ignores
+// colour, so it is the app mark for every topic unless one overrides it, and
+// it has to be white-on-transparent or it renders as a solid blob.
+const DEFAULT_BADGE = '/icons/icon-badge.png';
+const TOPIC_BADGES = {
+${badgeLines.join('\n')}
+};
 // </generated:topics>`;
 
 const next = src.slice(0, match.index) + block + src.slice(match.index + match[0].length);
@@ -72,4 +96,4 @@ if (check) {
 }
 
 writeFileSync(WORKER, next);
-console.log(`Rewrote ALL_TOPICS with ${live.length} topics (${defaults.length} default on).`);
+console.log(`Rewrote the generated block: ${live.length} topics, ${defaults.length} default on, ${iconLines.length} icons.`);
