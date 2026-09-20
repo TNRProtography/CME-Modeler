@@ -436,6 +436,7 @@ export default {
     if (url.pathname === '/stats'                     && request.method === 'GET')  return handleStats(request, env);
     if (url.pathname === '/sends'                     && request.method === 'GET')  return handleSends(request, env);
     if (url.pathname === '/dry-run'                   && request.method === 'GET')  return handleDryRun(request, env);
+    if (url.pathname === '/diagnose'                  && request.method === 'GET')  return handleDiagnose(request, env);
     if (url.pathname === '/migration'                 && request.method === 'GET')  return handleMigrationStatus(request, env);
     if (url.pathname === '/run-migration-shard'       && request.method === 'POST') return handleRunMigrationShard(request, env);
     if (url.pathname === '/notification-clicked'      && request.method === 'POST') return handleNotificationClicked(request, env);
@@ -1387,6 +1388,7 @@ function isReservedKey(name) {
          name.startsWith('JOBSHARD_') || name.startsWith('STATSSHARD_') ||
          name.startsWith('SEND_') || name.startsWith('CLK_') ||
          name.startsWith('MIGSHARD_') || name === MIGRATION_KEY ||
+         name === DISPATCH_ERROR_KEY ||
          name === STATS_KEY || name === SELF_ORIGIN_KEY || name === SEND_LOG_KEY;
 }
 
@@ -1525,15 +1527,33 @@ const migrationShardKey = (ch) => `MIGSHARD_${ch}`;
  * Returns how many records it changed.
  */
 async function runMigrationShard(env, ch) {
-  let changedCount = 0, seen = 0, errors = 0;
-  let cursor;
+  // Same ceiling as everywhere else: a read for every subscriber in the shard,
+  // plus a write for each one that changes, is more than one invocation can
+  // do. Pick up where the last one stopped.
+  const prior = await kv(env).get(migrationShardKey(ch), 'json');
+  const resuming = prior?.version === MIGRATION_VERSION && prior.state === 'running';
 
+  let changedCount = resuming ? prior.changed : 0;
+  let seen         = resuming ? prior.seen    : 0;
+  let errors       = resuming ? prior.errors  : 0;
+  let cursor  = resuming ? (prior.cursor ?? undefined) : undefined;
+  let lastKey = resuming ? (prior.lastKey ?? null) : null;
+  let ops = OP_BUDGET;
+  let complete = false;
+
+  outer:
   do {
-    const res = await kv(env).list({ prefix: ch, cursor, limit: 1000 });
+    const res = await kv(env).list({ prefix: ch, cursor, limit: LIST_PAGE });
+    ops--;
     for (const key of res.keys) {
+      if (lastKey && key.name <= lastKey) continue;
       if (isReservedKey(key.name)) continue;
+      // A read, and possibly a write. Leave room for both.
+      if (ops < 3) break outer;
       try {
         const stored = await kv(env).get(key.name, 'json');
+        ops--;
+        lastKey = key.name;
         if (!stored?.subscription) continue;
         seen++;
 
@@ -1559,6 +1579,7 @@ async function runMigrationShard(env, ch) {
 
         if (changed) {
           await kv(env).put(key.name, JSON.stringify({ ...stored, preferences: prefs }));
+          ops--;
           changedCount++;
         }
       } catch (e) {
@@ -1566,15 +1587,36 @@ async function runMigrationShard(env, ch) {
         console.error('[migrate] error on', key.name, e.message);
       }
     }
+    if (res.list_complete) { complete = true; break; }
     cursor = res.cursor;
-    if (res.list_complete) break;
-  } while (cursor);
+    lastKey = null;
+  } while (ops > 3);
 
+  // maybeRunMigration only treats a shard as reported once it says 'done', so
+  // a shard that ran out of budget is picked up again rather than counted as
+  // finished with a fraction of its subscribers migrated.
+  const state = complete ? 'done' : 'running';
   await kv(env).put(migrationShardKey(ch), JSON.stringify({
-    version: MIGRATION_VERSION, seen, changed: changedCount, errors, at: Date.now(),
+    version: MIGRATION_VERSION, state,
+    cursor: complete ? null : (cursor ?? null),
+    lastKey: complete ? null : lastKey,
+    seen, changed: changedCount, errors, at: Date.now(),
   }));
-  console.log(`[migrate] shard ${ch}: ${changedCount} of ${seen} updated, ${errors} error(s)`);
-  return { seen, changed: changedCount, errors };
+
+  if (!complete) {
+    const origin = await resolveSelfUrl(env);
+    if (origin) {
+      keepAlive(env, fetch(new URL('/run-migration-shard', origin), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ secret: env.TRIGGER_SECRET, shard: ch }),
+      }).catch(e => console.error(`[migrate] resume ${ch} failed:`, e.message)));
+    }
+    console.log(`[migrate] shard ${ch}: ${changedCount} of ${seen} so far, continuing`);
+  } else {
+    console.log(`[migrate] shard ${ch}: done, ${changedCount} of ${seen} updated, ${errors} error(s)`);
+  }
+  return { seen, changed: changedCount, errors, state };
 }
 
 /**
@@ -1609,7 +1651,7 @@ async function maybeRunMigration(env, note = /** @type {(name?: string, status?:
   const due = [];
   for (const ch of SHARD_CHARS) {
     const done = await kv(env).get(migrationShardKey(ch), 'json');
-    if (done?.version !== MIGRATION_VERSION) due.push(ch);
+    if (done?.version !== MIGRATION_VERSION || done.state !== 'done') due.push(ch);
   }
 
   if (!due.length) {
@@ -1636,7 +1678,7 @@ async function migrationTotals(env) {
   let seen = 0, changed = 0, errors = 0, shards = 0;
   for (const ch of SHARD_CHARS) {
     const s = await kv(env).get(migrationShardKey(ch), 'json');
-    if (s?.version !== MIGRATION_VERSION) continue;
+    if (s?.version !== MIGRATION_VERSION || s.state !== 'done') continue;
     shards++; seen += s.seen ?? 0; changed += s.changed ?? 0; errors += s.errors ?? 0;
   }
   return { shards, seen, changed, errors };
@@ -2256,8 +2298,86 @@ async function dispatchShards(env, jobId, chars) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ secret: env.TRIGGER_SECRET, jobId, shard: ch }),
-    }).catch(e => console.error(`[outbox] dispatch ${jobId}/${ch} failed:`, e.message)));
+    }).then(async (r) => {
+      // A dispatch that is refused used to vanish into a log line. Record the
+      // first failure so /job can say why nothing is running, rather than
+      // showing 64 pending shards and no reason.
+      if (!r.ok) await noteDispatchFailure(env, `${r.status} ${r.statusText}: ${(await r.text().catch(() => '')).slice(0, 200)}`);
+    }).catch(e => noteDispatchFailure(env, `fetch threw: ${e.message}`)));
   }
+}
+
+const DISPATCH_ERROR_KEY = 'LAST_DISPATCH_ERROR';
+
+async function noteDispatchFailure(env, detail) {
+  console.error('[outbox] dispatch failed:', detail);
+  try {
+    await kv(env).put(DISPATCH_ERROR_KEY, JSON.stringify({ at: nzTimestamp(Date.now()), detail }),
+                      { expirationTtl: 86400 });
+  } catch { /* a diagnostic is never worth failing over */ }
+}
+
+/**
+ * GET /diagnose?secret=...
+ *
+ * Can this worker reach itself? Everything fans out by the worker calling its
+ * own /run-shard, so if that is refused nothing is ever delivered and the only
+ * symptom is sixty-four shards sitting at pending forever - which is exactly
+ * what it looks like when SELF_URL is wrong, when the secret does not match,
+ * or when the platform declines to let a worker call itself.
+ *
+ * This makes one real call of each kind and reports what came back.
+ */
+async function handleDiagnose(request, env) {
+  const url = new URL(request.url);
+  if (url.searchParams.get('secret') !== env.TRIGGER_SECRET) return new Response('Forbidden', { status: 403 });
+
+  const origin = await resolveSelfUrl(env);
+  const out = {
+    selfUrlConfigured: env.SELF_URL ?? null,
+    originInUse: origin,
+    requestOrigin: new URL(request.url).origin,
+    triggerSecretSet: !!env.TRIGGER_SECRET,
+    lastDispatchError: await kv(env).get(DISPATCH_ERROR_KEY, 'json'),
+  };
+
+  if (!origin) {
+    out.verdict = 'No origin to call. Set SELF_URL.';
+    return json(out, 200);
+  }
+
+  // 1. Can we reach ourselves at all?
+  try {
+    const r = await fetch(new URL('/health', origin));
+    out.selfHealth = { status: r.status, body: (await r.text()).slice(0, 200) };
+  } catch (e) {
+    out.selfHealth = { error: e.message };
+  }
+
+  // 2. Can we reach the endpoint the fan-out actually uses, with the secret
+  //    the fan-out actually sends? A made-up job id is expected to come back
+  //    as 'gone' - what matters is that it is not 403 and not a throw.
+  try {
+    const r = await fetch(new URL('/run-shard', origin), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret: env.TRIGGER_SECRET, jobId: 'diagnose-no-such-job', shard: 'A' }),
+    });
+    out.selfRunShard = { status: r.status, body: (await r.text()).slice(0, 300) };
+  } catch (e) {
+    out.selfRunShard = { error: e.message };
+  }
+
+  const okHealth = out.selfHealth?.status === 200 || out.selfHealth?.status === 503;
+  const okShard  = out.selfRunShard?.status === 200;
+  out.verdict = okHealth && okShard
+    ? 'The worker can call itself. Fan-out should work.'
+    : !okHealth
+      ? 'The worker cannot reach its own origin. SELF_URL is wrong, or the platform is refusing the loopback.'
+      : out.selfRunShard?.status === 403
+        ? 'Reached itself, but /run-shard refused the secret.'
+        : 'Reached itself, but /run-shard did not answer normally. See selfRunShard.';
+  return json(out, 200);
 }
 
 /**
@@ -2966,25 +3086,53 @@ async function maybeRunCensus(env, note = /** @type {(name?: string, status?: st
 }
 
 async function runCensusShard(env, censusId, ch) {
-  const counts = {};
-  for (const t of ALL_TOPICS) counts[t] = 0;
-  let subscribers = 0, withGps = 0, active = 0, anyTopic = 0;
+  // Resume whatever this shard already counted for this census. Walking a
+  // shard takes more than one invocation at any real subscriber count - the
+  // same subrequest ceiling the delivery shard has to respect - so the totals
+  // live on the shard record and accumulate.
+  const prior = await kv(env).get(statsShardKey(ch), 'json');
+  const resuming = prior?.censusId === censusId && prior.state === 'counting';
+
+  const counts = resuming ? { ...prior.counts } : {};
+  for (const t of ALL_TOPICS) counts[t] ??= 0;
+  let subscribers = resuming ? prior.subscribers : 0;
+  let withGps     = resuming ? prior.withGps     : 0;
+  let active      = resuming ? prior.active      : 0;
+  let anyTopic    = resuming ? prior.anyTopic    : 0;
   // Records that are not reserved keys but that nothing can deliver to. Four
   // places in this worker skip these silently, so without counting them here a
   // subscriber whose record has an unexpected shape would simply never receive
   // anything and nothing would ever say so.
-  let unreadable = 0;
-  const unreadableShapes = {};
-  const overnightModes = {};
-  const services = {};
+  let unreadable = resuming ? prior.unreadable : 0;
+  const unreadableShapes = resuming ? { ...prior.unreadableShapes } : {};
+  const overnightModes = resuming ? { ...prior.overnightModes } : {};
+  const services = resuming ? { ...prior.services } : {};
   const activeCutoff = Date.now() - ACTIVE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
-  let cursor;
+  let cursor = resuming ? (prior.cursor ?? undefined) : undefined;
+  let lastKey = resuming ? (prior.lastKey ?? null) : null;
+  let ops = OP_BUDGET;
+  let complete = false;
+
+  outer:
   do {
-    const res = await kv(env).list({ prefix: ch, cursor, limit: 1000 });
+    const res = await kv(env).list({ prefix: ch, cursor, limit: LIST_PAGE });
+    ops--;
     for (const key of res.keys) {
+      // Skip what a previous invocation of this shard already counted. The
+      // page cursor only moves a page at a time, so without this a resumed
+      // shard would count the rest of its page twice.
+      if (lastKey && key.name <= lastKey) continue;
       if (isReservedKey(key.name)) continue;
+      // One read per subscriber, and a Worker gets about a thousand
+      // subrequests. Stop short and come back rather than throwing here -
+      // which is what used to happen, leaving the census permanently
+      // unfinished and STATS never written.
+      if (ops < 2) break outer;
+
       const stored = await kv(env).get(key.name, 'json');
+      ops--;
+      lastKey = key.name;
 
       if (!stored?.subscription?.endpoint || !stored?.subscription?.keys?.p256dh) {
         unreadable++;
@@ -3014,25 +3162,50 @@ async function runCensusShard(env, censusId, ch) {
       for (const t of ALL_TOPICS) if (stored?.preferences?.[t] === true) { counts[t]++; on++; }
       if (on > 0) anyTopic++;
     }
+    if (res.list_complete) { complete = true; break; }
+    // A whole page is behind us, so the page cursor is the record of progress
+    // and the within-page marker resets.
     cursor = res.cursor;
-    if (res.list_complete) break;
-  } while (cursor);
+    lastKey = null;
+  } while (ops > 2);
 
+  // 'counting' means there is more of this shard to walk. tryFinishCensus only
+  // counts a shard once it says 'done', so a partial pass can no longer be
+  // mistaken for a finished one.
+  const state = complete ? 'done' : 'counting';
   await kv(env).put(statsShardKey(ch), JSON.stringify({
-    censusId, shard: ch, subscribers, withGps, active, anyTopic, counts, overnightModes, services,
+    censusId, shard: ch, state, cursor: complete ? null : (cursor ?? null),
+    lastKey: complete ? null : lastKey,
+    subscribers, withGps, active, anyTopic, counts, overnightModes, services,
     unreadable, unreadableShapes, at: Date.now(),
   }), { expirationTtl: CENSUS_SHARD_TTL });
 
+  if (!complete) {
+    // Out of budget, not out of subscribers. Come straight back.
+    const origin = await resolveSelfUrl(env);
+    if (origin) {
+      keepAlive(env, fetch(new URL('/run-census-shard', origin), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ secret: env.TRIGGER_SECRET, censusId, shard: ch }),
+      }).catch(e => console.error(`[census] resume ${ch} failed:`, e.message)));
+    }
+    console.log(`[census] shard ${ch}: ${subscribers} counted so far, continuing`);
+    return { shard: ch, subscribers, state };
+  }
+
+  console.log(`[census] shard ${ch}: done, ${subscribers} subscribers`);
   // Whoever finishes last does the roll-up.
   await tryFinishCensus(env, censusId);
-  return { shard: ch, subscribers };
+  return { shard: ch, subscribers, state };
 }
 
 async function tryFinishCensus(env, censusId) {
   const parts = [];
   for (const ch of SHARD_CHARS) {
     const p = await kv(env).get(statsShardKey(ch), 'json');
-    if (!p || p.censusId !== censusId) return false;   // not everyone is in yet
+    // A shard still counting is not a shard that has reported.
+    if (!p || p.censusId !== censusId || p.state !== 'done') return false;
     parts.push(p);
   }
 
