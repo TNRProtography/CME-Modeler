@@ -406,7 +406,16 @@ function classifyOvernightConditions({ hp, bt, bz, speed, southMin, trend, auror
 
 // --- Main Export ---
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
+    // Without this, anything that fans out from an HTTP request is cancelled
+    // the moment the response returns. A Worker only keeps background work
+    // alive if it was handed to ctx.waitUntil, and keepAlive reads it from
+    // here. This handler had no ctx at all, so a forced census, a broadcast
+    // and a forced migration each dispatched 64 shard calls straight into the
+    // bin - the cron sweep picked delivery back up minutes later, but a
+    // census has no sweep, so it simply never finished.
+    env.__ctx = ctx;
+
     const url = new URL(request.url);
     if (request.method === 'OPTIONS') return handleOptions();
     // Learn where we live, in case SELF_URL was never configured.

@@ -401,5 +401,41 @@ console.log('\n8. the subscriber stats snapshot');
         'push services are identified');
 }
 
+// ---- 9. background work survives the response ------------------------
+// A Worker cancels anything still in flight when the fetch handler returns,
+// unless it was handed to ctx.waitUntil. The handler had no ctx at all, so
+// every fan-out started from an HTTP request - a forced census, a broadcast,
+// a forced migration - was thrown away the instant the response was sent.
+console.log('\n9. fan-out from an HTTP request is kept alive');
+{
+  const mod = await import(pathToFileURL(copy).href);
+  const handler = mod.default;
+  check(typeof handler?.fetch === 'function' && handler.fetch.length >= 3,
+        'the fetch handler accepts a ctx',
+        `arity ${handler?.fetch?.length}`);
+
+  const kept = [];
+  const ctx = { waitUntil: (p) => { kept.push(p); return p; } };
+  const envWithCtx = { ...env };
+
+  await handler.fetch(
+    new Request('https://push.invalid/stats?secret=s&force=1'), envWithCtx, ctx);
+  check(kept.length > 0,
+        'a forced census hands its shard dispatches to waitUntil',
+        `${kept.length} kept alive`);
+  check(envWithCtx.__ctx === ctx, 'the ctx is where keepAlive looks for it');
+
+  // And the broadcast path, which is the one that must not regress.
+  kept.length = 0;
+  await handler.fetch(new Request('https://push.invalid/send-broadcast', {
+    method: 'POST',
+    body: JSON.stringify({ secret: 's', title: 'T', body: 'B' }),
+    headers: { 'Content-Type': 'application/json' },
+  }), envWithCtx, ctx);
+  check(kept.length > 0,
+        'a broadcast hands its shard dispatches to waitUntil',
+        `${kept.length} kept alive`);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
