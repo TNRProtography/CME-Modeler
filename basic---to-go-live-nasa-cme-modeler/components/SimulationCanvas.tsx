@@ -532,6 +532,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   // --- Dynamic loader: only fetches Three.js + deps when the modeler first mounts ---
   const threeLoadedRef = useRef(false);
   const [threeReady, setThreeReady] = useState(!!(window as any).THREE);
+  // The scene is built inside an async callback, so it does not exist during the
+  // effect pass that mounts this component. Effects that add things to the scene
+  // have to wait for this rather than just for Three, or they bail once and never
+  // run again when their own data happens to arrive first.
+  const [sceneReady, setSceneReady] = useState(false);
   const loadThreeLibs = useCallback((): Promise<void> => {
     if (threeLoadedRef.current && (window as any).THREE && (window as any).gsap) {
       return Promise.resolve();
@@ -944,6 +949,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     controlsRef.current = controls;
 
     cmeGroupRef.current = new THREE.Group(); scene.add(cmeGroupRef.current);
+    setSceneReady(true);
 
     // Legacy torus - kept for import compatibility, hidden by default
     const fluxRopeMat = new THREE.ShaderMaterial({
@@ -1537,7 +1543,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         if (o.geometry) o.geometry.dispose();
         if (o.material) { if (Array.isArray(o.material)) o.material.forEach((m: any) => m.dispose()); else o.material.dispose(); }
       });
-      rendererRef.current = null; setRendererDomElement(null); onCameraReady(null);
+      rendererRef.current = null; setRendererDomElement(null); onCameraReady(null); setSceneReady(false);
     };
     }); // end loadThreeLibs().then()
 
@@ -1696,7 +1702,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       cmeGroupRef.current.add(system);
       cmeGroupRef.current.add(tailSystem);
     });
-  }, [cmeData, getClockElapsedTime, threeReady]);
+  }, [cmeData, getClockElapsedTime, threeReady, sceneReady]);
 
   useEffect(() => {
     const THREE = (window as any).THREE;
@@ -1719,7 +1725,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), p]), new THREE.LineDashedMaterial({ color: 0xffff66, transparent: true, opacity: 0.85, dashSize: 0.05 * SCENE_SCALE, gapSize: 0.02 * SCENE_SCALE }));
       l.computeLineDistances(); l.visible = !!currentlyModeledCMEId; sceneRef.current.add(l); predictionLineRef.current = l;
     }
-  }, [currentlyModeledCMEId, cmeData, getClockElapsedTime, threeReady, rerunToken, rerunHssInteraction]);
+  }, [currentlyModeledCMEId, cmeData, getClockElapsedTime, threeReady, sceneReady, rerunToken, rerunHssInteraction]);
 
   // ── Reset staged rerun state when the mode is turned off ─────────────────
   useEffect(() => {
@@ -1782,7 +1788,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       hssGroupRef.current.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
     });
-  }, [coronalHoles, threeReady]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [coronalHoles, threeReady, sceneReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
 
