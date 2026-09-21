@@ -50,11 +50,15 @@ const kv = {
 const env = { SUBSCRIPTIONS_KV: kv, TRIGGER_SECRET: 's' };
 globalThis.fetch = async () => new Response('[]', { status: 200 });
 
+/** Every payload any detector has produced during this run. */
+const allPayloads = [];
+
 /** Which topics were queued since the last call, newest last. */
 async function queuedTopics() {
   const out = [];
   for (const name of [...store.keys()].filter(k => k.startsWith('JOB_'))) {
     const job = JSON.parse(store.get(name));
+    if (job.payload) allPayloads.push({ topic: job.topic ?? job.kind, ...job.payload });
     out.push(job.topic ?? job.kind);
     store.delete(name);
     for (const ch of 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_') {
@@ -272,6 +276,37 @@ console.log('\nA half-configured worker');
   const sent = await queuedTopics();
   check(sent.includes('substorm-forecast'),
         'a substorm still fires with the config key missing', notes.join(', '));
+}
+
+// ── no emojis in anything that reaches a phone ─────────────────────────────
+console.log('\nNotifications carry no emojis');
+{
+  // Pictographs only. Arrows, the middle dot, degrees and superscripts are
+  // typography and belong in "Speed: 400 -> 600 km/s" and "p/cm3".
+  const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}]/u;
+
+  // What the detectors actually produced above, rather than what the source
+  // looks like - a title assembled at runtime is where one would hide.
+  const dirty = allPayloads.filter(p => EMOJI.test(`${p.title ?? ''} ${p.body ?? ''}`));
+  check(dirty.length === 0,
+        `every payload these tests produced is emoji-free (${allPayloads.length} checked)`,
+        dirty.map(p => `${p.topic}: ${p.title}`).join('\n        '));
+  check(allPayloads.length > 0, 'and there were payloads to check');
+
+  // The backstop, because the tests above do not exercise every branch - the
+  // visibility tiers, the overnight outlook and the test-push builder all have
+  // their own titles. The worker's only user-visible output is notifications,
+  // so no emoji anywhere in it is a clean invariant to hold.
+  const src = readFileSync(SRC, 'utf8');
+  const stray = [...src.matchAll(new RegExp(EMOJI.source, 'gu'))];
+  check(stray.length === 0,
+        'and none is left anywhere in the worker source',
+        stray.map(m => `${JSON.stringify(m[0])} at index ${m.index}`).slice(0, 8).join(', '));
+
+  // Also as an escape, which is how one survived a previous sweep.
+  check(!/\\uD8[0-9A-F]{2}\\uD[C-F][0-9A-F]{2}/i.test(src),
+        'nor written as an escaped surrogate pair',
+        'a \\uD83C\\uDF0C in a template literal is an emoji a character scan misses');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

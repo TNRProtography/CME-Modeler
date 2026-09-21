@@ -343,7 +343,6 @@ function classifyOvernightConditions({ hp, bt, bz, speed, southMin, trend, auror
     return {
       tier: 'unknown',
       label: 'Data Unavailable',
-      emoji: '❓',
       buildBody: () => "We couldn't pull fresh solar wind data just now. Pop the app open and take a look at the live forecast to check what's going on.",
     };
   }
@@ -403,13 +402,13 @@ function classifyOvernightConditions({ hp, bt, bz, speed, southMin, trend, auror
   }
 
   const TIER_META = {
-    quiet:     { emoji: '😴', label: 'Quiet' },
-    ambient:   { emoji: '🌑', label: 'Ambient' },
-    unsettled: { emoji: '🌀', label: 'Unsettled' },
-    moderate:  { emoji: '🟡', label: 'Moderate' },
-    high:      { emoji: '🟠', label: 'High' },
-    severe:    { emoji: '🔴', label: 'Severe' },
-    extreme:   { emoji: '🔥', label: 'Extreme' },
+    quiet:     { label: 'Quiet' },
+    ambient:   { label: 'Ambient' },
+    unsettled: { label: 'Unsettled' },
+    moderate:  { label: 'Moderate' },
+    high:      { label: 'High' },
+    severe:    { label: 'Severe' },
+    extreme:   { label: 'Extreme' },
   };
   const meta = TIER_META[tier];
 
@@ -478,7 +477,7 @@ function classifyOvernightConditions({ hp, bt, bz, speed, southMin, trend, auror
     return paragraphs.join('\n\n');
   };
 
-  return { tier, label: meta.label, emoji: meta.emoji, buildBody };
+  return { tier, label: meta.label, buildBody };
 }
 
 // --- Main Export ---
@@ -730,7 +729,7 @@ async function checkSolarFlares(env, /** @type {any[]|null} */ allData = null, n
         for (const th of FLARE_THRESHOLDS) {
           if (latest.flux >= th.value) {
             if (await checkAndSetCooldown(th.topic, th.cooldownMinutes, env)) {
-              const title = `☀️ ${cls} Solar Flare Detected`;
+              const title = `${cls} Solar Flare Detected`;
               const body = `X-ray flux has reached ${cls} class. A solar flare is in progress.`;
               await notifyTopic(th.topic, title, body, env, {
                 url: '/?page=solar-activity&section=goes-xray-flux-section',
@@ -773,7 +772,7 @@ async function checkSolarFlares(env, /** @type {any[]|null} */ allData = null, n
         for (const th of FLARE_THRESHOLDS) {
           if (latest.flux >= th.value && !alreadyNotified.has(th.topic)) {
             if (await checkAndSetCooldown(th.topic, th.cooldownMinutes, env)) {
-              const title = `☀️ Flare Intensifying: Now ${cls}`;
+              const title = `Flare Intensifying: Now ${cls}`;
               const body = `The ongoing solar flare has strengthened to ${cls} class.`;
               await notifyTopic(th.topic, title, body, env, {
                 url: '/?page=solar-activity&section=goes-xray-flux-section',
@@ -807,13 +806,13 @@ async function checkSolarFlares(env, /** @type {any[]|null} */ allData = null, n
         const peakClass = getXrayClass(prev.peakFlux);
         if (await checkAndSetCooldown('flare-peak', FLARE_PEAK_COOLDOWN_MINUTES, env)) {
           await notifyTopic('flare-peak',
-            `📉 Solar Flare Peaked: ${peakClass}`,
+            `Solar Flare Peaked: ${peakClass}`,
             `A solar flare reached a maximum of ${peakClass} around ${formatNzTime(prev.peakTime)} and is now declining.`,
             env, { url: '/?page=solar-activity&section=goes-xray-flux-section' });
         }
         if (await checkAndSetCooldown('flare-event', 15, env)) {
           await notifyTopic('flare-event',
-            `☀️ ${peakClass} Solar Flare`,
+            `${peakClass} Solar Flare`,
             `A solar flare peaked at ${peakClass} at ${formatNzTime(prev.peakTime)}.`,
             env, { url: '/?page=solar-activity&section=goes-xray-flux-section' });
         }
@@ -1056,7 +1055,7 @@ async function checkEarthDirectedCMEs(env, cmeData = null, note = /** @type {(na
       if (c.arrivalMs) arrivalLines.push(`NASA estimate: ${formatNzTime(c.arrivalMs)}`);
       const band = cmeSpeedBand(c.speed);
       const payload = {
-        title: `🌞 Earth-Directed CME - ${c.speed} km/s`,
+        title: `Earth-Directed CME - ${c.speed} km/s`,
         body: [
           'A CME has been detected heading toward Earth.',
           '',
@@ -1228,10 +1227,10 @@ async function checkSubstormActivity(env, substormThresholds, substormData, /** 
         let title = 'Substorm Forecast Update';
         let body  = substormData.current.summary || 'Substorm activity detected.';
         switch (currentStatus) {
-          case 'ONSET':       title = '💥 Substorm Eruption In Progress!';   body = 'A substorm onset has been detected. Aurora may be visible now, look south.'; break;
-          case 'IMMINENT_30': title = '⚡ Substorm Alert: Eruption Imminent'; body = `Substorm index ${Math.round(score)}, eruption expected within 30 minutes. Get to your viewing site.`; break;
-          case 'LIKELY_60':   title = '⚡ Substorm Watch: Eruption Likely';   body = `Substorm index ${Math.round(score)}, eruption likely within the hour. Prepare to go out.`; break;
-          case 'WATCH':       title = '⚡ Substorm Watch: Energy Building';   body = `Substorm index ${Math.round(score)}, magnetospheric energy is loading. Keep an eye on the forecast.`; break;
+          case 'ONSET':       title = 'Substorm Eruption In Progress!';   body = 'A substorm onset has been detected. Aurora may be visible now, look south.'; break;
+          case 'IMMINENT_30': title = 'Substorm Alert: Eruption Imminent'; body = `Substorm index ${Math.round(score)}, eruption expected within 30 minutes. Get to your viewing site.`; break;
+          case 'LIKELY_60':   title = 'Substorm Watch: Eruption Likely';   body = `Substorm index ${Math.round(score)}, eruption likely within the hour. Prepare to go out.`; break;
+          case 'WATCH':       title = 'Substorm Watch: Energy Building';   body = `Substorm index ${Math.round(score)}, magnetospheric energy is loading. Keep an eye on the forecast.`; break;
         }
         if (currentStatus !== 'ONSET') {
           const loadingLine = tailLoadingSentence(loadingState);
@@ -1438,15 +1437,15 @@ async function checkShockDetection(env, magPoints, plasmaPoints, tempAvailable =
     const prevM   = magPoints[magPoints.length - 2] || latestM;
 
     const SHOCK_LABELS = {
-      ff:  { emoji: '💥', title: 'CME Has Hit the Satellites!',   summary: 'A fast forward shock has been detected at the L1 satellites. Speed, density and magnetic field all jumped, which is the classic CME arrival signature.' },
-      sf:  { emoji: '💥', title: 'Compression Wave Detected',     summary: 'A slow forward shock has arrived at L1, a compression wave with rising speed and density but dropping magnetic field.' },
-      fr:  { emoji: '💥', title: 'CME Trailing Edge Passing',     summary: 'A fast reverse shock detected, the back end of a CME or high-speed stream is sweeping past.' },
-      sr:  { emoji: '💥', title: 'Trailing Rarefaction Detected', summary: 'A slow reverse shock at L1, density falling with a magnetic uptick.' },
-      imf: { emoji: '🧲', title: 'Sudden IMF Shift Detected',     summary: 'A sharp change in the interplanetary magnetic field was detected without a major plasma shock.' },
+      ff:  { title: 'CME Has Hit the Satellites!',   summary: 'A fast forward shock has been detected at the L1 satellites. Speed, density and magnetic field all jumped, which is the classic CME arrival signature.' },
+      sf:  { title: 'Compression Wave Detected',     summary: 'A slow forward shock has arrived at L1, a compression wave with rising speed and density but dropping magnetic field.' },
+      fr:  { title: 'CME Trailing Edge Passing',     summary: 'A fast reverse shock detected, the back end of a CME or high-speed stream is sweeping past.' },
+      sr:  { title: 'Trailing Rarefaction Detected', summary: 'A slow reverse shock at L1, density falling with a magnetic uptick.' },
+      imf: { title: 'Sudden IMF Shift Detected',     summary: 'A sharp change in the interplanetary magnetic field was detected without a major plasma shock.' },
     };
 
     const info = SHOCK_LABELS[bestEvent.shockType];
-    const title = `${info.emoji} ${info.title}`;
+    const title = info.title;
     const bodyLines = [
       info.summary, '',
       `Speed: ${Math.round(prevP.speed)} → ${Math.round(latestP.speed)} km/s${bestEvent.spdDelta !== 0 ? ` (${bestEvent.spdDelta > 0 ? '+' : ''}${bestEvent.spdDelta})` : ''}`,
@@ -1508,7 +1507,7 @@ async function checkOvernightWatch(env, forecastData, substormData, magPoints = 
     // (mode, score, the three hour cooldown, the once-a-night marker) move
     // into the shard worker unchanged.
     const payload = {
-      title: `\uD83C\uDF0C Tonight's aurora outlook: ${condition.label}`,
+      title: `Tonight's aurora outlook: ${condition.label}`,
       body,
       tag: 'overnight-watch',
       data: { url: '/?page=forecast', category: 'overnight-watch' },
@@ -2368,36 +2367,36 @@ async function handleTriggerSelfTest(request, env) {
 
     let title, body, url;
     const SHOCK_TEST_LABELS = {
-      'shock-ff':  { emoji: '💥', title: 'CME Has Hit the Satellites!',   summary: 'A fast forward shock has been detected at the L1 satellites.' },
-      'shock-sf':  { emoji: '💥', title: 'Compression Wave Detected',     summary: 'A slow forward shock has arrived at L1.' },
-      'shock-fr':  { emoji: '💥', title: 'CME Trailing Edge Passing',     summary: 'A fast reverse shock detected.' },
-      'shock-sr':  { emoji: '💥', title: 'Trailing Rarefaction Detected', summary: 'A slow reverse shock at L1.' },
-      'shock-imf': { emoji: '🧲', title: 'Sudden IMF Shift Detected',     summary: 'A sharp change in the interplanetary magnetic field.' },
+      'shock-ff':  { title: 'CME Has Hit the Satellites!',   summary: 'A fast forward shock has been detected at the L1 satellites.' },
+      'shock-sf':  { title: 'Compression Wave Detected',     summary: 'A slow forward shock has arrived at L1.' },
+      'shock-fr':  { title: 'CME Trailing Edge Passing',     summary: 'A fast reverse shock detected.' },
+      'shock-sr':  { title: 'Trailing Rarefaction Detected', summary: 'A slow reverse shock at L1.' },
+      'shock-imf': { title: 'Sudden IMF Shift Detected',     summary: 'A sharp change in the interplanetary magnetic field.' },
     };
 
     switch (category) {
       case 'overnight-watch': {
         const condition = classifyOvernightConditions({ hp, bt, bz, speed, southMin, trend, auroraScore, moonPct });
-        title = `🌌 Tonight's aurora outlook: ${condition.label}`;
+        title = `Tonight's aurora outlook: ${condition.label}`;
         body  = condition.buildBody();
         url   = '/?page=forecast';
         break;
       }
       case 'visibility-naked':
-        title = '👁️ Aurora, Naked Eye Visible';
+        title = 'Aurora, Naked Eye Visible';
         body  = `Aurora should be visible to the naked eye from your location. Head outside and look south.\n\n${statsLine}`;
         url   = '/?page=forecast'; break;
       case 'visibility-phone':
-        title = '📱 Aurora, Phone Camera Visible';
+        title = 'Aurora, Phone Camera Visible';
         body  = `Aurora is bright enough for your phone camera. Point it south and try night mode.\n\n${statsLine}`;
         url   = '/?page=forecast'; break;
       case 'visibility-dslr':
-        title = '📷 Aurora, DSLR Camera Visible';
+        title = 'Aurora, DSLR Camera Visible';
         body  = `Aurora is detectable from your location with a camera on a tripod. Point south and try a long exposure.\n\n${statsLine}`;
         url   = '/?page=forecast'; break;
       case 'flare-event': {
         const cls = latestFlareClass ?? 'M1.0';
-        title = `☀️ ${cls} Solar Flare`;
+        title = `${cls} Solar Flare`;
         body  = `A solar flare peaked at ${cls} at ${formatNzTime(Date.now())}.`;
         url   = '/?page=solar-activity&section=goes-xray-flux-section'; break;
       }
@@ -2405,7 +2404,7 @@ async function handleTriggerSelfTest(request, env) {
         const info = SHOCK_TEST_LABELS[category];
         const latestP = plasmaPoints.at(-1), prevP = plasmaPoints.at(-2) ?? latestP;
         const latestM = magPoints.at(-1),    prevM = magPoints.at(-2) ?? latestM;
-        title = `${info.emoji} ${info.title}`;
+        title = info.title;
         body  = latestP && prevP && latestM && prevM ? [
           info.summary, '',
           `Speed: ${Math.round(prevP.speed)} → ${Math.round(latestP.speed)} km/s`,
@@ -2416,12 +2415,12 @@ async function handleTriggerSelfTest(request, env) {
       }
       case 'shock-detection': case 'ips-shock': {
         const info = SHOCK_TEST_LABELS['shock-ff'];
-        title = `${info.emoji} ${info.title}`;
+        title = info.title;
         body  = `${info.summary}\n\n${statsLine}`;
         url   = '/?page=forecast'; break;
       }
       case 'substorm-forecast':
-        title = '⚡ Substorm Watch: Energy Building';
+        title = 'Substorm Watch: Energy Building';
         body  = `Substorm index ${Math.round(substormScore)} (${substormLevel}), magnetospheric energy is loading. Keep an eye on the forecast.\n\n${statsLine}`;
         url   = '/?page=forecast&section=unified-forecast-section'; break;
       default:
@@ -3113,13 +3112,13 @@ function buildVisibilityPayload(tier, statsLine) {
   const topic = { dslr: 'visibility-dslr', phone: 'visibility-phone', naked: 'visibility-naked' }[tier];
   let title, body;
   if (tier === 'naked') {
-    title = '👁️ Aurora, Naked Eye Visible';
+    title = 'Aurora, Naked Eye Visible';
     body  = `Aurora should be visible to the naked eye from your location. Head outside and look south.\n\n${statsLine}`;
   } else if (tier === 'phone') {
-    title = '📱 Aurora, Phone Camera Visible';
+    title = 'Aurora, Phone Camera Visible';
     body  = `Aurora is bright enough for your phone camera. Point it south and try night mode.\n\n${statsLine}`;
   } else {
-    title = '📷 Aurora, DSLR Camera Visible';
+    title = 'Aurora, DSLR Camera Visible';
     body  = `Aurora is detectable from your location with a camera on a tripod. Point south and try a long exposure.\n\n${statsLine}`;
   }
   return { title, body, tag: topic, data: { url: '/?page=forecast', category: topic }, ts: Date.now() };
