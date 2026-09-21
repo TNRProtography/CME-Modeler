@@ -105,7 +105,7 @@ npx wrangler deploy --config wrangler-forecast.toml
 Then check:
 
 ```bash
-curl -s https://solar-forecast-worker.<subdomain>.workers.dev/health
+curl -s https://spot-the-aurora-forecast-worker.<subdomain>.workers.dev/health
 ```
 
 `hasForecast: false` immediately after deploy is expected - nothing has run
@@ -113,7 +113,7 @@ yet. It fills in on the next cron, or you can trigger one from the Cloudflare
 dashboard.
 
 If the Worker name or subdomain differs from
-`solar-forecast-worker.thenamesrock.workers.dev`, update `FORECAST_WORKER` in
+`spot-the-aurora-forecast-worker.thenamesrock.workers.dev`, update `FORECAST_WORKER` in
 `hooks/useForecast.ts` to match.
 
 ## KV keys

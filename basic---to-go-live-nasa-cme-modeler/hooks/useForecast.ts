@@ -23,7 +23,7 @@ import {
   type ChStoreState,
 } from '../utils/chDetectionStore';
 
-const FORECAST_WORKER = 'https://solar-forecast-worker.thenamesrock.workers.dev';
+const FORECAST_WORKER = 'https://spot-the-aurora-forecast-worker.thenamesrock.workers.dev';
 const RTSW_URL = 'https://imap-solar-data-test.thenamesrock.workers.dev/rtsw/merged-24h';
 const SUVI_WORKER = 'https://suvi-difference-imagery.thenamesrock.workers.dev';
 
