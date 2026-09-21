@@ -73,32 +73,49 @@ const recordRun = async (env, entry) => {
 
 async function fetchCoronalHoles() {
   try {
-    const res = await fetch(`${CH_HISTORY_URL}/history`, { cf: { cacheTtl: 300 } });
-    if (!res.ok) return { holes: [], asOfMs: null };
+    // /ch-history, not /history. The app has always called it by that name;
+    // this worker guessed, and a guess that 404s looks exactly like a quiet
+    // sky, which is the worst way for an input to fail.
+    const res = await fetch(`${CH_HISTORY_URL}/ch-history`, { cf: { cacheTtl: 300 } });
+    if (!res.ok) return { holes: [], asOfMs: null, upstream: `HTTP ${res.status}` };
     const data = await res.json();
     const snapshots = Array.isArray(data?.snapshots) ? data.snapshots : [];
-    if (snapshots.length === 0) return { holes: [], asOfMs: null };
+    if (snapshots.length === 0) return { holes: [], asOfMs: null, upstream: 'no snapshots' };
     const newest = snapshots.reduce((a, b) => (a.timestampMs >= b.timestampMs ? a : b));
-    return { holes: newest.coronalHoles ?? [], asOfMs: newest.timestampMs ?? null };
-  } catch {
-    return { holes: [], asOfMs: null };
+    return {
+      holes: newest.coronalHoles ?? [],
+      asOfMs: newest.timestampMs ?? null,
+      upstream: `ok, ${snapshots.length} snapshots`,
+    };
+  } catch (error) {
+    return { holes: [], asOfMs: null, upstream: `failed: ${String(error?.message ?? error)}` };
   }
 }
 
+// Set by the fetch below so a run can report what its input actually did.
+// An empty array is returned for a 404, a parse failure and a genuinely quiet
+// feed alike, and those are three different problems.
+let lastWindNote = 'not fetched';
+let lastInputNotes = null;
+
 async function fetchObservedWind() {
+  lastWindNote = 'not fetched';
   try {
     const res = await fetch(RTSW_URL, { cf: { cacheTtl: 120 } });
-    if (!res.ok) return [];
+    if (!res.ok) { lastWindNote = `HTTP ${res.status}`; return []; }
     const data = await res.json();
     const rows = Array.isArray(data) ? data : (data?.data ?? []);
-    return rows.map((row) => ({
+    const parsed = rows.map((row) => ({
       atMs: new Date(row.time_tag ?? row.time_utc ?? row.time).getTime(),
       speedKms: Number(row.speed ?? row.proton_speed ?? null),
       densityCm3: Number(row.density ?? row.proton_density ?? null),
       btNt: Number(row.bt ?? null),
       bzNt: Number(row.bz ?? row.bz_gsm ?? null),
     })).filter((s) => Number.isFinite(s.atMs));
-  } catch {
+    lastWindNote = `ok, ${parsed.length} of ${rows.length} rows usable`;
+    return parsed;
+  } catch (error) {
+    lastWindNote = `failed: ${String(error?.message ?? error)}`;
     return [];
   }
 }
@@ -117,10 +134,16 @@ export async function runForecast(env, modules) {
   const { buildForecastTimeline, chEarthConnection, hssArrivalEnsemble,
           measurementConfidence, buildOutlook, solarDiskOrientation } = modules;
 
-  const [{ holes, asOfMs }, observed] = await Promise.all([
+  const [{ holes, asOfMs, upstream: holesNote }, observed] = await Promise.all([
     fetchCoronalHoles(),
     fetchObservedWind(),
   ]);
+  lastInputNotes = {
+    coronalHoles: holesNote ?? 'unknown',
+    holeCount: holes.length,
+    wind: lastWindNote,
+    windSamples: observed.length,
+  };
 
   const now = Date.now();
   const { b0 } = solarDiskOrientation(new Date(now));
@@ -179,6 +202,7 @@ export async function runForecast(env, modules) {
     streams,
     timeline,
     outlook: buildOutlook(timeline),
+    inputs: lastInputNotes,
   };
 
   await env.FORECAST_KV.put(TIMELINE_KEY, JSON.stringify(payload), { expirationTtl: 86400 });
@@ -316,6 +340,7 @@ export function makeHandler(modules) {
           const scoring = await runScoring(env, modules);
           await recordRun(env, {
             ok: true, startedMs, finishedMs: Date.now(), scored: scoring?.scored ?? 0,
+            inputs: lastInputNotes,
           });
         } catch (error) {
           console.error('forecast cron failed', error);
