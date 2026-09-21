@@ -187,6 +187,86 @@ console.log('\nA real alert goes to both sites');
         'an unscoped send must never exclude a record for lacking an origin');
 }
 
+// ── 4b. the same person, subscribed on both sites ──────────────────────────
+// The question this answers: someone who uses the live site AND the dev site
+// has two subscriptions on one phone. Do both actually fire, or does something
+// in here quietly treat them as one person?
+//
+// They must both fire. The subscriber id is a hash of the push endpoint, and
+// the browser issues a different endpoint per origin, so these are two
+// unrelated records that happen to belong to the same human. Nothing keys off
+// the device, the location or the auth secret - which this proves by making
+// all three identical and only varying the origin.
+console.log('\nOne person subscribed on both sites');
+{
+  const SHARED_AUTH = b64u(webcrypto.getRandomValues(new Uint8Array(16)));
+  // Same device, same keys, same location, same preferences. Only the origin
+  // and the endpoint differ - exactly what a real dual subscription looks like.
+  for (const [origin, tag] of [[PROD, 'live'], [DEV, 'preview']]) {
+    const req = new Request('https://push.invalid/save-subscription', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: origin },
+      body: JSON.stringify({
+        subscription: { endpoint: `https://push.example/sameperson-${tag}`,
+                        keys: { p256dh: P256DH, auth: SHARED_AUTH } },
+        preferences: { 'flare-X1': true, 'overnight-watch': true },
+        timezone: 'Pacific/Auckland', latitude: -43.53, longitude: 172.64,
+        overnight_mode: 'phone',
+      }),
+    });
+    await W.handleSaveSubscription(req, env);
+  }
+
+  const rows = [...store.values()]
+    .map(v => { try { return JSON.parse(v); } catch { return null; } })
+    .filter(r => r?.subscription?.endpoint?.includes('sameperson'));
+  check(rows.length === 2,
+        'the two subscriptions are two separate records, not one overwriting the other',
+        `${rows.length} record(s) - the id is a hash of the endpoint, which differs per origin`);
+
+  delivered.length = 0;
+  await W.enqueueDelivery(env, {
+    kind: 'topic', topic: 'flare-X1',
+    payload: { title: 'X1 flare', body: 'x', tag: 'flare-X1', data: { url: '/' } },
+  });
+  await settle();
+  const mine = delivered.filter(u => u.includes('sameperson'));
+  check(mine.length === 2,
+        'and a real alert reaches both of them',
+        `${mine.length} of 2: ${mine.join(', ')}`);
+  check(mine.some(u => u.includes('live')) && mine.some(u => u.includes('preview')),
+        'one to the live site, one to the dev site',
+        mine.join(', '));
+
+  // The nightly is the one job with per-subscriber send-once state
+  // (overnightWatchSentDate). If that state were shared, the second
+  // subscription would be skipped as "already sent tonight".
+  delivered.length = 0;
+  await W.enqueueDelivery(env, {
+    kind: 'overnight',
+    params: { sunsetDate: '2026-09-21', auroraScore: 95 },
+    payload: { title: 'Tonight', body: 'x', tag: 'overnight-watch', data: { url: '/' } },
+  });
+  await settle();
+  const nightly = delivered.filter(u => u.includes('sameperson'));
+  check(nightly.length === 2,
+        'the nightly send-once check is per subscription, so both still fire',
+        `${nightly.length} of 2`);
+
+  // And a dev-scoped test reaches only their dev subscription - the point of
+  // the filter, from one person's perspective rather than two populations'.
+  delivered.length = 0;
+  await W.enqueueDelivery(env, {
+    kind: 'topic', topic: 'flare-X1', site: 'dev',
+    payload: { title: 'dev only', body: 'x', tag: 'flare-X1', data: { url: '/' } },
+  });
+  await settle();
+  const scoped = delivered.filter(u => u.includes('sameperson'));
+  check(scoped.length === 1 && scoped[0].includes('preview'),
+        'while a dev-scoped test reaches only their dev subscription',
+        scoped.join(', ') || 'nothing');
+}
+
 // ── 5. a test push defaults to the caller's own site ───────────────────────
 console.log('\nA test push defaults to where it was triggered from');
 {
@@ -216,10 +296,17 @@ console.log('\n/stats breaks the count down by URL');
   check(!!stats, 'the census completed');
   if (stats) {
     console.log(`    byOrigin: ${JSON.stringify(stats.byOrigin)}`);
-    check(stats.byOrigin?.[PROD] === 20 && stats.byOrigin?.[DEV] === 5,
-          'each site is reported against its own URL',
+    // Derived from the store rather than hardcoded, so adding a case above
+    // does not silently turn this into a test of last week's numbers.
+    const seeded = [...store.values()]
+      .map(v => { try { return JSON.parse(v); } catch { return null; } })
+      .filter(r => r?.subscription?.endpoint);
+    const want = (site) => seeded.filter(r => (r.site ?? 'unknown') === site).length;
+
+    check(stats.byOrigin?.[PROD] === want('prod') && stats.byOrigin?.[DEV] === want('dev'),
+          `each site is reported against its own URL (${want('prod')} live, ${want('dev')} dev)`,
           JSON.stringify(stats.byOrigin));
-    check(stats.bySite?.prod === 20 && stats.bySite?.dev === 5,
+    check(stats.bySite?.prod === want('prod') && stats.bySite?.dev === want('dev'),
           'and grouped as prod and dev', JSON.stringify(stats.bySite));
     check(Object.values(stats.byOrigin ?? {}).reduce((a, b) => a + b, 0) === stats.subscribers,
           'the per-URL counts add up to the total',
