@@ -63,6 +63,17 @@ const readJson = async (kv, key, fallback) => {
   }
 };
 
+/** What actually came back, so a 404 can be told apart from another 404. */
+const describeFailure = async (res) => {
+  let body = '';
+  try {
+    body = (await res.text()).slice(0, 120).replace(/\s+/g, ' ').trim();
+  } catch {
+    body = '<unreadable>';
+  }
+  return `HTTP ${res.status} from ${new URL(res.url || 'https://unknown/').hostname}: ${body}`;
+};
+
 /** Best effort: a broken binding must not turn one failure into two. */
 const recordRun = async (env, entry) => {
   try {
@@ -80,7 +91,11 @@ async function fetchCoronalHoles() {
     // this worker guessed, and a guess that 404s looks exactly like a quiet
     // sky, which is the worst way for an input to fail.
     const res = await fetch(`${CH_HISTORY_URL}/ch-history`, { cf: { cacheTtl: 300 } });
-    if (!res.ok) return { holes: [], asOfMs: null, upstream: `HTTP ${res.status}` };
+    // The body, not just the status. Two unrelated upstreams both answering
+    // 404 is the signature of a subrequest being routed back to this worker,
+    // whose own 404 body is distinctive - and that is a completely different
+    // problem from an upstream that is genuinely missing a route.
+    if (!res.ok) return { holes: [], asOfMs: null, upstream: await describeFailure(res) };
     const data = await res.json();
     const snapshots = Array.isArray(data?.snapshots) ? data.snapshots : [];
     if (snapshots.length === 0) return { holes: [], asOfMs: null, upstream: 'no snapshots' };
@@ -105,7 +120,7 @@ async function fetchObservedWind() {
   lastWindNote = 'not fetched';
   try {
     const res = await fetch(RTSW_URL, { cf: { cacheTtl: 120 } });
-    if (!res.ok) { lastWindNote = `HTTP ${res.status}`; return []; }
+    if (!res.ok) { lastWindNote = await describeFailure(res); return []; }
     const data = await res.json();
     const rows = Array.isArray(data) ? data : (data?.data ?? []);
     const parsed = rows.map((row) => ({
