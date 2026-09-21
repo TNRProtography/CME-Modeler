@@ -36,6 +36,7 @@ const RTSW_URL = 'https://imap-solar-data-test.thenamesrock.workers.dev/rtsw/mer
 const TIMELINE_KEY = 'forecast:timeline:current';
 const FORECASTS_KEY = 'forecast:pending';
 const SCORES_KEY = 'forecast:scores';
+const LAST_RUN_KEY = 'forecast:last-run';
 
 /** Keep a rolling window rather than growing without limit. */
 const MAX_PENDING = 60;
@@ -56,6 +57,15 @@ const readJson = async (kv, key, fallback) => {
     return raw ? JSON.parse(raw) : fallback;
   } catch {
     return fallback;
+  }
+};
+
+/** Best effort: a broken binding must not turn one failure into two. */
+const recordRun = async (env, entry) => {
+  try {
+    await env?.FORECAST_KV?.put(LAST_RUN_KEY, JSON.stringify(entry), { expirationTtl: 604800 });
+  } catch {
+    /* nothing useful to do here */
   }
 };
 
@@ -257,23 +267,65 @@ export function makeHandler(modules) {
       }
 
       if (url.pathname === '/health') {
-        const stored = await readJson(env.FORECAST_KV, TIMELINE_KEY, null);
+        // readJson swallows every error, including the binding being absent,
+        // so asking it whether a forecast exists cannot tell a working worker
+        // with no data yet from a worker that cannot reach KV at all. Those
+        // need different fixes, so probe the binding directly and say which.
+        let kv = 'ok';
+        if (!env.FORECAST_KV) {
+          kv = 'missing';
+        } else {
+          try {
+            await env.FORECAST_KV.get(TIMELINE_KEY);
+          } catch (error) {
+            kv = `error: ${String(error?.message ?? error)}`;
+          }
+        }
+
+        const stored = kv === 'ok' ? await readJson(env.FORECAST_KV, TIMELINE_KEY, null) : null;
+        const lastRun = kv === 'ok' ? await readJson(env.FORECAST_KV, LAST_RUN_KEY, null) : null;
+
         return json({
-          ok: true,
+          ok: kv === 'ok',
+          kv,
           hasForecast: !!stored,
           generatedAtMs: stored?.generatedAtMs ?? null,
           ageMinutes: stored ? Math.round((Date.now() - stored.generatedAtMs) / 60000) : null,
           stale: stored?.stale ?? null,
-        });
+          // null here means the scheduled handler has never completed a run,
+          // which points at the trigger rather than at anything inside it.
+          lastRun,
+        }, kv === 'ok' ? 200 : 500);
       }
 
       return json({ ok: false, error: 'Not found' }, 404);
     },
 
     async scheduled(event, env, ctx) {
+      // Anything thrown inside waitUntil is lost: no response carries it, and
+      // with observability off there is nowhere to read it. A cron that fails
+      // every minute then looks exactly like a cron that never fired, which
+      // is not a distinction anyone should have to make by guessing. So the
+      // outcome of every run is written down, success or failure, and /health
+      // reports it.
       ctx.waitUntil((async () => {
-        await runForecast(env, modules);
-        await runScoring(env, modules);
+        const startedMs = Date.now();
+        try {
+          if (!env.FORECAST_KV) throw new Error('FORECAST_KV binding is missing');
+          await runForecast(env, modules);
+          const scoring = await runScoring(env, modules);
+          await recordRun(env, {
+            ok: true, startedMs, finishedMs: Date.now(), scored: scoring?.scored ?? 0,
+          });
+        } catch (error) {
+          console.error('forecast cron failed', error);
+          await recordRun(env, {
+            ok: false, startedMs, finishedMs: Date.now(),
+            error: String(error?.message ?? error),
+            stack: String(error?.stack ?? '').split('\n').slice(0, 4).join('\n'),
+          });
+          throw error; // so the run also shows as errored in the dashboard
+        }
       })());
     },
   };
