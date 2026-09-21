@@ -202,6 +202,83 @@ console.log('\nMeasuring the disk, with the caption in the way');
   check(D.detectSolarDiskGeometry(blank, W, H) === null, 'an empty frame returns null so the caller can fall back');
 }
 
+console.log('\nAnd through the corona, on EUV imagery');
+{
+  // SUVI is not HMI: the disk is bright but so is the corona outside the limb,
+  // and a fixed low threshold counts that as disk and reports a Sun bigger
+  // than the one in the picture.
+  const W = 400, H = 400;
+  const cx = 200, cy = 200, r = 140, halo = 190;
+  const d = new Uint8ClampedArray(W * H * 4);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4;
+      const dist = Math.hypot(x - cx, y - cy);
+      let v = 0;
+      if (dist <= r) v = 210;
+      else if (dist <= halo) v = 55;            // corona, well above a fixed 40
+      d[i] = v; d[i + 1] = Math.round(v * 0.7); d[i + 2] = Math.round(v * 0.3); d[i + 3] = 255;
+    }
+  }
+  const g = D.detectSolarDiskGeometry(d, W, H);
+  check(g !== null, 'the disk is found at all');
+  check(g && Math.abs(g.radius - r) <= 3,
+        `the radius is the limb, not the corona (want ${r}, halo reaches ${halo})`,
+        g ? `got ${g.radius.toFixed(1)}` : 'null');
+  check(g && Math.abs(g.cx - cx) <= 2 && Math.abs(g.cy - cy) <= 2,
+        'and the centre is right', g ? `(${g.cx.toFixed(1)},${g.cy.toFixed(1)})` : 'null');
+}
+
+console.log('\nA letterboxed image maps back to its panel');
+{
+  // The imagery panel is wider than it is tall and the Sun is square, so the
+  // image does not fill it. Treating panel percentages as image percentages
+  // puts every label off by half the letterbox.
+  const rect = D.containedImageRect({ width: 1280, height: 1280 }, { width: 600, height: 400 });
+  check(Math.abs(rect.height - 400) < 1e-9, 'it fills the short side');
+  check(Math.abs(rect.width - 400) < 1e-9, 'and stays square');
+  check(Math.abs(rect.x - 100) < 1e-9 && Math.abs(rect.y) < 1e-9,
+        'centred, with the bars on the left and right', `x=${rect.x}, y=${rect.y}`);
+  check(Math.abs(rect.scale - 400 / 1280) < 1e-9, 'and reports the scale to map through');
+
+  // A disk centre in image pixels lands in the middle of the panel.
+  const px = rect.x + 640 * rect.scale;
+  check(Math.abs(px - 300) < 1e-9, 'the image centre maps to the panel centre', String(px));
+
+  const tall = D.containedImageRect({ width: 1280, height: 1280 }, { width: 300, height: 500 });
+  check(Math.abs(tall.width - 300) < 1e-9 && Math.abs(tall.y - 100) < 1e-9,
+        'and the other way round when the panel is tall');
+  check(D.containedImageRect({ width: 0, height: 0 }, { width: 10, height: 10 }).scale === 1,
+        'an unloaded image does not divide by zero');
+}
+
+console.log('\nRegions are carried back to the frame being shown');
+{
+  // Scrub the timeline back and the Sun has turned since NOAA measured the
+  // region, so the reported longitude belongs to a later frame than the one
+  // on screen.
+  const rate = D.SOLAR_SYNODIC_DEG_PER_DAY;
+  check(Math.abs(rate - 13.1995) < 0.01, `the synodic rate is 13.2 deg/day (${rate.toFixed(4)})`);
+
+  const observed = Date.UTC(2026, 8, 21, 12);
+  check(D.longitudeAt(10, observed, observed) === 10, 'at the observation time it is unchanged');
+
+  const dayLater = D.longitudeAt(10, observed, observed + 86400000);
+  check(Math.abs(dayLater - (10 + rate)) < 1e-9,
+        'a day later it has rotated one day west', String(dayLater));
+  const sixHoursBefore = D.longitudeAt(10, observed, observed - 6 * 3600000);
+  check(sixHoursBefore < 10, 'and six hours earlier it was further east', String(sixHoursBefore));
+  check(Math.abs(sixHoursBefore - (10 - rate / 4)) < 1e-9, 'by exactly a quarter of a day');
+
+  // What that is worth in pixels, which is the point of doing it at all.
+  const geom = { width: 1000, height: 1000, cx: 500, cy: 500, radius: 310 };
+  const now = D.heliographicToPixel(0, D.longitudeAt(10, observed, observed), geom, 0);
+  const back = D.heliographicToPixel(0, D.longitudeAt(10, observed, observed - 6 * 3600000), geom, 0);
+  const shift = Math.abs(now.x - back.x);
+  console.log(`    six hours of rotation moves a disk-centre region ${shift.toFixed(1)}px of a ${geom.radius}px radius`);
+  check(shift > 10, 'six hours of scrubbing is worth more than a spot width');
+}
+
 // ── 4. labels that do not cover the spots ──────────────────────────────────
 console.log('\nLabels stay off the regions they name');
 {
@@ -227,6 +304,23 @@ console.log('\nLabels stay off the regions they name');
     }
   }
   check(covers.length === 0, 'and no label sits on top of any region', covers.join(', '));
+
+  // Touching is as bad as covering: the complaint was labels sitting on the
+  // spots, and a box whose edge grazes one still hides it.
+  const CLEAR = 8;
+  const tooClose = [];
+  for (const pl of placed) {
+    for (const a of anchors) {
+      const dx = Math.max(0, Math.abs(a.x - pl.x) - pl.width / 2);
+      const dy = Math.max(0, Math.abs(a.y - pl.y) - pl.height / 2);
+      if (Math.hypot(dx, dy) < CLEAR) {
+        tooClose.push(`${pl.id}'s label is ${Math.hypot(dx, dy).toFixed(1)}px from ${a.id}`);
+      }
+    }
+  }
+  check(tooClose.length === 0,
+        `every label keeps a ${CLEAR}px gap from every region, its own included`,
+        tooClose.join('\n        '));
 
   const outside = placed.filter(p =>
     p.x - p.width / 2 < 0 || p.x + p.width / 2 > bounds.width

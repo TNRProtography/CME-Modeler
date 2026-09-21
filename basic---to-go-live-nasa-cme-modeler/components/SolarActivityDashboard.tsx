@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { layoutLabels, leaderEndpoint } from '../utils/labelLayout';
-import { heliographicToPixel, detectSolarDiskGeometry } from '../utils/solarDisk';
+import { heliographicToPixel, detectSolarDiskGeometry, containedImageRect, longitudeAt } from '../utils/solarDisk';
 import type { SolarDiskGeometry } from '../utils/solarDisk';
 import { solarDiskOrientation } from '../utils/solarEphemeris';
 import { createPortal } from 'react-dom';
@@ -2002,6 +2002,44 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     return () => ro.disconnect();
   }, []);
 
+  // ── Active regions over the SUVI imagery ─────────────────────────────────
+  // Off by default: the imagery panel is the one place people go to look at
+  // the Sun itself, and labels over it should be something they ask for.
+  const [showRegionsOnImagery, setShowRegionsOnImagery] = useState<boolean>(() => {
+    try { return localStorage.getItem('suvi_show_regions') === '1'; } catch { return false; }
+  });
+  const toggleRegionsOnImagery = useCallback(() => {
+    setShowRegionsOnImagery((prev) => {
+      const next = !prev;
+      try { localStorage.setItem('suvi_show_regions', next ? '1' : '0'); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+
+  const suviBoxRef = useRef<HTMLDivElement | null>(null);
+  const [suviBoxSize, setSuviBoxSize] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    const el = suviBoxRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setSuviBoxSize((prev) =>
+        Math.abs(prev.width - width) < 1 && Math.abs(prev.height - height) < 1
+          ? prev
+          : { width, height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [showRegionsOnImagery]);
+
+  // The disk in a SUVI frame is a different size from the one in an HMI frame,
+  // and different again between channels, so it is measured rather than
+  // assumed - and measured once per source, since every frame from a source
+  // shares a geometry and re-measuring on each scrub step would be wasteful.
+  const [suviDiskGeometry, setSuviDiskGeometry] = useState<
+    { geometry: SolarDiskGeometry; naturalWidth: number; naturalHeight: number } | null
+  >(null);
+
   const [closeupLightbox, setCloseupLightbox] = useState(false);
 
   const openSunspotCloseupInViewer = useCallback(() => {
@@ -2135,7 +2173,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     });
 
     const placed = layoutLabels(entries.map(e => e.anchor), { width, height }, {
-      minDistance: Math.max(18, Math.min(34, width * 0.045)),
+      minDistance: Math.max(14, Math.min(26, width * 0.032)),
       padding: 4,
       anchorClearance: Math.max(6, width * 0.012),
     });
@@ -2459,6 +2497,106 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     return `${SUVI_DIFF_WORKER_BASE}${url.startsWith('/') ? '' : '/'}${url}`;
   }, []);
   const activeSuviFrameUrl = resolveSuviWorkerUrl(activeSuviFrame?.url);
+
+  // Measure the SUVI disk once per source. Frames from one source share a
+  // geometry, so this keys off the first frame rather than the active one.
+  const suviGeometryProbeUrl = resolveSuviWorkerUrl(suviFrames[0]?.url);
+  useEffect(() => {
+    if (!showRegionsOnImagery || !suviGeometryProbeUrl) { setSuviDiskGeometry(null); return; }
+    let cancelled = false;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      if (cancelled) return;
+      const naturalWidth = img.naturalWidth;
+      const naturalHeight = img.naturalHeight;
+      const geometry = measureDiskFromImage(img, naturalWidth, naturalHeight);
+      setSuviDiskGeometry(geometry ? { geometry, naturalWidth, naturalHeight } : null);
+    };
+    img.onerror = () => { if (!cancelled) setSuviDiskGeometry(null); };
+    img.src = suviGeometryProbeUrl;
+    return () => { cancelled = true; };
+  }, [showRegionsOnImagery, suviGeometryProbeUrl, activeSuviSourceKey]);
+
+  /**
+   * Active regions placed on the frame currently being shown.
+   *
+   * Two things move between frames. The Sun turns, so a region's reported
+   * longitude belongs to the moment NOAA measured it rather than to the frame
+   * on screen - about half a degree an hour. And B0 drifts, though far more
+   * slowly. Both are taken from the frame's own timestamp, so scrubbing the
+   * timeline carries the labels with it instead of pinning them to now.
+   */
+  const suviRegionLabels = useMemo(() => {
+    if (!showRegionsOnImagery || !suviDiskGeometry) return [];
+    const { width, height } = suviBoxSize;
+    if (!width || !height) return [];
+
+    const frameMs = activeSuviFrame?.ts ? new Date(activeSuviFrame.ts).getTime() : Date.now();
+    if (!Number.isFinite(frameMs)) return [];
+    const { b0 } = solarDiskOrientation(new Date(frameMs));
+
+    // Where the square frame actually sits inside a panel that is not square.
+    const rect = containedImageRect(
+      { width: suviDiskGeometry.naturalWidth, height: suviDiskGeometry.naturalHeight },
+      { width, height },
+    );
+    const toBoxX = (px: number) => rect.x + px * rect.scale;
+    const toBoxY = (py: number) => rect.y + py * rect.scale;
+
+    const showDetail = width >= 420;
+    const entries = activeSunspotRegions
+      .filter((r) => r.latitude !== null && r.longitude !== null)
+      .map((region) => {
+        // Rotate the region to the frame's time. Without an observation time
+        // the reported position is the best we have, so use it as-is.
+        const observedMs = region.observedTime ?? frameMs;
+        const lon = longitudeAt(region.longitude as number, observedMs, frameMs);
+        const pos = heliographicToPixel(region.latitude as number, lon, suviDiskGeometry.geometry, b0);
+        if (!pos.onDisk) return null;
+
+        const title = `AR ${region.region}`;
+        const detailParts = [
+          region.magneticClass ? String(region.magneticClass).toUpperCase() : null,
+          region.spotCount != null ? `${region.spotCount} spot${region.spotCount === 1 ? '' : 's'}` : null,
+        ].filter(Boolean) as string[];
+        const detail = showDetail ? detailParts.join(' \u00b7 ') : '';
+        const boxWidth = Math.max(title.length * 6.2, detail.length * 5.1) + 12;
+        const boxHeight = (detail ? 28 : 19);
+
+        return {
+          region,
+          title,
+          detail,
+          anchor: {
+            id: region.region,
+            x: toBoxX(pos.x),
+            y: toBoxY(pos.y),
+            width: boxWidth,
+            height: boxHeight,
+            priority: (region.area ?? 0) + (region.spotCount ?? 0) * 2,
+          },
+        };
+      })
+      .filter((e): e is NonNullable<typeof e> => e !== null);
+
+    if (entries.length === 0) return [];
+
+    const placed = layoutLabels(entries.map((e) => e.anchor), { width, height }, {
+      minDistance: Math.max(16, Math.min(30, rect.width * 0.05)),
+      padding: 3,
+      anchorClearance: Math.max(5, rect.width * 0.012),
+    });
+    const byId = new Map(placed.map((pl) => [pl.id, pl]));
+
+    return entries
+      .map((e) => {
+        const label = byId.get(e.region.region);
+        return label ? { ...e, label, leader: leaderEndpoint(label) } : null;
+      })
+      .filter((e): e is NonNullable<typeof e> => e !== null);
+  }, [showRegionsOnImagery, suviDiskGeometry, suviBoxSize, activeSuviFrame?.ts, activeSunspotRegions]);
+
   const previousSuviFrameUrl = resolveSuviWorkerUrl(previousSuviFrame?.url);
   const latestCoronagraphAgeMs = useMemo(() => {
     if (!latestCoronagraphFrame?.ts) return null;
@@ -3185,6 +3323,18 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                     </div>
                     <span className="text-sm font-medium text-neutral-300">Difference imagery</span>
                   </label>
+                  <button
+                    type="button"
+                    onClick={toggleRegionsOnImagery}
+                    aria-pressed={showRegionsOnImagery}
+                    className={`text-xs px-2 py-1 rounded border transition-colors ${
+                      showRegionsOnImagery
+                        ? 'bg-amber-500/15 border-amber-500/40 text-amber-200'
+                        : 'bg-neutral-900 border-neutral-700 text-neutral-400 hover:text-neutral-200'}`}
+                    title="Overlay NOAA active regions, positioned for the frame being shown"
+                  >
+                    Active regions
+                  </button>
                 </div>
                 <span className="text-xs text-neutral-500">{activeSuviSourceState?.label ?? ' - '} · {suviFrames.length} frame(s)</span>
               </div>
@@ -3200,8 +3350,69 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       <div className="w-full h-full flex items-center justify-center text-neutral-400 italic">No SUVI imagery available.</div>
                     )}
                     {activeSuviFrameUrl && (
-                      <div className="w-full h-full relative cursor-pointer" onClick={() => setViewerMedia({ url: activeSuviFrameUrl, type: 'image' })}>
+                      <div
+                        ref={suviBoxRef}
+                        className="w-full h-full relative cursor-pointer"
+                        onClick={() => setViewerMedia({ url: activeSuviFrameUrl, type: 'image' })}
+                      >
                         <img src={activeSuviFrameUrl} alt={`${imageryModeLabels[activeSunImage]} frame`} className="w-full h-full object-contain" />
+
+                        {suviRegionLabels.length > 0 && (
+                          <>
+                            <svg
+                              className="absolute inset-0 w-full h-full pointer-events-none"
+                              viewBox={`0 0 ${suviBoxSize.width} ${suviBoxSize.height}`}
+                              aria-hidden="true"
+                            >
+                              {suviRegionLabels.map(({ region, label, leader }) => {
+                                const riskBand = getSunspotRiskBand(region);
+                                return (
+                                  <g key={`suvi-leader-${region.region}`} opacity={0.92}>
+                                    <line
+                                      x1={leader.x} y1={leader.y} x2={label.anchorX} y2={label.anchorY}
+                                      stroke="rgba(0,0,0,0.85)" strokeWidth={3.2} strokeLinecap="round"
+                                    />
+                                    <line
+                                      x1={leader.x} y1={leader.y} x2={label.anchorX} y2={label.anchorY}
+                                      stroke={riskBand.color} strokeWidth={1.5} strokeLinecap="round"
+                                    />
+                                    <circle cx={label.anchorX} cy={label.anchorY} r={5.5}
+                                      fill="none" stroke="rgba(0,0,0,0.85)" strokeWidth={3.2} />
+                                    <circle cx={label.anchorX} cy={label.anchorY} r={5.5}
+                                      fill="none" stroke={riskBand.color} strokeWidth={1.5} />
+                                  </g>
+                                );
+                              })}
+                            </svg>
+
+                            {suviRegionLabels.map(({ region, title, detail, label }) => {
+                              const riskBand = getSunspotRiskBand(region);
+                              return (
+                                <button
+                                  key={`suvi-label-${region.region}`}
+                                  onClick={(e) => { e.stopPropagation(); setSelectedSunspotRegion(region); }}
+                                  className="absolute -translate-x-1/2 -translate-y-1/2"
+                                  style={{ left: `${label.x}px`, top: `${label.y}px` }}
+                                  title={`AR ${region.region} \u00b7 ${region.magneticClass || 'Unknown'} \u00b7 ${region.location}`}
+                                >
+                                  <span
+                                    className="flex flex-col items-center px-1.5 py-0.5 rounded whitespace-nowrap bg-black/85 leading-tight"
+                                    style={{ color: riskBand.color, border: `1px solid ${riskBand.color}40` }}
+                                  >
+                                    <span className="text-[10px] font-bold">{title}</span>
+                                    {detail && <span className="text-[9px] font-medium text-neutral-300">{detail}</span>}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </>
+                        )}
+
+                        {showRegionsOnImagery && suviRegionLabels.length === 0 && (
+                          <div className="absolute bottom-1 left-2 text-[10px] text-neutral-500 pointer-events-none">
+                            No active regions to place on this frame
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -3409,22 +3620,40 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                           const riskBand = getSunspotRiskBand(region);
                           const isSelected = selectedSunspotRegion?.region === region.region;
                           return (
-                            <g key={`leader-${region.region}`} opacity={isSelected ? 1 : 0.75}>
+                            <g key={`leader-${region.region}`} opacity={isSelected ? 1 : 0.9}>
+                              {/* Drawn twice: a dark stroke underneath, then the
+                                  colour. The disk is nearly white in continuum
+                                  and mid-grey in magnetogram, and a single thin
+                                  coloured line disappears into both. */}
+                              <line
+                                x1={leader.x} y1={leader.y}
+                                x2={label.anchorX} y2={label.anchorY}
+                                stroke="rgba(0,0,0,0.85)"
+                                strokeWidth={isSelected ? 4 : 3.2}
+                                strokeLinecap="round"
+                              />
                               <line
                                 x1={leader.x} y1={leader.y}
                                 x2={label.anchorX} y2={label.anchorY}
                                 stroke={riskBand.color}
-                                strokeWidth={isSelected ? 1.4 : 1}
+                                strokeWidth={isSelected ? 2 : 1.5}
                                 strokeLinecap="round"
                               />
                               {/* A ring rather than a dot: it says exactly where
                                   the region is without hiding what is there. */}
                               <circle
                                 cx={label.anchorX} cy={label.anchorY}
-                                r={isSelected ? 6 : 4.5}
+                                r={isSelected ? 7 : 5.5}
+                                fill="none"
+                                stroke="rgba(0,0,0,0.85)"
+                                strokeWidth={isSelected ? 4 : 3.2}
+                              />
+                              <circle
+                                cx={label.anchorX} cy={label.anchorY}
+                                r={isSelected ? 7 : 5.5}
                                 fill="none"
                                 stroke={riskBand.color}
-                                strokeWidth={isSelected ? 1.8 : 1.2}
+                                strokeWidth={isSelected ? 2 : 1.5}
                               />
                             </g>
                           );

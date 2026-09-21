@@ -40,7 +40,14 @@ export interface LayoutBounds {
 }
 
 export interface LayoutOptions {
-  /** Shortest leader, in the same units as the anchors. */
+  /**
+   * The clear gap to keep between a region and the nearest edge of its label.
+   *
+   * Measured to the edge, not to the label's centre: a label is far wider than
+   * it is tall, so a distance measured to its centre leaves a generous gap
+   * above and almost none to the side, which is exactly how labels ended up
+   * sitting on the spots they were naming.
+   */
   minDistance?: number;
   /** Keep labels this far inside the edges. */
   padding?: number;
@@ -73,7 +80,7 @@ export function layoutLabels(
   bounds: LayoutBounds,
   options: LayoutOptions = {},
 ): PlacedLabel[] {
-  const minDistance = options.minDistance ?? 22;
+  const minDistance = options.minDistance ?? 16;
   const padding = options.padding ?? 4;
   const anchorClearance = options.anchorClearance ?? 7;
 
@@ -94,8 +101,11 @@ export function layoutLabels(
 
     let best: { x: number; y: number; score: number } | null = null;
 
-    for (const ring of [0, 1, 2]) {
-      const distance = minDistance + ring * (minDistance * 0.75);
+    // Push out far enough that the box's nearest corner clears the gap, then
+    // try progressively further rings if everything close is taken.
+    const reach = minDistance + Math.hypot(anchor.width, anchor.height) / 2;
+    for (const ring of [0, 1, 2, 3]) {
+      const distance = reach + ring * (minDistance * 0.9);
       for (let ai = 0; ai < angles.length; ai++) {
         const angle = angles[ai];
         const x = anchor.x + Math.cos(angle) * distance;
@@ -115,8 +125,10 @@ export function layoutLabels(
         for (const other of others) {
           if (rectContains(rect, other.x, other.y, anchorClearance)) score += 1600;
         }
-        // And its own, which would defeat the whole exercise.
-        if (rectContains(rect, anchor.x, anchor.y, 1)) score += 2400;
+        // And its own, which would defeat the whole exercise. Held to the same
+        // clearance as everyone else's: a label touching the spot it names is
+        // no more readable than one touching its neighbour.
+        if (rectContains(rect, anchor.x, anchor.y, anchorClearance)) score += 2400;
 
         // Overlapping another label is bad but recoverable - it is only text.
         for (const p of placed) {
@@ -139,7 +151,7 @@ export function layoutLabels(
       if (best && best.score < 1) break;
     }
 
-    const chosen = best ?? { x: anchor.x, y: anchor.y - minDistance, score: 0 };
+    const chosen = best ?? { x: anchor.x, y: anchor.y - (minDistance + anchor.height), score: 0 };
     // Clamp as a last resort, so a label near a corner is still readable even
     // if every candidate was partly outside.
     const x = Math.min(bounds.width - anchor.width / 2 - padding,
