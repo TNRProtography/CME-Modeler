@@ -166,7 +166,9 @@ export async function analyseAndPostHistoricalFrame(
   frame: SuviFrameInfo,
 ): Promise<boolean> {
   try {
-    const result = await detectCoronalHolesFromSuvi195(frame.url);
+    // The frame's own time, not now: the axis tilt the projection needs is
+    // the one that applied when the picture was taken.
+    const result = await detectCoronalHolesFromSuvi195(frame.url, 0.3, new Date(frame.timestampMs));
     if (!result.succeeded || result.coronalHoles.length === 0) return false;
 
     const record: CHSnapshotRecord = {

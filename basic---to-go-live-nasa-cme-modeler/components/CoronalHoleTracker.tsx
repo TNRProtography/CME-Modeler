@@ -15,7 +15,8 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CoronalHole } from '../utils/coronalHoleData';
-import { ANALYSIS_SIZE, detectCoronalHolesFromSuvi195 } from '../utils/suviCoronalHoleDetector';
+import { detectCoronalHolesFromSuvi195 } from '../utils/suviCoronalHoleDetector';
+import { readImagePixels } from '../utils/imagePixels';
 import { estimateHssSpeedFromChWidthAndDarkness } from '../utils/solarWindModel';
 import {
   chGrowth, chOutlineAt, chSpeedForEarth, chTiming,
@@ -73,6 +74,15 @@ interface Detection {
    * while the detection behind it was working perfectly well.
    */
   disk: DiskFraction;
+  /**
+   * The axis tilt the detector projected with.
+   *
+   * Drawing has to use this exact value, not one computed independently for
+   * the frame on screen. The outlines are the detector's own projection run
+   * backwards, so any difference between the two tilts comes out as holes
+   * sitting a few degrees away from the dark patches they were traced from.
+   */
+  b0Deg: number;
 }
 
 const fmtNz = (ms: number | null | undefined): string => {
@@ -121,6 +131,7 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [polarity, setPolarity] = useState<Record<string, ChPolarityResult>>({});
+  const [polarityError, setPolarityError] = useState<string | null>(null);
 
   const [boxSize, setBoxSize] = useState({ width: 0, height: 0 });
   const [natural, setNatural] = useState<{ width: number; height: number } | null>(null);
@@ -226,20 +237,15 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
         const url = resolveUrl(f.url);
         if (!url) continue;
         try {
-          const result = await detectCoronalHolesFromSuvi195(url, 0);
+          const frameAt = new Date(f.ts);
+          const result = await detectCoronalHolesFromSuvi195(url, 0, frameAt);
           if (cancelled || detectRunId.current !== run) return;
-          if (result.succeeded && result.diskRadius > 0) {
+          if (result.succeeded && result.diskFraction) {
             found.push({
-              atMs: new Date(f.ts).getTime(),
+              atMs: frameAt.getTime(),
               holes: result.coronalHoles,
-              // The detector works at a fixed analysis size, so its disk is
-              // turned into fractions of the frame here and scaled back up to
-              // whatever size the image is being displayed at.
-              disk: {
-                cx: result.diskCentreX / ANALYSIS_SIZE,
-                cy: result.diskCentreY / ANALYSIS_SIZE,
-                r: result.diskRadius / ANALYSIS_SIZE,
-              },
+              disk: result.diskFraction,
+              b0Deg: result.b0Deg,
             });
             found.sort((a, b) => a.atMs - b.atMs);
             setDetections([...found]);
@@ -314,7 +320,10 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
 
     if (!drawGeometry || !detectionForFrame) return;
     const { geometry, offsetX, offsetY } = drawGeometry;
-    const { b0, p } = solarDiskOrientation(new Date(activeFrameMs));
+    // The detector's own tilt, so this projection is the exact inverse of the
+    // one the outlines came out of.
+    const b0 = detectionForFrame.b0Deg;
+    const p = 0;
 
     detectionForFrame.holes.forEach((hole, i) => {
       const colour = HOLE_COLOURS[i % HOLE_COLOURS.length];
@@ -402,33 +411,39 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
     if (!latestDetection || latestDetection.holes.length === 0) return;
     let cancelled = false;
 
-    const readMagnetogram = (src: string) => new Promise<{ data: Uint8ClampedArray; width: number; height: number } | null>((resolve) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        try {
-          const canvas = document.createElement('canvas');
-          canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
-          const ctx = canvas.getContext('2d', { willReadFrequently: true });
-          if (!ctx) return resolve(null);
-          ctx.drawImage(img, 0, 0);
-          const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          resolve({ data: id.data, width: canvas.width, height: canvas.height });
-        } catch {
-          // Tainted by a missing CORS header. Nothing readable here.
-          resolve(null);
-        }
-      };
-      img.onerror = () => resolve(null);
-      img.src = src;
-    });
-
     (async () => {
-      const image = (await readMagnetogram(HMI_MAG_URL)) ?? (await readMagnetogram(HMI_MAG_FALLBACK));
-      if (cancelled || !image) return;
+      setPolarityError(null);
+      // Through the proxy, at the magnetogram's own resolution. Pointing an
+      // <img> at jsoc1.stanford.edu and reading it back does not work: there
+      // is no CORS header, so with crossOrigin set the image never loads and
+      // without it the canvas is tainted and getImageData throws. Either way
+      // the panel sat on "Reading the HMI magnetogram..." forever.
+      //
+      // Full resolution matters here more than it does elsewhere. Halving a
+      // magnetogram averages neighbouring positive and negative network
+      // elements into each other, and those cancel - which erodes exactly the
+      // signed flux being measured.
+      let image = null;
+      for (const url of [HMI_MAG_URL, HMI_MAG_FALLBACK]) {
+        try {
+          image = await readImagePixels(url);
+          break;
+        } catch {
+          // Try the other source before giving up on it.
+        }
+      }
+      if (cancelled) return;
+      if (!image) {
+        setPolarityError('The HMI magnetogram could not be read, so polarity is unavailable for now.');
+        return;
+      }
 
       const geom = detectSolarDiskGeometry(image.data, image.width, image.height);
-      if (!geom) return;
+      if (cancelled) return;
+      if (!geom) {
+        setPolarityError('The solar disk could not be found in the magnetogram.');
+        return;
+      }
       const { b0, p } = solarDiskOrientation(new Date());
 
       const next: Record<string, ChPolarityResult> = {};
@@ -718,6 +733,8 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
                             : 'text-neutral-500'}`}>{season.note}</p>
                       )}
                     </>
+                  ) : polarityError ? (
+                    <p className="text-xs text-neutral-500">{polarityError}</p>
                   ) : (
                     <p className="text-xs text-neutral-400">Reading the HMI magnetogram...</p>
                   )}

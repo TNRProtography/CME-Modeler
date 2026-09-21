@@ -58,6 +58,8 @@
 
 import type { CoronalHole }            from './coronalHoleData';
 import { estimateHssSpeedFromChWidthAndDarkness } from './solarWindModel';
+import { readImagePixels } from './imagePixels';
+import { solarDiskOrientation } from './solarEphemeris';
 
 // ── Tuning constants ──────────────────────────────────────────────────────────
 /**
@@ -77,7 +79,6 @@ const LIMB_EXCLUSION_FRAC     = 0.06;  // exclude outer 6% of per-angle limb rad
 const CH_DARK_THRESHOLD_FRAC  = 0.52;  // CH pixel if luma < this × disk median (raised from 0.40 to catch full CH extent)
 const MIN_CH_PIXEL_FRAC       = 0.003; // minimum CH region as fraction of disk area
 const MAX_CH_REGIONS          = 4;     // return at most this many CHs
-const PROXY_TTL_SECONDS       = 90;    // edge cache TTL
 
 // ── Sunspot rejection filters ─────────────────────────────────────────────────
 //
@@ -99,7 +100,6 @@ const MIN_CH_ASPECT      = 1.20;  // reject if bounding-box long/short < this
 const SUNSPOT_MAX_FRAC   = 0.025; // only apply shape filters to regions below this size
 
 const SUVI_195_URL     = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/195/latest.png';
-const PROXY_IMAGE_PATH = '/api/proxy/image';
 
 // ── Internal types ─────────────────────────────────────────────────────────────
 interface PixelRegion {
@@ -109,62 +109,10 @@ interface PixelRegion {
   centroidX: number; centroidY: number;
 }
 
-// ── Proxy URL ─────────────────────────────────────────────────────────────────
-function proxyUrl(targetUrl: string): string {
-  return `${PROXY_IMAGE_PATH}?url=${encodeURIComponent(targetUrl)}&ttl=${PROXY_TTL_SECONDS}`;
-}
-
-// ── Fetch image through proxy → blob URL ──────────────────────────────────────
-async function fetchAsBlob(url: string): Promise<string> {
-  const res = await fetch(proxyUrl(url));
-  if (!res.ok) throw new Error(`Proxy fetch failed: ${res.status} for ${url}`);
-  const blob = await res.blob();
-  if (!blob.type.startsWith('image/')) throw new Error(`Expected image, got ${blob.type}`);
-  return URL.createObjectURL(blob);
-}
-
-async function fetchAsBlobDirect(url: string): Promise<string> {
-  const res = await fetch(url, { mode: 'cors', credentials: 'omit' });
-  if (!res.ok) throw new Error(`Direct fetch failed: ${res.status} for ${url}`);
-  const blob = await res.blob();
-  if (!blob.type.startsWith('image/')) throw new Error(`Expected image, got ${blob.type}`);
-  return URL.createObjectURL(blob);
-}
-
-async function fetchAsBlobWithFallback(url: string): Promise<string> {
-  try {
-    return await fetchAsBlob(url);
-  } catch (proxyErr) {
-    try {
-      return await fetchAsBlobDirect(url);
-    } catch {
-      const msg = proxyErr instanceof Error ? proxyErr.message : String(proxyErr);
-      throw new Error(`SUVI image fetch failed (proxy/direct): ${msg}`);
-    }
-  }
-}
-
-// ── Draw onto canvas → ImageData ──────────────────────────────────────────────
-async function toImageData(blobUrl: string, size: number): Promise<ImageData> {
-  return new Promise<ImageData>((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = canvas.height = size;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) { reject(new Error('No 2d canvas context')); return; }
-      ctx.drawImage(img, 0, 0, size, size);
-      try {
-        resolve(ctx.getImageData(0, 0, size, size));
-      } catch (e) {
-        reject(new Error(`getImageData failed (CORS?): ${e}`));
-      }
-    };
-    img.onerror = () => reject(new Error('Blob image load failed'));
-    img.src = blobUrl;
-  });
-}
+// Fetching and decoding now live in utils/imagePixels.ts. They used to be
+// here, which meant every other feature that needed to read pixels off a
+// science image either reinvented the proxy hop or quietly got a tainted
+// canvas and an empty panel.
 
 // ── Luma ─────────────────────────────────────────────────────────────────────
 function luma(d: Uint8ClampedArray, i: number): number {
@@ -267,6 +215,35 @@ function buildDiskMask(
   }
 
   return { mask, limbRadii: clipped };
+}
+
+/**
+ * Re-fit the disk centre from the limb distances measured around it.
+ *
+ * If the guessed centre is off by (dx, dy), the measured radius at angle theta
+ * is longer on one side and shorter on the other by dx*cos(theta) + dy*sin(theta).
+ * Averaging the limb points therefore lands on the true centre, and two passes
+ * are plenty because the correction is nearly linear for the small offsets a
+ * caption band produces.
+ *
+ * Streamers make individual radii too long, so the longest sixth are dropped
+ * before averaging rather than being allowed to drag the centre toward them.
+ */
+function limbCentre(limbRadii: number[], cx: number, cy: number): { cx: number; cy: number } | null {
+  if (limbRadii.length < 8) return null;
+  const sorted = [...limbRadii].sort((a, b) => a - b);
+  const cap = sorted[Math.floor(sorted.length * 0.85)];
+  let sx = 0, sy = 0, n = 0;
+  for (let i = 0; i < limbRadii.length; i++) {
+    const r = limbRadii[i];
+    if (!Number.isFinite(r) || r <= 0 || r > cap) continue;
+    const a = (i / limbRadii.length) * 2 * Math.PI;
+    sx += cx + r * Math.cos(a);
+    sy += cy + r * Math.sin(a);
+    n++;
+  }
+  if (n < 8) return null;
+  return { cx: sx / n, cy: sy / n };
 }
 
 // ── Median luma inside the disk mask ─────────────────────────────────────────
@@ -402,18 +379,41 @@ function isCoronalHoleCandidate(region: PixelRegion, diskPixelCount: number): bo
 //
 // The disk centre corresponds to the Earth-facing point at the time of observation.
 // So lon=0 is the sub-Earth point, and values range ±90°.
-function pixelToHG(
+/**
+ * Exported so it can be tested against the forward projection in solarDisk.ts.
+ * The two are inverses of each other and nothing else guarantees they stay
+ * that way: they live in different files, were written months apart, and a
+ * disagreement between them is invisible in the code and obvious only as
+ * outlines drawn beside the holes they came from.
+ */
+export function pixelToHG(
   px: number, py: number,
-  cx: number, cy: number, diskR: number
+  cx: number, cy: number, diskR: number,
+  b0Deg = 0,
 ): { lat: number; lon: number } | null {
-  const u  = (px - cx) / diskR;
-  const v  = (py - cy) / diskR;
-  if (u * u + v * v > 1) return null;
-  const lat    = Math.asin(Math.max(-1, Math.min(1, -v)));
-  const cosLat = Math.cos(lat);
-  const lon    = cosLat > 1e-6
-    ? Math.asin(Math.max(-1, Math.min(1, u / cosLat)))
-    : 0;
+  const u = (px - cx) / diskR;
+  // Screen y grows downward, heliographic north is up.
+  const w = -(py - cy) / diskR;
+  const r2 = u * u + w * w;
+  if (r2 > 1) return null;
+  // Toward the observer. Only the front of the Sun is visible, so the
+  // positive root is the only one.
+  const z = Math.sqrt(Math.max(0, 1 - r2));
+
+  // Undo the tilt of the rotation axis. This is the exact inverse of the
+  // forward projection in solarDisk.ts - the two have to agree, because an
+  // outline measured here is drawn back onto the image with that one, and any
+  // disagreement between them shows up as holes sitting beside the dark
+  // patches they were traced from.
+  const B = b0Deg * Math.PI / 180;
+  const sinB = Math.sin(B), cosB = Math.cos(B);
+
+  const sinLat = cosB * w + sinB * z;
+  const lat = Math.asin(Math.max(-1, Math.min(1, sinLat)));
+  // atan2 rather than asin: it keeps the sign of the longitude right all the
+  // way to the limb instead of folding it back at 90 degrees.
+  const lon = Math.atan2(u, -sinB * w + cosB * z);
+
   return { lat: lat * 180 / Math.PI, lon: lon * 180 / Math.PI };
 }
 
@@ -430,6 +430,7 @@ function pixelToHG(
 function buildPolygon(
   region: PixelRegion,
   cx: number, cy: number, diskR: number,
+  b0Deg = 0,
   nPoints = 64,
 ): Array<{ lat: number; lon: number }> | undefined {
   const { pixels, centroidX, centroidY } = region;
@@ -495,11 +496,11 @@ function buildPolygon(
   const step = Math.max(1, Math.floor(boundary.length / nPoints));
   for (let i = 0; i < boundary.length; i += step) {
     const p = boundary[i];
-    const hg = pixelToHG(p.x, p.y, cx, cy, diskR);
+    const hg = pixelToHG(p.x, p.y, cx, cy, diskR, b0Deg);
     if (hg) poly.push(hg);
   }
 
-  const hgCen = pixelToHG(centroidX, centroidY, cx, cy, diskR);
+  const hgCen = pixelToHG(centroidX, centroidY, cx, cy, diskR, b0Deg);
   if (!hgCen || poly.length < 3) return undefined;
 
   // Return as offsets from centroid (same convention as before)
@@ -515,6 +516,14 @@ export interface SuviDetectionResult {
   diskRadius:    number;
   diskCentreX:   number;
   diskCentreY:   number;
+  /**
+   * The same disk as fractions of the SOURCE frame, which is what anything
+   * drawing these holes back over the imagery needs. Null when detection
+   * failed.
+   */
+  diskFraction:  { cx: number; cy: number; r: number } | null;
+  /** The axis tilt used for the projection, so a caller can invert it exactly. */
+  b0Deg:         number;
   succeeded:     boolean;
   errorMessage?: string;
 }
@@ -528,29 +537,37 @@ export interface SuviDetectionResult {
 export async function detectCoronalHolesFromSuvi195(
   imageUrl: string = SUVI_195_URL,
   animPhaseOffset = 0.3,
+  observedAt: Date = new Date(),
 ): Promise<SuviDetectionResult> {
 
-  let blobUrl: string | null = null;
-
   try {
-    // ── 1. Fetch ──────────────────────────────────────────────────────────
-    if (imageUrl.startsWith('blob:') || imageUrl.startsWith('data:') || imageUrl.startsWith(window.location.origin)) {
-      blobUrl = imageUrl;
-    } else {
-      blobUrl = await fetchAsBlobWithFallback(imageUrl);
+    // ── 1. Fetch and render ───────────────────────────────────────────────
+    // 'contain' rather than a straight stretch: a SUVI frame carries a
+    // caption band, so it is not square, and squeezing it into a square
+    // canvas turns the Sun into an ellipse. Everything measured afterwards
+    // then inherits that distortion.
+    const size = ANALYSIS_SIZE;
+    const raster = await readImagePixels(imageUrl, size, 'contain');
+    const data = raster.data;
+
+    // ── 2. Find the disk ──────────────────────────────────────────────────
+    // The centre used to be assumed to be the centre of the frame. It is not:
+    // the caption band pushes the Sun upward, and any error here moves every
+    // hole on the disk by the same amount in the same direction. So the limb
+    // is measured from a first guess and the centre re-fitted to it.
+    let cx = size / 2;
+    let cy = size / 2;
+    for (let pass = 0; pass < 2; pass++) {
+      const probe = buildDiskMask(data, size, size, cx, cy);
+      const fitted = limbCentre(probe.limbRadii, cx, cy);
+      if (!fitted) break;
+      const moved = Math.hypot(fitted.cx - cx, fitted.cy - cy);
+      cx = fitted.cx;
+      cy = fitted.cy;
+      if (moved < 0.5) break;
     }
 
-    // ── 2. Canvas render ──────────────────────────────────────────────────
-    const size = ANALYSIS_SIZE;
-    const id   = await toImageData(blobUrl, size);
-    const data = id.data;
-
-    // ── 3. Find disk centre (simple midline scan for cx/cy is good enough
-    //        since the sun fills most of the frame in SUVI images)
-    const cx = size / 2;
-    const cy = size / 2;
-
-    // ── 4. Gradient-based per-angle limb detection ───────────────────────
+    // ── 3. Gradient-based per-angle limb detection ───────────────────────
     const { mask: diskMask, limbRadii } = buildDiskMask(data, size, size, cx, cy);
 
     // Median disk radius for heliographic conversions
@@ -561,6 +578,13 @@ export async function detectCoronalHolesFromSuvi195(
     if (diskR < size * 0.15) {
       throw new Error(`Disk too small (r=${diskR.toFixed(1)}) - image may not have loaded`);
     }
+
+    // The tilt of the rotation axis toward or away from us on this date. It
+    // reaches about seven degrees twice a year, and leaving it out shifts
+    // everything on the disk in latitude by up to that much - which is
+    // exactly what made the outlines sit beside their holes rather than on
+    // them once they were drawn back onto the image.
+    const { b0 } = solarDiskOrientation(observedAt);
 
     // ── 5. Dark pixel mask ────────────────────────────────────────────────
     const median    = diskMedian(data, diskMask, size);
@@ -584,7 +608,7 @@ export async function detectCoronalHolesFromSuvi195(
 
     // ── 7. Convert to CoronalHole objects ──────────────────────────────────
     const coronalHoles: CoronalHole[] = candidates.flatMap((region, idx) => {
-      const hgCen  = pixelToHG(region.centroidX, region.centroidY, cx, cy, diskR);
+      const hgCen  = pixelToHG(region.centroidX, region.centroidY, cx, cy, diskR, b0);
 
       // If the centroid maps outside the disk (null), this region is invalid - skip it.
       // This catches noise clusters whose centroid lands at the very edge or outside.
@@ -593,15 +617,15 @@ export async function detectCoronalHolesFromSuvi195(
       const lat    = hgCen.lat;
       const lon    = hgCen.lon;
 
-      const leftHG   = pixelToHG(region.minX, region.centroidY, cx, cy, diskR);
-      const rightHG  = pixelToHG(region.maxX, region.centroidY, cx, cy, diskR);
-      const topHG    = pixelToHG(region.centroidX, region.minY,  cx, cy, diskR);
-      const bottomHG = pixelToHG(region.centroidX, region.maxY,  cx, cy, diskR);
+      const leftHG   = pixelToHG(region.minX, region.centroidY, cx, cy, diskR, b0);
+      const rightHG  = pixelToHG(region.maxX, region.centroidY, cx, cy, diskR, b0);
+      const topHG    = pixelToHG(region.centroidX, region.minY,  cx, cy, diskR, b0);
+      const bottomHG = pixelToHG(region.centroidX, region.maxY,  cx, cy, diskR, b0);
 
       const widthDeg  = leftHG && rightHG  ? Math.abs(rightHG.lon  - leftHG.lon)  : 15;
       const heightDeg = topHG  && bottomHG ? Math.abs(bottomHG.lat - topHG.lat)   : widthDeg;
 
-      const polygon = buildPolygon(region, cx, cy, diskR, 96);
+      const polygon = buildPolygon(region, cx, cy, diskR, b0, 96);
 
       // Reject regions that have no usable polygon AND no meaningful size.
       // These are typically sunspot fragments or noise that slipped past the shape filter.
@@ -645,13 +669,28 @@ export async function detectCoronalHolesFromSuvi195(
       }))
     );
 
+    // The disk, expressed as fractions of the SOURCE frame rather than of the
+    // analysis canvas. That is what lets a caller draw these holes over the
+    // same image at any display size: analysis pixels mean nothing outside
+    // this function, whereas "43% of the way across the frame" survives every
+    // resize.
+    const { scale, offsetX, offsetY } = raster.placement;
+    const nat = raster.natural;
+    const diskFraction = {
+      cx: ((cx - offsetX) / scale) / nat.width,
+      cy: ((cy - offsetY) / scale) / nat.height,
+      r:  (diskR / scale) / Math.min(nat.width, nat.height),
+    };
+
     return {
       coronalHoles,
-      imageUrl:    blobUrl,
-      analysedAt:  new Date(),
+      imageUrl,
+      analysedAt:  observedAt,
       diskRadius:  diskR,
       diskCentreX: cx,
       diskCentreY: cy,
+      diskFraction,
+      b0Deg:       b0,
       succeeded:   true,
     };
 
@@ -660,16 +699,17 @@ export async function detectCoronalHolesFromSuvi195(
     console.warn('[SUVI CH detector]', msg);
     return {
       coronalHoles:  [],
-      imageUrl:      blobUrl ?? '',
-      analysedAt:    new Date(),
+      imageUrl,
+      analysedAt:    observedAt,
       diskRadius:    0,
       diskCentreX:   0,
       diskCentreY:   0,
+      diskFraction:  null,
+      b0Deg:         0,
       succeeded:     false,
       errorMessage:  msg,
     };
   }
-  // Note: blobUrl is NOT revoked - the caller may display it for debug.
 }
 
 // --- END OF FILE utils/suviCoronalHoleDetector.ts ---

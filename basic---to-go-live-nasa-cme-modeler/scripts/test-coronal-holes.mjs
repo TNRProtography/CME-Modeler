@@ -27,7 +27,8 @@ async function load(rel) {
 await load('utils/solarEphemeris.ts');
 const W = await load('utils/solarWindModel.ts');
 await load('utils/coronalHoleData.ts');
-await load('utils/suviCoronalHoleDetector.ts');
+await load('utils/imagePixels.ts');
+const S = await load('utils/suviCoronalHoleDetector.ts');
 const D = await load('utils/solarDisk.ts');
 const C = await load('utils/coronalHoleDynamics.ts');
 const H = await load('utils/coronalHoleHistory.ts');
@@ -285,6 +286,65 @@ console.log('\nMatching a hole to its own earlier measurements');
   check(picked && Math.abs(picked.lon + 2 * RATE) < 1e-6,
         'and it matches its own earlier self rather than a nearer-looking neighbour',
         picked ? String(picked.lon) : 'null');
+}
+
+// ── the two projections are inverses ────────────────────────────
+console.log('\nPixels to heliographic and back again');
+{
+  // The detector traces a hole in pixels and converts to lat/lon. The panel
+  // takes that lat/lon and converts back to pixels to draw it. The two
+  // conversions live in different files and were written months apart, so
+  // nothing but this makes them agree - and when they disagree the outlines
+  // are drawn next to the holes rather than on them, which is exactly what
+  // happened when one of them carried the axis tilt and the other did not.
+  const geom = { width: 400, height: 400, cx: 197.5, cy: 193.25, radius: 168.4 };
+
+  for (const b0 of [0, 7.25, -7.25, 3.1]) {
+    let worst = 0;
+    let checked = 0;
+    for (let px = 40; px <= 360; px += 11) {
+      for (let py = 40; py <= 360; py += 11) {
+        const hg = S.pixelToHG(px, py, geom.cx, geom.cy, geom.radius, b0);
+        if (!hg) continue;
+        const back = D.heliographicToPixel(hg.lat, hg.lon, geom, b0, 0);
+        if (!back.onDisk) continue;
+        worst = Math.max(worst, Math.hypot(back.x - px, back.y - py));
+        checked++;
+      }
+    }
+    check(checked > 300, `B0 ${b0}: ${checked} points on the disk to check`, String(checked));
+    check(worst < 0.001,
+          `B0 ${b0}: every one of them comes back to within ${worst.toExponential(1)} pixels`,
+          String(worst));
+  }
+
+  // And the tilt actually does something, so a test passing at B0=0 is not
+  // quietly passing for every tilt.
+  const flat = S.pixelToHG(200, 150, geom.cx, geom.cy, geom.radius, 0);
+  const tilted = S.pixelToHG(200, 150, geom.cx, geom.cy, geom.radius, 7.25);
+  check(Math.abs(tilted.lat - flat.lat) > 3,
+        `a 7.25 degree tilt moves this point ${(tilted.lat - flat.lat).toFixed(1)} degrees in latitude`,
+        `${flat.lat} vs ${tilted.lat}`);
+
+  // Disk centre is the sub-Earth point whatever the tilt, by definition.
+  for (const b0 of [0, 7.25, -7.25]) {
+    const centre = S.pixelToHG(geom.cx, geom.cy, geom.cx, geom.cy, geom.radius, b0);
+    check(Math.abs(centre.lon) < 1e-9 && Math.abs(centre.lat - b0) < 1e-9,
+          `B0 ${b0}: the middle of the disk is longitude zero, latitude ${b0}`,
+          JSON.stringify(centre));
+  }
+
+  // Off the disk is nothing, not a clamped guess at the nearest edge.
+  check(S.pixelToHG(10, 10, geom.cx, geom.cy, geom.radius, 0) === null,
+        'a pixel in the corner of the frame is not on the Sun');
+
+  // Longitude keeps its sign right out to the limb. The old asin form folded
+  // back past 90 degrees, so two very different places read the same.
+  const west = S.pixelToHG(geom.cx + geom.radius * 0.97, geom.cy, geom.cx, geom.cy, geom.radius, 0);
+  const east = S.pixelToHG(geom.cx - geom.radius * 0.97, geom.cy, geom.cx, geom.cy, geom.radius, 0);
+  check(west.lon > 70 && east.lon < -70, 'near the limbs the longitudes are opposite and large',
+        `${west.lon.toFixed(1)} / ${east.lon.toFixed(1)}`);
+  check(Math.abs(west.lon + east.lon) < 1e-9, 'and symmetric about the middle');
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
