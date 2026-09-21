@@ -56,6 +56,23 @@ export interface ChTrack<H extends TrackedHole = TrackedHole> {
   latest: H;
   /** True when it was found in the newest frame available. */
   present: boolean;
+  /**
+   * True while the hole should still be shown, which is a different and much
+   * more useful question than whether it turned up in one particular frame.
+   *
+   * The detector misses holes. A faint frame, a bit of the disk washed out by
+   * a flare, a shape that momentarily falls under the area threshold - any of
+   * those drop a hole for one frame and bring it back the next. Keying the
+   * display off `present` makes holes flicker in and out as the timeline
+   * plays, which reads as the app being broken rather than as the detector
+   * being imperfect.
+   *
+   * So a hole stays live for a grace period after it was last measured, its
+   * outline rotating with the Sun as though it were still being seen. Only
+   * after a long enough silence - long enough that a genuinely closed hole
+   * would not have come back - is it treated as gone.
+   */
+  live: boolean;
 }
 
 /**
@@ -65,9 +82,12 @@ export interface ChTrack<H extends TrackedHole = TrackedHole> {
  * in order of how close it is. A track can take at most one hole per frame, so
  * two holes that drift together cannot both claim the same history.
  */
+export const LIVE_GRACE_MS = 12 * 3600 * 1000;
+
 export function buildChTracks<H extends TrackedHole>(
   frames: ChFrame<H>[],
   matchRadiusDeg: number = MATCH_RADIUS_DEG,
+  graceMs: number = LIVE_GRACE_MS,
 ): ChTrack<H>[] {
   const ordered = [...frames]
     .filter((f) => Number.isFinite(f.atMs) && Array.isArray(f.holes))
@@ -118,16 +138,20 @@ export function buildChTracks<H extends TrackedHole>(
         lastSeenMs: frame.atMs,
         latest: hole,
         present: false,
+        live: false,
       });
     });
   }
 
-  for (const track of tracks) track.present = track.lastSeenMs === newestMs;
+  for (const track of tracks) {
+    track.present = track.lastSeenMs === newestMs;
+    track.live = newestMs - track.lastSeenMs <= graceMs;
+  }
 
-  // Present ones first, then the most recently seen, then the biggest. A hole
+  // Live ones first, then the most recently seen, then the biggest. A hole
   // that has gone is still listed - it just sorts below the live ones.
   return tracks.sort((a, b) => {
-    if (a.present !== b.present) return a.present ? -1 : 1;
+    if (a.live !== b.live) return a.live ? -1 : 1;
     if (a.lastSeenMs !== b.lastSeenMs) return b.lastSeenMs - a.lastSeenMs;
     return b.latest.widthDeg - a.latest.widthDeg;
   });

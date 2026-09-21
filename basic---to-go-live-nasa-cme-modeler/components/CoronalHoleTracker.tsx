@@ -26,7 +26,8 @@ import {
 } from '../utils/coronalHolePolarity';
 import { buildChTracks, chDisappearance, type ChTrack, type TrackedHole } from '../utils/chTracking';
 import {
-  detectionNear, framesForTracking, type ChDetection, type FrameRef,
+  detectionNear, drawableHoles, framesForTracking, numberTracks,
+  type ChDetection, type FrameRef,
 } from '../utils/chDetectionStore';
 import { useCoronalHoleDetections } from '../hooks/useCoronalHoleDetections';
 import CoronalHoleOverlay, { holeColour } from './CoronalHoleOverlay';
@@ -212,14 +213,13 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
     [store.history, store.detections],
   );
 
-  const orderOfHole = useCallback((holeId: string): number => {
-    // Hole ids repeat between frames (CH_SUVI_0 every time), so the colour and
-    // number come from the track the hole belongs to in THIS frame, matched by
-    // the measurement itself rather than by id.
-    const index = tracks.findIndex((t) => t.points.some((p) => p.hole.id === holeId
-      && Math.abs(p.atMs - activeFrameMs) < 3 * 3600000));
-    return index >= 0 ? index : 0;
-  }, [tracks, activeFrameMs]);
+  // Numbers come from the persistent registry, not from position in a list.
+  // A hole keeps the same number across reloads, across window changes, and
+  // across the frames where the detector missed it.
+  const chNumbers = useMemo(() => numberTracks(tracks), [tracks]);
+  const numberOf = useCallback((trackKey: string) => chNumbers.get(trackKey), [chNumbers]);
+  const labelFor = useCallback(
+    (track: { key: string }) => `CH${chNumbers.get(track.key) ?? '?'}`, [chNumbers]);
 
   const latestFrameMs = store.detections.length > 0
     ? store.detections[store.detections.length - 1].atMs
@@ -235,19 +235,10 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
     [store.detections, activeFrameMs],
   );
 
-  /** Which hole in the drawn frame belongs to the selected track. */
-  const selectedHoleId = useMemo(() => {
-    if (!selectedTrack || !detectionForFrame) return null;
-    const point = selectedTrack.points.find((p) => Math.abs(p.atMs - detectionForFrame.atMs) < 60000);
-    return point?.hole.id ?? null;
-  }, [selectedTrack, detectionForFrame]);
-
-  const selectHoleFromImage = useCallback((holeId: string) => {
-    if (!detectionForFrame) return;
-    const track = tracks.find((t) => t.points.some(
-      (p) => p.hole.id === holeId && Math.abs(p.atMs - detectionForFrame.atMs) < 60000));
-    if (track) setSelectedKey(track.key);
-  }, [tracks, detectionForFrame]);
+  const drawables = useMemo(
+    () => drawableHoles(store, tracks, activeFrameMs),
+    [store, tracks, activeFrameMs],
+  );
 
   // ── the displayed image ───────────────────────────────────────────────────
   const handleImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
@@ -444,13 +435,13 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
               </div>
             )}
             <CoronalHoleOverlay
-              detection={detectionForFrame}
+              holes={drawables}
               atMs={activeFrameMs}
               natural={natural}
               box={boxSize}
-              orderOf={orderOfHole}
-              selectedId={selectedHoleId}
-              onSelect={selectHoleFromImage}
+              numberOf={numberOf}
+              selectedId={selectedTrack?.key ?? null}
+              onSelect={setSelectedKey}
             />
             {showSunspots && (
               <SunspotLabelOverlay
@@ -530,8 +521,9 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
           )}
 
           <div className="flex flex-wrap gap-2">
-            {tracks.map((track, i) => {
+            {tracks.map((track) => {
               const isSel = selectedTrack?.key === track.key;
+              const number = chNumbers.get(track.key);
               return (
                 <button
                   key={track.key}
@@ -540,12 +532,12 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
                   className={`px-3 py-1.5 text-xs rounded border transition-colors ${
                     isSel ? 'bg-neutral-700 border-neutral-500 text-white'
                           : 'bg-neutral-800/70 border-neutral-700 hover:bg-neutral-700'} ${
-                    track.present ? '' : 'opacity-60'}`}
-                  title={track.present ? undefined : `Last seen ${fmtRelative(track.lastSeenMs)}`}
+                    track.live ? '' : 'opacity-60'}`}
+                  title={track.live ? undefined : `Last seen ${fmtRelative(track.lastSeenMs)}`}
                 >
-                  <span style={{ color: holeColour(i) }} className="font-semibold">CH{i + 1}</span>
+                  <span style={{ color: holeColour(number ?? 0) }} className="font-semibold">CH{number ?? '?'}</span>
                   <span className="ml-2 text-neutral-300">{track.latest.widthDeg.toFixed(0)}°</span>
-                  {!track.present && <span className="ml-1.5 text-neutral-500">gone</span>}
+                  {!track.live && <span className="ml-1.5 text-neutral-500">gone</span>}
                 </button>
               );
             })}
@@ -562,10 +554,10 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
 
                 {/* Whether it is still there. A hole that has rotated off is
                     still sending wind, so this cannot just be an absence. */}
-                {gone.gone && (
+                {gone.gone && !selectedTrack.live && (
                   <div className="rounded bg-neutral-800/70 border border-neutral-700 p-2">
                     <div className="text-xs font-semibold text-amber-300">
-                      {gone.label} · last seen {fmtRelative(selectedTrack.lastSeenMs)}
+                      {labelFor(selectedTrack)} · {gone.label} · last seen {fmtRelative(selectedTrack.lastSeenMs)}
                     </div>
                     <p className="text-xs text-neutral-400 mt-1">{gone.note}</p>
                   </div>
@@ -649,7 +641,7 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
                         className="mt-1 px-2 py-0.5 text-[11px] rounded bg-neutral-700 hover:bg-neutral-600"
                       >Try again</button>
                     </div>
-                  ) : gone.gone ? (
+                  ) : gone.gone && !selectedTrack.live ? (
                     <p className="text-xs text-neutral-500">
                       Polarity is read from the current magnetogram, so it is only available while the hole is visible.
                     </p>

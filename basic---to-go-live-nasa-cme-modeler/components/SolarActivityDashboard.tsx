@@ -7,7 +7,8 @@ import SunspotLabelOverlay from './SunspotLabelOverlay';
 import CoronalHoleTracker from './CoronalHoleTracker';
 import CoronalHoleOverlay from './CoronalHoleOverlay';
 import { useCoronalHoleDetections } from '../hooks/useCoronalHoleDetections';
-import { detectionNear } from '../utils/chDetectionStore';
+import { drawableHoles, framesForTracking, numberTracks } from '../utils/chDetectionStore';
+import { buildChTracks } from '../utils/chTracking';
 import { buildRegionLabels, type RegionInput } from '../utils/regionLabels';
 import { nextFramePosition, frameSpanHours } from '../utils/framePlayback';
 import { detectSolarDiskGeometry, heliographicToPixel, diskAsFraction, diskFromFraction, type SolarDiskGeometry } from '../utils/solarDisk';
@@ -2775,9 +2776,20 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     return Number.isFinite(ms) ? ms : Date.now();
   }, [activeSuviFrame?.ts]);
 
-  const suviChDetection = useMemo(
-    () => (showChOnSuvi ? detectionNear(chStore.detections, suviFrameMs) : null),
-    [showChOnSuvi, chStore.detections, suviFrameMs],
+  // The same tracks and the same numbers the Coronal Hole Tracker shows, so a
+  // hole is CH97 wherever it appears. Drawing from tracks rather than from one
+  // frame's detections also stops holes blinking out in the frames where the
+  // detector happened to miss them.
+  const chTracks = useMemo(
+    () => buildChTracks(framesForTracking(chStore)),
+    [chStore.history, chStore.detections],
+  );
+  const chNumbers = useMemo(() => numberTracks(chTracks), [chTracks]);
+  const chNumberOf = useCallback((trackKey: string) => chNumbers.get(trackKey), [chNumbers]);
+
+  const suviChHoles = useMemo(
+    () => (showChOnSuvi ? drawableHoles(chStore, chTracks, suviFrameMs) : []),
+    [showChOnSuvi, chStore, chTracks, suviFrameMs],
   );
 
   const suviNatural = useMemo(() => (
@@ -2786,11 +2798,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       : null
   ), [suviDiskGeometry]);
 
-  const latestChDetection = useMemo(() => (
-    showChOnSunspots && chStore.detections.length > 0
-      ? chStore.detections[chStore.detections.length - 1]
-      : null
-  ), [showChOnSunspots, chStore.detections]);
+  const sunspotChHoles = useMemo(
+    () => (showChOnSunspots ? drawableHoles(chStore, chTracks, Date.now()) : []),
+    [showChOnSunspots, chStore, chTracks],
+  );
 
   const overviewNatural = useMemo(() => (
     overviewGeometry ? { width: overviewGeometry.width, height: overviewGeometry.height } : null
@@ -3618,10 +3629,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
                         {showChOnSuvi && (
                           <CoronalHoleOverlay
-                            detection={suviChDetection}
+                            holes={suviChHoles}
                             atMs={suviFrameMs}
                             natural={suviNatural}
                             box={suviBoxSize}
+                            numberOf={chNumberOf}
                             subdued
                           />
                         )}
@@ -3666,10 +3678,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         <canvas ref={suviCanvasRef} className="w-full h-full object-contain" />
                         {showChOnSuvi && (
                           <CoronalHoleOverlay
-                            detection={suviChDetection}
+                            holes={suviChHoles}
                             atMs={suviFrameMs}
                             natural={suviNatural}
                             box={suviDiffBoxSize}
+                            numberOf={chNumberOf}
                             subdued
                           />
                         )}
@@ -3900,10 +3913,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
                     {showChOnSunspots && (
                       <CoronalHoleOverlay
-                        detection={latestChDetection}
+                        holes={sunspotChHoles}
                         atMs={Date.now()}
                         natural={overviewNatural}
                         box={overviewBoxSize}
+                        numberOf={chNumberOf}
                         diskOverride={overviewDiskFraction}
                         subdued
                       />

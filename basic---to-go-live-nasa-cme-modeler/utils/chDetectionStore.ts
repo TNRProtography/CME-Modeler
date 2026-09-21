@@ -23,9 +23,11 @@
 import { detectCoronalHolesFromSuvi195 } from './suviCoronalHoleDetector';
 import type { CoronalHole } from './coronalHoleData';
 import type { DiskFraction } from './solarDisk';
-import type { TrackedHole } from './chTracking';
+import type { ChTrack, TrackedHole } from './chTracking';
+import { assignChNumbers, parseRegistry, type ChRegistry } from './chRegistry';
 
 const STORAGE_KEY = 'sta-ch-history-v1';
+const REGISTRY_KEY = 'sta-ch-registry-v1';
 export const HISTORY_WINDOW_MS = 7 * 86400000;
 
 /**
@@ -68,6 +70,7 @@ const detections = new Map<string, ChDetection>();
 /** Frames already tried, so a frame that fails is not retried every poll. */
 const attempted = new Set<string>();
 let history: ChRecord[] = [];
+let registry: ChRegistry = { nextNumber: 0, entries: [] };
 let progress: ChStoreState['progress'] = null;
 let error: string | null = null;
 let running = false;
@@ -83,6 +86,12 @@ function compact(holes: CoronalHole[]): TrackedHole[] {
 function loadHistory(): void {
   if (loaded) return;
   loaded = true;
+  try {
+    registry = parseRegistry(
+      typeof localStorage !== 'undefined' ? localStorage.getItem(REGISTRY_KEY) : null);
+  } catch {
+    registry = parseRegistry(null);
+  }
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
     if (!raw) return;
@@ -225,6 +234,29 @@ export async function ensureChDetections(frames: FrameRef[]): Promise<void> {
   }
 }
 
+/**
+ * Record a detection somebody else ran.
+ *
+ * The 3D scene detects the live SUVI image rather than the worker's archived
+ * frames, so its result would otherwise never reach this store and the two
+ * views of the Sun could show different holes. Publishing it here means one
+ * set of outlines everywhere, whichever half of the app did the work.
+ */
+export function publishDetection(
+  frameUrl: string,
+  atMs: number,
+  holes: CoronalHole[],
+  disk: DiskFraction,
+  b0Deg: number,
+): void {
+  loadHistory();
+  if (!frameUrl || !Number.isFinite(atMs)) return;
+  detections.set(frameUrl, { atMs, frameUrl, holes, disk, b0Deg });
+  attempted.add(frameUrl);
+  remember(atMs, holes);
+  emit();
+}
+
 /** The detection nearest a moment, for drawing over that frame. */
 export function detectionNear(all: ChDetection[], atMs: number): ChDetection | null {
   if (all.length === 0) return null;
@@ -244,11 +276,90 @@ export function framesForTracking(state: ChStoreState): { atMs: number; holes: T
     .sort((a, b) => a.atMs - b.atMs);
 }
 
+/**
+ * Number the tracks, and remember the numbering.
+ *
+ * Kept here rather than in the component because the numbers have to outlive
+ * any one render, any one window of frames, and the page itself - a hole that
+ * was CH97 this morning must still be CH97 tonight.
+ */
+export function numberTracks(tracks: ChTrack[], nowMs = Date.now()): Map<string, number> {
+  loadHistory();
+  const result = assignChNumbers(tracks, registry, nowMs);
+  registry = result.registry;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(REGISTRY_KEY, JSON.stringify(registry));
+    }
+  } catch { /* storage disabled */ }
+  return result.numbers;
+}
+
+export interface DrawableHole {
+  /** The track this outline belongs to. */
+  trackKey: string;
+  hole: CoronalHole;
+  /** When the outline was measured, so it can be rotated forward. */
+  observedAtMs: number;
+  disk: DiskFraction;
+  b0Deg: number;
+  /** True when this is not from the frame being shown. */
+  carriedForward: boolean;
+}
+
+/**
+ * The outline to draw for each track, over a given frame.
+ *
+ * Takes the measurement from the frame itself where there is one, and the
+ * track's most recent measurement otherwise. That second case is what stops
+ * the flicker: the detector misses a hole in maybe one frame in ten, and
+ * drawing only what the current frame found makes holes blink in and out as
+ * the timeline plays. A carried-forward outline is rotated to the frame's
+ * moment like any other, so it sits where the hole actually is.
+ */
+export function drawableHoles(
+  state: ChStoreState,
+  tracks: ChTrack[],
+  atMs: number,
+): DrawableHole[] {
+  if (state.detections.length === 0) return [];
+  const byTime = new Map<number, ChDetection>();
+  for (const d of state.detections) byTime.set(d.atMs, d);
+
+  const frameDetection = detectionNear(state.detections, atMs);
+  const out: DrawableHole[] = [];
+
+  for (const track of tracks) {
+    if (!track.live) continue;
+
+    // Newest first: the freshest outline we have for this hole.
+    for (let i = track.points.length - 1; i >= 0; i--) {
+      const point = track.points[i];
+      const detection = byTime.get(point.atMs);
+      if (!detection) continue;
+      const hole = detection.holes.find((h) => h.id === point.hole.id);
+      if (!hole) continue;
+      out.push({
+        trackKey: track.key,
+        hole,
+        observedAtMs: detection.atMs,
+        disk: detection.disk,
+        b0Deg: detection.b0Deg,
+        carriedForward: detection.atMs !== frameDetection?.atMs,
+      });
+      break;
+    }
+  }
+
+  return out;
+}
+
 /** Testing seam: forget everything, including what is on disk. */
 export function resetChStore(): void {
   detections.clear();
   attempted.clear();
   history = [];
+  registry = { nextNumber: 0, entries: [] };
   progress = null;
   error = null;
   running = false;
@@ -257,6 +368,9 @@ export function resetChStore(): void {
   // ReferenceError where the identifier is not declared at all, which is every
   // non-browser environment this module gets imported into.
   try {
-    if (typeof localStorage !== 'undefined') localStorage.removeItem(STORAGE_KEY);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(REGISTRY_KEY);
+    }
   } catch { /* storage disabled */ }
 }

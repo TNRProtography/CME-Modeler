@@ -12,7 +12,7 @@
 // cross-origin anyway, so reading its pixels throws.
 
 import React, { useCallback, useEffect, useRef } from 'react';
-import type { ChDetection } from '../utils/chDetectionStore';
+import type { DrawableHole } from '../utils/chDetectionStore';
 import { chOutlineAt } from '../utils/coronalHoleDynamics';
 import {
   containedImageRect, diskFromFraction, heliographicToPixel, longitudeAt,
@@ -24,13 +24,21 @@ export const HOLE_COLOURS = ['#38bdf8', '#a78bfa', '#fbbf24', '#34d399', '#fb718
 export const holeColour = (index: number): string => HOLE_COLOURS[index % HOLE_COLOURS.length];
 
 export interface CoronalHoleOverlayProps {
-  detection: ChDetection | null;
+  /**
+   * What to draw, one entry per hole.
+   *
+   * Tracks rather than a single frame's detections, so a hole the detector
+   * missed in this particular frame keeps its outline instead of blinking
+   * out. Each entry carries the moment it was measured and gets rotated to
+   * the frame's moment like any other.
+   */
+  holes: DrawableHole[];
   /** The moment the frame underneath was taken. Outlines rotate to it. */
   atMs: number;
   natural: { width: number; height: number } | null;
   box: { width: number; height: number };
-  /** Names holes by their position in this list, so numbering is stable. */
-  orderOf?: (holeId: string) => number;
+  /** The number to show for a track, from the persistent registry. */
+  numberOf?: (trackKey: string) => number | undefined;
   selectedId?: string | null;
   onSelect?: (holeId: string) => void;
   labels?: boolean;
@@ -50,7 +58,7 @@ export interface CoronalHoleOverlayProps {
 }
 
 interface Shape {
-  holeId: string;
+  trackKey: string;
   points: { x: number; y: number }[];
   centre: { x: number; y: number } | null;
   colour: string;
@@ -58,20 +66,24 @@ interface Shape {
 }
 
 const CoronalHoleOverlay: React.FC<CoronalHoleOverlayProps> = ({
-  detection, atMs, natural, box, orderOf, selectedId, onSelect,
+  holes, atMs, natural, box, numberOf, selectedId, onSelect,
   labels = true, subdued = false, diskOverride = null,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const shapesRef = useRef<Shape[]>([]);
 
   const buildShapes = useCallback((): Shape[] => {
-    if (!detection || !natural || box.width === 0 || box.height === 0) return [];
+    if (holes.length === 0 || !natural || box.width === 0 || box.height === 0) return [];
     const rect = containedImageRect(natural, box);
-    const geometry = diskFromFraction(diskOverride ?? detection.disk, { width: rect.width, height: rect.height });
-    const b0 = detection.b0Deg;
 
-    return detection.holes.flatMap((hole, i): Shape[] => {
-      const outline = chOutlineAt(hole, detection.atMs, atMs);
+    return holes.flatMap((entry, i): Shape[] => {
+      const { hole, observedAtMs } = entry;
+      // Each outline is drawn against the disk of the frame it was measured
+      // in, because that is the disk its coordinates came out of.
+      const geometry = diskFromFraction(diskOverride ?? entry.disk, { width: rect.width, height: rect.height });
+      const b0 = entry.b0Deg;
+
+      const outline = chOutlineAt(hole, observedAtMs, atMs);
       const points = outline
         .map((q) => heliographicToPixel(q.lat, q.lon, geometry, b0, 0))
         .filter((q) => q.onDisk)
@@ -79,17 +91,17 @@ const CoronalHoleOverlay: React.FC<CoronalHoleOverlayProps> = ({
       if (points.length < 3) return [];
 
       const projected = heliographicToPixel(
-        hole.lat, longitudeAt(hole.lon, detection.atMs, atMs), geometry, b0, 0);
-      const order = orderOf ? orderOf(hole.id) : i;
+        hole.lat, longitudeAt(hole.lon, observedAtMs, atMs), geometry, b0, 0);
+      const number = numberOf?.(entry.trackKey);
       return [{
-        holeId: hole.id,
+        trackKey: entry.trackKey,
         points,
         centre: projected.onDisk ? { x: projected.x + rect.x, y: projected.y + rect.y } : null,
-        colour: holeColour(order),
-        label: `CH${order + 1} · ${hole.widthDeg.toFixed(0)}°`,
+        colour: holeColour(number != null ? number : i),
+        label: `CH${number ?? i + 1} \u00b7 ${hole.widthDeg.toFixed(0)}\u00b0`,
       }];
     });
-  }, [detection, natural, box.width, box.height, atMs, orderOf, diskOverride]);
+  }, [holes, natural, box.width, box.height, atMs, numberOf, diskOverride]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -107,7 +119,7 @@ const CoronalHoleOverlay: React.FC<CoronalHoleOverlayProps> = ({
     shapesRef.current = shapes;
 
     for (const shape of shapes) {
-      const selected = shape.holeId === selectedId;
+      const selected = shape.trackKey === selectedId;
       ctx.beginPath();
       ctx.moveTo(shape.points[0].x, shape.points[0].y);
       for (let k = 1; k < shape.points.length; k++) ctx.lineTo(shape.points[k].x, shape.points[k].y);
@@ -181,7 +193,7 @@ const CoronalHoleOverlay: React.FC<CoronalHoleOverlayProps> = ({
     for (const shape of shapesRef.current) {
       if (!pointInPolygon(x, y, shape.points)) continue;
       const area = polygonArea(shape.points);
-      if (!best || area < best.area) best = { id: shape.holeId, area };
+      if (!best || area < best.area) best = { id: shape.trackKey, area };
     }
     if (best) onSelect(best.id);
   }, [onSelect]);

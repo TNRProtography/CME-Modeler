@@ -33,6 +33,7 @@ const D = await load('utils/solarDisk.ts');
 const C = await load('utils/coronalHoleDynamics.ts');
 const H = await load('utils/coronalHoleHistory.ts');
 const T = await load('utils/chTracking.ts');
+await load('utils/chRegistry.ts');
 const St = await load('utils/chDetectionStore.ts');
 
 // The real model the panel uses, not a mirror of it: a mirror drifts the

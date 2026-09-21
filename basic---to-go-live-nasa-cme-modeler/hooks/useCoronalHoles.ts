@@ -27,6 +27,14 @@ import {
   CHEvolution,
 } from '../utils/coronalHoleHistory';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
+import { getChState, publishDetection, subscribeToChDetections } from '../utils/chDetectionStore';
+
+/**
+ * How fresh a shared detection has to be for the scene to use it rather than
+ * running its own. Well inside the 15 minute refresh, so in practice the
+ * dashboard's work is reused and the scene detects nothing at all.
+ */
+const SHARED_DETECTION_MAX_AGE_MS = 30 * 60 * 1000;
 
 // ── TUNE ──────────────────────────────────────────────────────────────
 const REFRESH_INTERVAL_MS   = 15 * 60 * 1000;  // 15 minutes
@@ -92,8 +100,30 @@ export function useCoronalHoles({ enabled = false, sourceImageUrl }: UseCoronalH
     setErrorMessage(undefined);
 
     try {
+      // Prefer a detection the rest of the app already ran. The Coronal Hole
+      // Tracker measures the same Sun from the same channel, and two
+      // independent runs produce two slightly different sets of outlines -
+      // which shows up as the 3D scene and the dashboard disagreeing about
+      // where a hole is.
+      const shared = getChState();
+      const newest = shared.detections[shared.detections.length - 1];
+      if (newest && Date.now() - newest.atMs < SHARED_DETECTION_MAX_AGE_MS && newest.holes.length > 0) {
+        setCoronalHoles(newest.holes);
+        setLastDetectedAt(new Date(newest.atMs));
+        setStatus('detected');
+        return;
+      }
+
       const result = await detectCoronalHolesFromSuvi195(sourceImageUrl ?? undefined);
       if (!mountedRef.current) return;
+
+      // And publish ours, so the dashboard reuses it in turn.
+      if (result.succeeded && result.diskFraction) {
+        publishDetection(
+          result.imageUrl, result.analysedAt.getTime(),
+          result.coronalHoles, result.diskFraction, result.b0Deg,
+        );
+      }
 
       setLastResult(result);
       setLastDetectedAt(result.analysedAt);
@@ -127,6 +157,18 @@ export function useCoronalHoles({ enabled = false, sourceImageUrl }: UseCoronalH
       setErrorMessage(err instanceof Error ? err.message : String(err));
     }
   }, [sourceImageUrl]);
+
+  // Follow the shared store, so a detection run anywhere in the app reaches
+  // the scene without waiting for its own refresh.
+  useEffect(() => subscribeToChDetections((shared) => {
+    if (!mountedRef.current) return;
+    const newest = shared.detections[shared.detections.length - 1];
+    if (!newest || newest.holes.length === 0) return;
+    if (Date.now() - newest.atMs > SHARED_DETECTION_MAX_AGE_MS) return;
+    setCoronalHoles(newest.holes);
+    setLastDetectedAt(new Date(newest.atMs));
+    setStatus('detected');
+  }), []);
 
   // ── Detection lifecycle ────────────────────────────────────────────
   useEffect(() => {
