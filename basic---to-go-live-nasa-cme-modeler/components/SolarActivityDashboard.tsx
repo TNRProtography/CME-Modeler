@@ -1,6 +1,10 @@
 // --- START OF FILE src/components/SolarActivityDashboard.tsx ---
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { layoutLabels, leaderEndpoint } from '../utils/labelLayout';
+import { heliographicToPixel, detectSolarDiskGeometry } from '../utils/solarDisk';
+import type { SolarDiskGeometry } from '../utils/solarDisk';
+import { solarDiskOrientation } from '../utils/solarEphemeris';
 import { createPortal } from 'react-dom';
 import { Line } from 'react-chartjs-2';
 import { ChartOptions } from 'chart.js';
@@ -222,13 +226,45 @@ const SDO_HMI_IF_4096_FALLBACK = `${NASA_SDO_BASE}/latest_4096_HMII.jpg`;
 const resolveSdoImageUrl = (rawUrl: string, _forceDirect?: boolean) => rawUrl;
 const REFRESH_INTERVAL_MS = 30 * 1000; // JSON refreshes every tick; images are rate-limited separately by SOLAR_IMAGE_CACHE_TTL_MS
 const HMI_IMAGE_SIZE = 4096;
-const SDO_HMI_NATIVE_CX = 2048;
-const SDO_HMI_NATIVE_CY = 2048;
-const SDO_HMI_NATIVE_RADIUS = 1980;
-const DISK_LABEL_OFFSET_X_PX = 200;
-const DISK_LABEL_OFFSET_Y_PX = -200;
-const CLOSEUP_OFFSET_X_PX = 200;
-const CLOSEUP_OFFSET_Y_PX = -200;
+// Where the disk sits in an HMI frame, as a fraction of the frame, used only
+// when it cannot be measured from the image itself. The Sun does not fill the
+// frame edge to edge and the margin is not identical between products, so this
+// is a fallback rather than the answer - detectSolarDiskGeometry measures the
+// real thing whenever the image is readable.
+const SDO_HMI_FALLBACK_CENTRE_FRACTION = 0.5;
+const SDO_HMI_FALLBACK_RADIUS_FRACTION = 0.455;
+
+/** The disk's assumed place in a frame, when it cannot be measured. */
+const fallbackDiskGeometry = (width: number, height: number): SolarDiskGeometry => ({
+  width,
+  height,
+  cx: width * SDO_HMI_FALLBACK_CENTRE_FRACTION,
+  cy: height * SDO_HMI_FALLBACK_CENTRE_FRACTION,
+  radius: Math.min(width, height) * SDO_HMI_FALLBACK_RADIUS_FRACTION,
+});
+
+/**
+ * Measure the solar disk in a loaded image, or null if the pixels are not
+ * readable. Drawing to a canvas taints it unless the host sent CORS headers,
+ * and reading a tainted canvas throws rather than returning anything useful.
+ */
+const measureDiskFromImage = (
+  source: HTMLImageElement,
+  width: number,
+  height: number,
+): SolarDiskGeometry | null => {
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.drawImage(source, 0, 0, width, height);
+    return detectSolarDiskGeometry(ctx.getImageData(0, 0, width, height).data, width, height);
+  } catch {
+    return null;
+  }
+};
 const ACTIVE_REGION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_REGION_MIN_AREA_MSH = 0;
 // Roughly how often the upstream SUVI/SDO "latest" products actually publish.
@@ -472,67 +508,6 @@ const constrainToSolarDiskBounds = (
     x: clampToRange(x, minX, maxX),
     y: clampToRange(y, minY, maxY),
   };
-};
-
-const solarCoordsToPixel = (latitude: number, longitude: number, cx: number, cy: number, radius: number) => {
-  const latRad = latitude * (Math.PI / 180);
-  const lonRad = longitude * (Math.PI / 180);
-  const x = cx + radius * Math.cos(latRad) * Math.sin(lonRad);
-  const y = cy - radius * Math.sin(latRad);
-  const visibleHemisphere = Math.cos(latRad) * Math.cos(lonRad) >= 0;
-  const onDisk = visibleHemisphere && ((x - cx) ** 2 + (y - cy) ** 2 <= radius ** 2);
-  return { x, y, onDisk };
-};
-
-const detectSolarDiskGeometry = (source: HTMLImageElement): { width: number; height: number; cx: number; cy: number; radius: number } => {
-  const width = source.naturalWidth || HMI_IMAGE_SIZE;
-  const height = source.naturalHeight || HMI_IMAGE_SIZE;
-  const fallback = { width, height, cx: width / 2, cy: height / 2, radius: Math.min(width, height) * 0.48 };
-
-  try {
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return fallback;
-
-    ctx.drawImage(source, 0, 0, width, height);
-    const imageData = ctx.getImageData(0, 0, width, height).data;
-    const step = Math.max(1, Math.floor(Math.min(width, height) / 512));
-
-    const isDiskPixel = (x: number, y: number) => {
-      const i = (y * width + x) * 4;
-      const r = imageData[i];
-      const g = imageData[i + 1];
-      const b = imageData[i + 2];
-      const a = imageData[i + 3];
-      return a > 0 && (r + g + b) > 24;
-    };
-
-    let left = width;
-    let right = 0;
-    let top = height;
-    let bottom = 0;
-
-    for (let y = 0; y < height; y += step) {
-      for (let x = 0; x < width; x += step) {
-        if (isDiskPixel(x, y)) {
-          if (x < left) left = x;
-          if (x > right) right = x;
-          if (y < top) top = y;
-          if (y > bottom) bottom = y;
-        }
-      }
-    }
-
-    if (left >= right || top >= bottom) return fallback;
-    const cx = (left + right) / 2;
-    const cy = (top + bottom) / 2;
-    const radius = Math.max((right - left), (bottom - top)) / 2;
-    return { width, height, cx, cy, radius };
-  } catch {
-    return fallback;
-  }
 };
 
 const getSunspotClassColor = (magneticClass?: string | null): string => {
@@ -1976,18 +1951,27 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       ? sdoHmiB4096
       : sdoHmiBc4096;
 
+  // Where the Sun's axis is pointing right now. B0 swings between -7.25 and
+  // +7.25 degrees over a year and moves a region by up to 12% of the solar
+  // radius, which is why labels used to sit beside their spots rather than on
+  // them. Recomputed whenever the imagery refreshes; it drifts about a tenth
+  // of a degree a day, so that is far more often than it needs.
+  const diskOrientation = useMemo(
+    () => solarDiskOrientation(new Date()),
+    [sunspotOverviewImage.url],
+  );
+
   const selectedSunspotPreview = useMemo(() => {
     if (!selectedSunspotRegion || selectedSunspotRegion.latitude === null || selectedSunspotRegion.longitude === null) {
       return null;
     }
 
-    const geometry = overviewGeometry ?? { width: HMI_IMAGE_SIZE, height: HMI_IMAGE_SIZE, cx: HMI_IMAGE_SIZE / 2, cy: HMI_IMAGE_SIZE / 2, radius: HMI_IMAGE_SIZE * 0.46 };
-    const pos = solarCoordsToPixel(
+    const geometry = overviewGeometry ?? fallbackDiskGeometry(HMI_IMAGE_SIZE, HMI_IMAGE_SIZE);
+    const pos = heliographicToPixel(
       selectedSunspotRegion.latitude,
       selectedSunspotRegion.longitude,
-      geometry.cx,
-      geometry.cy,
-      geometry.radius
+      geometry,
+      diskOrientation.b0,
     );
     const constrained = constrainToSolarDiskBounds(pos.x, pos.y, geometry);
 
@@ -1997,7 +1981,26 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       xPx: constrained.x,
       yPx: constrained.y,
     };
-  }, [selectedSunspotRegion, overviewGeometry]);
+  }, [selectedSunspotRegion, overviewGeometry, diskOrientation]);
+
+  // The overview box's size in pixels. Label placement is done in pixels
+  // because a label's size is fixed in pixels while its anchor is a fraction
+  // of the disk, and the two only relate once the box has been measured.
+  const overviewBoxRef = useRef<HTMLDivElement | null>(null);
+  const [overviewBoxSize, setOverviewBoxSize] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    const el = overviewBoxRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setOverviewBoxSize((prev) =>
+        Math.abs(prev.width - width) < 1 && Math.abs(prev.height - height) < 1
+          ? prev
+          : { width, height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const [closeupLightbox, setCloseupLightbox] = useState(false);
 
@@ -2013,6 +2016,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
     let cancelled = false;
     const source = new Image();
+    // Only the measurement needs this; the displayed <img> is untouched, so a
+    // host without CORS headers costs us the measurement, not the picture.
+    source.crossOrigin = 'anonymous';
 
     source.onload = () => {
       if (cancelled) return;
@@ -2020,24 +2026,34 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       const width = source.naturalWidth || HMI_IMAGE_SIZE;
       const height = source.naturalHeight || HMI_IMAGE_SIZE;
 
-      // Use known native SDO HMI geometry scaled to actual image size.
-      // detectSolarDiskGeometry is unreliable on colorized/magnetogram images
-      // (false pixel edges from colour mapping throw off boundary detection).
-      // The native constants are stable across all HMI products.
-      const scaleX = width / HMI_IMAGE_SIZE;
-      const scaleY = height / HMI_IMAGE_SIZE;
-      const scale = Math.min(scaleX, scaleY);
+      // Measure the disk rather than assume it. The Sun does not fill an HMI
+      // frame and the margin differs between the continuum, magnetogram and
+      // colourised products, so a single hardcoded radius is wrong for at
+      // least two of the three - and a radius that is a few percent out moves
+      // a region near the limb by more than its own width.
+      const measured = measureDiskFromImage(source, width, height);
+      if (measured) {
+        setOverviewGeometry(measured);
+        return;
+      }
+
+      // Reading pixels needs the image to be CORS-readable; if it is not, the
+      // canvas is tainted and this is all we have. Stated as a fraction of the
+      // frame so it survives whatever resolution the product is served at.
       setOverviewGeometry({
         width,
         height,
-        cx: SDO_HMI_NATIVE_CX * scaleX,
-        cy: SDO_HMI_NATIVE_CY * scaleY,
-        radius: SDO_HMI_NATIVE_RADIUS * scale,
+        cx: width * SDO_HMI_FALLBACK_CENTRE_FRACTION,
+        cy: height * SDO_HMI_FALLBACK_CENTRE_FRACTION,
+        radius: Math.min(width, height) * SDO_HMI_FALLBACK_RADIUS_FRACTION,
       });
     };
 
     source.onerror = () => {
-      if (!cancelled) setOverviewGeometry(null);
+      if (cancelled) return;
+      // A CORS-less host rejects the anonymous request outright. Fall back to
+      // the frame fractions rather than to nothing, or every label disappears.
+      setOverviewGeometry(fallbackDiskGeometry(HMI_IMAGE_SIZE, HMI_IMAGE_SIZE));
     };
 
     source.src = sunspotOverviewImage.url;
@@ -2048,19 +2064,21 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, [sunspotOverviewImage.url]);
 
   const plottedSunspots = useMemo(() => {
-    const geometry = overviewGeometry ?? { width: HMI_IMAGE_SIZE, height: HMI_IMAGE_SIZE, cx: HMI_IMAGE_SIZE / 2, cy: HMI_IMAGE_SIZE / 2, radius: HMI_IMAGE_SIZE * 0.46 };
+    const geometry = overviewGeometry ?? fallbackDiskGeometry(HMI_IMAGE_SIZE, HMI_IMAGE_SIZE);
 
     return activeSunspotRegions
       .filter((region) => region.latitude !== null && region.longitude !== null)
       .map((region) => {
-        const pos = solarCoordsToPixel(region.latitude as number, region.longitude as number, geometry.cx, geometry.cy, geometry.radius);
-        const scaleX = geometry.width / HMI_IMAGE_SIZE;
-        const scaleY = geometry.height / HMI_IMAGE_SIZE;
-        const shifted = {
-          x: pos.x + DISK_LABEL_OFFSET_X_PX * scaleX,
-          y: pos.y + DISK_LABEL_OFFSET_Y_PX * scaleY,
-        };
-        const constrained = constrainToSolarDiskBounds(shifted.x, shifted.y, geometry);
+        // No nudge here any more. The old constant offset was compensating for
+        // the missing B0 term, which it could not do: that error changes with
+        // a region's position, so a fixed shift helped some and hurt others.
+        const pos = heliographicToPixel(
+          region.latitude as number,
+          region.longitude as number,
+          geometry,
+          diskOrientation.b0,
+        );
+        const constrained = constrainToSolarDiskBounds(pos.x, pos.y, geometry);
         return {
           ...region,
           xPercent: (constrained.x / geometry.width) * 100,
@@ -2070,7 +2088,67 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         };
       })
       .filter((region) => region.onDisk && Number.isFinite(region.xPercent) && Number.isFinite(region.yPercent));
-  }, [activeSunspotRegions, overviewGeometry]);
+  }, [activeSunspotRegions, overviewGeometry, diskOrientation]);
+
+  /**
+   * Label boxes, placed so they do not sit on top of the spots.
+   *
+   * Every label is offset from its region and joined to it by a leader line.
+   * The detail line is dropped on a narrow box, where a two-line label would
+   * take up more of the disk than the regions it is describing.
+   */
+  const laidOutSunspotLabels = useMemo(() => {
+    const { width, height } = overviewBoxSize;
+    if (!width || !height || plottedSunspots.length === 0) return [];
+
+    const showDetail = width >= 380;
+    const titleSize = 10;
+    const detailSize = 9;
+
+    const entries = plottedSunspots.map((region) => {
+      const title = `AR ${region.region}`;
+      const detailParts = [
+        region.magneticClass ? String(region.magneticClass).toUpperCase() : null,
+        region.spotCount != null ? `${region.spotCount} spot${region.spotCount === 1 ? '' : 's'}` : null,
+      ].filter(Boolean) as string[];
+      const detail = showDetail ? detailParts.join(' \u00b7 ') : '';
+
+      // Rough advance width per character for the weights in use. Close enough
+      // to reserve space with; the box itself is sized by its content.
+      const boxWidth = Math.max(title.length * titleSize * 0.62, detail.length * detailSize * 0.56) + 12;
+      const boxHeight = (detail ? titleSize + detailSize + 9 : titleSize + 7) + 4;
+
+      return {
+        region,
+        title,
+        detail,
+        anchor: {
+          id: region.region,
+          x: (region.xPercent / 100) * width,
+          y: (region.yPercent / 100) * height,
+          width: boxWidth,
+          height: boxHeight,
+          // The regions most worth reading get the clearest positions.
+          priority: (region.area ?? 0) + (region.spotCount ?? 0) * 2,
+        },
+      };
+    });
+
+    const placed = layoutLabels(entries.map(e => e.anchor), { width, height }, {
+      minDistance: Math.max(18, Math.min(34, width * 0.045)),
+      padding: 4,
+      anchorClearance: Math.max(6, width * 0.012),
+    });
+    const byId = new Map(placed.map(pl => [pl.id, pl]));
+
+    return entries
+      .map((e) => {
+        const label = byId.get(e.region.region);
+        if (!label) return null;
+        return { ...e, label, leader: leaderEndpoint(label) };
+      })
+      .filter((e): e is NonNullable<typeof e> => e !== null);
+  }, [plottedSunspots, overviewBoxSize]);
 
   const displayedSunspotRegions = useMemo(() => {
     return activeSunspotRegions
@@ -3273,6 +3351,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-grow">
                 <div className="lg:col-span-7 rounded-lg border border-neutral-800 bg-black/80 p-3 min-h-0 flex items-center justify-center">
                   <div
+                    ref={overviewBoxRef}
                     className="relative aspect-square w-full max-w-[700px] max-h-[70vh] md:max-h-[680px] mx-auto cursor-zoom-in"
                     title={`${tooltipContent['active-sunspots']} (click for 4K)`}
                     onClick={() => {
@@ -3318,7 +3397,42 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/60 text-amber-200 text-sm">Failed to load - tap to retry</div>
                     )}
 
-                    {plottedSunspots.map((region) => {
+                    {/* Leader lines and region markers. One SVG under all the
+                        labels, so a line can never be drawn over a box. */}
+                    {laidOutSunspotLabels.length > 0 && (
+                      <svg
+                        className="absolute inset-0 w-full h-full pointer-events-none"
+                        viewBox={`0 0 ${overviewBoxSize.width} ${overviewBoxSize.height}`}
+                        aria-hidden="true"
+                      >
+                        {laidOutSunspotLabels.map(({ region, label, leader }) => {
+                          const riskBand = getSunspotRiskBand(region);
+                          const isSelected = selectedSunspotRegion?.region === region.region;
+                          return (
+                            <g key={`leader-${region.region}`} opacity={isSelected ? 1 : 0.75}>
+                              <line
+                                x1={leader.x} y1={leader.y}
+                                x2={label.anchorX} y2={label.anchorY}
+                                stroke={riskBand.color}
+                                strokeWidth={isSelected ? 1.4 : 1}
+                                strokeLinecap="round"
+                              />
+                              {/* A ring rather than a dot: it says exactly where
+                                  the region is without hiding what is there. */}
+                              <circle
+                                cx={label.anchorX} cy={label.anchorY}
+                                r={isSelected ? 6 : 4.5}
+                                fill="none"
+                                stroke={riskBand.color}
+                                strokeWidth={isSelected ? 1.8 : 1.2}
+                              />
+                            </g>
+                          );
+                        })}
+                      </svg>
+                    )}
+
+                    {laidOutSunspotLabels.map(({ region, title, detail, label }) => {
                       const isSelected = selectedSunspotRegion?.region === region.region;
                       const riskBand = getSunspotRiskBand(region);
                       return (
@@ -3326,18 +3440,21 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                           key={`${region.region}-${region.location}`}
                           onClick={(e) => { e.stopPropagation(); setSelectedSunspotRegion(region); }}
                           className="absolute -translate-x-1/2 -translate-y-1/2 group"
-                          style={{ left: `${region.xPercent}%`, top: `${region.yPercent}%` }}
+                          style={{ left: `${label.x}px`, top: `${label.y}px` }}
                           title={`AR ${region.region} · ${region.magneticClass || 'Unknown'} · ${region.location}`}
                         >
                           <span
-                            className="relative z-10 px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap bg-black/80 opacity-90 group-hover:opacity-100 transition-opacity"
+                            className="relative z-10 flex flex-col items-center px-1.5 py-0.5 rounded whitespace-nowrap bg-black/85 opacity-90 group-hover:opacity-100 transition-opacity leading-tight"
                             style={{
                               color: riskBand.color,
                               border: `1px solid ${riskBand.color}40`,
                               boxShadow: isSelected ? `0 0 8px ${riskBand.color}60` : 'none',
                             }}
                           >
-                            AR {region.region}
+                            <span className="text-[10px] font-bold">{title}</span>
+                            {detail && (
+                              <span className="text-[9px] font-medium text-neutral-300">{detail}</span>
+                            )}
                           </span>
                         </button>
                       );
@@ -3368,10 +3485,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         >
                           <div className="relative w-[90vw] h-[90vw] max-w-[90vh] max-h-[90vh] overflow-hidden rounded-lg">
                             {(() => {
-                              const offsetXPercent = (CLOSEUP_OFFSET_X_PX / HMI_IMAGE_SIZE) * 100;
-                              const offsetYPercent = (CLOSEUP_OFFSET_Y_PX / HMI_IMAGE_SIZE) * 100;
-                              const adjustedX = Math.max(0, Math.min(100, selectedSunspotPreview.xPercent + offsetXPercent));
-                              const adjustedY = Math.max(0, Math.min(100, selectedSunspotPreview.yPercent + offsetYPercent));
+                              const adjustedX = Math.max(0, Math.min(100, selectedSunspotPreview.xPercent));
+                              const adjustedY = Math.max(0, Math.min(100, selectedSunspotPreview.yPercent));
                               return (
                                 <img
                                   src={selectedSunspotCloseupUrl}
@@ -3413,10 +3528,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         {selectedSunspotCloseupUrl && selectedSunspotPreview ? (
                           <div className="relative w-full h-full overflow-hidden bg-black">
                             {(() => {
-                              const offsetXPercent = (CLOSEUP_OFFSET_X_PX / HMI_IMAGE_SIZE) * 100;
-                              const offsetYPercent = (CLOSEUP_OFFSET_Y_PX / HMI_IMAGE_SIZE) * 100;
-                              const adjustedX = Math.max(0, Math.min(100, selectedSunspotPreview.xPercent + offsetXPercent));
-                              const adjustedY = Math.max(0, Math.min(100, selectedSunspotPreview.yPercent + offsetYPercent));
+                              const adjustedX = Math.max(0, Math.min(100, selectedSunspotPreview.xPercent));
+                              const adjustedY = Math.max(0, Math.min(100, selectedSunspotPreview.yPercent));
                               return (
                                 <img
                                   ref={closeupImgRef}
