@@ -171,20 +171,21 @@ console.log('\nConfirming a peak needs the flux to actually fall');
   check(fired.includes('flare-event'),
         'and the summary still goes out alongside it', fired.join(', '));
 
-  // The backstop: a decay too noisy to ever give two clean falls must not
-  // leave the flare open forever.
-  midFlare(25 * 60 * 1000);
-  await W.checkSolarFlares(env, xray([3.0e-4, 3.0e-4, 3.0e-4]), () => {});
-  const late = await queuedTopics();
-  check(late.includes('flare-peak'),
-        'a flare off its peak for 20 minutes is called peaked anyway',
-        late.join(', ') || 'nothing - the flare would stay open indefinitely');
-
-  // ...but not before that, or the backstop would be the real trigger.
-  midFlare(5 * 60 * 1000);
+  // No time-based backstop: falling flux is the only thing that confirms a
+  // peak, however long the flare sits there.
+  midFlare(45 * 60 * 1000);
   await W.checkSolarFlares(env, xray([3.0e-4, 3.0e-4, 3.0e-4]), () => {});
   check((await queuedTopics()).length === 0,
-        'and not one minute earlier than that');
+        'time alone never confirms a peak, even 45 minutes of it');
+
+  // The flare still has to end. Dropping below M1 closes it out and reports
+  // the class it actually reached, so nothing is lost by having no backstop.
+  midFlare(45 * 60 * 1000);
+  await W.checkSolarFlares(env, xray([3.0e-4, 3.0e-4, 5.0e-6]), () => {});
+  const ended = await queuedTopics();
+  check(ended.includes('flare-peak') && ended.includes('flare-event'),
+        'and dropping below M1 still closes the flare out',
+        ended.join(', ') || 'nothing');
 }
 
 // ── 2. a quiet sun stays quiet ─────────────────────────────────────────────

@@ -649,10 +649,10 @@ const FLARE_M1_THRESHOLD = 1e-5;
 // true, instead of waiting out a fixed timer that did not care whether the
 // flux was still falling or had simply stopped climbing.
 const FLARE_DECLINE_SAMPLES = 2;
-// Backstop. A noisy decay can oscillate without ever giving two clean falls in
-// a row, and a big X flare can sit above M1 for an hour - so if the flux has
-// been off its peak this long, report the peak anyway rather than sit on it.
-const FLARE_DECLINE_MAX_MS = 20 * 60 * 1000;
+// There is deliberately no time-based backstop. A flare that never gives two
+// clean falls in a row is still closed out when the flux drops below M1, which
+// fires the peak notification with the class it actually reached - so nothing
+// is lost by waiting, only reported a little later.
 const FLARE_STALE_MS   = 4 * 60 * 60 * 1000;
 
 /**
@@ -795,12 +795,10 @@ async function checkSolarFlares(env, /** @type {any[]|null} */ allData = null, n
         if (falls >= FLARE_DECLINE_SAMPLES) {
           peaked = true;
           console.log(`[flare] Flux fell for ${falls} readings in a row - peaked`);
-        } else if (offPeakMs >= FLARE_DECLINE_MAX_MS) {
-          peaked = true;
-          console.log(`[flare] Flux off peak for ${Math.round(offPeakMs / 60000)} min without a clean decline - calling it peaked`);
         } else {
           note('flare', 'rising',
-               `${cls}, past peak, ${falls}/${FLARE_DECLINE_SAMPLES} falling readings`);
+               `${cls}, past peak ${Math.round(offPeakMs / 60000)} min, `
+               + `${falls}/${FLARE_DECLINE_SAMPLES} falling readings`);
         }
       }
 
