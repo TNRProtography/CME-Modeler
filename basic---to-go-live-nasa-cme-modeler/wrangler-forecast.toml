@@ -1,4 +1,4 @@
-name = "solar-forecast-worker"
+name = "spot-the-aurora-forecast-worker"
 main = "worker/forecast-entry.js"
 compatibility_date = "2026-03-04"
 workers_dev = true
@@ -10,7 +10,9 @@ workers_dev = true
 crons = ["7 * * * *"]
 
 # Created with:  wrangler kv namespace create FORECAST_KV
-# then paste the id here.
+# then paste the id here. The dashboard binding is not enough on its own:
+# a `wrangler deploy` replaces the worker's bindings with exactly what this
+# file lists, so a placeholder here removes a binding added in the UI.
 [[kv_namespaces]]
 binding = "FORECAST_KV"
 id = "REPLACE_WITH_KV_NAMESPACE_ID"
