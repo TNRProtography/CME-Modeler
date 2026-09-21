@@ -1,6 +1,7 @@
 // --- START OF FILE src/components/SolarActivityDashboard.tsx ---
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { nextFramePosition, frameSpanHours } from '../utils/framePlayback';
 import { layoutLabels, leaderEndpoint } from '../utils/labelLayout';
 import { heliographicToPixel, detectSolarDiskGeometry, containedImageRect, longitudeAt } from '../utils/solarDisk';
 import type { SolarDiskGeometry } from '../utils/solarDisk';
@@ -1040,6 +1041,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [suviWorkerState, setSuviWorkerState] = useState<SuviWorkerStateResponse | null>(null);
   const [suviWorkerLoading, setSuviWorkerLoading] = useState<string | null>('Loading SUVI timeline...');
   const [suviFrameIndex, setSuviFrameIndex] = useState<number>(0);
+  const suviFrameIndexRef = useRef<number>(0);
   const [suviDifference, setSuviDifference] = useState<boolean>(false);
   const [suviPlaying, setSuviPlaying] = useState<boolean>(false);
   const [suviPlaybackSpeed, setSuviPlaybackSpeed] = useState<PlaybackSpeedOption>(1);
@@ -2583,9 +2585,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const activeSuviSourceState = suviWorkerState?.sources?.[activeSuviSourceKey] ?? null;
   const suviFrames = useMemo(() => {
     const all = activeSuviSourceState?.frames ?? [];
-    if (suviFrameWindowHours >= 24) return all;
+    // Every window filters the same way. 24h used to be special-cased to
+    // "return everything", which silently showed more than a day if the worker
+    // held more, and looked identical to 12h if it held less.
     const cutoff = Date.now() - suviFrameWindowHours * 3600 * 1000;
-    return all.filter((f) => f.ts && new Date(f.ts).getTime() >= cutoff);
+    const within = all.filter((f) => f.ts && new Date(f.ts).getTime() >= cutoff);
+    // If the worker's clock or ours is off enough to filter everything out,
+    // showing the frames beats showing an empty panel.
+    return within.length >= 2 ? within : all;
   }, [activeSuviSourceState?.frames, suviFrameWindowHours]);
   const clampedSuviFrameIndex = Math.min(suviFrameIndex, Math.max(0, suviFrames.length - 1));
   const activeSuviFrame = suviFrames[clampedSuviFrameIndex] ?? null;
@@ -2757,21 +2764,34 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     setCoronagraphPlaying(false);
   }, [coronagraphSource, coronagraphFrames.length]);
 
-  useEffect(() => {
-    if (suviFrames.length === 0) {
-      setSuviFrameIndex(0);
-      setSuviPlaying(false);
-      return;
-    }
-    setSuviFrameIndex(suviFrames.length - 1);
-    setSuviPlaying(false);
-  }, [activeSuviSourceKey, suviFrames.length]);
+  // Remember which moment is on screen, so a poll that reshapes the frame list
+  // can put the scrubber back on the same frame rather than on the same index.
+  const activeSuviFrameTsRef = useRef<string | null>(null);
+  useEffect(() => { activeSuviFrameTsRef.current = activeSuviFrame?.ts ?? null; }, [activeSuviFrame?.ts]);
 
-  // Reset to latest frame when time window changes
+  // One effect owns the scrubber's position. There used to be two, and both
+  // stopped playback whenever the frame count changed - which a thirty second
+  // poll does routinely. A three hour window plays through before the next
+  // poll lands so nobody noticed; twenty-four hours takes over a minute and
+  // was being killed two or three times on the way through.
+  const suviTimelineKeyRef = useRef<string>('');
   useEffect(() => {
-    setSuviFrameIndex(Math.max(0, suviFrames.length - 1));
-    setSuviPlaying(false);
-  }, [suviFrameWindowHours, suviFrames.length]);
+    const key = `${activeSuviSourceKey}|${suviFrameWindowHours}`;
+    const switched = suviTimelineKeyRef.current !== key;
+    suviTimelineKeyRef.current = key;
+
+    const { index, stopPlayback } = nextFramePosition({
+      frames: suviFrames,
+      previousTs: activeSuviFrameTsRef.current,
+      previousIndex: suviFrameIndexRef.current,
+      switched,
+    });
+    setSuviFrameIndex(index);
+    if (stopPlayback) setSuviPlaying(false);
+    // suviFrameIndex is read through a ref on purpose: including it here would
+    // re-run this on every frame of playback.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSuviSourceKey, suviFrameWindowHours, suviFrames]);
 
   useEffect(() => {
     setCoronagraphIndex(Math.max(0, coronagraphFrames.length - 1));
@@ -2779,6 +2799,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, [coronagraphFrameWindowHours, coronagraphFrames.length]);
 
   // Keep loading refs in sync so interval closures see current values
+  useEffect(() => { suviFrameIndexRef.current = suviFrameIndex; }, [suviFrameIndex]);
   useEffect(() => { suviFrameLoadingRef.current = suviFrameLoading; }, [suviFrameLoading]);
   useEffect(() => { coronagraphFrameLoadingRef.current = coronagraphFrameLoading; }, [coronagraphFrameLoading]);
 
@@ -3461,7 +3482,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                     Active regions
                   </button>
                 </div>
-                <span className="text-xs text-neutral-500">{activeSuviSourceState?.label ?? ' - '} · {suviFrames.length} frame(s)</span>
+                <span className="text-xs text-neutral-500">
+                  {activeSuviSourceState?.label ?? ' - '} · {suviFrames.length} frame(s)
+                  {(() => {
+                    // The buttons say what was asked for; this says what came
+                    // back. A worker holding less than the window asked for
+                    // otherwise looks like a broken button.
+                    const span = frameSpanHours(suviFrames);
+                    if (span == null) return null;
+                    return ` · ${span < 1 ? `${Math.round(span * 60)} min` : `${span.toFixed(1)}h`} of data`;
+                  })()}
+                </span>
               </div>
 
               {/* Viewer - flex-row on desktop (side by side), stacked on mobile */}

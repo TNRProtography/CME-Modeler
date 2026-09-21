@@ -45,6 +45,7 @@ await load('utils/solarEphemeris.ts');
 const D = await load('utils/solarDisk.ts');
 const E = await load('utils/solarEphemeris.ts');
 const L = await load('utils/labelLayout.ts');
+const P = await load('utils/framePlayback.ts');
 
 let pass = 0, fail = 0;
 const check = (ok, label, detail) => {
@@ -392,6 +393,71 @@ console.log('\nLabels stay off the regions they name');
   // Same input, same layout - no jitter between renders.
   const again = L.layoutLabels(anchors, bounds, { minDistance: 30, padding: 4, anchorClearance: 8 });
   check(JSON.stringify(placed) === JSON.stringify(again), 'the layout is deterministic');
+}
+
+// ── 5. the timeline keeps its place while the worker polls ────────────────
+console.log('\nThe scrubber holds its place when frames arrive');
+{
+  // The imagery worker is polled every thirty seconds and hands back a new
+  // array each time. The position is an index into that array, so it has to be
+  // re-derived rather than trusted - and, crucially, playback must survive it.
+  const frame = (mins) => ({ ts: new Date(Date.UTC(2026, 8, 21, 0, mins)).toISOString() });
+  const frames = Array.from({ length: 10 }, (_, i) => frame(i * 4));
+
+  const switched = P.nextFramePosition({ frames, previousTs: null, previousIndex: 0, switched: true });
+  check(switched.index === 9 && switched.stopPlayback === true,
+        'changing channel or window starts at the newest frame and stops playback');
+
+  const empty = P.nextFramePosition({ frames: [], previousTs: null, previousIndex: 3, switched: false });
+  check(empty.index === 0 && empty.stopPlayback === true, 'an empty timeline stops playback');
+
+  // A poll that appends a frame: the moment on screen is still there, one
+  // index earlier from the end. Playback must not stop.
+  const grown = [...frames, frame(40)];
+  const held = P.nextFramePosition({
+    frames: grown, previousTs: frames[4].ts, previousIndex: 4, switched: false,
+  });
+  check(held.index === 4, 'a poll that adds a frame keeps the same moment on screen', String(held.index));
+  check(held.stopPlayback === false,
+        'and does not stop playback',
+        'this is the bug: 24h takes over a minute to play, so two or three polls land during it');
+
+  // A rolling window drops frames from the front, so the same moment is now at
+  // a lower index.
+  const rolled = grown.slice(2);
+  const shifted = P.nextFramePosition({
+    frames: rolled, previousTs: frames[4].ts, previousIndex: 4, switched: false,
+  });
+  check(shifted.index === 2, 'a window that rolls forward finds the same moment at its new index', String(shifted.index));
+  check(rolled[shifted.index].ts === frames[4].ts, 'and it really is the same frame');
+
+  // The frame being watched can roll off the back entirely.
+  const wayPast = grown.slice(6);
+  const gone = P.nextFramePosition({
+    frames: wayPast, previousTs: frames[1].ts, previousIndex: 1, switched: false,
+  });
+  check(gone.stopPlayback === false, 'a frame rolling off the window does not stop playback');
+  check(gone.index >= 0 && gone.index < wayPast.length,
+        'and the position stays inside the list', String(gone.index));
+
+  // Playing right through a poll: the index the interval set must survive.
+  let idx = 200;
+  const long = Array.from({ length: 360 }, (_, i) => frame(i * 4));
+  const during = P.nextFramePosition({
+    frames: long, previousTs: long[idx].ts, previousIndex: idx, switched: false,
+  });
+  check(during.index === idx && during.stopPlayback === false,
+        'a 24h playback survives a poll landing halfway through', `${during.index} vs ${idx}`);
+}
+
+console.log('\nAnd the panel says how much data actually arrived');
+{
+  const frame = (h) => ({ ts: new Date(Date.UTC(2026, 8, 21, h)).toISOString() });
+  check(P.frameSpanHours([]) === null, 'no frames spans nothing');
+  check(P.frameSpanHours([frame(0)]) === null, 'one frame spans nothing measurable');
+  check(P.frameSpanHours([frame(0), frame(12)]) === 12, 'twelve hours of frames reports 12');
+  check(P.frameSpanHours([frame(0), frame(6), frame(24)]) === 24, 'and it is the full extent, not the gaps');
+  check(P.frameSpanHours([{ ts: null }, frame(0), frame(3)]) === 3, 'frames without a timestamp are ignored');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
