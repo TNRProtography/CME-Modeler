@@ -16,8 +16,49 @@
 // coronal hole detector, which is why every other feature that needed pixels
 // quietly got a tainted canvas and an empty panel instead.
 
-const PROXY_IMAGE_PATH = '/api/proxy/image';
 const DEFAULT_TTL_SECONDS = 90;
+
+/** Where the image proxy lives in production, on its own custom domain. */
+const PRODUCTION_PROXY_BASE = 'https://spottheaurora.co.nz/api/proxy';
+
+/**
+ * Every place the proxy might be, best first.
+ *
+ * This is not belt and braces - the same-origin path genuinely does not exist
+ * on every deployment. The Worker is routed at spottheaurora.co.nz/api/proxy/*,
+ * and Cloudflare does not allow routing a Worker onto a *.pages.dev hostname
+ * because that zone belongs to Cloudflare rather than to us. So on the preview
+ * site /api/proxy/image is a plain 404.
+ *
+ * wrangler.toml has said for a while that VITE_PROXY_BASE is the answer, but
+ * nothing in the app ever read it. The result was invisible: the SUVI frames
+ * come from a Cloudflare Worker that sends CORS headers, so the direct fetch
+ * behind the proxy always succeeded and nobody noticed the proxy was dead.
+ * JSOC sends no CORS headers at all, so the magnetogram had nothing to fall
+ * back to, which is why polarity was the thing that surfaced it.
+ *
+ * Reading the variable fixes it where it is configured. Falling through to
+ * the production host fixes it where it is not, since that Worker answers
+ * with Access-Control-Allow-Origin for anyone.
+ */
+function proxyBases(): string[] {
+  const bases: string[] = [];
+  const configured = (import.meta as any)?.env?.VITE_PROXY_BASE;
+  if (typeof configured === 'string' && configured) bases.push(configured.replace(/\/$/, ''));
+  bases.push('/api/proxy');
+  bases.push(PRODUCTION_PROXY_BASE);
+
+  // On the production domain the relative path and the absolute one are the
+  // same request, so it is not worth making twice.
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const deduped: string[] = [];
+  for (const base of bases) {
+    const absolute = base.startsWith('http') ? base : `${origin}${base}`;
+    if (deduped.some((b) => (b.startsWith('http') ? b : `${origin}${b}`) === absolute)) continue;
+    deduped.push(base);
+  }
+  return deduped;
+}
 
 export interface RasterImage {
   data: Uint8ClampedArray;
@@ -34,8 +75,12 @@ export interface RasterImage {
   placement: { scale: number; offsetX: number; offsetY: number };
 }
 
-export function proxyImageUrl(targetUrl: string, ttlSeconds: number = DEFAULT_TTL_SECONDS): string {
-  return `${PROXY_IMAGE_PATH}?url=${encodeURIComponent(targetUrl)}&ttl=${ttlSeconds}`;
+export function proxyImageUrl(
+  targetUrl: string,
+  ttlSeconds: number = DEFAULT_TTL_SECONDS,
+  base: string = proxyBases()[0],
+): string {
+  return `${base}/image?url=${encodeURIComponent(targetUrl)}&ttl=${ttlSeconds}`;
 }
 
 async function blobUrlFrom(res: Response, what: string): Promise<string> {
@@ -59,16 +104,22 @@ export async function fetchImageAsBlobUrl(url: string, ttlSeconds?: number): Pro
       || (typeof window !== 'undefined' && url.startsWith(window.location.origin))) {
     return url;
   }
-  try {
-    return await blobUrlFrom(await fetch(proxyImageUrl(url, ttlSeconds)), 'Proxy fetch');
-  } catch (proxyErr) {
+  const failures: string[] = [];
+  for (const base of proxyBases()) {
     try {
-      return await blobUrlFrom(await fetch(url, { mode: 'cors', credentials: 'omit' }), 'Direct fetch');
-    } catch {
-      const msg = proxyErr instanceof Error ? proxyErr.message : String(proxyErr);
-      throw new Error(`Image fetch failed (proxy and direct): ${msg}`);
+      return await blobUrlFrom(await fetch(proxyImageUrl(url, ttlSeconds, base)), `Proxy fetch via ${base}`);
+    } catch (err) {
+      failures.push(err instanceof Error ? err.message : String(err));
     }
   }
+  // Last: straight at the source. This works only for hosts that send CORS
+  // headers, which is most Cloudflare Workers and almost no observatory.
+  try {
+    return await blobUrlFrom(await fetch(url, { mode: 'cors', credentials: 'omit' }), 'Direct fetch');
+  } catch (err) {
+    failures.push(err instanceof Error ? err.message : String(err));
+  }
+  throw new Error(`Image fetch failed for ${url}: ${failures.join('; ')}`);
 }
 
 /**
