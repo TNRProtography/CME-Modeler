@@ -1,0 +1,19 @@
+name = "solar-forecast-worker"
+main = "worker/forecast-entry.js"
+compatibility_date = "2026-03-04"
+workers_dev = true
+
+# Hourly. The inputs move slower than that - coronal holes are re-detected
+# every couple of hours by whichever client is open, and the L1 feed updates
+# every minute but the forecast only depends on its daily shape.
+[triggers]
+crons = ["7 * * * *"]
+
+# Created with:  wrangler kv namespace create FORECAST_KV
+# then paste the id here.
+[[kv_namespaces]]
+binding = "FORECAST_KV"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+[observability]
+enabled = true
