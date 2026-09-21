@@ -302,7 +302,18 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
       }
       if (cancelled) return;
       if (!image) {
-        setPolarityError(`The HMI magnetogram could not be read, so polarity is unavailable. ${failures.join(' | ')}`);
+        // Every source failing the same way is worth naming, because there is
+        // exactly one cause and one fix. Displaying an image needs no CORS;
+        // reading its pixels does, and no observatory sends those headers. So
+        // this depends entirely on the app's own image proxy, and if that is
+        // not answering there is no fallback to have.
+        const proxyDown = failures.every((f) => /not deployed at that address|text\/html/.test(f));
+        setPolarityError(proxyDown
+          ? 'Polarity needs to read the magnetogram\u2019s pixels, and every route to them answered with a web page '
+            + 'instead of an image \u2013 which means the image proxy is not deployed at this address. Showing an '
+            + 'image needs no permission; reading it does, and no observatory sends the header that would allow it '
+            + 'directly. Deploying worker/index.ts (it already allows both HMI hosts) is the whole fix.'
+          : `The HMI magnetogram could not be read, so polarity is unavailable. ${failures.join(' | ')}`);
         return;
       }
 

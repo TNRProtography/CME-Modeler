@@ -86,7 +86,17 @@ export function proxyImageUrl(
 async function blobUrlFrom(res: Response, what: string): Promise<string> {
   if (!res.ok) throw new Error(`${what} failed: ${res.status}`);
   const blob = await res.blob();
-  if (!blob.type.startsWith('image/')) throw new Error(`Expected an image, got ${blob.type}`);
+  if (!blob.type.startsWith('image/')) {
+    // A proxy that is not deployed does not fail loudly - the request falls
+    // through to the single-page app, which answers every unknown path with
+    // index.html and a 200. So "got text/html" here means the proxy route is
+    // missing, not that the upstream image is broken, and saying so saves
+    // somebody chasing the wrong end of it.
+    const hint = blob.type.startsWith('text/html')
+      ? ' - the proxy route answered with a web page, which means it is not deployed at that address'
+      : '';
+    throw new Error(`Expected an image, got ${blob.type || 'nothing'}${hint}`);
+  }
   return URL.createObjectURL(blob);
 }
 
