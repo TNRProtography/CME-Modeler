@@ -85,12 +85,33 @@ const recordRun = async (env, entry) => {
 
 // ── inputs ───────────────────────────────────────────────────────────────
 
-async function fetchCoronalHoles() {
+/**
+ * Both upstreams are Workers on the same workers.dev subdomain as this one.
+ * A subrequest from here to those hostnames does not leave Cloudflare and
+ * comes back as this worker's own 404 rather than reaching them - which is
+ * why two unrelated feeds failed identically while both answered fine in a
+ * browser. A service binding addresses the other Worker directly, so the
+ * request never goes near the public hostname.
+ *
+ * The binding's fetch ignores the host, but still needs a valid absolute URL,
+ * hence the placeholder. Falling back to plain fetch keeps this working if a
+ * binding is missing, and the note says which path was taken.
+ */
+const callUpstream = async (binding, url, init) => {
+  if (binding && typeof binding.fetch === 'function') {
+    return { res: await binding.fetch(new Request(url, init)), via: 'binding' };
+  }
+  return { res: await fetch(url, init), via: 'public url' };
+};
+
+async function fetchCoronalHoles(env) {
   try {
     // /ch-history, not /history. The app has always called it by that name;
     // this worker guessed, and a guess that 404s looks exactly like a quiet
     // sky, which is the worst way for an input to fail.
-    const res = await fetch(`${CH_HISTORY_URL}/ch-history`, { cf: { cacheTtl: 300 } });
+    const { res, via } = await callUpstream(
+      env?.CH_HISTORY, `${CH_HISTORY_URL}/ch-history`, { cf: { cacheTtl: 300 } });
+    lastHolesVia = via;
     // The body, not just the status. Two unrelated upstreams both answering
     // 404 is the signature of a subrequest being routed back to this worker,
     // whose own 404 body is distinctive - and that is a completely different
@@ -114,12 +135,15 @@ async function fetchCoronalHoles() {
 // An empty array is returned for a 404, a parse failure and a genuinely quiet
 // feed alike, and those are three different problems.
 let lastWindNote = 'not fetched';
+let lastWindVia = 'unknown';
+let lastHolesVia = 'unknown';
 let lastInputNotes = null;
 
-async function fetchObservedWind() {
+async function fetchObservedWind(env) {
   lastWindNote = 'not fetched';
   try {
-    const res = await fetch(RTSW_URL, { cf: { cacheTtl: 120 } });
+    const { res, via } = await callUpstream(env?.RTSW, RTSW_URL, { cf: { cacheTtl: 120 } });
+    lastWindVia = via;
     if (!res.ok) { lastWindNote = await describeFailure(res); return []; }
     const data = await res.json();
     const rows = Array.isArray(data) ? data : (data?.data ?? []);
@@ -153,14 +177,16 @@ export async function runForecast(env, modules) {
           measurementConfidence, buildOutlook, solarDiskOrientation } = modules;
 
   const [{ holes, asOfMs, upstream: holesNote }, observed] = await Promise.all([
-    fetchCoronalHoles(),
-    fetchObservedWind(),
+    fetchCoronalHoles(env),
+    fetchObservedWind(env),
   ]);
   lastInputNotes = {
     coronalHoles: holesNote ?? 'unknown',
     holeCount: holes.length,
+    holesVia: lastHolesVia,
     wind: lastWindNote,
     windSamples: observed.length,
+    windVia: lastWindVia,
   };
 
   const now = Date.now();
@@ -246,7 +272,7 @@ export async function runScoring(env, modules) {
   const due = dueForScoring(pending);
   if (due.length === 0) return { scored: 0 };
 
-  const observed = await fetchObservedWind();
+  const observed = await fetchObservedWind(env);
   if (observed.length < 8) return { scored: 0, reason: 'no L1 data' };
 
   const scores = await readJson(env.FORECAST_KV, SCORES_KEY, []);

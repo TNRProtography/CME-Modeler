@@ -17,5 +17,16 @@ crons = ["7 * * * *"]
 binding = "FORECAST_KV"
 id = "9444bb31349745efa353ddfee9080596"
 
+# Both upstreams are Workers on this same workers.dev subdomain. A plain fetch
+# to their public hostnames loops back to this worker and answers 404 without
+# ever reaching them, so they are addressed directly instead.
+[[services]]
+binding = "CH_HISTORY"
+service = "ch-history-worker"
+
+[[services]]
+binding = "RTSW"
+service = "imap-solar-data-test"
+
 [observability]
 enabled = true
