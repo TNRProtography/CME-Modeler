@@ -18,10 +18,44 @@ import { hssArrivalEnsemble, measurementConfidence } from '../utils/arrivalEnsem
 import { buildTrackRecord, type ForecastScore, type TrackRecord } from '../utils/forecastScoring';
 import { solarDiskOrientation } from '../utils/solarEphemeris';
 import { buildChTracks } from '../utils/chTracking';
-import { framesForTracking, numberTracks, subscribeToChDetections, type ChStoreState } from '../utils/chDetectionStore';
+import {
+  ensureChDetections, framesForTracking, numberTracks, subscribeToChDetections,
+  type ChStoreState,
+} from '../utils/chDetectionStore';
 
 const FORECAST_WORKER = 'https://solar-forecast-worker.thenamesrock.workers.dev';
 const RTSW_URL = 'https://imap-solar-data-test.thenamesrock.workers.dev/rtsw/merged-24h';
+const SUVI_WORKER = 'https://suvi-difference-imagery.thenamesrock.workers.dev';
+
+/**
+ * Detection is only useful if it has happened, and it used to happen only on
+ * the Solar Activity page. Opening the outlook from anywhere else therefore
+ * showed nothing and told you to go and open another page first, which is not
+ * a forecast - it is homework.
+ *
+ * So this drives detection itself when the store is empty or stale. The store
+ * de-duplicates by frame, so if the dashboard has already done the work this
+ * costs nothing.
+ */
+async function primeCoronalHoles(): Promise<void> {
+  try {
+    const res = await fetch(`${SUVI_WORKER}/api/state`);
+    if (!res.ok) return;
+    const json = await res.json();
+    const frames = json?.sources?.suvi_195_primary?.frames ?? [];
+    const cutoff = Date.now() - 12 * 3600000;
+    const refs = frames
+      .filter((f: any) => f?.ts && f?.url)
+      .map((f: any) => ({
+        url: f.url.startsWith('http') ? f.url : `${SUVI_WORKER}${f.url.startsWith('/') ? '' : '/'}${f.url}`,
+        atMs: new Date(f.ts).getTime(),
+      }))
+      .filter((f: { atMs: number }) => f.atMs >= cutoff);
+    if (refs.length > 0) await ensureChDetections(refs);
+  } catch {
+    // No imagery worker, no holes. The panel says so rather than hanging.
+  }
+}
 
 export interface ForecastState {
   timeline: L1State[];
@@ -74,6 +108,10 @@ export function useForecast(enabled = true): ForecastState {
     let cancelled = false;
 
     (async () => {
+      // Kick detection off immediately, in parallel with everything else, so
+      // the outlook works from a cold start on any page.
+      const priming = primeCoronalHoles();
+
       const [workerResult, observedResult] = await Promise.allSettled([
         fetch(`${FORECAST_WORKER}/forecast`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
         fetchObserved(),
@@ -81,7 +119,12 @@ export function useForecast(enabled = true): ForecastState {
       if (cancelled) return;
       if (workerResult.status === 'fulfilled' && workerResult.value?.ok) setWorker(workerResult.value);
       if (observedResult.status === 'fulfilled') setObserved(observedResult.value);
-      setLoading(false);
+
+      // Only stop showing a spinner once there is either a server forecast or
+      // some holes of our own to build one from.
+      const haveWorker = workerResult.status === 'fulfilled' && workerResult.value?.ok;
+      if (haveWorker) setLoading(false);
+      else { await priming; if (!cancelled) setLoading(false); }
 
       // The track record is only ever the server's: it needs a history no
       // single device has, and inventing a local one from this browser's few

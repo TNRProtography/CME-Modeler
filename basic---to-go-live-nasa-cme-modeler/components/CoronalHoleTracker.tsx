@@ -37,6 +37,8 @@ import { detectSolarDiskGeometry, diskFromFraction, longitudeAt } from '../utils
 import { solarDiskOrientation } from '../utils/solarEphemeris';
 import { frameSpanHours } from '../utils/framePlayback';
 import { bestSkyWithin, skyConditionsAt, visibilityOutlook } from '../utils/skyConditions';
+import { buildOutlook, geomagneticLatitude, strengthAtLatitude } from '../utils/auroraOutlook';
+import { buildForecastTimeline } from '../utils/forecastTimeline';
 import { describeSpread, hssArrivalEnsemble, measurementConfidence } from '../utils/arrivalEnsemble';
 import { bySignForPolarity, rmWindows, windowsDuring } from '../utils/rmWindows';
 import { locationLabel, resolveViewerLocation, type ViewerLocation } from '../utils/viewerLocation';
@@ -398,8 +400,9 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
     // A stream arrives into a sky, and the sky costs more than the difference
     // between a moderate stream and a fast one. A full Moon overhead, or the
     // Sun already up, and there is nothing to see however good the wind is.
-    let arrivalSky = null;
-    let outlook = null;
+    let arrivalSky: ReturnType<typeof skyConditionsAt> | null = null;
+    let outlook: ReturnType<typeof visibilityOutlook> | null = null;
+    let bestCaseOutlook: ReturnType<typeof visibilityOutlook> | null = null;
     let windows: ReturnType<typeof rmWindows> = [];
     if (arrival != null) {
       // The whole arrival window, not the nominal moment: the Moon sets and
@@ -407,27 +410,47 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
       // the middle.
       const from = ensemble ? ensemble.p10Ms : arrival - 7 * 3600000;
       const to = ensemble ? ensemble.p90Ms : arrival + 7 * 3600000;
-      arrivalSky = bestSkyWithin(from, to, location.latitude, location.longitude)
+      const sky = bestSkyWithin(from, to, location.latitude, location.longitude)
         ?? skyConditionsAt(arrival, location.latitude, location.longitude);
+      arrivalSky = sky;
 
-      // Strength from the speed, then whatever the field geometry adds. This
-      // is an expectation, not a measurement, and the panel says so.
-      const speed = choice.speedKms ?? 0;
-      let strength = Math.max(0, Math.min(100, (speed - 330) / 3.2)) * connection.factor;
+      // Through the real chain - stream, coupling, oval boundary, latitude -
+      // rather than a formula of its own.
+      //
+      // It used to map speed straight to a strength, which saturated at about
+      // 650 km/s and therefore called every fast stream a guaranteed
+      // naked-eye display. Speed alone does not do that: without southward
+      // field a fast stream is a bright patch on a camera and nothing to the
+      // eye. Running the same chain the forecast uses is both more honest and
+      // one fewer copy of the arithmetic to drift.
       const bySign = pol ? bySignForPolarity(pol.polarity) : null;
       if (bySign) {
         windows = windowsDuring(
           rmWindows(bySign, from - 12 * 3600000, to + 2 * DAY_MS, { byMagnitudeNt: 6 }),
           from, to + 2 * DAY_MS,
         );
-        if (season?.favourable === true) strength *= 1.25;
-        else if (season?.favourable === false) strength *= 0.8;
       }
-      outlook = visibilityOutlook(strength, arrivalSky);
+
+      const streamTimeline = buildForecastTimeline([], [{
+        id: selectedTrack.key,
+        centralMeridianMs,
+        peakSpeedKms: choice.speedKms ?? 400,
+        widthDeg: latest.widthDeg,
+        bySign,
+        earthConnection: connection.factor,
+      }], { fromMs: from - 6 * 3600000, toMs: to + 3 * DAY_MS, stepMs: 3600000 });
+
+      const viewerGeomag = geomagneticLatitude(location.latitude, location.longitude);
+      const chainOutlook = buildOutlook(streamTimeline);
+      const atArrival = chainOutlook.reduce((a, b) =>
+        (Math.abs(a.atMs - sky.atMs) <= Math.abs(b.atMs - sky.atMs) ? a : b));
+
+      outlook = visibilityOutlook(strengthAtLatitude(atArrival.boundaryLikely, viewerGeomag), sky);
+      bestCaseOutlook = visibilityOutlook(strengthAtLatitude(atArrival.boundaryBest, viewerGeomag), sky);
     }
 
     return { timing, choice, growth, centralMeridianMs, arrival, samples, pol, season, gone, latest,
-             arrivalSky, outlook, windows, ensemble, confidence, connection };
+             arrivalSky, outlook, bestCaseOutlook, windows, ensemble, confidence, connection };
   }, [selectedTrack, polarity, latestFrameMs, location]);
 
   const windowSpan = frameSpanHours(windowFrames);
@@ -623,7 +646,7 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
 
           {selectedTrack && insight && (() => {
             const { timing, choice, growth, centralMeridianMs, arrival, samples, pol, season, gone, latest,
-                    arrivalSky, outlook, windows, ensemble, confidence, connection } = insight;
+                    arrivalSky, outlook, bestCaseOutlook, windows, ensemble, confidence, connection } = insight;
             const band = choice.speedKms != null ? speedBand(choice.speedKms) : null;
             return (
               <div className="bg-neutral-900/60 rounded p-3 text-sm flex flex-col gap-3">
@@ -709,6 +732,23 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
                             {outlook.label}
                           </div>
                           <p className="text-xs text-neutral-400 mt-0.5">{outlook.note}</p>
+                          {bestCaseOutlook && bestCaseOutlook.tier !== outlook.tier && (
+                            <p className="text-xs text-neutral-400 mt-0.5">
+                              If the field swings south at the right moment, up to{' '}
+                              <span className="text-neutral-200">{bestCaseOutlook.label.toLowerCase()}</span>.
+                            </p>
+                          )}
+                          {!pol && (
+                            // The honest caveat. Without polarity there is no
+                            // sector, so the chain runs with no guaranteed
+                            // southward field and what comes out is a floor.
+                            <p className="text-xs text-yellow-300/90 mt-1">
+                              This assumes the field stays neutral, because the hole's polarity could not be
+                              measured. Polarity is what decides whether the stream drags southward field past
+                              Earth, so this is a floor rather than a forecast - the real night could be
+                              considerably better, and nothing here can tell you which.
+                            </p>
+                          )}
                           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-neutral-500 mt-1.5">
                             <div>
                               Moon: <span className="text-neutral-300">

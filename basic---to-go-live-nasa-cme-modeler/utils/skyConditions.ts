@@ -231,10 +231,15 @@ export function visibilityOutlook(strength0to100: number, sky: SkyConditions): V
     };
   }
 
+  // Thresholds matched to the instrument reaches in auroraOutlook: with a
+  // sixteen degree camera limit, the eye limit of four degrees lands at 75 and
+  // the phone limit of nine at 44. A clear sky therefore has to put the oval
+  // genuinely close before anything is called naked-eye, which is what stops a
+  // merely fast stream being announced as a guaranteed display.
   let tier: VisibilityTier = 'none';
-  if (effective >= 50) tier = 'eye';
-  else if (effective >= 28) tier = 'phone';
-  else if (effective >= 11) tier = 'camera';
+  if (effective >= 72) tier = 'eye';
+  else if (effective >= 42) tier = 'phone';
+  else if (effective >= 10) tier = 'camera';
 
   const moonNote = sky.moonAltitude > 0 && sky.phase.illumination > 0.3
     ? ` The Moon is up and ${Math.round(sky.phase.illumination * 100)}% lit, which is washing out some of it.`

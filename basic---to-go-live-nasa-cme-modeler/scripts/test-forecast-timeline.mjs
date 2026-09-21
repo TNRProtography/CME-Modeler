@@ -39,6 +39,9 @@ await load('utils/coronalHoleData.ts');
 const C = await load('utils/coronalHoleDynamics.ts');
 const F = await load('utils/forecastTimeline.ts');
 const A = await load('utils/auroraOutlook.ts');
+const S = await load('utils/skyConditions.ts');
+const dark = { atMs: 0, sunAltitude: -40, moonAltitude: -20, darkness: 'dark', washout: 0,
+               phase: { illumination: 0, elongation: 0, waxing: true, name: 'New moon' } };
 
 let pass = 0, fail = 0;
 const check = (ok, label, detail) => {
@@ -199,13 +202,28 @@ console.log('\nThe nowcast chain, fed forecast numbers');
         'a stream pushes the oval further equatorward than quiet conditions',
         `${Math.max(...active.map(p => p.boundaryLikely)).toFixed(2)} vs ${Math.max(...quiet.map(p => p.boundaryLikely)).toFixed(2)}`);
 
-  // Latitude falloff: overhead beats a horizon glow beats nothing.
+  // How far equatorward of the oval each instrument still sees something. A
+  // long exposure reaches a great deal further than an eye does, and
+  // collapsing that into one distance either calls those nights nothing or
+  // calls them naked-eye. Both are wrong; the second is worse.
+  const tierAt = (reach) => S.visibilityOutlook(A.strengthAtLatitude(-45 - reach, -45), dark).tier;
   check(A.strengthAtLatitude(-45, -45) === 100, 'the oval at your latitude is as good as it gets');
-  check(A.strengthAtLatitude(-60, -45) === 0, 'fifteen degrees poleward of you is nothing');
-  const mid = A.strengthAtLatitude(-52, -45);
-  check(mid > 0 && mid < 100, `seven degrees poleward is a horizon glow (${mid.toFixed(0)})`);
+  check(tierAt(0) === 'eye', 'overhead is naked eye');
+  check(tierAt(3) === 'eye', 'and three degrees away still is');
+  check(tierAt(7) === 'phone', 'seven degrees away is a phone shot');
+  check(tierAt(12) === 'camera', 'twelve degrees away needs a long exposure');
+  check(tierAt(17) === 'none', 'and seventeen degrees away is nothing at all');
   check(A.strengthAtLatitude(-50, -45) > A.strengthAtLatitude(-55, -45),
-        'and it falls off steadily with distance');
+        'it falls off steadily with distance');
+
+  // Geomagnetic latitude is not geographic, and for New Zealand the
+  // difference is about four degrees in the direction that matters.
+  const geomag = A.geomagneticLatitude(-43.53, 172.63);
+  check(geomag < -45 && geomag > -50,
+        `Christchurch sits at ${geomag.toFixed(1)} geomagnetic, not -43.5`, String(geomag));
+  check(Math.abs(geomag) > 43.53,
+        'which is further from the equator magnetically than geographically - using the geographic '
+        + 'figure quietly under-forecasts the whole country');
 }
 
 // ── night by night ─────────────────────────────────────────────────────────
@@ -301,9 +319,14 @@ console.log('\nNot flattering the forecast');
   // The oval eight degrees poleward is a faint glow low down, not a display.
   // A generous falloff here makes every quiet night look worth driving for,
   // which is the way to lose people's trust fastest.
-  check(A.strengthAtLatitude(-51, -43) === 0, 'eight degrees poleward scores nothing');
-  check(A.strengthAtLatitude(-47, -43) < 40, 'four degrees poleward is modest, not a good night');
-  check(A.strengthAtLatitude(-43, -43) === 100, 'and overhead is still full marks');
+  // The calibration that matters: a fast stream with no southward field is a
+  // camera target, not a naked-eye display. Speed alone does not do it.
+  check(A.strengthAtLatitude(-59, -43) === 0, 'sixteen degrees poleward scores nothing at all');
+  check(S.visibilityOutlook(A.strengthAtLatitude(-55, -43), dark).tier === 'camera',
+        'twelve degrees poleward is a long exposure, not a night out');
+  check(S.visibilityOutlook(A.strengthAtLatitude(-50, -43), dark).tier !== 'eye',
+        'and seven degrees poleward is still not naked eye');
+  check(A.strengthAtLatitude(-43, -43) === 100, 'while overhead is still full marks');
 
   // Quiet conditions must not produce a viewable night by themselves.
   const quietNights = A.nightlyOutlook(
