@@ -27,7 +27,8 @@ const dir = mkdtempSync(join(tmpdir(), 'cme-'));
 const copy = join(dir, 'w.mjs');
 writeFileSync(copy, readFileSync(SRC, 'utf8') +
   '\nexport { checkEarthDirectedCMEs, runShard, decideForSubscriber, pickCmeAnalysis,' +
-  ' isCmeEarthDirected, cmeSpeedFloorOf, cmeSpeedBand, handleSaveSubscription };\n');
+  ' isCmeEarthDirected, cmeSpeedFloorOf, cmeSpeedBand, handleSaveSubscription,' +
+  ' cmeDistanceAU, cmeTransitSeconds, cmeArrivalMs, CME_ARRIVAL_UNCERTAINTY_HOURS };\n');
 const W = await import(pathToFileURL(copy).href);
 
 let pass = 0, fail = 0;
@@ -245,6 +246,59 @@ console.log('\nA speed is described in words, not just a number');
         'the notification body includes the band description');
 }
 
+// ── the arrival time has to be the app's own ───────────────────────────────
+console.log("\nThe arrival time matches the model the 3D scene draws with");
+{
+  // Not "the same constants" - the same numbers. The scene decides where to
+  // draw a CME with utils/cmePropagation.ts, and a notification quoting a
+  // different arrival than the picture it links to is worse than one quoting
+  // none at all. So run both and compare.
+  const propSrc = readFileSync(join(APP, 'utils', 'cmePropagation.ts'), 'utf8')
+    .replace(/import \{ AU_IN_KM \} from '\.\.\/constants';/, 'const AU_IN_KM = 149597870.7;')
+    .replace(/:\s*number(\s*\|\s*null)?/g, '')
+    .replace(/export function (\w+)\(([^)]*)\)/g, 'export function $1($2)');
+  const propCopy = join(dir, 'prop.mjs');
+  writeFileSync(propCopy, propSrc);
+  const P = await import(pathToFileURL(propCopy).href);
+
+  const speeds = [350, 500, 700, 900, 1200, 1800, 2500];
+  const distDrift = [];
+  const transitDrift = [];
+  for (const sp of speeds) {
+    for (const hours of [6, 24, 48, 72]) {
+      const a = P.cmeDistanceAU(sp, hours * 3600);
+      const b = W.cmeDistanceAU(sp, hours * 3600);
+      if (Math.abs(a - b) > 1e-12) distDrift.push(`${sp} km/s at ${hours}h: app ${a}, worker ${b}`);
+    }
+    const ta = P.cmeTransitSeconds(sp, 1);
+    const tb = W.cmeTransitSeconds(sp, 1);
+    if (ta == null !== (tb == null) || (ta != null && Math.abs(ta - tb) > 1e-6)) {
+      transitDrift.push(`${sp} km/s: app ${ta}, worker ${tb}`);
+    }
+  }
+  check(distDrift.length === 0,
+        `distance agrees with the app at every speed and time checked (${speeds.length * 4} points)`,
+        distDrift.join('\n        '));
+  check(transitDrift.length === 0,
+        'and so does the transit time to 1 AU', transitDrift.join('\n        '));
+
+  // Sanity, so a model that agrees with itself but is nonsense still fails.
+  const hours = (sp) => W.cmeTransitSeconds(sp, 1) / 3600;
+  console.log(`    transit: 500 km/s ${hours(500).toFixed(1)}h, `
+            + `1000 km/s ${hours(1000).toFixed(1)}h, 2000 km/s ${hours(2000).toFixed(1)}h`);
+  check(hours(500) > hours(1000) && hours(1000) > hours(2000),
+        'a faster CME always arrives sooner');
+  check(hours(2000) > 12 && hours(350) < 14 * 24,
+        'and every transit lands in a physically sensible range',
+        `${hours(2000).toFixed(1)}h to ${hours(350).toFixed(1)}h`);
+
+  // The uncertainty is stated, always, and is the figure asked for.
+  check(W.CME_ARRIVAL_UNCERTAINTY_HOURS === 12, 'the quoted uncertainty is +/- 12 hours');
+  const worker = readFileSync(SRC, 'utf8');
+  check(/Forecast arrival: \$\{formatNzTime\(forecastMs\)\} \(\+\/- \$\{CME_ARRIVAL_UNCERTAINTY_HOURS\} hours\)/.test(worker),
+        'and the body always carries it beside the time, never a bare timestamp');
+}
+
 // ── the per-subscriber floor ───────────────────────────────────────────────
 console.log("\nEach subscriber's own speed floor decides");
 {
@@ -331,6 +385,63 @@ console.log('\nSubscribers who predate the category still get it');
   // The fill-in must never overwrite a choice somebody made.
   check(/if \(prefs\[topic\] === undefined\)/.test(worker),
         'the fill-in only touches keys nobody has set');
+}
+
+// ── telling existing subscribers it exists ─────────────────────────────────
+console.log('\nExisting subscribers are told rather than opted in');
+{
+  // shock-ff stays false for everyone who already migrated - the fill-in does
+  // not overwrite stored values, and flipping it for them would be deciding on
+  // their behalf. The announcement is what closes that gap, so it has to
+  // actually reach them and actually offer the switch.
+  const modal = readFileSync(join(APP, 'components', 'WhatsNewModal.tsx'), 'utf8');
+  const gate  = readFileSync(join(APP, 'utils', 'whatsNew.ts'), 'utf8');
+  const app   = readFileSync(join(APP, 'App.tsx'), 'utf8');
+
+  for (const id of ['cme-earth-directed', 'shock-ff']) {
+    check(modal.includes(`'${id}'`), `it offers ${id}`);
+  }
+
+  check(/pushManager\.getSubscription/.test(gate),
+        'it is only shown to devices that already have a push subscription',
+        'otherwise it interrupts people who have never turned notifications on');
+  check(/localStorage\.setItem\(WHATS_NEW_ID/.test(gate) && /markWhatsNewSeen/.test(modal),
+        'and it is marked seen when dismissed, so it shows once');
+  // Run it rather than read it: with storage blocked - private mode, or a
+  // browser with site data turned off - it must report "seen". An announcement
+  // that cannot stay dismissed would come back on every single load.
+  {
+    const gateCopy = join(dir, 'whatsNew.mjs');
+    writeFileSync(gateCopy, gate.replace(/:\s*(string|boolean|void|Promise<boolean>)/g, ''));
+    const throwing = { getItem() { throw new Error('blocked'); },
+                       setItem() { throw new Error('blocked'); } };
+    globalThis.localStorage = throwing;
+    const G = await import(pathToFileURL(gateCopy).href);
+    check(G.hasSeenWhatsNew() === true,
+          'blocked storage counts as seen rather than showing on every load',
+          'an announcement that cannot stay dismissed is worse than one missed');
+    let threw = false;
+    try { G.markWhatsNewSeen(); } catch { threw = true; }
+    check(!threw, 'and dismissing it never throws when storage is blocked');
+    check(await G.shouldShowWhatsNew() === false,
+          'nor is it shown when there is no service worker at all');
+    delete globalThis.localStorage;
+  }
+
+  check(/isLoading \|\| isAppTutorialOpen \|\| isFirstVisitTutorialOpen \|\| isTutorialOpen/.test(app),
+        'it waits for the loading screen and the tutorials, so popups never stack');
+
+  // The ids have to be real, or the switches write preferences nothing reads.
+  const manifest = readFileSync(join(APP, 'utils', 'notificationCategories.ts'), 'utf8');
+  const bogus = ['cme-earth-directed', 'shock-ff'].filter(id => !manifest.includes(`id: '${id}'`));
+  check(bogus.length === 0, 'and both ids are declared categories', bogus.join(', '));
+
+  // Both must be things a user can actually see and control afterwards.
+  for (const id of ['cme-earth-directed', 'shock-ff']) {
+    const block = manifest.slice(manifest.indexOf(`id: '${id}'`));
+    check(/^\s*ui: 'toggle'/m.test(block.slice(0, 200)),
+          `${id} has a toggle in Settings to change it later`);
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

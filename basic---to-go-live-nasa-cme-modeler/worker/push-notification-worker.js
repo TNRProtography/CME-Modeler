@@ -882,6 +882,58 @@ function cmeSpeedBand(speed) {
   return 'fast';
 }
 
+// ── Arrival time: the app's own model, not a second opinion ────────────────
+// The 3D scene decides where to draw a CME with utils/cmePropagation.ts, and a
+// notification that quotes a different arrival time than the picture the user
+// then opens is worse than one that quotes none. So the model is duplicated
+// here, and test:cme checks the constants and the shape against the original.
+//
+// A CME leaves at its launch speed and decelerates at a constant rate that
+// depends on that speed, a = 1.41 - 0.0035u m/s^2 - a slow one is nudged
+// along, a fast one is dragged back hard - until it is down to the ambient
+// wind, then it coasts.
+const AU_IN_KM = 149597870.7;
+const MIN_CME_SPEED_KMS = 300;
+
+// The honest width of the answer. Arrival forecasting is good to about half a
+// day at best, and a notification that says "3:40am" without one invites
+// somebody to stand outside at 3:40am. Always stated, never tuned per CME.
+const CME_ARRIVAL_UNCERTAINTY_HOURS = 12;
+
+function cmeDistanceAU(speedKms, timeSinceEventSeconds) {
+  const u_kms = speedKms;
+  const t_s = Math.max(0, timeSinceEventSeconds);
+  if (u_kms <= MIN_CME_SPEED_KMS) return (u_kms * t_s) / AU_IN_KM;
+
+  const a_kms2 = (1.41 - 0.0035 * u_kms) / 1000.0;
+  if (a_kms2 >= 0) return ((u_kms * t_s) + (0.5 * a_kms2 * t_s * t_s)) / AU_IN_KM;
+
+  const time_to_floor_s = (MIN_CME_SPEED_KMS - u_kms) / a_kms2;
+  if (t_s < time_to_floor_s) {
+    return ((u_kms * t_s) + (0.5 * a_kms2 * t_s * t_s)) / AU_IN_KM;
+  }
+  const dist_decel = (u_kms * time_to_floor_s) + (0.5 * a_kms2 * time_to_floor_s * time_to_floor_s);
+  const dist_coast = MIN_CME_SPEED_KMS * (t_s - time_to_floor_s);
+  return (dist_decel + dist_coast) / AU_IN_KM;
+}
+
+/** Seconds to reach a distance in AU, or null if it never does in a fortnight. */
+function cmeTransitSeconds(speedKms, targetAU) {
+  let lo = 0, hi = 14 * 24 * 3600;
+  if (cmeDistanceAU(speedKms, hi) < targetAU) return null;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (cmeDistanceAU(speedKms, mid) < targetAU) lo = mid; else hi = mid;
+  }
+  return hi;
+}
+
+/** When this CME reaches Earth, in ms, by the model the scene draws with. */
+function cmeArrivalMs(speedKms, startMs) {
+  const secs = cmeTransitSeconds(speedKms, 1);
+  return secs == null ? null : startMs + secs * 1000;
+}
+
 // At most this many alerts from one run. DONKI occasionally publishes a batch
 // after an outage, and an outage is not a reason to send somebody six pushes.
 const CME_MAX_PER_RUN = 3;
@@ -988,9 +1040,20 @@ async function checkEarthDirectedCMEs(env, cmeData = null, note = /** @type {(na
     const toSend = fresh.slice(0, CME_MAX_PER_RUN);
 
     for (const c of toSend) {
-      const arrival = c.arrivalMs
-        ? `Predicted arrival: ${formatNzTime(c.arrivalMs)}`
-        : 'Arrival typically 1-3 days; watch for the shock alert when it reaches the satellites.';
+      // Spot The Aurora's own forecast, from the same model the 3D scene uses,
+      // so the notification and the picture it links to agree.
+      const forecastMs = cmeArrivalMs(c.speed, c.startMs);
+      const arrivalLines = [];
+      if (forecastMs) {
+        arrivalLines.push(
+          `Forecast arrival: ${formatNzTime(forecastMs)} (+/- ${CME_ARRIVAL_UNCERTAINTY_HOURS} hours)`);
+      } else {
+        arrivalLines.push('Too slow to reach us on any useful timescale.');
+      }
+      // DONKI's own number, when it has linked a geomagnetic storm to this CME.
+      // Labelled rather than blended, because they are different models and
+      // will not agree.
+      if (c.arrivalMs) arrivalLines.push(`NASA estimate: ${formatNzTime(c.arrivalMs)}`);
       const band = cmeSpeedBand(c.speed);
       const payload = {
         title: `🌞 Earth-Directed CME - ${c.speed} km/s`,
@@ -1003,7 +1066,7 @@ async function checkEarthDirectedCMEs(env, cmeData = null, note = /** @type {(na
           `Source: ${c.longitude >= 0 ? 'west' : 'east'} ${Math.abs(c.longitude)}deg, `
             + `${c.latitude >= 0 ? 'north' : 'south'} ${Math.abs(c.latitude)}deg`,
           '',
-          arrival,
+          ...arrivalLines,
         ].join('\n'),
         tag: 'cme-earth-directed',
         data: { url: '/?page=modeler', category: 'cme-earth-directed' },

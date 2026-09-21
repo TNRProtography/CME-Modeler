@@ -216,6 +216,21 @@ subscriber is judged against their own:
 Default floor is 700 km/s. `/stats` reports the distribution as
 `cmeSpeedFloors`, keyed by km/s.
 
+The alert quotes an arrival time from `utils/cmePropagation.ts` - the same
+model the 3D scene draws the cloud with, duplicated in the worker and checked
+against the original by `test:cme`, which compares the numbers rather than the
+constants. It is always stated as `+/- 12 hours`: arrival forecasting is good
+to about half a day at best, and a bare timestamp invites somebody to stand
+outside at 3:40am. DONKI's own estimate is shown too when it has linked a
+geomagnetic storm to the CME, labelled separately rather than blended, because
+they are different models and will not agree.
+
+`shock-ff` is default-on as of this version, but that only affects new
+subscribers: the fill-in never overwrites a stored value, and everyone who
+migrated earlier has an explicit `false`. They are told about it by a one-time
+note in the app (`components/WhatsNewModal.tsx`) rather than being opted in on
+their behalf.
+
 Two things stop a backlog becoming a flood: a CME is only considered for 48
 hours after launch, and at most three alerts go out per run - fastest first,
 with the rest marked seen so the cap does not merely delay them. The first

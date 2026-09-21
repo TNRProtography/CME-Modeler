@@ -99,6 +99,8 @@ const SolarActivityDashboard = retryLazyLoad(() => import('./components/SolarAct
 const UnifiedDashboardMode = retryLazyLoad(() => import('./components/UnifiedDashboardMode'));
 import GlobalBanner from './components/GlobalBanner';
 import OnboardingBanner from './components/OnboardingBanner';
+import WhatsNewModal from './components/WhatsNewModal';
+import { shouldShowWhatsNew } from './utils/whatsNew';
 import AppDocumentation from './components/AppDocumentation';
 import InitialLoadingScreen from './components/InitialLoadingScreen';
 
@@ -297,6 +299,7 @@ const App: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isDebugOpen, setIsDebugOpen] = useState(false);
   const [isFirstVisitTutorialOpen, setIsFirstVisitTutorialOpen] = useState(false);
+  const [isWhatsNewOpen, setIsWhatsNewOpen] = useState(false);
   const [isCmeTutorialOpen, setIsCmeTutorialOpen] = useState(false);
   const [isAppTutorialOpen, setIsAppTutorialOpen] = useState(false);
   const [showBannerAfterTutorial, setShowBannerAfterTutorial] = useState(false);
@@ -690,6 +693,22 @@ const App: React.FC = () => {
     }
     return () => { clearTimeout(minTimer); clearTimeout(preloadTimer); };
   }, [navigateToModelerOverlay]);
+
+  // A one-time note about new notification categories, for people who already
+  // had the app. Waits for the loading screen and for the tutorials to have
+  // had their turn, so a first-time visitor never sees two popups stacked -
+  // and in practice never sees this one at all, because it is only shown to
+  // devices that already have a push subscription.
+  useEffect(() => {
+    if (isLoading || isAppTutorialOpen || isFirstVisitTutorialOpen || isTutorialOpen) return;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      void shouldShowWhatsNew().then((show) => {
+        if (show && !cancelled) setIsWhatsNewOpen(true);
+      });
+    }, 4000);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [isLoading, isAppTutorialOpen, isFirstVisitTutorialOpen, isTutorialOpen]);
 
   // Silently refresh GPS location for push notification worker on every app load.
   // Non-blocking - if GPS is denied or there's no subscription, this is a no-op.
@@ -1415,6 +1434,10 @@ const App: React.FC = () => {
           {showDocumentation && (
             <AppDocumentation onClose={() => setShowDocumentation(false)} />
           )}
+          <WhatsNewModal
+            isOpen={isWhatsNewOpen}
+            onClose={() => setIsWhatsNewOpen(false)}
+          />
           <OnboardingBanner
               deferredInstallPrompt={deferredInstallPrompt}
               onInstallClick={handleInstallClick}
