@@ -279,6 +279,49 @@ console.log('\nRegions are carried back to the frame being shown');
   check(shift > 10, 'six hours of scrubbing is worth more than a spot width');
 }
 
+console.log('\nAcross the whole 24 hour window the imagery offers');
+{
+  // The imagery panel offers 3, 6, 12 and 24 hour windows. The longer ones are
+  // where getting this wrong shows: a day of rotation is 13 degrees, which
+  // near disk centre is most of the way across a sunspot group.
+  const geom = { width: 1000, height: 1000, cx: 500, cy: 500, radius: 310 };
+  const observed = Date.UTC(2026, 8, 21, 12);
+  const rate = D.SOLAR_SYNODIC_DEG_PER_DAY;
+
+  for (const hours of [3, 6, 12, 24]) {
+    const frameMs = observed - hours * 3600000;
+    const lon = D.longitudeAt(20, observed, frameMs);
+    const drift = 20 - lon;
+    const uncorrected = D.heliographicToPixel(0, 20, geom, 0);
+    const corrected = D.heliographicToPixel(0, lon, geom, 0);
+    const px = Math.abs(uncorrected.x - corrected.x);
+    console.log(`    ${String(hours).padStart(2)}h back: ${drift.toFixed(2)} deg, ${px.toFixed(1)}px`);
+    check(Math.abs(drift - rate * hours / 24) < 1e-9,
+          `${hours}h back rotates by exactly ${(rate * hours / 24).toFixed(2)} degrees`);
+    check(corrected.x < uncorrected.x, `and moves the region east, as the Sun turning backwards should`);
+  }
+
+  // Over the full day the shift is big enough to matter on any screen.
+  const dayLon = D.longitudeAt(20, observed, observed - 86400000);
+  const dayPx = Math.abs(D.heliographicToPixel(0, 20, geom, 0).x
+                       - D.heliographicToPixel(0, dayLon, geom, 0).x);
+  check(dayPx > 60, `a full day is worth ${dayPx.toFixed(0)}px on a ${geom.radius}px radius`);
+
+  // A region near the east limb now was round the back a day ago, and must be
+  // dropped rather than drawn squashed against the edge.
+  const nearEastLimb = -84;
+  const dayAgo = D.longitudeAt(nearEastLimb, observed, observed - 86400000);
+  check(dayAgo < -90, `a region at E84 was behind the limb a day earlier (${dayAgo.toFixed(1)})`);
+  check(D.heliographicToPixel(0, dayAgo, geom, 0).onDisk === false,
+        'and is reported off-disk, so nothing is drawn for it');
+
+  // B0 barely moves in a day, but it is taken from the frame time anyway.
+  const b0Now = E.solarDiskOrientation(new Date(observed)).b0;
+  const b0Then = E.solarDiskOrientation(new Date(observed - 86400000)).b0;
+  check(Math.abs(b0Now - b0Then) < 0.2 && b0Now !== b0Then,
+        `B0 drifts a little over the window (${b0Then.toFixed(3)} to ${b0Now.toFixed(3)})`);
+}
+
 // ── 4. labels that do not cover the spots ──────────────────────────────────
 console.log('\nLabels stay off the regions they name');
 {

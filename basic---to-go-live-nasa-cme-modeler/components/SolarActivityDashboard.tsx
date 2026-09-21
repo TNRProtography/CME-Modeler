@@ -783,6 +783,90 @@ const getSunspotDetailCompleteness = (entry: Omit<ActiveSunspotRegion, 'trend'>)
 
 // --- REUSABLE COMPONENTS ---
 
+/**
+ * Active-region labels drawn over a picture of the Sun.
+ *
+ * Shared by every imagery panel - the sunspot tracker's own overview, the raw
+ * SUVI frame and the difference view - so a label looks and behaves the same
+ * wherever it appears, and a fix to one is a fix to all of them.
+ *
+ * Positions arrive already laid out; this only draws. The leader lines and the
+ * anchor rings are stroked twice, dark underneath and colour on top, because a
+ * single thin coloured line vanishes against a near-white continuum disk and
+ * again against a mid-grey magnetogram.
+ */
+interface RegionLabelDraw {
+  region: ActiveSunspotRegion;
+  title: string;
+  detail: string;
+  label: { x: number; y: number; anchorX: number; anchorY: number; width: number; height: number };
+  leader: { x: number; y: number };
+}
+
+const SunspotLabelOverlay: React.FC<{
+  labels: RegionLabelDraw[];
+  boxSize: { width: number; height: number };
+  selectedRegion?: string | null;
+  onSelect: (region: ActiveSunspotRegion) => void;
+  idPrefix: string;
+}> = ({ labels, boxSize, selectedRegion, onSelect, idPrefix }) => {
+  if (labels.length === 0) return null;
+  return (
+    <>
+      <svg
+        className="absolute inset-0 w-full h-full pointer-events-none"
+        viewBox={`0 0 ${boxSize.width} ${boxSize.height}`}
+        aria-hidden="true"
+      >
+        {labels.map(({ region, label, leader }) => {
+          const riskBand = getSunspotRiskBand(region);
+          const isSelected = selectedRegion === region.region;
+          return (
+            <g key={`${idPrefix}-leader-${region.region}`} opacity={isSelected ? 1 : 0.9}>
+              <line x1={leader.x} y1={leader.y} x2={label.anchorX} y2={label.anchorY}
+                stroke="rgba(0,0,0,0.85)" strokeWidth={isSelected ? 4 : 3.2} strokeLinecap="round" />
+              <line x1={leader.x} y1={leader.y} x2={label.anchorX} y2={label.anchorY}
+                stroke={riskBand.color} strokeWidth={isSelected ? 2 : 1.5} strokeLinecap="round" />
+              {/* A ring rather than a dot: it says exactly where the region is
+                  without hiding what is there. */}
+              <circle cx={label.anchorX} cy={label.anchorY} r={isSelected ? 7 : 5.5}
+                fill="none" stroke="rgba(0,0,0,0.85)" strokeWidth={isSelected ? 4 : 3.2} />
+              <circle cx={label.anchorX} cy={label.anchorY} r={isSelected ? 7 : 5.5}
+                fill="none" stroke={riskBand.color} strokeWidth={isSelected ? 2 : 1.5} />
+            </g>
+          );
+        })}
+      </svg>
+
+      {labels.map(({ region, title, detail, label }) => {
+        const riskBand = getSunspotRiskBand(region);
+        const isSelected = selectedRegion === region.region;
+        return (
+          <button
+            key={`${idPrefix}-label-${region.region}`}
+            onClick={(e) => { e.stopPropagation(); onSelect(region); }}
+            className="absolute -translate-x-1/2 -translate-y-1/2 group"
+            style={{ left: `${label.x}px`, top: `${label.y}px` }}
+            title={`AR ${region.region} \u00b7 ${region.magneticClass || 'Unknown'} \u00b7 ${region.location}`}
+          >
+            <span
+              className="relative z-10 flex flex-col items-center px-1.5 py-0.5 rounded whitespace-nowrap bg-black/85 opacity-90 group-hover:opacity-100 transition-opacity leading-tight"
+              style={{
+                color: riskBand.color,
+                border: `1px solid ${riskBand.color}40`,
+                boxShadow: isSelected ? `0 0 8px ${riskBand.color}60` : 'none',
+              }}
+            >
+              <span className="text-[10px] font-bold">{title}</span>
+              {detail && <span className="text-[9px] font-medium text-neutral-300">{detail}</span>}
+            </span>
+          </button>
+        );
+      })}
+    </>
+  );
+};
+
 // Time-window selector for imagery sections (SUVI + Coronagraph)
 // 12h and 24h are flagged BETA - they load many more frames and
 // diff computation is slower on lower-end devices.
@@ -2016,21 +2100,36 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     });
   }, []);
 
+  // Both imagery panels get labels: the raw frame and the difference view.
+  // They are different sizes, and on mobile the difference panel is the only
+  // one rendered when that toggle is on, so labelling just the raw one would
+  // leave phone users with none.
   const suviBoxRef = useRef<HTMLDivElement | null>(null);
+  const suviDiffBoxRef = useRef<HTMLDivElement | null>(null);
   const [suviBoxSize, setSuviBoxSize] = useState({ width: 0, height: 0 });
-  useEffect(() => {
-    const el = suviBoxRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
-      setSuviBoxSize((prev) =>
-        Math.abs(prev.width - width) < 1 && Math.abs(prev.height - height) < 1
-          ? prev
-          : { width, height });
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [showRegionsOnImagery]);
+  const [suviDiffBoxSize, setSuviDiffBoxSize] = useState({ width: 0, height: 0 });
+
+  const useBoxSize = (
+    ref: React.MutableRefObject<HTMLDivElement | null>,
+    set: React.Dispatch<React.SetStateAction<{ width: number; height: number }>>,
+    enabled: boolean,
+  ) => {
+    useEffect(() => {
+      const el = ref.current;
+      if (!el || typeof ResizeObserver === 'undefined') return;
+      const ro = new ResizeObserver(([entry]) => {
+        const { width, height } = entry.contentRect;
+        set((prev) =>
+          Math.abs(prev.width - width) < 1 && Math.abs(prev.height - height) < 1
+            ? prev
+            : { width, height });
+      });
+      ro.observe(el);
+      return () => ro.disconnect();
+    }, [ref, set, enabled]);
+  };
+  useBoxSize(suviBoxRef, setSuviBoxSize, showRegionsOnImagery);
+  useBoxSize(suviDiffBoxRef, setSuviDiffBoxSize, showRegionsOnImagery);
 
   // The disk in a SUVI frame is a different size from the one in an HMI frame,
   // and different again between channels, so it is measured rather than
@@ -2527,9 +2626,23 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
    * slowly. Both are taken from the frame's own timestamp, so scrubbing the
    * timeline carries the labels with it instead of pinning them to now.
    */
-  const suviRegionLabels = useMemo(() => {
+  /**
+   * Active regions placed on the frame currently being shown.
+   *
+   * Takes the panel size rather than closing over one, because the raw and
+   * difference panels are different sizes and each needs its own layout - the
+   * same regions, but the labels dodge each other differently in a narrower
+   * box, and on mobile the difference panel is the only one on screen.
+   *
+   * Two things move between frames. The Sun turns, so a region's reported
+   * longitude belongs to the moment NOAA measured it rather than to the frame
+   * on screen - about half a degree an hour. And B0 drifts, though far more
+   * slowly. Both are taken from the frame's own timestamp, so scrubbing the
+   * timeline carries the labels with it instead of pinning them to now.
+   */
+  const buildSuviRegionLabels = useCallback((box: { width: number; height: number }) => {
     if (!showRegionsOnImagery || !suviDiskGeometry) return [];
-    const { width, height } = suviBoxSize;
+    const { width, height } = box;
     if (!width || !height) return [];
 
     const frameMs = activeSuviFrame?.ts ? new Date(activeSuviFrame.ts).getTime() : Date.now();
@@ -2548,9 +2661,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     const entries = activeSunspotRegions
       .filter((r) => r.latitude !== null && r.longitude !== null)
       .map((region) => {
-        // Rotate the region to the frame's time. Without an observation time
-        // the reported position is the best we have, so use it as-is.
-        const observedMs = region.observedTime ?? frameMs;
+        // Rotate the region to the frame's time. When NOAA did not say when it
+        // measured, assume the report is current rather than assuming it was
+        // taken at the frame's time - the latter would mean no correction at
+        // all, which on a 24 hour window is the whole 13 degrees of rotation
+        // left uncorrected.
+        const observedMs = region.observedTime ?? Date.now();
         const lon = longitudeAt(region.longitude as number, observedMs, frameMs);
         const pos = heliographicToPixel(region.latitude as number, lon, suviDiskGeometry.geometry, b0);
         if (!pos.onDisk) return null;
@@ -2583,7 +2699,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     if (entries.length === 0) return [];
 
     const placed = layoutLabels(entries.map((e) => e.anchor), { width, height }, {
-      minDistance: Math.max(16, Math.min(30, rect.width * 0.05)),
+      minDistance: Math.max(14, Math.min(26, rect.width * 0.035)),
       padding: 3,
       anchorClearance: Math.max(5, rect.width * 0.012),
     });
@@ -2595,7 +2711,16 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         return label ? { ...e, label, leader: leaderEndpoint(label) } : null;
       })
       .filter((e): e is NonNullable<typeof e> => e !== null);
-  }, [showRegionsOnImagery, suviDiskGeometry, suviBoxSize, activeSuviFrame?.ts, activeSunspotRegions]);
+  }, [showRegionsOnImagery, suviDiskGeometry, activeSuviFrame?.ts, activeSunspotRegions]);
+
+  const suviRegionLabels = useMemo(
+    () => buildSuviRegionLabels(suviBoxSize),
+    [buildSuviRegionLabels, suviBoxSize],
+  );
+  const suviDiffRegionLabels = useMemo(
+    () => buildSuviRegionLabels(suviDiffBoxSize),
+    [buildSuviRegionLabels, suviDiffBoxSize],
+  );
 
   const previousSuviFrameUrl = resolveSuviWorkerUrl(previousSuviFrame?.url);
   const latestCoronagraphAgeMs = useMemo(() => {
@@ -3357,56 +3482,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       >
                         <img src={activeSuviFrameUrl} alt={`${imageryModeLabels[activeSunImage]} frame`} className="w-full h-full object-contain" />
 
-                        {suviRegionLabels.length > 0 && (
-                          <>
-                            <svg
-                              className="absolute inset-0 w-full h-full pointer-events-none"
-                              viewBox={`0 0 ${suviBoxSize.width} ${suviBoxSize.height}`}
-                              aria-hidden="true"
-                            >
-                              {suviRegionLabels.map(({ region, label, leader }) => {
-                                const riskBand = getSunspotRiskBand(region);
-                                return (
-                                  <g key={`suvi-leader-${region.region}`} opacity={0.92}>
-                                    <line
-                                      x1={leader.x} y1={leader.y} x2={label.anchorX} y2={label.anchorY}
-                                      stroke="rgba(0,0,0,0.85)" strokeWidth={3.2} strokeLinecap="round"
-                                    />
-                                    <line
-                                      x1={leader.x} y1={leader.y} x2={label.anchorX} y2={label.anchorY}
-                                      stroke={riskBand.color} strokeWidth={1.5} strokeLinecap="round"
-                                    />
-                                    <circle cx={label.anchorX} cy={label.anchorY} r={5.5}
-                                      fill="none" stroke="rgba(0,0,0,0.85)" strokeWidth={3.2} />
-                                    <circle cx={label.anchorX} cy={label.anchorY} r={5.5}
-                                      fill="none" stroke={riskBand.color} strokeWidth={1.5} />
-                                  </g>
-                                );
-                              })}
-                            </svg>
-
-                            {suviRegionLabels.map(({ region, title, detail, label }) => {
-                              const riskBand = getSunspotRiskBand(region);
-                              return (
-                                <button
-                                  key={`suvi-label-${region.region}`}
-                                  onClick={(e) => { e.stopPropagation(); setSelectedSunspotRegion(region); }}
-                                  className="absolute -translate-x-1/2 -translate-y-1/2"
-                                  style={{ left: `${label.x}px`, top: `${label.y}px` }}
-                                  title={`AR ${region.region} \u00b7 ${region.magneticClass || 'Unknown'} \u00b7 ${region.location}`}
-                                >
-                                  <span
-                                    className="flex flex-col items-center px-1.5 py-0.5 rounded whitespace-nowrap bg-black/85 leading-tight"
-                                    style={{ color: riskBand.color, border: `1px solid ${riskBand.color}40` }}
-                                  >
-                                    <span className="text-[10px] font-bold">{title}</span>
-                                    {detail && <span className="text-[9px] font-medium text-neutral-300">{detail}</span>}
-                                  </span>
-                                </button>
-                              );
-                            })}
-                          </>
-                        )}
+                        <SunspotLabelOverlay
+                          labels={suviRegionLabels}
+                          boxSize={suviBoxSize}
+                          selectedRegion={selectedSunspotRegion?.region}
+                          onSelect={setSelectedSunspotRegion}
+                          idPrefix="suvi-raw"
+                        />
 
                         {showRegionsOnImagery && suviRegionLabels.length === 0 && (
                           <div className="absolute bottom-1 left-2 text-[10px] text-neutral-500 pointer-events-none">
@@ -3427,8 +3509,19 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       <div className="w-full h-full flex items-center justify-center text-neutral-400 italic">No SUVI imagery available.</div>
                     )}
                     {activeSuviFrameUrl && (
-                      <div className="w-full h-full relative cursor-pointer" onClick={() => setViewerMedia({ url: activeSuviFrameUrl, type: 'image' })}>
+                      <div
+                        ref={suviDiffBoxRef}
+                        className="w-full h-full relative cursor-pointer"
+                        onClick={() => setViewerMedia({ url: activeSuviFrameUrl, type: 'image' })}
+                      >
                         <canvas ref={suviCanvasRef} className="w-full h-full object-contain" />
+                        <SunspotLabelOverlay
+                          labels={suviDiffRegionLabels}
+                          boxSize={suviDiffBoxSize}
+                          selectedRegion={selectedSunspotRegion?.region}
+                          onSelect={setSelectedSunspotRegion}
+                          idPrefix="suvi-diff"
+                        />
                         {!previousSuviFrameUrl && (
                           <div className="absolute inset-0 flex items-center justify-center text-xs text-neutral-400 bg-black/40">Need at least 2 frames for difference view.</div>
                         )}
@@ -3608,86 +3701,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/60 text-amber-200 text-sm">Failed to load - tap to retry</div>
                     )}
 
-                    {/* Leader lines and region markers. One SVG under all the
-                        labels, so a line can never be drawn over a box. */}
-                    {laidOutSunspotLabels.length > 0 && (
-                      <svg
-                        className="absolute inset-0 w-full h-full pointer-events-none"
-                        viewBox={`0 0 ${overviewBoxSize.width} ${overviewBoxSize.height}`}
-                        aria-hidden="true"
-                      >
-                        {laidOutSunspotLabels.map(({ region, label, leader }) => {
-                          const riskBand = getSunspotRiskBand(region);
-                          const isSelected = selectedSunspotRegion?.region === region.region;
-                          return (
-                            <g key={`leader-${region.region}`} opacity={isSelected ? 1 : 0.9}>
-                              {/* Drawn twice: a dark stroke underneath, then the
-                                  colour. The disk is nearly white in continuum
-                                  and mid-grey in magnetogram, and a single thin
-                                  coloured line disappears into both. */}
-                              <line
-                                x1={leader.x} y1={leader.y}
-                                x2={label.anchorX} y2={label.anchorY}
-                                stroke="rgba(0,0,0,0.85)"
-                                strokeWidth={isSelected ? 4 : 3.2}
-                                strokeLinecap="round"
-                              />
-                              <line
-                                x1={leader.x} y1={leader.y}
-                                x2={label.anchorX} y2={label.anchorY}
-                                stroke={riskBand.color}
-                                strokeWidth={isSelected ? 2 : 1.5}
-                                strokeLinecap="round"
-                              />
-                              {/* A ring rather than a dot: it says exactly where
-                                  the region is without hiding what is there. */}
-                              <circle
-                                cx={label.anchorX} cy={label.anchorY}
-                                r={isSelected ? 7 : 5.5}
-                                fill="none"
-                                stroke="rgba(0,0,0,0.85)"
-                                strokeWidth={isSelected ? 4 : 3.2}
-                              />
-                              <circle
-                                cx={label.anchorX} cy={label.anchorY}
-                                r={isSelected ? 7 : 5.5}
-                                fill="none"
-                                stroke={riskBand.color}
-                                strokeWidth={isSelected ? 2 : 1.5}
-                              />
-                            </g>
-                          );
-                        })}
-                      </svg>
-                    )}
-
-                    {laidOutSunspotLabels.map(({ region, title, detail, label }) => {
-                      const isSelected = selectedSunspotRegion?.region === region.region;
-                      const riskBand = getSunspotRiskBand(region);
-                      return (
-                        <button
-                          key={`${region.region}-${region.location}`}
-                          onClick={(e) => { e.stopPropagation(); setSelectedSunspotRegion(region); }}
-                          className="absolute -translate-x-1/2 -translate-y-1/2 group"
-                          style={{ left: `${label.x}px`, top: `${label.y}px` }}
-                          title={`AR ${region.region} · ${region.magneticClass || 'Unknown'} · ${region.location}`}
-                        >
-                          <span
-                            className="relative z-10 flex flex-col items-center px-1.5 py-0.5 rounded whitespace-nowrap bg-black/85 opacity-90 group-hover:opacity-100 transition-opacity leading-tight"
-                            style={{
-                              color: riskBand.color,
-                              border: `1px solid ${riskBand.color}40`,
-                              boxShadow: isSelected ? `0 0 8px ${riskBand.color}60` : 'none',
-                            }}
-                          >
-                            <span className="text-[10px] font-bold">{title}</span>
-                            {detail && (
-                              <span className="text-[9px] font-medium text-neutral-300">{detail}</span>
-                            )}
-                          </span>
-                        </button>
-                      );
-                    })}
+                    <SunspotLabelOverlay
+                      labels={laidOutSunspotLabels}
+                      boxSize={overviewBoxSize}
+                      selectedRegion={selectedSunspotRegion?.region}
+                      onSelect={setSelectedSunspotRegion}
+                      idPrefix="hmi"
+                    />
                   </div>
                 </div>
 
