@@ -5,6 +5,9 @@ import { regionTiming, earthDirectedRisk, growthSummary, rotationTrack, diskZone
 import { longitudeAt } from '../utils/solarDisk';
 import SunspotLabelOverlay from './SunspotLabelOverlay';
 import CoronalHoleTracker from './CoronalHoleTracker';
+import CoronalHoleOverlay from './CoronalHoleOverlay';
+import { useCoronalHoleDetections } from '../hooks/useCoronalHoleDetections';
+import { detectionNear } from '../utils/chDetectionStore';
 import { buildRegionLabels, type RegionInput } from '../utils/regionLabels';
 import { nextFramePosition, frameSpanHours } from '../utils/framePlayback';
 import { detectSolarDiskGeometry, heliographicToPixel, diskAsFraction, diskFromFraction, type SolarDiskGeometry } from '../utils/solarDisk';
@@ -33,6 +36,8 @@ interface SolarActivityDashboardProps {
   setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | { type: 'image_with_labels'; url: string; regions: RegionInput[]; geometry: SolarDiskGeometry; imageNatural: { width: number; height: number }; atMs: number } | null) => void;
   setLatestXrayFlux: (flux: number | null) => void;
   onViewCMEInVisualization: (cmeId: string) => void;
+  /** Opens the 3D visualisation with the coronal hole and HSS layer on. */
+  onViewCoronalHolesInVisualization?: () => void;
   navigationTarget: { page: string; elementId: string; expandId?: string; } | null;
   refreshSignal: number;
   onSuvi195ImageUrlChange?: (url: string | null) => void;
@@ -915,7 +920,7 @@ const SolarActivitySummaryDisplay: React.FC<{ summary: SolarActivitySummary | nu
 };
 
 // --- COMPONENT ---
-const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setViewerMedia, setLatestXrayFlux, onViewCMEInVisualization, refreshSignal, onSuvi195ImageUrlChange, onInitialLoad, onInitialLoadProgress, modalSlug, onModalSlugChange }) => {
+const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setViewerMedia, setLatestXrayFlux, onViewCMEInVisualization, onViewCoronalHolesInVisualization, refreshSignal, onSuvi195ImageUrlChange, onInitialLoad, onInitialLoadProgress, modalSlug, onModalSlugChange }) => {
   const isInitialLoad = useRef(true);
   const reportedInitialTasks = useRef<Set<'solarXray' | 'solarProton' | 'solarFlares' | 'solarRegions'>>(new Set());
 
@@ -2013,6 +2018,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   // leave phone users with none.
   const suviBoxRef = useRef<HTMLDivElement | null>(null);
   const suviDiffBoxRef = useRef<HTMLDivElement | null>(null);
+  // Coronal holes on the imagery. Off by default everywhere: this panel is
+  // about sunspot regions, and a disk covered in hole outlines the moment it
+  // opens is noise until somebody asks for it.
+  const [showCoronalHoles, setShowCoronalHoles] = useState(false);
+  // Read-only: the Coronal Hole Tracker on this same page drives detection,
+  // and the store hands out one set of results to everything that asks.
+  const chStore = useCoronalHoleDetections([], false);
   const [suviBoxSize, setSuviBoxSize] = useState({ width: 0, height: 0 });
   const [suviDiffBoxSize, setSuviDiffBoxSize] = useState({ width: 0, height: 0 });
 
@@ -2727,6 +2739,43 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       atMs: frameMs,
     });
   }, [showRegionsOnImagery, suviDiskGeometry, activeSuviFrame?.ts, regionInputs]);
+
+  // ── Coronal holes over the imagery ────────────────────────────────────────
+  // The holes are heliographic, so they can be drawn over any picture of the
+  // Sun - but only against that picture's own disk. SUVI frames use the disk
+  // the detector measured in them; the sunspot tracker's HMI frames are framed
+  // differently and use their own.
+  const suviFrameMs = useMemo(() => {
+    const ms = activeSuviFrame?.ts ? new Date(activeSuviFrame.ts).getTime() : NaN;
+    return Number.isFinite(ms) ? ms : Date.now();
+  }, [activeSuviFrame?.ts]);
+
+  const suviChDetection = useMemo(
+    () => (showCoronalHoles ? detectionNear(chStore.detections, suviFrameMs) : null),
+    [showCoronalHoles, chStore.detections, suviFrameMs],
+  );
+
+  const suviNatural = useMemo(() => (
+    suviDiskGeometry
+      ? { width: suviDiskGeometry.naturalWidth, height: suviDiskGeometry.naturalHeight }
+      : null
+  ), [suviDiskGeometry]);
+
+  const latestChDetection = useMemo(() => (
+    showCoronalHoles && chStore.detections.length > 0
+      ? chStore.detections[chStore.detections.length - 1]
+      : null
+  ), [showCoronalHoles, chStore.detections]);
+
+  const overviewNatural = useMemo(() => (
+    overviewGeometry ? { width: overviewGeometry.width, height: overviewGeometry.height } : null
+  ), [overviewGeometry]);
+
+  const overviewDiskFraction = useMemo(() => (
+    overviewGeometry
+      ? diskAsFraction(overviewGeometry, { width: overviewGeometry.width, height: overviewGeometry.height })
+      : null
+  ), [overviewGeometry]);
 
   const suviRegionLabels = useMemo(
     () => buildSuviRegionLabels(suviBoxSize),
@@ -3491,6 +3540,18 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   >
                     View sunspot regions
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowCoronalHoles((v) => !v)}
+                    aria-pressed={showCoronalHoles}
+                    className={`px-3 py-1 text-xs rounded transition-colors ${
+                      showCoronalHoles
+                        ? 'bg-sky-600 text-white'
+                        : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                    title="Overlay coronal holes detected in SUVI 195, rotated to the frame being shown"
+                  >
+                    View coronal holes
+                  </button>
                 </div>
                 <span className="text-xs text-neutral-500">
                   {activeSuviSourceState?.label ?? ' - '} · {suviFrames.length} frame(s)
@@ -3522,6 +3583,16 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         onClick={() => setViewerMedia(openSuviInViewer())}
                       >
                         <img src={activeSuviFrameUrl} alt={`${imageryModeLabels[activeSunImage]} frame`} className="w-full h-full object-contain" />
+
+                        {showCoronalHoles && (
+                          <CoronalHoleOverlay
+                            detection={suviChDetection}
+                            atMs={suviFrameMs}
+                            natural={suviNatural}
+                            box={suviBoxSize}
+                            subdued
+                          />
+                        )}
 
                         <SunspotLabelOverlay
                           labels={suviRegionLabels}
@@ -3561,6 +3632,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         onClick={() => setViewerMedia(openSuviInViewer())}
                       >
                         <canvas ref={suviCanvasRef} className="w-full h-full object-contain" />
+                        {showCoronalHoles && (
+                          <CoronalHoleOverlay
+                            detection={suviChDetection}
+                            atMs={suviFrameMs}
+                            natural={suviNatural}
+                            box={suviDiffBoxSize}
+                            subdued
+                          />
+                        )}
                         <SunspotLabelOverlay
                           labels={suviDiffRegionLabels}
                           boxSize={suviDiffBoxSize}
@@ -3696,6 +3776,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 <button onClick={() => setSunspotImageryMode('colorized')} className={`px-3 py-1 text-xs rounded transition-colors ${sunspotImageryMode === 'colorized' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>HMI Colorized</button>
                 <button onClick={() => setSunspotImageryMode('magnetogram')} className={`px-3 py-1 text-xs rounded transition-colors ${sunspotImageryMode === 'magnetogram' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>HMI Magnetogram</button>
                 <button onClick={() => setSunspotImageryMode('intensity')} className={`px-3 py-1 text-xs rounded transition-colors ${sunspotImageryMode === 'intensity' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>HMI Intensity</button>
+                <button
+                  type="button"
+                  onClick={() => setShowCoronalHoles((v) => !v)}
+                  aria-pressed={showCoronalHoles}
+                  className={`px-3 py-1 text-xs rounded transition-colors ${showCoronalHoles ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                  title="Overlay coronal holes detected in SUVI 195, drawn against this image's own disk"
+                >View coronal holes</button>
                 <div className="ml-auto text-[11px] text-neutral-500">{displayedSunspotRegions.length} Earth-facing regions</div>
               </div>
 
@@ -3777,6 +3864,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                           )
                         ))}
                       </svg>
+                    )}
+
+                    {showCoronalHoles && (
+                      <CoronalHoleOverlay
+                        detection={latestChDetection}
+                        atMs={Date.now()}
+                        natural={overviewNatural}
+                        box={overviewBoxSize}
+                        diskOverride={overviewDiskFraction}
+                        subdued
+                      />
                     )}
 
                     <SunspotLabelOverlay
@@ -4207,7 +4305,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               <div className="text-right text-xs text-neutral-500 mt-2">Last updated: {lastSunspotRegionsUpdate || 'N/A'}</div>
             </div>
 
-            <CoronalHoleTracker onOpenModal={openModal} />
+            <CoronalHoleTracker
+              onOpenModal={openModal}
+              regions={regionInputs}
+              onViewInVisualisation={onViewCoronalHolesInVisualization}
+            />
 
             {/* IPS section removed entirely */}
 

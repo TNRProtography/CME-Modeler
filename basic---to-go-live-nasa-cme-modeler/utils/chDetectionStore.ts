@@ -1,0 +1,262 @@
+// One place that knows where the coronal holes are.
+//
+// Three panels want this now - the tracker, the SUVI imagery overlay and the
+// sunspot tracker - and running the detector once per panel would mean three
+// canvas decodes and three flood fills of the same frame. So detection happens
+// here, once per frame, and the panels subscribe.
+//
+// It also remembers. The SUVI worker holds about a day of frames, but a hole
+// takes a fortnight to cross the disk and its stream is still arriving days
+// after it has turned out of sight. Keeping a week of compact records means a
+// hole that rotated off on Tuesday is still listed on Friday with the reason
+// it is no longer visible, rather than disappearing from the app as though it
+// had never existed.
+//
+// What is kept where matters. The full detection - polygon, disk geometry,
+// axis tilt - is what the overlay needs to draw, and only exists for frames
+// seen this session. The persisted record is the small part: where the hole
+// was, how big, how dark. That is all the list, the trend and the arrival
+// estimate need, and it is about a hundred bytes rather than four kilobytes,
+// which is the difference between a week of history fitting in local storage
+// and not.
+
+import { detectCoronalHolesFromSuvi195 } from './suviCoronalHoleDetector';
+import type { CoronalHole } from './coronalHoleData';
+import type { DiskFraction } from './solarDisk';
+import type { TrackedHole } from './chTracking';
+
+const STORAGE_KEY = 'sta-ch-history-v1';
+export const HISTORY_WINDOW_MS = 7 * 86400000;
+
+/**
+ * How far apart detections are taken. A hole does not change shape
+ * meaningfully inside two hours and the Sun turns about a degree, so running
+ * the detector on every four-minute frame buys nothing for a lot of work.
+ */
+export const DETECT_SPACING_MS = 2 * 3600 * 1000;
+
+/** Frames per pass. Enough for a day at two-hour spacing, with room over. */
+const MAX_PER_PASS = 16;
+
+export interface ChDetection {
+  atMs: number;
+  frameUrl: string;
+  holes: CoronalHole[];
+  disk: DiskFraction;
+  b0Deg: number;
+}
+
+/** The part worth keeping for a week. */
+export interface ChRecord {
+  atMs: number;
+  holes: TrackedHole[];
+}
+
+export interface ChStoreState {
+  /** Full detections from this session, newest last. Drawable. */
+  detections: ChDetection[];
+  /** Up to a week of compact records, newest last. */
+  history: ChRecord[];
+  progress: { done: number; total: number } | null;
+  error: string | null;
+}
+
+type Listener = (state: ChStoreState) => void;
+
+const listeners = new Set<Listener>();
+const detections = new Map<string, ChDetection>();
+/** Frames already tried, so a frame that fails is not retried every poll. */
+const attempted = new Set<string>();
+let history: ChRecord[] = [];
+let progress: ChStoreState['progress'] = null;
+let error: string | null = null;
+let running = false;
+let loaded = false;
+
+function compact(holes: CoronalHole[]): TrackedHole[] {
+  return holes.map((h) => ({
+    id: h.id, lat: h.lat, lon: h.lon,
+    widthDeg: h.widthDeg, heightDeg: h.heightDeg, darkness: h.darkness,
+  }));
+}
+
+function loadHistory(): void {
+  if (loaded) return;
+  loaded = true;
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return;
+    history = parsed.filter((r: any) => Number.isFinite(r?.atMs) && Array.isArray(r?.holes));
+    prune();
+  } catch {
+    // A corrupt or unavailable store is not worth failing over. Private
+    // browsing throws on read, and a week of history is a convenience.
+    history = [];
+  }
+}
+
+function prune(): void {
+  const cutoff = Date.now() - HISTORY_WINDOW_MS;
+  history = history
+    .filter((r) => r.atMs >= cutoff)
+    .sort((a, b) => a.atMs - b.atMs);
+}
+
+function saveHistory(): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
+  } catch {
+    // Quota, or storage disabled. The session still works from memory.
+  }
+}
+
+function remember(atMs: number, holes: CoronalHole[]): void {
+  const existing = history.findIndex((r) => r.atMs === atMs);
+  const record: ChRecord = { atMs, holes: compact(holes) };
+  if (existing >= 0) history[existing] = record;
+  else history.push(record);
+  prune();
+  saveHistory();
+}
+
+function snapshot(): ChStoreState {
+  return {
+    detections: [...detections.values()].sort((a, b) => a.atMs - b.atMs),
+    history: [...history],
+    progress,
+    error,
+  };
+}
+
+function emit(): void {
+  const state = snapshot();
+  for (const listener of listeners) listener(state);
+}
+
+export function subscribeToChDetections(listener: Listener): () => void {
+  loadHistory();
+  listeners.add(listener);
+  listener(snapshot());
+  return () => { listeners.delete(listener); };
+}
+
+export function getChState(): ChStoreState {
+  loadHistory();
+  return snapshot();
+}
+
+export interface FrameRef {
+  /** Absolute, resolved URL of the frame. */
+  url: string;
+  atMs: number;
+}
+
+/** Pick frames roughly DETECT_SPACING_MS apart, always including the newest. */
+export function spacedFrames(frames: FrameRef[], spacingMs = DETECT_SPACING_MS): FrameRef[] {
+  const ordered = [...frames]
+    .filter((f) => f.url && Number.isFinite(f.atMs))
+    .sort((a, b) => a.atMs - b.atMs);
+  if (ordered.length === 0) return [];
+
+  const picked: FrameRef[] = [];
+  let lastMs = -Infinity;
+  for (const f of ordered) {
+    if (f.atMs - lastMs >= spacingMs) { picked.push(f); lastMs = f.atMs; }
+  }
+  const newest = ordered[ordered.length - 1];
+  if (picked[picked.length - 1]?.url !== newest.url) picked.push(newest);
+  // Keep the newest end when there are more than a pass can take.
+  return picked.slice(-MAX_PER_PASS);
+}
+
+/**
+ * Detect any of these frames not already known.
+ *
+ * Newest first, so the panels get something to draw immediately and the
+ * history fills in behind it. Only one pass runs at a time: several panels
+ * mounting at once must not each start their own.
+ */
+export async function ensureChDetections(frames: FrameRef[]): Promise<void> {
+  loadHistory();
+  if (running) return;
+
+  const wanted = spacedFrames(frames)
+    .filter((f) => !detections.has(f.url) && !attempted.has(f.url))
+    .reverse();
+  if (wanted.length === 0) return;
+
+  running = true;
+  error = null;
+  progress = { done: 0, total: wanted.length };
+  emit();
+
+  try {
+    for (let i = 0; i < wanted.length; i++) {
+      const frame = wanted[i];
+      attempted.add(frame.url);
+      try {
+        const result = await detectCoronalHolesFromSuvi195(frame.url, 0, new Date(frame.atMs));
+        if (result.succeeded && result.diskFraction) {
+          detections.set(frame.url, {
+            atMs: frame.atMs,
+            frameUrl: frame.url,
+            holes: result.coronalHoles,
+            disk: result.diskFraction,
+            b0Deg: result.b0Deg,
+          });
+          remember(frame.atMs, result.coronalHoles);
+        }
+      } catch {
+        // One unreadable frame is not a reason to abandon the rest.
+      }
+      progress = { done: i + 1, total: wanted.length };
+      emit();
+    }
+    if (detections.size === 0) {
+      error = 'No coronal holes could be measured in the available imagery.';
+    }
+  } finally {
+    running = false;
+    progress = null;
+    emit();
+  }
+}
+
+/** The detection nearest a moment, for drawing over that frame. */
+export function detectionNear(all: ChDetection[], atMs: number): ChDetection | null {
+  if (all.length === 0) return null;
+  return all.reduce((a, b) => (Math.abs(a.atMs - atMs) <= Math.abs(b.atMs - atMs) ? a : b));
+}
+
+/**
+ * Everything worth following: a week of remembered records, with this
+ * session's full detections layered over the top where they overlap.
+ */
+export function framesForTracking(state: ChStoreState): { atMs: number; holes: TrackedHole[] }[] {
+  const byTime = new Map<number, TrackedHole[]>();
+  for (const record of state.history) byTime.set(record.atMs, record.holes);
+  for (const detection of state.detections) byTime.set(detection.atMs, compact(detection.holes));
+  return [...byTime.entries()]
+    .map(([atMs, holes]) => ({ atMs, holes }))
+    .sort((a, b) => a.atMs - b.atMs);
+}
+
+/** Testing seam: forget everything, including what is on disk. */
+export function resetChStore(): void {
+  detections.clear();
+  attempted.clear();
+  history = [];
+  progress = null;
+  error = null;
+  running = false;
+  loaded = false;
+  // typeof, not optional chaining: `localStorage?.x` still throws a
+  // ReferenceError where the identifier is not declared at all, which is every
+  // non-browser environment this module gets imported into.
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.removeItem(STORAGE_KEY);
+  } catch { /* storage disabled */ }
+}

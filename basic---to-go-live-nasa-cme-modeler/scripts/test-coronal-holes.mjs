@@ -32,6 +32,8 @@ const S = await load('utils/suviCoronalHoleDetector.ts');
 const D = await load('utils/solarDisk.ts');
 const C = await load('utils/coronalHoleDynamics.ts');
 const H = await load('utils/coronalHoleHistory.ts');
+const T = await load('utils/chTracking.ts');
+const St = await load('utils/chDetectionStore.ts');
 
 // The real model the panel uses, not a mirror of it: a mirror drifts the
 // moment the model is retuned, and then the tests agree with nothing.
@@ -345,6 +347,207 @@ console.log('\nPixels to heliographic and back again');
   check(west.lon > 70 && east.lon < -70, 'near the limbs the longitudes are opposite and large',
         `${west.lon.toFixed(1)} / ${east.lon.toFixed(1)}`);
   check(Math.abs(west.lon + east.lon) < 1e-9, 'and symmetric about the middle');
+}
+
+// ── following one hole across frames ───────────────────────────
+console.log('\nFollowing one hole across frames');
+{
+  const hole = (id, lat, lon, widthDeg = 25) => ({ id, lat, lon, widthDeg, darkness: 0.6 });
+  const frame = (hoursAgo, holes) => ({ atMs: T0 - hoursAgo * 3600000, holes });
+  // How far the Sun turns in an hour.
+  const perHour = RATE / 24;
+
+  // One hole, seen four times, rotating. The detector renumbers from zero
+  // every frame, so ordering alone cannot connect them.
+  const rotating = T.buildChTracks([
+    frame(6, [hole('CH_SUVI_0', 10, -6 * perHour)]),
+    frame(4, [hole('CH_SUVI_0', 10, -4 * perHour)]),
+    frame(2, [hole('CH_SUVI_0', 10, -2 * perHour)]),
+    frame(0, [hole('CH_SUVI_0', 10, 0)]),
+  ]);
+  check(rotating.length === 1, 'four sightings of a rotating hole are one track', String(rotating.length));
+  check(rotating[0].points.length === 4, 'with all four measurements kept');
+  check(rotating[0].present, 'and it is present in the newest frame');
+  check(rotating[0].firstSeenMs === T0 - 6 * 3600000, 'first seen six hours ago');
+  check(rotating[0].lastSeenMs === T0, 'and last seen now');
+
+  // Two holes that never move near each other stay separate.
+  const two = T.buildChTracks([
+    frame(2, [hole('a', 30, -10), hole('b', -40, 30)]),
+    frame(0, [hole('a', 30, -10 + 2 * perHour), hole('b', -40, 30 + 2 * perHour)]),
+  ]);
+  check(two.length === 2, 'two separate holes stay two tracks', String(two.length));
+  check(two.every(t => t.points.length === 2), 'each with its own history');
+
+  // The detector reversing its ordering between frames must not swap them.
+  const swapped = T.buildChTracks([
+    frame(2, [hole('CH_SUVI_0', 30, -10), hole('CH_SUVI_1', -40, 30)]),
+    frame(0, [hole('CH_SUVI_0', -40, 30 + 2 * perHour), hole('CH_SUVI_1', 30, -10 + 2 * perHour)]),
+  ]);
+  check(swapped.length === 2, 'reordered detections do not create new tracks', String(swapped.length));
+  check(swapped.every(t => t.points.every(p => Math.abs(p.hole.lat - t.latest.lat) < 1)),
+        'and each track keeps a consistent latitude, so they were not crossed over');
+
+  // A hole that stops being detected is still a track, just not present.
+  const vanished = T.buildChTracks([
+    frame(6, [hole('a', 0, -6 * perHour), hole('b', 50, 20)]),
+    frame(0, [hole('a', 0, 0)]),
+  ]);
+  check(vanished.length === 2, 'a hole that disappeared is still a track', String(vanished.length));
+  const goneTrack = vanished.find(t => !t.present);
+  check(goneTrack != null, 'and is marked as not present');
+  check(goneTrack.lastSeenMs === T0 - 6 * 3600000, 'with the time it was last seen');
+  check(vanished[0].present, 'the live one sorts first');
+
+  // Two holes drifting close together cannot both claim one detection.
+  const merged = T.buildChTracks([
+    frame(2, [hole('a', 0, 0), hole('b', 12, 6)]),
+    frame(0, [hole('only', 6, 3 + 2 * perHour)]),
+  ]);
+  check(merged.length === 2, 'when two holes merge into one, both tracks survive', String(merged.length));
+  check(merged.filter(t => t.present).length === 1,
+        'but only one of them claims the surviving detection');
+  check(merged.filter(t => !t.present).length === 1, 'and the other is marked gone');
+
+  check(T.buildChTracks([]).length === 0, 'no frames, no tracks');
+  check(T.buildChTracks([frame(0, [])]).length === 0, 'an empty frame gives nothing');
+
+  // Order the frames arrive in does not matter.
+  const shuffled = T.buildChTracks([
+    frame(0, [hole('a', 10, 0)]),
+    frame(4, [hole('a', 10, -4 * perHour)]),
+    frame(2, [hole('a', 10, -2 * perHour)]),
+  ]);
+  check(shuffled.length === 1 && shuffled[0].points.length === 3,
+        'frames can arrive in any order');
+  check(shuffled[0].points[0].atMs < shuffled[0].points[2].atMs, 'and come out oldest first');
+
+  // Rotation is the whole reason this cannot be a plain distance check. A
+  // hole moves 13.2 degrees a day, so over two days it has moved further than
+  // the match radius and a raw comparison loses it entirely.
+  const twoDaysApart = T.buildChTracks([
+    { atMs: T0 - 2 * DAY, holes: [hole('a', 0, -2 * RATE)] },
+    { atMs: T0, holes: [hole('a', 0, 0)] },
+  ]);
+  check(twoDaysApart.length === 1, 'a hole tracked across two days is one hole');
+  check(twoDaysApart[0].points.length === 2, 'with both measurements');
+
+  // And the converse: something sitting at the same longitude two days later
+  // has NOT rotated with the Sun, so it is not the same hole.
+  const stationary = T.buildChTracks([
+    { atMs: T0 - 2 * DAY, holes: [hole('a', 0, 0)] },
+    { atMs: T0, holes: [hole('a', 0, 0)] },
+  ]);
+  check(stationary.length === 2,
+        'something that stayed at the same longitude for two days is not the same hole',
+        String(stationary.length));
+}
+
+// ── why a hole is gone ────────────────────────────────────
+console.log('\nSaying why a hole is no longer there');
+{
+  const track = (lon, lastSeenHoursAgo, present = false) => ({
+    key: 'k', present, latest: { id: 'a', lat: 0, lon, widthDeg: 20, darkness: 0.5 },
+    points: [], firstSeenMs: T0 - DAY, lastSeenMs: T0 - lastSeenHoursAgo * 3600000,
+  });
+
+  check(T.chDisappearance(track(0, 0, true), T0, T0).gone === false,
+        'a hole in the latest frame has not gone anywhere');
+
+  // Past the west limb: still there, still sending wind, just not visible.
+  const rotated = T.chDisappearance(track(85, 1), T0, T0);
+  check(rotated.reason === 'rotated-off', 'one past the west limb has rotated off', rotated.reason);
+  check(/still arrives|still on its way/.test(rotated.note),
+        'and its stream is still described as coming', rotated.note);
+
+  // On the disk and missing for hours: it closed up.
+  const closed = T.chDisappearance(track(10, 6), T0, T0);
+  check(closed.reason === 'closed', 'one missing for six hours mid-disk has closed', closed.reason);
+  check(/open field has closed/.test(closed.note), 'and says what that means');
+
+  // On the disk and missing from one frame: probably us, not the Sun.
+  const lost = T.chDisappearance(track(10, 1), T0, T0);
+  check(lost.reason === 'lost', 'one missing from a single frame is just missed', lost.reason);
+  check(/faint or partial/.test(lost.note),
+        'and is honest that this is our problem rather than the hole closing', lost.note);
+  check(lost.label !== closed.label && closed.label !== rotated.label,
+        'the three cases read differently on the badge');
+}
+
+// ── which frames get measured ────────────────────────────────
+console.log('\nChoosing which frames to run the detector on');
+{
+  // SUVI publishes every four minutes. Running a canvas decode and a flood
+  // fill on all of them would be hundreds of passes for a shape that does not
+  // meaningfully change inside two hours.
+  const every4Min = [];
+  for (let i = 0; i < 360; i++) {
+    every4Min.push({ url: `f${i}`, atMs: T0 - (360 - i) * 4 * 60000 });
+  }
+
+  const picked = St.spacedFrames(every4Min);
+  check(picked.length > 0 && picked.length <= 16,
+        `a day of four-minute frames comes down to ${picked.length} detections`, String(picked.length));
+  check(picked[picked.length - 1].url === 'f359', 'and the newest frame is always one of them');
+
+  let minGap = Infinity;
+  for (let i = 1; i < picked.length - 1; i++) {
+    minGap = Math.min(minGap, picked[i].atMs - picked[i - 1].atMs);
+  }
+  check(minGap >= St.DETECT_SPACING_MS,
+        'the chosen frames are at least two hours apart', `${minGap / 3600000}h`);
+
+  check(St.spacedFrames([]).length === 0, 'no frames, nothing to measure');
+  const one = St.spacedFrames([{ url: 'a', atMs: T0 }]);
+  check(one.length === 1 && one[0].url === 'a', 'a single frame is measured');
+
+  // Junk in the list does not become a detection attempt.
+  check(St.spacedFrames([{ url: '', atMs: T0 }, { url: 'b', atMs: NaN }]).length === 0,
+        'frames with no url or no time are dropped');
+
+  // Order in does not matter.
+  const shuffled = St.spacedFrames([
+    { url: 'c', atMs: T0 },
+    { url: 'a', atMs: T0 - 6 * 3600000 },
+    { url: 'b', atMs: T0 - 3 * 3600000 },
+  ]);
+  check(shuffled.map(f => f.url).join(',') === 'a,b,c', 'frames come back oldest first', String(shuffled.map(f => f.url)));
+}
+
+// ── a week of memory ──────────────────────────────────────
+console.log('\nCombining a week of records with this session\'s detections');
+{
+  const hole = (id, lon) => ({ id, lat: 0, lon, widthDeg: 20, darkness: 0.5 });
+  const state = {
+    history: [
+      { atMs: T0 - 3 * DAY, holes: [hole('a', -40)] },
+      { atMs: T0 - DAY, holes: [hole('a', -13)] },
+      // Same moment as a full detection below, to prove which one wins.
+      { atMs: T0, holes: [hole('stale', 99)] },
+    ],
+    detections: [
+      { atMs: T0, holes: [{ ...hole('fresh', 0), polygon: [], heightDeg: 18 }], disk: {}, b0Deg: 7, frameUrl: 'u' },
+    ],
+    progress: null, error: null,
+  };
+
+  const frames = St.framesForTracking(state);
+  check(frames.length === 3, 'three distinct moments, not four', String(frames.length));
+  check(frames[0].atMs < frames[2].atMs, 'oldest first');
+  check(frames[2].holes[0].id === 'fresh',
+        'where both exist for a moment, this session\'s full detection wins over the stored record',
+        frames[2].holes[0].id);
+  check(frames[0].holes[0].widthDeg === 20, 'and the older records keep their measurements');
+
+  // The point of keeping a week: a hole seen three days ago is still followed.
+  const tracks = T.buildChTracks(frames);
+  check(tracks.length >= 1, 'the week of records builds tracks');
+  const longest = tracks.reduce((a, b) => (a.points.length >= b.points.length ? a : b));
+  check(longest.points.length === 3,
+        'and one hole is followed across all three days', String(longest.points.length));
+
+  check(St.framesForTracking({ history: [], detections: [], progress: null, error: null }).length === 0,
+        'nothing remembered and nothing detected gives nothing');
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

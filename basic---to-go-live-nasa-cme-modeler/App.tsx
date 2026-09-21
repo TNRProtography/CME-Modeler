@@ -1312,6 +1312,17 @@ const App: React.FC = () => {
     navigateToModelerOverlay('cme-list');
   }, [cmeData, handleSelectCMEForModeling, navigateToModelerOverlay, navigateToPage]);
 
+  /**
+   * Open the 3D visualisation showing coronal holes and the streams leaving
+   * them. The layer is off by default in the scene, so this turns it on rather
+   * than assuming the last state the user left it in.
+   */
+  const handleViewCoronalHolesInVisualization = useCallback(() => {
+    navigateToPage('modeler');
+    handleShowHssChange(true);
+    navigateToModelerOverlay('controls-panel');
+  }, [handleShowHssChange, navigateToModelerOverlay, navigateToPage]);
+
   const handleFlareAlertClick = useCallback(() => {
     setNavigationTarget({ page: 'solar-activity', elementId: 'goes-xray-flux-section' });
   }, []);
@@ -1714,6 +1725,7 @@ const App: React.FC = () => {
                         setViewerMedia={setViewerMedia}
                         setLatestXrayFlux={setLatestXrayFlux}
                         onViewCMEInVisualization={handleViewCMEInVisualization}
+                        onViewCoronalHolesInVisualization={handleViewCoronalHolesInVisualization}
                         onSuvi195ImageUrlChange={setSharedSuvi195Url}
                         navigationTarget={navigationTarget}
                         modalSlug={solarModalSlug}

@@ -1,21 +1,19 @@
 // The Coronal Hole Tracker.
 //
-// The sunspot tracker answers "might this go off". This one answers a
-// question that does not need anything to happen: a coronal hole is already
-// leaking wind, and a few days after it crosses the middle of the disk that
-// wind gets here. So the panel is built around when and how fast, rather than
-// around probabilities.
+// The sunspot tracker answers "might this go off". This one answers a question
+// that does not need anything to happen: a coronal hole is already leaking
+// wind, and a few days after it crosses the middle of the disk that wind gets
+// here. So the panel is built around when and how fast, rather than around
+// probabilities.
 //
-// Holes are found in the SUVI 195 frames the difference-imagery worker
-// already holds, at roughly two-hour spacing across the window, which is
-// enough to watch one open or close without running the detector on every
-// four-minute frame. The outlines are drawn over whichever frame is on screen,
-// rotated to that frame's moment, so scrubbing the timeline moves the holes
-// with the Sun instead of pinning yesterday's shapes to today's image.
+// Holes come from the shared detection store, which runs the detector once per
+// frame at roughly two-hour spacing and keeps a week of compact records. The
+// week matters: a hole takes a fortnight to cross the disk and its stream is
+// still arriving days after it has turned out of sight, so a hole that rotated
+// off on Tuesday is still listed on Friday with the reason it is no longer
+// visible - rather than vanishing from the app as though it never existed.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CoronalHole } from '../utils/coronalHoleData';
-import { detectCoronalHolesFromSuvi195 } from '../utils/suviCoronalHoleDetector';
 import { readImagePixels } from '../utils/imagePixels';
 import { estimateHssSpeedFromChWidthAndDarkness } from '../utils/solarWindModel';
 import {
@@ -26,26 +24,21 @@ import {
   classifyChPolarity, samplePolygonField, sectorSeasonNote,
   type ChPolarityResult,
 } from '../utils/coronalHolePolarity';
+import { buildChTracks, chDisappearance, type ChTrack, type TrackedHole } from '../utils/chTracking';
 import {
-  containedImageRect, detectSolarDiskGeometry, diskFromFraction,
-  heliographicToPixel, longitudeAt,
-  type DiskFraction, type SolarDiskGeometry,
-} from '../utils/solarDisk';
+  detectionNear, framesForTracking, type ChDetection, type FrameRef,
+} from '../utils/chDetectionStore';
+import { useCoronalHoleDetections } from '../hooks/useCoronalHoleDetections';
+import CoronalHoleOverlay, { holeColour } from './CoronalHoleOverlay';
+import SunspotLabelOverlay from './SunspotLabelOverlay';
+import { buildRegionLabels, type RegionInput } from '../utils/regionLabels';
+import { detectSolarDiskGeometry, diskFromFraction, containedImageRect, longitudeAt } from '../utils/solarDisk';
 import { solarDiskOrientation } from '../utils/solarEphemeris';
 import { frameSpanHours } from '../utils/framePlayback';
 
 const SUVI_DIFF_WORKER_BASE = 'https://suvi-difference-imagery.thenamesrock.workers.dev';
 const HMI_MAG_URL = 'https://jsoc1.stanford.edu/data/hmi/images/latest/HMI_latest_Mag_1024x1024.gif';
 const HMI_MAG_FALLBACK = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_HMIB.jpg';
-
-/**
- * How far apart detections are taken. Running the detector on every frame
- * would be a canvas decode and a flood fill every four minutes of window for
- * no extra information: a hole does not change shape meaningfully inside two
- * hours, and the Sun only turns about a degree in that time.
- */
-const DETECT_SPACING_MS = 2 * 3600 * 1000;
-const MAX_DETECTIONS = 14;
 
 /** The honest width of the arrival window. */
 const ARRIVAL_UNCERTAINTY_HOURS = 7;
@@ -54,36 +47,7 @@ const DAY_MS = 86400000;
 const WINDOW_OPTIONS = [6, 12, 24] as const;
 const SPEED_OPTIONS = [0.5, 1, 2, 5, 10] as const;
 
-const HOLE_COLOURS = ['#38bdf8', '#a78bfa', '#fbbf24', '#34d399', '#fb7185', '#facc15', '#22d3ee', '#f472b6'];
-
 interface WorkerFrame { key: string; ts: string; url: string }
-
-interface Detection {
-  atMs: number;
-  holes: CoronalHole[];
-  /**
-   * The disk the detector itself found, as fractions of the frame.
-   *
-   * Taken from the detection rather than measured again from the displayed
-   * image for two reasons. The outlines are in coordinates the detector
-   * derived from THIS disk, so measuring it again can only introduce
-   * disagreement. And the displayed image is cross-origin: the detector reads
-   * it as a blob and can get at the pixels, whereas reading the same bytes
-   * back out of the <img> element taints the canvas and throws - which is
-   * what left the overlay permanently stuck on "locating the solar disk"
-   * while the detection behind it was working perfectly well.
-   */
-  disk: DiskFraction;
-  /**
-   * The axis tilt the detector projected with.
-   *
-   * Drawing has to use this exact value, not one computed independently for
-   * the frame on screen. The outlines are the detector's own projection run
-   * backwards, so any difference between the two tilts comes out as holes
-   * sitting a few degrees away from the dark patches they were traced from.
-   */
-  b0Deg: number;
-}
 
 const fmtNz = (ms: number | null | undefined): string => {
   if (ms == null || !Number.isFinite(ms)) return 'Unknown';
@@ -94,18 +58,27 @@ const fmtNz = (ms: number | null | undefined): string => {
 };
 
 const fmtRelative = (ms: number): string => {
-  const d = ms - Date.now();
-  const hours = d / 3600000;
+  const hours = (ms - Date.now()) / 3600000;
   if (Math.abs(hours) < 1) return 'within the hour';
-  if (hours < 0) return `${Math.abs(hours) < 48 ? `${Math.round(-hours)} hours` : `${(-hours / 24).toFixed(1)} days`} ago`;
+  if (hours < 0) return `${-hours < 48 ? `${Math.round(-hours)} hours` : `${(-hours / 24).toFixed(1)} days`} ago`;
   return hours < 48 ? `in ${Math.round(hours)} hours` : `in ${(hours / 24).toFixed(1)} days`;
+};
+
+/** A live countdown, which is the one number people actually watch. */
+const fmtCountdown = (targetMs: number, nowMs: number): string => {
+  const left = targetMs - nowMs;
+  if (left <= 0) return 'Arriving now';
+  const days = Math.floor(left / DAY_MS);
+  const hours = Math.floor((left % DAY_MS) / 3600000);
+  const mins = Math.floor((left % 3600000) / 60000);
+  if (days > 0) return `${days}d ${hours}h ${mins}m`;
+  return `${hours}h ${mins}m`;
 };
 
 /**
  * The bands are the ones the wind itself falls into at 1 AU, not the CME
  * bands. A CME at 500 km/s is slow; a stream at 500 km/s is a decent one.
- * They are different populations and sharing a scale would flatter every
- * hole on the panel.
+ * They are different populations and sharing a scale would flatter every hole.
  */
 const speedBand = (kms: number): { label: string; colour: string; note: string } => {
   if (kms < 400) return { label: 'Slow', colour: 'text-neutral-300', note: 'Ordinary background wind. Enough to unsettle the field, rarely enough on its own.' };
@@ -116,30 +89,35 @@ const speedBand = (kms: number): { label: string; colour: string; note: string }
 
 export interface CoronalHoleTrackerProps {
   onOpenModal?: (id: string) => void;
+  /** NOAA sunspot regions, for the optional overlay. */
+  regions?: RegionInput[];
+  /** Opens the 3D visualisation with the coronal hole and HSS layer on. */
+  onViewInVisualisation?: () => void;
 }
 
-const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) => {
+const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
+  onOpenModal, regions = [], onViewInVisualisation,
+}) => {
   const [frames, setFrames] = useState<WorkerFrame[]>([]);
+  const [framesError, setFramesError] = useState<string | null>(null);
   const [windowHours, setWindowHours] = useState<number>(12);
   const [frameIndex, setFrameIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<number>(1);
 
-  const [detections, setDetections] = useState<Detection[]>([]);
-  const [detectProgress, setDetectProgress] = useState<{ done: number; total: number } | null>(null);
-  const [detectError, setDetectError] = useState<string | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  // Off by default. The holes are the subject here, and a disk covered in
+  // region labels the moment the panel opens is noise until it is asked for.
+  const [showSunspots, setShowSunspots] = useState(false);
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [polarity, setPolarity] = useState<Record<string, ChPolarityResult>>({});
   const [polarityError, setPolarityError] = useState<string | null>(null);
 
   const [boxSize, setBoxSize] = useState({ width: 0, height: 0 });
   const [natural, setNatural] = useState<{ width: number; height: number } | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   const boxRef = useRef<HTMLDivElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const imgRef = useRef<HTMLImageElement | null>(null);
-  const detectRunId = useRef(0);
 
   const resolveUrl = useCallback((url: string | null | undefined): string | null => {
     if (!url) return null;
@@ -157,13 +135,21 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
         if (cancelled) return;
         const all: WorkerFrame[] = json?.sources?.suvi_195_primary?.frames ?? [];
         setFrames(all.filter((f) => f?.ts && f?.url));
+        setFramesError(null);
       } catch {
-        if (!cancelled) setDetectError('Could not reach the SUVI imagery worker.');
+        if (!cancelled) setFramesError('Could not reach the SUVI imagery worker.');
       }
     };
     load();
     const id = setInterval(load, 10 * 60 * 1000);
     return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  // A ticking clock for the countdown, once a minute. Anything faster would
+  // re-render the panel for a number that only changes every sixty seconds.
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 60000);
+    return () => clearInterval(id);
   }, []);
 
   const windowFrames = useMemo(() => {
@@ -176,13 +162,18 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
       .sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
   }, [frames, windowHours]);
 
+  const frameRefs = useMemo((): FrameRef[] => windowFrames
+    .map((f) => ({ url: resolveUrl(f.url) ?? '', atMs: new Date(f.ts).getTime() }))
+    .filter((f) => f.url), [windowFrames, resolveUrl]);
+
+  const store = useCoronalHoleDetections(frameRefs);
+
   const clampedIndex = Math.min(frameIndex, Math.max(0, windowFrames.length - 1));
   const activeFrame = windowFrames[clampedIndex] ?? null;
   const activeFrameMs = activeFrame ? new Date(activeFrame.ts).getTime() : Date.now();
   const activeUrl = resolveUrl(activeFrame?.url);
 
-  // Landing on the newest frame rather than the oldest, so opening the panel
-  // shows now and playing runs backwards through the window on purpose only.
+  // Land on the newest frame, so opening the panel shows now.
   const lastWindowKey = useRef<string>('');
   useEffect(() => {
     const key = `${windowHours}:${windowFrames.length}`;
@@ -199,84 +190,54 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
       setFrameIndex((prev) => (prev + 1) % windowFrames.length);
     }, interval);
     return () => clearInterval(id);
-    // Deliberately keyed on the frame COUNT and not the array: a poll that
-    // returns the same frames must not restart playback, which is what used to
-    // make the 24 hour window look broken on the imagery panel.
+    // Keyed on the frame COUNT, not the array: a poll returning the same
+    // frames must not restart playback.
   }, [playing, windowFrames.length, speed]);
 
-  // ── detection across the window ───────────────────────────────────────────
-  const detectionTargets = useMemo(() => {
-    if (windowFrames.length === 0) return [] as WorkerFrame[];
-    const picked: WorkerFrame[] = [];
-    let lastMs = -Infinity;
-    for (const f of windowFrames) {
-      const ms = new Date(f.ts).getTime();
-      if (ms - lastMs >= DETECT_SPACING_MS) { picked.push(f); lastMs = ms; }
-    }
-    const newest = windowFrames[windowFrames.length - 1];
-    if (picked[picked.length - 1]?.key !== newest.key) picked.push(newest);
-    // Keep the newest end of the window if there are more than we want to run.
-    return picked.slice(-MAX_DETECTIONS);
-  }, [windowFrames]);
+  // ── tracks ────────────────────────────────────────────────────────────────
+  const tracks = useMemo(
+    () => buildChTracks(framesForTracking(store)),
+    [store.history, store.detections],
+  );
 
-  useEffect(() => {
-    if (detectionTargets.length === 0) return;
-    const run = ++detectRunId.current;
-    let cancelled = false;
+  const orderOfHole = useCallback((holeId: string): number => {
+    // Hole ids repeat between frames (CH_SUVI_0 every time), so the colour and
+    // number come from the track the hole belongs to in THIS frame, matched by
+    // the measurement itself rather than by id.
+    const index = tracks.findIndex((t) => t.points.some((p) => p.hole.id === holeId
+      && Math.abs(p.atMs - activeFrameMs) < 3 * 3600000));
+    return index >= 0 ? index : 0;
+  }, [tracks, activeFrameMs]);
 
-    (async () => {
-      setDetectError(null);
-      setDetectProgress({ done: 0, total: detectionTargets.length });
-      const found: Detection[] = [];
-      // Newest first, so the outlines and the numbers appear immediately and
-      // the history fills in behind them.
-      const ordered = [...detectionTargets].reverse();
-      for (let i = 0; i < ordered.length; i++) {
-        if (cancelled || detectRunId.current !== run) return;
-        const f = ordered[i];
-        const url = resolveUrl(f.url);
-        if (!url) continue;
-        try {
-          const frameAt = new Date(f.ts);
-          const result = await detectCoronalHolesFromSuvi195(url, 0, frameAt);
-          if (cancelled || detectRunId.current !== run) return;
-          if (result.succeeded && result.diskFraction) {
-            found.push({
-              atMs: frameAt.getTime(),
-              holes: result.coronalHoles,
-              disk: result.diskFraction,
-              b0Deg: result.b0Deg,
-            });
-            found.sort((a, b) => a.atMs - b.atMs);
-            setDetections([...found]);
-          }
-        } catch {
-          // One unreadable frame is not a reason to abandon the rest.
-        }
-        setDetectProgress({ done: i + 1, total: ordered.length });
-      }
-      if (!cancelled && detectRunId.current === run) {
-        setDetectProgress(null);
-        if (found.length === 0) setDetectError('No coronal holes could be measured in this window.');
-      }
-    })();
+  const latestFrameMs = store.detections.length > 0
+    ? store.detections[store.detections.length - 1].atMs
+    : 0;
 
-    return () => { cancelled = true; };
-  }, [detectionTargets, resolveUrl]);
+  const selectedTrack: ChTrack<TrackedHole> | null = useMemo(() => {
+    if (tracks.length === 0) return null;
+    return tracks.find((t) => t.key === selectedKey) ?? tracks[0];
+  }, [tracks, selectedKey]);
 
-  const latestDetection = detections.length > 0 ? detections[detections.length - 1] : null;
+  const detectionForFrame: ChDetection | null = useMemo(
+    () => detectionNear(store.detections, activeFrameMs),
+    [store.detections, activeFrameMs],
+  );
 
-  /** The detection nearest the frame on screen, which is what gets drawn. */
-  const detectionForFrame = useMemo(() => {
-    if (detections.length === 0) return null;
-    return detections.reduce((a, b) =>
-      Math.abs(a.atMs - activeFrameMs) <= Math.abs(b.atMs - activeFrameMs) ? a : b);
-  }, [detections, activeFrameMs]);
+  /** Which hole in the drawn frame belongs to the selected track. */
+  const selectedHoleId = useMemo(() => {
+    if (!selectedTrack || !detectionForFrame) return null;
+    const point = selectedTrack.points.find((p) => Math.abs(p.atMs - detectionForFrame.atMs) < 60000);
+    return point?.hole.id ?? null;
+  }, [selectedTrack, detectionForFrame]);
 
-  // ── the size of the displayed image ───────────────────────────────────────
-  // Only its natural size is wanted here. Where the disk sits inside it comes
-  // from the detection, which read the same frame through a blob and so could
-  // actually get at the pixels.
+  const selectHoleFromImage = useCallback((holeId: string) => {
+    if (!detectionForFrame) return;
+    const track = tracks.find((t) => t.points.some(
+      (p) => p.hole.id === holeId && Math.abs(p.atMs - detectionForFrame.atMs) < 60000));
+    if (track) setSelectedKey(track.key);
+  }, [tracks, detectionForFrame]);
+
+  // ── the displayed image ───────────────────────────────────────────────────
   const handleImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget;
     if (!img.naturalWidth || !img.naturalHeight) return;
@@ -286,151 +247,41 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
   useEffect(() => {
     const el = boxRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(() => {
-      setBoxSize({ width: el.clientWidth, height: el.clientHeight });
-    });
+    const ro = new ResizeObserver(() => setBoxSize({ width: el.clientWidth, height: el.clientHeight }));
     ro.observe(el);
     setBoxSize({ width: el.clientWidth, height: el.clientHeight });
     return () => ro.disconnect();
   }, []);
 
-  /** Where the letterboxed image actually sits, and the disk inside it. */
-  const drawGeometry = useMemo((): { geometry: SolarDiskGeometry; offsetX: number; offsetY: number } | null => {
-    if (!detectionForFrame || !natural || boxSize.width === 0 || boxSize.height === 0) return null;
+  // Sunspot regions, using the detector's disk so they line up with the holes.
+  const regionLabels = useMemo(() => {
+    if (!showSunspots || !detectionForFrame || !natural || !boxSize.width) return [];
     const rect = containedImageRect(natural, boxSize);
-    return {
+    return buildRegionLabels(regions, {
       geometry: diskFromFraction(detectionForFrame.disk, { width: rect.width, height: rect.height }),
-      offsetX: rect.x,
-      offsetY: rect.y,
-    };
-  }, [detectionForFrame, natural, boxSize]);
-
-  // ── drawing the outlines ──────────────────────────────────────────────────
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.max(1, Math.round(boxSize.width * dpr));
-    canvas.height = Math.max(1, Math.round(boxSize.height * dpr));
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, boxSize.width, boxSize.height);
-
-    if (!drawGeometry || !detectionForFrame) return;
-    const { geometry, offsetX, offsetY } = drawGeometry;
-    // The detector's own tilt, so this projection is the exact inverse of the
-    // one the outlines came out of.
-    const b0 = detectionForFrame.b0Deg;
-    const p = 0;
-
-    detectionForFrame.holes.forEach((hole, i) => {
-      const colour = HOLE_COLOURS[i % HOLE_COLOURS.length];
-      const selected = hole.id === selectedId;
-      const outline = chOutlineAt(hole, detectionForFrame.atMs, activeFrameMs);
-
-      const pts = outline
-        .map((q) => heliographicToPixel(q.lat, q.lon, geometry, b0, p))
-        .filter((q) => q.onDisk)
-        .map((q) => ({ x: q.x + offsetX, y: q.y + offsetY }));
-      if (pts.length < 3) return;
-
-      ctx.beginPath();
-      ctx.moveTo(pts[0].x, pts[0].y);
-      for (let k = 1; k < pts.length; k++) ctx.lineTo(pts[k].x, pts[k].y);
-      ctx.closePath();
-
-      ctx.fillStyle = `${colour}${selected ? '44' : '22'}`;
-      ctx.fill();
-      // Stroked twice: a thin coloured line alone disappears against the
-      // bright corona in the 195 channel.
-      ctx.lineJoin = 'round';
-      ctx.strokeStyle = 'rgba(0,0,0,0.75)';
-      ctx.lineWidth = selected ? 5 : 3.5;
-      ctx.stroke();
-      ctx.strokeStyle = colour;
-      ctx.lineWidth = selected ? 2.5 : 1.5;
-      ctx.stroke();
-
-      // The label goes below the hole with a leader back to it, rather than
-      // on top of it. A hole is the thing being looked at; covering it with
-      // the name of the thing is the one placement that cannot be right.
-      const centre = heliographicToPixel(
-        hole.lat, longitudeAt(hole.lon, detectionForFrame.atMs, activeFrameMs), geometry, b0, p);
-      if (!centre.onDisk) return;
-
-      const cx = centre.x + offsetX;
-      const cy = centre.y + offsetY;
-      const bottom = Math.max(...pts.map((q) => q.y));
-      const label = `CH${i + 1} · ${hole.widthDeg.toFixed(0)}°`;
-
-      ctx.font = `600 ${selected ? 13 : 12}px system-ui, sans-serif`;
-      const textWidth = ctx.measureText(label).width;
-      const padX = 6, padY = 4;
-      const boxW = textWidth + padX * 2;
-      const boxH = (selected ? 13 : 12) + padY * 2;
-
-      // Clamped so a hole near the bottom or the side of the frame still has
-      // a readable label rather than one half off the edge.
-      const labelX = Math.min(Math.max(cx - boxW / 2, 4), Math.max(4, boxSize.width - boxW - 4));
-      const labelY = Math.min(bottom + 10, Math.max(4, boxSize.height - boxH - 4));
-
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.lineTo(labelX + boxW / 2, labelY);
-      ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-      ctx.lineWidth = 3;
-      ctx.stroke();
-      ctx.strokeStyle = colour;
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      ctx.fillStyle = 'rgba(0,0,0,0.78)';
-      ctx.strokeStyle = colour;
-      ctx.lineWidth = selected ? 1.5 : 1;
-      if (typeof (ctx as any).roundRect === 'function') {
-        ctx.beginPath();
-        (ctx as any).roundRect(labelX, labelY, boxW, boxH, 4);
-        ctx.fill();
-        ctx.stroke();
-      } else {
-        ctx.fillRect(labelX, labelY, boxW, boxH);
-        ctx.strokeRect(labelX, labelY, boxW, boxH);
-      }
-
-      ctx.fillStyle = colour;
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-      ctx.fillText(label, labelX + padX, labelY + padY);
+      imageNatural: natural,
+      box: boxSize,
+      atMs: activeFrameMs,
     });
-  }, [boxSize, drawGeometry, detectionForFrame, activeFrameMs, selectedId]);
+  }, [showSunspots, regions, detectionForFrame, natural, boxSize, activeFrameMs]);
 
   // ── polarity from the magnetogram ─────────────────────────────────────────
+  const latestDetection = store.detections.length > 0
+    ? store.detections[store.detections.length - 1]
+    : null;
+
   useEffect(() => {
     if (!latestDetection || latestDetection.holes.length === 0) return;
     let cancelled = false;
 
     (async () => {
       setPolarityError(null);
-      // Through the proxy, at the magnetogram's own resolution. Pointing an
-      // <img> at jsoc1.stanford.edu and reading it back does not work: there
-      // is no CORS header, so with crossOrigin set the image never loads and
-      // without it the canvas is tainted and getImageData throws. Either way
-      // the panel sat on "Reading the HMI magnetogram..." forever.
-      //
-      // Full resolution matters here more than it does elsewhere. Halving a
-      // magnetogram averages neighbouring positive and negative network
-      // elements into each other, and those cancel - which erodes exactly the
-      // signed flux being measured.
+      // Through the proxy, at full resolution. Halving a magnetogram averages
+      // neighbouring positive and negative network elements into each other,
+      // and those cancel - which erodes the exact signal being measured.
       let image = null;
       for (const url of [HMI_MAG_URL, HMI_MAG_FALLBACK]) {
-        try {
-          image = await readImagePixels(url);
-          break;
-        } catch {
-          // Try the other source before giving up on it.
-        }
+        try { image = await readImagePixels(url); break; } catch { /* try the other */ }
       }
       if (cancelled) return;
       if (!image) {
@@ -451,9 +302,9 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
         const outline = chOutlineAt(hole, latestDetection.atMs, Date.now());
         const lon = longitudeAt(hole.lon, latestDetection.atMs, Date.now());
         const inside = samplePolygonField(image, outline, geom, { b0, p });
-        // The ring outside is a sanity check on the boundary, not the answer:
-        // quiet Sun is balanced, so an outside leaning the same way as the
-        // inside means the outline probably is not where the hole ends.
+        // The ring outside is a check on the boundary, not the answer: quiet
+        // Sun is balanced, so an outside leaning the same way as the inside
+        // means the outline probably is not where the hole ends.
         const surround = samplePolygonField(image, outline, geom, { b0, p, scale: 1.7, exclude: 1.1 });
         next[hole.id] = classifyChPolarity(inside, surround.total > 30 ? surround : null, lon);
       }
@@ -464,47 +315,33 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
   }, [latestDetection]);
 
   // ── what to say about the selected hole ───────────────────────────────────
-  const holes = latestDetection?.holes ?? [];
-  const selected = holes.find((h) => h.id === selectedId) ?? holes[0] ?? null;
-
   const insight = useMemo(() => {
-    if (!selected || !latestDetection) return null;
+    if (!selectedTrack) return null;
     const now = Date.now();
+    const latest = selectedTrack.latest;
 
-    // Every measurement of this hole we have, matched by proximity once each
-    // older one is carried forward to today's disk.
-    const samples: ChSample[] = [];
-    for (const det of detections) {
-      let best: CoronalHole | null = null;
-      let bestDist = 22;
-      for (const h of det.holes) {
-        const projected = longitudeAt(h.lon, det.atMs, now);
-        const selectedNow = longitudeAt(selected.lon, latestDetection.atMs, now);
-        const d = Math.hypot(projected - selectedNow, h.lat - selected.lat);
-        if (d < bestDist) { bestDist = d; best = h; }
-      }
-      if (best) {
-        samples.push({
-          atMs: det.atMs, widthDeg: best.widthDeg, darkness: best.darkness,
-          longitude: best.lon,
-        });
-      }
-    }
+    const samples: ChSample[] = selectedTrack.points.map((p) => ({
+      atMs: p.atMs, widthDeg: p.hole.widthDeg, darkness: p.hole.darkness, longitude: p.hole.lon,
+    }));
 
-    const timing = chTiming(selected.lon, latestDetection.atMs, now);
+    const timing = chTiming(latest.lon, selectedTrack.lastSeenMs, now);
     const choice = chSpeedForEarth(samples, estimateHssSpeedFromChWidthAndDarkness);
     const growth = chGrowth(samples);
 
     const centralMeridianMs = now + timing.daysToCentralMeridian * DAY_MS;
     const arrival = choice.speedKms != null ? hssArrivalMs(choice.speedKms, centralMeridianMs) : null;
 
-    const pol = polarity[selected.id] ?? null;
+    const pol = polarity[latest.id] ?? null;
     const season = pol ? sectorSeasonNote(pol.sector, new Date()) : null;
+    const gone = chDisappearance(selectedTrack, now, latestFrameMs || selectedTrack.lastSeenMs);
 
-    return { timing, choice, growth, centralMeridianMs, arrival, samples, pol, season };
-  }, [selected, latestDetection, detections, polarity]);
+    return { timing, choice, growth, centralMeridianMs, arrival, samples, pol, season, gone, latest };
+  }, [selectedTrack, polarity, latestFrameMs]);
 
   const windowSpan = frameSpanHours(windowFrames);
+  const historyDays = store.history.length > 1
+    ? (store.history[store.history.length - 1].atMs - store.history[0].atMs) / DAY_MS
+    : 0;
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
@@ -535,11 +372,32 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
                 windowHours === h ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
             >{h}h</button>
           ))}
+          <button
+            type="button"
+            onClick={() => setShowSunspots((v) => !v)}
+            aria-pressed={showSunspots}
+            className={`px-3 py-1 text-xs rounded transition-colors ${
+              showSunspots ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+            title="Overlay NOAA sunspot regions, positioned for the frame being shown"
+          >
+            View sunspot regions
+          </button>
+          {onViewInVisualisation && (
+            <button
+              type="button"
+              onClick={onViewInVisualisation}
+              className="px-3 py-1 text-xs rounded bg-purple-700 hover:bg-purple-600 text-white transition-colors"
+              title="Open the 3D visualisation with coronal holes and their streams turned on"
+            >
+              Watch in 3D
+            </button>
+          )}
         </div>
         <span className="text-xs text-neutral-500">
           {windowFrames.length} frame(s)
-          {windowSpan != null && ` · ${windowSpan < 1 ? `${Math.round(windowSpan * 60)} min` : `${windowSpan.toFixed(1)}h`} of data`}
-          {detectProgress && ` · measuring ${detectProgress.done}/${detectProgress.total}`}
+          {windowSpan != null && ` · ${windowSpan < 1 ? `${Math.round(windowSpan * 60)} min` : `${windowSpan.toFixed(1)}h`} shown`}
+          {historyDays >= 0.5 && ` · ${historyDays.toFixed(1)} days tracked`}
+          {store.progress && ` · measuring ${store.progress.done}/${store.progress.total}`}
         </span>
       </div>
 
@@ -549,7 +407,6 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
           <div ref={boxRef} className="relative w-full aspect-square bg-black rounded overflow-hidden">
             {activeUrl ? (
               <img
-                ref={imgRef}
                 src={activeUrl}
                 alt="SUVI 195 with coronal holes outlined"
                 className="w-full h-full object-contain"
@@ -557,14 +414,25 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-neutral-500 text-sm">
-                Loading SUVI 195 imagery...
+                {framesError ?? 'Loading SUVI 195 imagery...'}
               </div>
             )}
-            <canvas
-              ref={canvasRef}
-              className="absolute inset-0 pointer-events-none"
-              style={{ width: '100%', height: '100%' }}
+            <CoronalHoleOverlay
+              detection={detectionForFrame}
+              atMs={activeFrameMs}
+              natural={natural}
+              box={boxSize}
+              orderOf={orderOfHole}
+              selectedId={selectedHoleId}
+              onSelect={selectHoleFromImage}
             />
+            {showSunspots && (
+              <SunspotLabelOverlay
+                labels={regionLabels}
+                boxSize={boxSize}
+                idPrefix="ch-tracker-region"
+              />
+            )}
             {!detectionForFrame && activeUrl && (
               <div className="absolute top-2 left-2 text-[11px] text-neutral-300 bg-black/70 px-2 py-1 rounded">
                 Measuring coronal holes...
@@ -573,7 +441,7 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
           </div>
 
           {/* Playback - the same controls, in the same order, as the SUVI
-              imagery panel above, so the two do not behave differently. */}
+              imagery panel, so the two do not behave differently. */}
           <div className="mt-3 space-y-2 flex-shrink-0">
             <div className="flex flex-wrap items-center gap-2">
               <button
@@ -608,9 +476,7 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
                   className="rounded bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs text-neutral-200"
                   title="Playback speed"
                 >
-                  {SPEED_OPTIONS.map((s) => (
-                    <option key={`ch-speed-${s}`} value={s}>{s}x</option>
-                  ))}
+                  {SPEED_OPTIONS.map((s) => <option key={`ch-speed-${s}`} value={s}>{s}x</option>)}
                 </select>
               </label>
             </div>
@@ -619,15 +485,12 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
               min={0}
               max={Math.max(0, windowFrames.length - 1)}
               value={clampedIndex}
-              onChange={(e) => {
-                setPlaying(false);
-                setFrameIndex(Number(e.target.value));
-              }}
+              onChange={(e) => { setPlaying(false); setFrameIndex(Number(e.target.value)); }}
               className="w-full accent-sky-500"
             />
             <div className="mt-1 text-xs text-neutral-500 text-right">
               {activeFrame ? `Frame: ${fmtNz(activeFrameMs)}` : 'No frame selected'}
-              {detectionForFrame && detectionForFrame.atMs !== activeFrameMs && (
+              {detectionForFrame && Math.abs(detectionForFrame.atMs - activeFrameMs) > 60000 && (
                 <> · outlines measured {fmtRelative(detectionForFrame.atMs)}, rotated to this frame</>
               )}
             </div>
@@ -636,37 +499,51 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
 
         {/* The list and the detail */}
         <div className="lg:w-1/2 flex flex-col gap-3">
-          {detectError && holes.length === 0 && (
-            <div className="text-sm text-neutral-400 bg-neutral-900/60 rounded p-3">{detectError}</div>
+          {store.error && tracks.length === 0 && (
+            <div className="text-sm text-neutral-400 bg-neutral-900/60 rounded p-3">{store.error}</div>
           )}
 
           <div className="flex flex-wrap gap-2">
-            {holes.map((hole, i) => {
-              const colour = HOLE_COLOURS[i % HOLE_COLOURS.length];
-              const isSel = selected?.id === hole.id;
+            {tracks.map((track, i) => {
+              const isSel = selectedTrack?.key === track.key;
               return (
                 <button
-                  key={hole.id}
+                  key={track.key}
                   type="button"
-                  onClick={() => setSelectedId(hole.id)}
+                  onClick={() => setSelectedKey(track.key)}
                   className={`px-3 py-1.5 text-xs rounded border transition-colors ${
-                    isSel ? 'bg-neutral-700 border-neutral-500 text-white' : 'bg-neutral-800/70 border-neutral-700 hover:bg-neutral-700'}`}
+                    isSel ? 'bg-neutral-700 border-neutral-500 text-white'
+                          : 'bg-neutral-800/70 border-neutral-700 hover:bg-neutral-700'} ${
+                    track.present ? '' : 'opacity-60'}`}
+                  title={track.present ? undefined : `Last seen ${fmtRelative(track.lastSeenMs)}`}
                 >
-                  <span style={{ color: colour }} className="font-semibold">{i + 1}</span>
-                  <span className="ml-2 text-neutral-300">{hole.widthDeg.toFixed(0)}° wide</span>
+                  <span style={{ color: holeColour(i) }} className="font-semibold">CH{i + 1}</span>
+                  <span className="ml-2 text-neutral-300">{track.latest.widthDeg.toFixed(0)}°</span>
+                  {!track.present && <span className="ml-1.5 text-neutral-500">gone</span>}
                 </button>
               );
             })}
-            {holes.length === 0 && !detectError && (
+            {tracks.length === 0 && !store.error && (
               <span className="text-sm text-neutral-500">Measuring the latest frame...</span>
             )}
           </div>
 
-          {selected && insight && (() => {
-            const { timing, choice, growth, centralMeridianMs, arrival, samples, pol, season } = insight;
+          {selectedTrack && insight && (() => {
+            const { timing, choice, growth, centralMeridianMs, arrival, samples, pol, season, gone, latest } = insight;
             const band = choice.speedKms != null ? speedBand(choice.speedKms) : null;
             return (
               <div className="bg-neutral-900/60 rounded p-3 text-sm flex flex-col gap-3">
+
+                {/* Whether it is still there. A hole that has rotated off is
+                    still sending wind, so this cannot just be an absence. */}
+                {gone.gone && (
+                  <div className="rounded bg-neutral-800/70 border border-neutral-700 p-2">
+                    <div className="text-xs font-semibold text-amber-300">
+                      {gone.label} · last seen {fmtRelative(selectedTrack.lastSeenMs)}
+                    </div>
+                    <p className="text-xs text-neutral-400 mt-1">{gone.note}</p>
+                  </div>
+                )}
 
                 {/* Speed */}
                 <div>
@@ -691,13 +568,20 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
                   <div className="text-neutral-400 text-xs uppercase tracking-wide mb-1">Stream arrives at Earth</div>
                   {arrival != null ? (
                     <>
-                      <div className="font-mono text-base text-sky-300">
-                        {fmtNz(arrival)} <span className="text-neutral-400">± {ARRIVAL_UNCERTAINTY_HOURS} hours</span>
+                      <div className="flex items-baseline gap-3 flex-wrap">
+                        <span className="font-mono text-base text-sky-300">
+                          {fmtNz(arrival)} <span className="text-neutral-400">± {ARRIVAL_UNCERTAINTY_HOURS} hours</span>
+                        </span>
+                        {arrival > nowMs && (
+                          <span className="font-mono text-sm text-emerald-300">{fmtCountdown(arrival, nowMs)}</span>
+                        )}
                       </div>
                       <div className="text-xs text-neutral-400 mt-0.5">
-                        NZ time, {fmtRelative(arrival)} · window {fmtNz(arrival - ARRIVAL_UNCERTAINTY_HOURS * 3600000)}
+                        NZ time · window {fmtNz(arrival - ARRIVAL_UNCERTAINTY_HOURS * 3600000)}
                         {' to '}{fmtNz(arrival + ARRIVAL_UNCERTAINTY_HOURS * 3600000)}
                       </div>
+                      {/* Where we are in the arrival window, as a bar. */}
+                      <ArrivalBar arrivalMs={arrival} nowMs={nowMs} centralMeridianMs={centralMeridianMs} />
                       <p className="text-xs text-neutral-500 mt-1">
                         Run from the moment the hole {timing.facingEarthOrPast ? 'crossed' : 'crosses'} the middle of the
                         disk ({fmtNz(centralMeridianMs)}), at the speed above. The seven hour window is real: a stream is
@@ -720,24 +604,31 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
                           : 'text-neutral-400'}`}>
                         {pol.summary}
                         {pol.confidence !== 'none' && pol.polarity !== 'unknown' && (
-                          <span className="ml-2 text-[11px] font-normal text-neutral-500">
-                            {pol.confidence} confidence
-                          </span>
+                          <span className="ml-2 text-[11px] font-normal text-neutral-500">{pol.confidence} confidence</span>
                         )}
                       </div>
                       <p className="text-xs text-neutral-400 mt-1">{pol.detail}</p>
                       {season?.note && (
-                        <p className={`text-xs mt-1 ${
-                          season.favourable === true ? 'text-emerald-300'
-                            : season.favourable === false ? 'text-neutral-500'
-                            : 'text-neutral-500'}`}>{season.note}</p>
+                        <p className={`text-xs mt-1 ${season.favourable === true ? 'text-emerald-300' : 'text-neutral-500'}`}>
+                          {season.note}
+                        </p>
                       )}
                     </>
                   ) : polarityError ? (
                     <p className="text-xs text-neutral-500">{polarityError}</p>
+                  ) : gone.gone ? (
+                    <p className="text-xs text-neutral-500">
+                      Polarity is read from the current magnetogram, so it is only available while the hole is visible.
+                    </p>
                   ) : (
                     <p className="text-xs text-neutral-400">Reading the HMI magnetogram...</p>
                   )}
+                </div>
+
+                {/* How it has changed */}
+                <div>
+                  <div className="text-neutral-400 text-xs uppercase tracking-wide mb-1">Width over time</div>
+                  <WidthSparkline samples={samples} />
                 </div>
 
                 {/* Where it is, and what it is doing */}
@@ -746,7 +637,7 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
                     <div className="text-neutral-500">Position</div>
                     <div className="text-neutral-200 font-mono">
                       {timing.longitude >= 0 ? 'W' : 'E'}{Math.abs(timing.longitude).toFixed(0)}°
-                      {' '}{selected.lat >= 0 ? 'N' : 'S'}{Math.abs(selected.lat).toFixed(0)}°
+                      {' '}{latest.lat >= 0 ? 'N' : 'S'}{Math.abs(latest.lat).toFixed(0)}°
                     </div>
                   </div>
                   <div>
@@ -760,16 +651,16 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
                   <div>
                     <div className="text-neutral-500">Size</div>
                     <div className="text-neutral-200 font-mono">
-                      {selected.widthDeg.toFixed(0)}° × {(selected.heightDeg ?? selected.widthDeg).toFixed(0)}°
+                      {latest.widthDeg.toFixed(0)}° × {(latest.heightDeg ?? latest.widthDeg).toFixed(0)}°
                     </div>
                   </div>
                   <div>
                     <div className="text-neutral-500">Trend</div>
-                    <div className={`${
+                    <div className={
                       growth.phase === 'opening fast' ? 'text-orange-300'
                         : growth.phase === 'opening' ? 'text-yellow-300'
                         : growth.phase === 'closing' ? 'text-sky-300'
-                        : 'text-neutral-200'}`}>
+                        : 'text-neutral-200'}>
                       {growth.label}
                       {growth.widthPerDay != null && Math.abs(growth.widthPerDay) >= 0.5 && (
                         <span className="text-neutral-500 font-mono ml-1">
@@ -781,7 +672,7 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
                 </div>
 
                 <div className="text-[11px] text-neutral-600">
-                  {samples.length} measurement{samples.length === 1 ? '' : 's'} of this hole across the window
+                  {samples.length} measurement{samples.length === 1 ? '' : 's'} of this hole
                   {growth.days > 0 && `, spanning ${growth.days < 1 ? `${Math.round(growth.days * 24)} hours` : `${growth.days.toFixed(1)} days`}`}
                   . Speeds come from the hole's width and darkness, which is an estimate, not a measurement of the wind.
                 </div>
@@ -789,6 +680,69 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
             );
           })()}
         </div>
+      </div>
+    </div>
+  );
+};
+
+/** Where now sits between the hole facing Earth and its stream arriving. */
+const ArrivalBar: React.FC<{ arrivalMs: number; nowMs: number; centralMeridianMs: number }> = ({
+  arrivalMs, nowMs, centralMeridianMs,
+}) => {
+  const span = arrivalMs - centralMeridianMs;
+  if (!(span > 0)) return null;
+  const progress = Math.max(0, Math.min(1, (nowMs - centralMeridianMs) / span));
+  return (
+    <div className="mt-2">
+      <div className="h-1.5 rounded bg-neutral-800 overflow-hidden">
+        <div className="h-full bg-gradient-to-r from-sky-600 to-emerald-400" style={{ width: `${progress * 100}%` }} />
+      </div>
+      <div className="flex justify-between text-[10px] text-neutral-600 mt-0.5">
+        <span>Faced Earth</span>
+        <span>{(progress * 100).toFixed(0)}% of the way here</span>
+        <span>Arrives</span>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * The hole's width over the measurements we have.
+ *
+ * A number and a trend word say what is happening; the shape says whether it
+ * has been steady for a day or is bouncing around, which is the difference
+ * between a trend worth believing and one measured through patchy frames.
+ */
+const WidthSparkline: React.FC<{ samples: ChSample[] }> = ({ samples }) => {
+  const points = [...samples].sort((a, b) => a.atMs - b.atMs);
+  if (points.length < 2) {
+    return <p className="text-xs text-neutral-500">Only one measurement so far, so there is no trend to draw yet.</p>;
+  }
+
+  const W = 260, H = 44, PAD = 3;
+  const t0 = points[0].atMs, t1 = points[points.length - 1].atMs;
+  const widths = points.map((p) => p.widthDeg);
+  const lo = Math.min(...widths), hi = Math.max(...widths);
+  const span = Math.max(1, hi - lo);
+  const x = (ms: number) => PAD + ((ms - t0) / Math.max(1, t1 - t0)) * (W - PAD * 2);
+  const y = (w: number) => H - PAD - ((w - lo) / span) * (H - PAD * 2);
+
+  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.atMs).toFixed(1)},${y(p.widthDeg).toFixed(1)}`).join(' ');
+  const area = `${path} L${x(t1).toFixed(1)},${H} L${x(t0).toFixed(1)},${H} Z`;
+  const hours = (t1 - t0) / 3600000;
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-11" preserveAspectRatio="none" role="img"
+           aria-label={`Width from ${lo.toFixed(0)} to ${hi.toFixed(0)} degrees`}>
+        <path d={area} fill="rgba(56,189,248,0.15)" />
+        <path d={path} fill="none" stroke="#38bdf8" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+        <circle cx={x(t1)} cy={y(points[points.length - 1].widthDeg)} r="2.5" fill="#38bdf8" />
+      </svg>
+      <div className="flex justify-between text-[10px] text-neutral-600">
+        <span>{lo.toFixed(0)}° min</span>
+        <span>{hours < 48 ? `${hours.toFixed(0)} hours` : `${(hours / 24).toFixed(1)} days`}</span>
+        <span>{hi.toFixed(0)}° max</span>
       </div>
     </div>
   );
