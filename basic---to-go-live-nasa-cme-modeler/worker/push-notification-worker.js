@@ -643,8 +643,34 @@ const FLARE_THRESHOLDS = [
 ];
 const FLARE_PEAK_COOLDOWN_MINUTES = 15;
 const FLARE_M1_THRESHOLD = 1e-5;
-const FLARE_DECLINE_MS = 3 * 60 * 1000;
+// How many consecutive falling readings confirm a peak. The GOES feed is
+// one-minute cadence, so two in a row is the flux having genuinely turned the
+// corner rather than wobbling at the top - and it fires as soon as that is
+// true, instead of waiting out a fixed timer that did not care whether the
+// flux was still falling or had simply stopped climbing.
+const FLARE_DECLINE_SAMPLES = 2;
+// Backstop. A noisy decay can oscillate without ever giving two clean falls in
+// a row, and a big X flare can sit above M1 for an hour - so if the flux has
+// been off its peak this long, report the peak anyway rather than sit on it.
+const FLARE_DECLINE_MAX_MS = 20 * 60 * 1000;
 const FLARE_STALE_MS   = 4 * 60 * 60 * 1000;
+
+/**
+ * How many readings at the end of the series each fell below the one before.
+ *
+ * Counts backwards from the newest sample and stops at the first rise, so a
+ * return of 2 means the flux has dropped twice in succession - the newest
+ * reading is below the previous one, and that one is below the one before it.
+ * Equal readings do not count as a fall: a plateau is not a decline.
+ */
+function consecutiveFalls(series) {
+  let n = 0;
+  for (let i = series.length - 1; i > 0; i--) {
+    if (series[i].flux < series[i - 1].flux) n++;
+    else break;
+  }
+  return n;
+}
 
 async function checkSolarFlares(env, /** @type {any[]|null} */ allData = null, note = /** @type {(name?: string, status?: string, detail?: string) => void} */ (() => {})) {
   try {
@@ -758,13 +784,24 @@ async function checkSolarFlares(env, /** @type {any[]|null} */ allData = null, n
         }
         note('flare', 'rising', `${cls}, new peak`);
       } else {
-        if (!prev.declineStart) {
-          newState.declineStart = latest.t;
-        } else if (latest.t - prev.declineStart >= FLARE_DECLINE_MS) {
+        // Off the peak. Confirm it by looking at the feed's own samples rather
+        // than at the clock: the last FLARE_DECLINE_SAMPLES readings each have
+        // to be below the one before them.
+        if (!prev.declineStart) newState.declineStart = latest.t;
+
+        const falls = consecutiveFalls(xraySeries);
+        const offPeakMs = latest.t - (prev.declineStart ?? latest.t);
+
+        if (falls >= FLARE_DECLINE_SAMPLES) {
           peaked = true;
-          console.log(`[flare] Flux declining for ${Math.round((latest.t - prev.declineStart) / 60000)} min - peaked`);
+          console.log(`[flare] Flux fell for ${falls} readings in a row - peaked`);
+        } else if (offPeakMs >= FLARE_DECLINE_MAX_MS) {
+          peaked = true;
+          console.log(`[flare] Flux off peak for ${Math.round(offPeakMs / 60000)} min without a clean decline - calling it peaked`);
+        } else {
+          note('flare', 'rising',
+               `${cls}, past peak, ${falls}/${FLARE_DECLINE_SAMPLES} falling readings`);
         }
-        note('flare', 'rising', `${cls}, past peak, waiting for decline confirmation`);
       }
 
       if (peaked) {
@@ -1504,12 +1541,12 @@ const ALL_TOPICS = [
   // solar
   'flare-M1', 'flare-M5', 'flare-X1',
   'flare-X5', 'flare-X10', 'shock-ff',
-  'shock-sf', 'shock-fr', 'shock-sr',
+  'flare-peak', 'shock-sf', 'shock-fr',
+  'shock-sr',
   // announcements
   'admin-broadcast',
   // no group - live but not shown in the app
-  'flare-event', 'flare-peak', 'substorm-forecast',
-  'shock-imf',
+  'flare-event', 'substorm-forecast', 'shock-imf',
 ];
 
 // What a subscriber gets for a topic they have never been asked about. This

@@ -128,6 +128,65 @@ console.log('\nAn X5 flare, minute by minute');
         'no threshold fires a second time on the way down', decline.join(', '));
 }
 
+// ── 1b. the peak waits for two falling readings ────────────────────────────
+// "Past the peak" used to mean a three-minute timer that started the moment
+// flux stopped climbing and never looked at the flux again - so a flare that
+// plateaued, or wobbled once and kept rising, was called peaked on the clock
+// alone. It now has to actually fall, twice in a row, on the feed's own
+// one-minute cadence.
+console.log('\nConfirming a peak needs the flux to actually fall');
+{
+  /** Put the detector in mid-flare with a known peak, then feed it a tail. */
+  const midFlare = (declineStartMsAgo = null) => {
+    store.clear();
+    store.set('CONFIG_THRESHOLDS', JSON.stringify(CONFIG));
+    store.set('STATE_flare', JSON.stringify({
+      status: 'active', peakFlux: 6e-4, peakTime: Date.now() - 5 * 60000,
+      notifiedThresholds: ['flare-M1', 'flare-M5', 'flare-X1', 'flare-X5'],
+      declineStart: declineStartMsAgo == null ? null : Date.now() - declineStartMsAgo,
+      stateEnteredAt: Date.now() - 10 * 60000,
+    }));
+  };
+
+  // One fall, then a rise. Not a peak - this is the wobble near the top.
+  midFlare();
+  await W.checkSolarFlares(env, xray([4.0e-4, 3.0e-4, 3.5e-4]), () => {});
+  check((await queuedTopics()).length === 0,
+        'a single fall followed by a rise is not a peak');
+
+  // Flat. A plateau is not a decline, however long it lasts.
+  midFlare();
+  await W.checkSolarFlares(env, xray([3.0e-4, 3.0e-4, 3.0e-4]), () => {});
+  check((await queuedTopics()).length === 0,
+        'a plateau is not a decline');
+
+  // Two consecutive falls. This is the peak.
+  midFlare();
+  await W.checkSolarFlares(env, xray([4.0e-4, 3.0e-4, 2.0e-4]), () => {});
+  const fired = await queuedTopics();
+  check(fired.includes('flare-peak'),
+        'two falling readings in a row confirms the peak', fired.join(', ') || 'nothing');
+
+  // Still both notifications, one of which the user can now switch off.
+  check(fired.includes('flare-event'),
+        'and the summary still goes out alongside it', fired.join(', '));
+
+  // The backstop: a decay too noisy to ever give two clean falls must not
+  // leave the flare open forever.
+  midFlare(25 * 60 * 1000);
+  await W.checkSolarFlares(env, xray([3.0e-4, 3.0e-4, 3.0e-4]), () => {});
+  const late = await queuedTopics();
+  check(late.includes('flare-peak'),
+        'a flare off its peak for 20 minutes is called peaked anyway',
+        late.join(', ') || 'nothing - the flare would stay open indefinitely');
+
+  // ...but not before that, or the backstop would be the real trigger.
+  midFlare(5 * 60 * 1000);
+  await W.checkSolarFlares(env, xray([3.0e-4, 3.0e-4, 3.0e-4]), () => {});
+  check((await queuedTopics()).length === 0,
+        'and not one minute earlier than that');
+}
+
 // ── 2. a quiet sun stays quiet ─────────────────────────────────────────────
 console.log('\nA quiet day');
 {
