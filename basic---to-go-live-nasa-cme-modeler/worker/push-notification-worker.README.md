@@ -171,6 +171,9 @@ said on.
   "byCategory": { "overnight-watch": 0 },
   "overnightModes": { "eye": 0, "phone": 0, "camera": 0 },
   "byPushService": { "apple": 0, "google": 0 },
+  "bySite": { "prod": 0, "dev": 0, "unknown": 0 },
+  "byOrigin": { "https://www.spottheaurora.co.nz": 0,
+                "https://cme-modeler.pages.dev": 0 },
   "recentSends": [{ "topic": "", "accepted": 0, "clicked": 0, "clickRate": 0 }] }
 ```
 
@@ -185,6 +188,46 @@ failures cluster by platform - when a send goes badly, it says whose devices.
 The census shards the same way as delivery, so it never walks the whole list
 in one invocation. `/diagnostics` reads this snapshot rather than counting
 subscribers itself.
+
+## Two front ends
+
+The live site and the Pages dev deploys both talk to this worker:
+
+| Site | Origin | `site` |
+| --- | --- | --- |
+| Live | `https://spottheaurora.co.nz`, `https://www.spottheaurora.co.nz` | `prod` |
+| Dev | `https://cme-modeler.pages.dev` and any `<hash>.cme-modeler.pages.dev` preview | `dev` |
+| Local | `http://localhost:*`, `http://127.0.0.1:*` | `dev` |
+
+A push subscription belongs to the origin that created it, because the browser
+scopes the service worker that way. So the same person on both sites is **two
+independent subscriptions**, and both receive alerts. That is the browser's
+model rather than a double-count: `byOrigin` in `/stats` says which URL each
+one came from.
+
+Real alerts go to everyone on both sites - someone using the dev site is still
+someone waiting for the aurora. The `site` filter is for tests:
+
+    /dry-run?secret=...&topic=flare-X1&site=dev     rehearse against dev only
+    /trigger-test-push?secret=...&site=dev          send to dev subscribers only
+    /trigger-test-push?secret=...&site=all          everyone, both sites
+
+`/trigger-test-push` **defaults to the site it was called from**, so opening
+the dev site and triggering a test cannot light up live subscribers' phones.
+Pass `site=all` when you mean everyone. `/send-broadcast` takes `"site"` in
+its JSON body and defaults to everyone, because a broadcast usually is for
+everyone.
+
+Anyone who subscribed before origins were recorded shows as `unknown` in
+`bySite` and as `(recorded before origins were tracked)` in `byOrigin`. They
+still receive every unscoped alert; the label clears the next time they open
+the app, save a preference, or share their location. It does not clear on its
+own, so a residual count there is expected rather than a fault.
+
+CORS is `*` on every route. Nothing here is cookie-authenticated - the write
+routes are protected by the secret, not by origin - so adding an origin
+allowlist would not be a security boundary, and would break the live site the
+moment a hostname changed.
 
 ## Telling whether it is working
 
@@ -206,13 +249,14 @@ cooldown stopped it. `error` means it threw.
 
 ## Testing changes
 
-`npm run test:all` runs all four suites. Worth doing before pasting anything
+`npm run test:all` runs every suite. Worth doing before pasting anything
 into the dashboard.
 
 | Suite | What it covers |
 | --- | --- |
 | `test:topics` | the app and this worker agree about every topic; nothing sends into a void; no topic is live without either a toggle or a written reason |
 | `test:worker` | the detectors against synthetic solar wind, including cases that must stay quiet |
+| `test:sites` | both front ends: origins classify correctly, a scoped test cannot reach live subscribers, an unscoped alert reaches both, and `/stats` breaks the count down by URL |
 | `test:detectors` | a full X5 flare minute by minute, a CME arrival with and without the temperature channel, a quiet day, and a half-configured worker |
 | `test:outbox` | delivery, the sweep's recovery, the ledger, click counting, the migration, an oversized shard, a rate-limiting push service and a cron tick racing a send |
 | `test:scale` | 80,000 subscribers with dispatches dropped and pushes failing, asserting everyone is reached exactly once. Not in `test:all` - takes half a minute |

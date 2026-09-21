@@ -70,6 +70,83 @@ const POLE_LON_RAD = -72.68 * Math.PI / 180;
 
 const kv = (env) => env.SUBSCRIPTIONS_KV;
 
+// ── Which site a subscriber came from ──────────────────────────────────────
+//
+// One worker serves two front ends: the live site and the Pages dev/preview
+// deploys. A push subscription belongs to the origin that created it - the
+// browser scopes the service worker that way - so the same person on both is
+// two independent subscriptions that both want alerts. That is fine, and real
+// alerts go to both, because someone using the dev site is still someone
+// waiting for the aurora.
+//
+// What is not fine is not knowing which is which. Without it, a test push
+// aimed at the dev site reaches every live subscriber, and the census cannot
+// say whether a number is real users or a browser tab left open on a preview
+// deploy. So the origin is recorded, classified, and can be filtered on.
+const SITE_PATTERNS = [
+  ['prod', /^https:\/\/(www\.)?spottheaurora\.co\.nz$/],
+  // The production Pages project and every preview deploy under it
+  // (<hash>.cme-modeler.pages.dev), plus a local dev server.
+  ['dev',  /^https:\/\/([a-z0-9-]+\.)?cme-modeler\.pages\.dev$/],
+  ['dev',  /^http:\/\/localhost(:\d+)?$/],
+  ['dev',  /^http:\/\/127\.0\.0\.1(:\d+)?$/],
+];
+
+/** 'prod', 'dev', or 'other' for an origin string. */
+function classifySite(origin) {
+  if (!origin) return 'unknown';
+  for (const [site, re] of SITE_PATTERNS) if (re.test(origin)) return site;
+  return 'other';
+}
+
+/**
+ * The origin a request came from, and what that origin is.
+ *
+ * Browsers send Origin on cross-origin POSTs, which every call from either
+ * front end is - the worker is on its own hostname. Referer is the fallback
+ * for the few request shapes that omit Origin; a call with neither (curl, the
+ * cron) is 'unknown' rather than being guessed at.
+ */
+function siteOf(request) {
+  let origin = request.headers.get('Origin');
+  if (!origin) {
+    const ref = request.headers.get('Referer');
+    if (ref) { try { origin = new URL(ref).origin; } catch { /* ignore */ } }
+  }
+  return { origin: origin || null, site: classifySite(origin) };
+}
+
+/**
+ * Add the origin to a subscriber record, reporting whether anything changed.
+ *
+ * Only the endpoints that already read a record call this, and it only asks
+ * for a write when the answer is new - a device that reappears from the same
+ * site costs nothing. Records written before this existed have no origin and
+ * read as 'unknown' until their owner next opens the app.
+ */
+function stampOrigin(stored, request) {
+  const { origin, site } = siteOf(request);
+  if (!origin || site === 'unknown') return false;
+  if (stored.origin === origin && stored.site === site) return false;
+  stored.origin = origin;
+  stored.site = site;
+  return true;
+}
+
+/**
+ * Read a site filter off a request.
+ *
+ * Absent means everyone, which is what a real alert wants. 'prod' or 'dev'
+ * narrows a test to one front end so rehearsing on the dev site cannot light
+ * up live subscribers' phones.
+ */
+function siteFilterFrom(value) {
+  if (value == null || value === '' || value === 'all') return null;
+  const v = String(value).toLowerCase();
+  if (v === 'prod' || v === 'dev' || v === 'other' || v === 'unknown') return v;
+  return undefined;   // invalid - the caller turns this into a 400
+}
+
 // Why each detector did or did not fire on the last scheduled run. Written to
 // KV so /diagnostics can show it without anyone reading Cloudflare logs.
 const DIAG_KEY = 'STATE_diagnostics';
@@ -1762,10 +1839,14 @@ async function handleDiagnostics(request, env) {
 
 async function handleSendBroadcast(request, env) {
   try {
-    const { secret, title, body, url, dryRun = false } = await request.json();
+    const { secret, title, body, url, dryRun = false, site = null } = await request.json();
     const validSecrets = [env.TRIGGER_SECRET, env.BANNER_AUTH_TOKEN].filter(Boolean);
     if (!secret || !validSecrets.includes(secret)) return json({ error: 'Unauthorized' }, 401);
     if (!title || !body) return json({ error: 'title and body are required' }, 400);
+    const siteFilter = siteFilterFrom(site);
+    if (siteFilter === undefined) {
+      return json({ error: `unknown site '${site}'`, sites: ['all', 'prod', 'dev'] }, 400);
+    }
     const topic = 'admin-broadcast';
     const payload = { title, body, tag: topic, data: { url: url || '/', category: topic }, ts: Date.now() };
     // A dry run must not leave a trace that looks like a real alert went out.
@@ -1774,9 +1855,10 @@ async function handleSendBroadcast(request, env) {
     }
     // Delivery is now a job rather than a single pass, so this returns
     // immediately with an id. Watch it with /job?id=...&secret=...
-    const jobId = await enqueueDelivery(env, { kind: 'topic', topic, payload, dryRun: !!dryRun });
+    const jobId = await enqueueDelivery(env, { kind: 'topic', topic, payload, dryRun: !!dryRun, site: siteFilter });
     return json({
       success: true, queued: true, dryRun, jobId, watch: `/job?id=${jobId}`,
+      site: siteFilter ?? 'all',
       note: dryRun
         ? 'DRY RUN - walks every subscriber and counts who would receive this. No notification is sent.'
         : 'Live send. Watch /job for progress.',
@@ -1810,6 +1892,9 @@ async function handleUpdateLocation(request, env) {
     const stored = await kv(env).get(id, 'json');
     if (!stored?.subscription) return json({ ok: false, reason: 'no subscription' });
     stored.location = { ...stored.location, latitude, longitude, locationSource: 'gps', locationUpdatedAt: Date.now() };
+    // This record is being written anyway, so backfill the origin for anyone
+    // who subscribed before it was recorded.
+    stampOrigin(stored, request);
     await kv(env).put(id, JSON.stringify(stored));
     return json({ ok: true });
   } catch (e) {
@@ -1854,6 +1939,10 @@ async function handleSaveSubscription(request, env) {
       // being refreshed by a live app rather than just how many rows exist.
       lastSeenAt: Date.now(),
     };
+    // Which front end this subscription belongs to. Set here because this is
+    // the one endpoint every subscriber passes through when they opt in.
+    const { origin, site } = siteOf(request);
+    if (origin && site !== 'unknown') { record.origin = origin; record.site = site; }
     await kv(env).put(id, JSON.stringify(record));
     // The app stores this id so a single device can be targeted for testing.
     return json({ message: 'Saved', id }, 201);
@@ -1900,10 +1989,25 @@ async function handleTriggerTestPush(request, env) {
     const secret = url.searchParams.get('secret');
     if (!secret || secret !== env.TRIGGER_SECRET) return new Response('Forbidden', { status: 403 });
     const type = (url.searchParams.get('type') || 'test').toLowerCase();
+    // Defaults to the site the request came from, so triggering a test with
+    // the dev site open cannot light up live subscribers' phones. Pass
+    // ?site=all to mean it.
+    const asked = url.searchParams.get('site') ?? siteOf(request).site;
+    const siteFilter = siteFilterFrom(asked === 'unknown' ? 'all' : asked);
+    if (siteFilter === undefined) {
+      return json({ error: `unknown site '${asked}'`, sites: ['all', 'prod', 'dev'] }, 400);
+    }
     const snapshot = await buildStatusSnapshot(env);
     const payload  = buildTestPayloadByType(type, url, snapshot);
-    const jobId = await enqueueDelivery(env, { kind: 'topic', topic: payload.topic, payload });
-    return json({ message: `Test push queued for topic '${payload.topic}'.`, jobId, watch: `/job?id=${jobId}` });
+    const jobId = await enqueueDelivery(env, { kind: 'topic', topic: payload.topic, payload, site: siteFilter });
+    return json({
+      message: `Test push queued for topic '${payload.topic}'.`,
+      site: siteFilter ?? 'all',
+      note: siteFilter
+        ? `Only ${siteFilter} subscribers will receive this. Pass ?site=all to reach everyone.`
+        : 'Every subscriber on both sites will receive this.',
+      jobId, watch: `/job?id=${jobId}`,
+    });
   } catch (err) {
     reportError(err, env, { handler: 'handleTriggerTestPush' });
     return json({ error: 'Failed.', message: err.message }, 500);
@@ -2250,14 +2354,19 @@ function newJobId() {
  */
 /**
  * @param {any} env
- * @param {{ kind: string, topic?: string|null, payload?: any, params?: any, dryRun?: boolean }} job
+ * @param {{ kind: string, topic?: string|null, payload?: any, params?: any, dryRun?: boolean, site?: string|null }} job
  */
-async function enqueueDelivery(env, { kind, topic = null, payload = null, params = null, dryRun = false }) {
+async function enqueueDelivery(env, { kind, topic = null, payload = null, params = null, dryRun = false, site = null }) {
   const id = newJobId();
   const job = {
     id, kind, topic,
     payload: payload ?? null,
     params: params ?? null,
+    // null means every subscriber, which is what a real alert wants: someone
+    // using the dev site is still waiting for the aurora. Set to 'prod' or
+    // 'dev' it narrows the send to one front end, so a test aimed at the dev
+    // site cannot reach live subscribers.
+    site: site ?? null,
     // A dry run does everything except the push itself: the same sharding, the
     // same walk of every record, the same preference checks. It answers "how
     // many people would this reach" without anybody's phone lighting up, which
@@ -2279,7 +2388,7 @@ async function enqueueDelivery(env, { kind, topic = null, payload = null, params
     }),
     { expirationTtl: JOB_TTL_SECONDS },
   )));
-  console.log(`[outbox] job ${id} queued: kind=${kind} topic=${topic ?? '-'}${dryRun ? ' (DRY RUN - nothing will be sent)' : ''} across ${SHARD_CHARS.length} shards`);
+  console.log(`[outbox] job ${id} queued: kind=${kind} topic=${topic ?? '-'}${site ? ` site=${site}` : ''}${dryRun ? ' (DRY RUN - nothing will be sent)' : ''} across ${SHARD_CHARS.length} shards`);
   await dispatchShards(env, id, SHARD_CHARS);
   return id;
 }
@@ -2596,6 +2705,13 @@ async function runShard(env, jobId, ch) {
  */
 async function decideForSubscriber(env, job, keyName, stored, meter = { ops: 0 }) {
   const prefs = stored.preferences || {};
+
+  // A site-scoped job skips everyone else outright, before any preference or
+  // location check. Records written before the origin was recorded have no
+  // site, so they only match a filter that asks for 'unknown' - a narrowed
+  // test should reach the devices it names and nobody else.
+  if (job.site && (stored.site ?? 'unknown') !== job.site) return null;
+
   // Counts the KV calls this makes so the shard can budget honestly. A
   // subscriber who is skipped after a cooldown read still costs a subrequest.
   const count = (n = 1) => { meter.ops += n; };
@@ -2987,13 +3103,18 @@ async function handleDryRun(request, env) {
     return json({ error: `unknown topic '${topic}'`, topics: ALL_TOPICS }, 400);
   }
 
+  const siteFilter = siteFilterFrom(url.searchParams.get('site'));
+  if (siteFilter === undefined) {
+    return json({ error: 'unknown site', sites: ['all', 'prod', 'dev'] }, 400);
+  }
+
   const jobId = await enqueueDelivery(env, {
-    kind: 'topic', topic, dryRun: true,
+    kind: 'topic', topic, dryRun: true, site: siteFilter,
     payload: { title: 'Dry run', body: 'Nobody receives this.', tag: topic, data: { url: '/' } },
   });
 
   return json({
-    dryRun: true, topic, jobId,
+    dryRun: true, topic, jobId, site: siteFilter ?? 'all',
     watch: `/job?id=${jobId}&secret=...`,
     note: 'Walking every subscriber now. Nothing is sent. Read /job in a few '
         + 'seconds - "sent" is how many people a real alert on this topic would reach.',
@@ -3122,6 +3243,12 @@ async function runCensusShard(env, censusId, ch) {
   const unreadableShapes = resuming ? { ...prior.unreadableShapes } : {};
   const overnightModes = resuming ? { ...prior.overnightModes } : {};
   const services = resuming ? { ...prior.services } : {};
+  // Which front end each subscription came from, both as a category and as the
+  // literal origin. The origin is the one that answers "how many on the live
+  // site, how many on the dev one" without anybody having to remember which
+  // hostname is which.
+  const sites = resuming ? { ...prior.sites } : {};
+  const origins = resuming ? { ...prior.origins } : {};
   const activeCutoff = Date.now() - ACTIVE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
   let cursor = resuming ? (prior.cursor ?? undefined) : undefined;
@@ -3173,6 +3300,13 @@ async function runCensusShard(env, censusId, ch) {
       const svc = pushServiceOf(stored.subscription?.endpoint);
       services[svc] = (services[svc] ?? 0) + 1;
 
+      // 'unknown' is a record written before the origin was recorded, not a
+      // record that came from nowhere. It shrinks as people reopen the app.
+      const site = stored.site ?? 'unknown';
+      sites[site] = (sites[site] ?? 0) + 1;
+      const origin = stored.origin ?? '(recorded before origins were tracked)';
+      origins[origin] = (origins[origin] ?? 0) + 1;
+
       let on = 0;
       for (const t of ALL_TOPICS) if (stored?.preferences?.[t] === true) { counts[t]++; on++; }
       if (on > 0) anyTopic++;
@@ -3192,6 +3326,7 @@ async function runCensusShard(env, censusId, ch) {
     censusId, shard: ch, state, cursor: complete ? null : (cursor ?? null),
     lastKey: complete ? null : lastKey,
     subscribers, withGps, active, anyTopic, counts, overnightModes, services,
+    sites, origins,
     unreadable, unreadableShapes, at: Date.now(),
   }), { expirationTtl: CENSUS_SHARD_TTL });
 
@@ -3228,6 +3363,8 @@ async function tryFinishCensus(env, censusId) {
   let subscribers = 0, withGps = 0, active = 0, anyTopic = 0, unreadable = 0;
   const overnightModes = {};
   const services = {};
+  const sites = {};
+  const origins = {};
   const unreadableShapes = {};
   for (const p of parts) {
     subscribers += p.subscribers; withGps += p.withGps;
@@ -3238,6 +3375,12 @@ async function tryFinishCensus(env, censusId) {
     }
     for (const [svc, n] of Object.entries(p.services ?? {})) {
       services[svc] = (services[svc] ?? 0) + n;
+    }
+    for (const [site, n] of Object.entries(p.sites ?? {})) {
+      sites[site] = (sites[site] ?? 0) + n;
+    }
+    for (const [origin, n] of Object.entries(p.origins ?? {})) {
+      origins[origin] = (origins[origin] ?? 0) + n;
     }
     unreadable += p.unreadable ?? 0;
     for (const [shape, n] of Object.entries(p.unreadableShapes ?? {})) {
@@ -3262,6 +3405,12 @@ async function tryFinishCensus(env, censusId) {
     byCategory,
     overnightModes,
     byPushService: Object.fromEntries(Object.entries(services).sort((a, b) => b[1] - a[1])),
+    // Which site each subscription was created on. A push subscription belongs
+    // to the origin that made it, so the same person on both sites is two rows
+    // here and receives an alert on both - that is the browser's model, not a
+    // double-count bug.
+    bySite: Object.fromEntries(Object.entries(sites).sort((a, b) => b[1] - a[1])),
+    byOrigin: Object.fromEntries(Object.entries(origins).sort((a, b) => b[1] - a[1])),
     // Should be zero. Anything here is somebody who can never be sent to,
     // and the shape says what is wrong with their record.
     undeliverable: unreadable,
@@ -3270,6 +3419,10 @@ async function tryFinishCensus(env, censusId) {
     note: 'Counted by walking every subscriber record. Refreshed about once an hour. '
         + 'subscribers counts saved push subscriptions; some belong to devices that have '
         + 'since uninstalled - those are pruned when a send to them comes back 410.',
+    originsNote: 'byOrigin is the site each subscription was created on. Anyone who '
+        + 'subscribed before origins were tracked shows as "(recorded before origins '
+        + 'were tracked)" until they next open the app, save a preference or share '
+        + 'their location.',
   };
   await kv(env).put(STATS_KEY, JSON.stringify(snapshot, null, 2));
   console.log(`[census] ${subscribers} subscribers, ${anyTopic} with at least one topic on`);
