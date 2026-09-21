@@ -105,6 +105,7 @@ const callUpstream = async (binding, url, init) => {
 };
 
 async function fetchCoronalHoles(env) {
+  const startedMs = Date.now();
   try {
     // /ch-history, not /history. The app has always called it by that name;
     // this worker guessed, and a guess that 404s looks exactly like a quiet
@@ -116,18 +117,27 @@ async function fetchCoronalHoles(env) {
     // 404 is the signature of a subrequest being routed back to this worker,
     // whose own 404 body is distinctive - and that is a completely different
     // problem from an upstream that is genuinely missing a route.
-    if (!res.ok) return { holes: [], asOfMs: null, upstream: await describeFailure(res) };
+    if (!res.ok) {
+      return { holes: [], asOfMs: null, upstream: await describeFailure(res), ms: Date.now() - startedMs };
+    }
     const data = await res.json();
     const snapshots = Array.isArray(data?.snapshots) ? data.snapshots : [];
-    if (snapshots.length === 0) return { holes: [], asOfMs: null, upstream: 'no snapshots' };
+    if (snapshots.length === 0) {
+      return { holes: [], asOfMs: null, upstream: 'no snapshots', ms: Date.now() - startedMs };
+    }
     const newest = snapshots.reduce((a, b) => (a.timestampMs >= b.timestampMs ? a : b));
     return {
       holes: newest.coronalHoles ?? [],
       asOfMs: newest.timestampMs ?? null,
       upstream: `ok, ${snapshots.length} snapshots`,
+      ms: Date.now() - startedMs,
     };
   } catch (error) {
-    return { holes: [], asOfMs: null, upstream: `failed: ${String(error?.message ?? error)}` };
+    return {
+      holes: [], asOfMs: null,
+      upstream: `failed: ${String(error?.message ?? error)}`,
+      ms: Date.now() - startedMs,
+    };
   }
 }
 
@@ -136,11 +146,14 @@ async function fetchCoronalHoles(env) {
 // feed alike, and those are three different problems.
 let lastWindNote = 'not fetched';
 let lastWindVia = 'unknown';
+let lastWindMs = null;
 let lastHolesVia = 'unknown';
 let lastInputNotes = null;
 
 async function fetchObservedWind(env) {
   lastWindNote = 'not fetched';
+  const startedMs = Date.now();
+  lastWindMs = null;
   try {
     const { res, via } = await callUpstream(env?.RTSW, RTSW_URL, { cf: { cacheTtl: 120 } });
     lastWindVia = via;
@@ -155,9 +168,11 @@ async function fetchObservedWind(env) {
       bzNt: Number(row.bz ?? row.bz_gsm ?? null),
     })).filter((s) => Number.isFinite(s.atMs));
     lastWindNote = `ok, ${parsed.length} of ${rows.length} rows usable`;
+    lastWindMs = Date.now() - startedMs;
     return parsed;
   } catch (error) {
     lastWindNote = `failed: ${String(error?.message ?? error)}`;
+    lastWindMs = Date.now() - startedMs;
     return [];
   }
 }
@@ -176,7 +191,8 @@ export async function runForecast(env, modules) {
   const { buildForecastTimeline, chEarthConnection, hssArrivalEnsemble,
           measurementConfidence, buildOutlook, solarDiskOrientation } = modules;
 
-  const [{ holes, asOfMs, upstream: holesNote }, observed] = await Promise.all([
+  const modelStartedMs = Date.now();
+  const [{ holes, asOfMs, upstream: holesNote, ms: holesMs }, observed] = await Promise.all([
     fetchCoronalHoles(env),
     fetchObservedWind(env),
   ]);
@@ -184,9 +200,15 @@ export async function runForecast(env, modules) {
     coronalHoles: holesNote ?? 'unknown',
     holeCount: holes.length,
     holesVia: lastHolesVia,
+    holesMs,
     wind: lastWindNote,
     windSamples: observed.length,
     windVia: lastWindVia,
+    windMs: lastWindMs,
+    // Both fetches run in parallel, so the model's own cost is whatever is
+    // left after the slower of the two. That is the number to look at before
+    // blaming the physics for a slow run.
+    fetchMs: Date.now() - modelStartedMs,
   };
 
   const now = Date.now();
@@ -246,7 +268,7 @@ export async function runForecast(env, modules) {
     streams,
     timeline,
     outlook: buildOutlook(timeline),
-    inputs: lastInputNotes,
+    inputs: { ...lastInputNotes, modelMs: Date.now() - modelStartedMs - lastInputNotes.fetchMs },
   };
 
   await env.FORECAST_KV.put(TIMELINE_KEY, JSON.stringify(payload), { expirationTtl: 86400 });
