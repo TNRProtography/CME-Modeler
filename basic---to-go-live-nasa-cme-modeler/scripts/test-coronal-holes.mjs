@@ -25,12 +25,16 @@ async function load(rel) {
   return import(pathToFileURL(out).href);
 }
 await load('utils/solarEphemeris.ts');
-await load('utils/solarWindModel.ts');
+const W = await load('utils/solarWindModel.ts');
 await load('utils/coronalHoleData.ts');
 await load('utils/suviCoronalHoleDetector.ts');
 const D = await load('utils/solarDisk.ts');
 const C = await load('utils/coronalHoleDynamics.ts');
 const H = await load('utils/coronalHoleHistory.ts');
+
+// The real model the panel uses, not a mirror of it: a mirror drifts the
+// moment the model is retuned, and then the tests agree with nothing.
+const estimate = W.estimateHssSpeedFromChWidthAndDarkness;
 
 let pass = 0, fail = 0;
 const check = (ok, label, detail) => {
@@ -85,19 +89,25 @@ console.log('\nWhen the stream gets to Earth');
   check(C.hssArrivalMs(-100, T0) === null, 'nor does a negative one');
   check(C.hssArrivalMs(NaN, T0) === null, 'nor an unmeasurable one');
 
-  // Every speed the width model can produce lands in the rule-of-thumb window.
-  let allInWindow = true;
-  for (let w = 5; w <= 80; w += 5) {
-    const v = C.hssArrivalMs(estimate(w, 0), T0);
-    const d = (v - T0) / DAY;
-    if (d < 1.8 || d > 4.5) allInWindow = false;
+  // Every speed the width model can produce has to land somewhere sensible.
+  // The band was toned down 25% to match observed arrival speeds rather than
+  // peak ones, which pushes the slowest holes past four days - so the check is
+  // that nothing falls outside two to six, not that everything fits the
+  // textbook two-to-four.
+  let slowest = 0, fastest = Infinity;
+  for (let w = 1; w <= 90; w += 1) {
+    for (const dark of [0, 0.5, 1]) {
+      const d = (C.hssArrivalMs(estimate(w, dark), T0) - T0) / DAY;
+      slowest = Math.max(slowest, d);
+      fastest = Math.min(fastest, d);
+    }
   }
-  check(allInWindow, 'every width the model accepts arrives within the two-to-four-day window');
-}
-
-function estimate(widthDeg, darkness) {
-  // Mirrors what the dashboard passes in.
-  return 450 + Math.sqrt(Math.max(0, Math.min(1, (widthDeg - 5) / 55))) * 450 + 120 * darkness;
+  check(fastest >= 2 && slowest <= 6,
+        `the model's whole range arrives between ${fastest.toFixed(1)} and ${slowest.toFixed(1)} days`,
+        `${fastest} .. ${slowest}`);
+  check(estimate(60, 1) <= 675 && estimate(1, 0) >= 330,
+        `and the speeds themselves stay inside the toned-down band: ${estimate(1, 0)} to ${estimate(60, 1)}`,
+        `${estimate(1, 0)} .. ${estimate(60, 1)}`);
 }
 
 // ── which measurement to believe ───────────────────────────────────────────

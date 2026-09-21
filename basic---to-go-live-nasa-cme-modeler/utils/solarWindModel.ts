@@ -43,8 +43,14 @@
 //  HSS_CH_WIDTH_MIN_DEG  : CH width → speed floor
 //  HSS_CH_WIDTH_MAX_DEG  : CH width → speed ceiling
 
-const HSS_SPEED_MIN_1AU    = 450;   // km/s - tiny equatorial CH at 1 AU
-const HSS_SPEED_MAX_1AU    = 900;   // km/s - very large/dark CH at 1 AU
+// Toned down 25% from the 450-900 band these started at. The original numbers
+// came from the literature's *peak* speeds - the highest value reached during
+// a stream, often for a few hours - whereas what the tracker actually shows is
+// what to expect when the stream arrives. Measured against real streams the
+// old figures read consistently high, so a hole that produced a 490 km/s wind
+// was being announced at 650.
+const HSS_SPEED_MIN_1AU    = 338;   // km/s - tiny equatorial CH at 1 AU
+const HSS_SPEED_MAX_1AU    = 675;   // km/s - very large/dark CH at 1 AU
 const HSS_CH_WIDTH_MIN_DEG = 5;     // degrees CH width -> speed floor
 const HSS_CH_WIDTH_MAX_DEG = 60;    // degrees CH width -> speed ceiling
 
@@ -84,9 +90,11 @@ export function estimateHssSpeedFromChWidth(widthDeg: number): number {
 export function estimateHssSpeedFromChWidthAndDarkness(widthDeg: number, darknessFraction: number): number {
   const widthSpeed = estimateHssSpeedFromChWidth(widthDeg);
   const darkness = Math.max(0, Math.min(1, darknessFraction));
-  // Max boost ~120 km/s for the darkest holes (calibrated against OMNI data)
-  // A very dark CH with strong open flux drives significantly faster wind
-  const boostKms = 120 * darkness;
+  // Max boost ~90 km/s for the darkest holes (calibrated against OMNI data).
+  // A very dark CH with strong open flux drives significantly faster wind.
+  // Scaled by the same 25% as the width band above, so darkness keeps the
+  // same weight relative to width rather than quietly becoming dominant.
+  const boostKms = 90 * darkness;
   return Math.round(Math.max(HSS_SPEED_MIN_1AU, Math.min(HSS_SPEED_MAX_1AU, widthSpeed + boostKms)));
 }
 

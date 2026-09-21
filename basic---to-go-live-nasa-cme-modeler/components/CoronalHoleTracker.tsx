@@ -15,7 +15,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CoronalHole } from '../utils/coronalHoleData';
-import { detectCoronalHolesFromSuvi195 } from '../utils/suviCoronalHoleDetector';
+import { ANALYSIS_SIZE, detectCoronalHolesFromSuvi195 } from '../utils/suviCoronalHoleDetector';
 import { estimateHssSpeedFromChWidthAndDarkness } from '../utils/solarWindModel';
 import {
   chGrowth, chOutlineAt, chSpeedForEarth, chTiming,
@@ -26,9 +26,9 @@ import {
   type ChPolarityResult,
 } from '../utils/coronalHolePolarity';
 import {
-  containedImageRect, detectSolarDiskGeometry, diskAsFraction, diskFromFraction,
+  containedImageRect, detectSolarDiskGeometry, diskFromFraction,
   heliographicToPixel, longitudeAt,
-  type SolarDiskGeometry,
+  type DiskFraction, type SolarDiskGeometry,
 } from '../utils/solarDisk';
 import { solarDiskOrientation } from '../utils/solarEphemeris';
 import { frameSpanHours } from '../utils/framePlayback';
@@ -51,7 +51,7 @@ const ARRIVAL_UNCERTAINTY_HOURS = 7;
 
 const DAY_MS = 86400000;
 const WINDOW_OPTIONS = [6, 12, 24] as const;
-const SPEED_OPTIONS = [0.5, 1, 2, 5] as const;
+const SPEED_OPTIONS = [0.5, 1, 2, 5, 10] as const;
 
 const HOLE_COLOURS = ['#38bdf8', '#a78bfa', '#fbbf24', '#34d399', '#fb7185', '#facc15', '#22d3ee', '#f472b6'];
 
@@ -60,6 +60,19 @@ interface WorkerFrame { key: string; ts: string; url: string }
 interface Detection {
   atMs: number;
   holes: CoronalHole[];
+  /**
+   * The disk the detector itself found, as fractions of the frame.
+   *
+   * Taken from the detection rather than measured again from the displayed
+   * image for two reasons. The outlines are in coordinates the detector
+   * derived from THIS disk, so measuring it again can only introduce
+   * disagreement. And the displayed image is cross-origin: the detector reads
+   * it as a blob and can get at the pixels, whereas reading the same bytes
+   * back out of the <img> element taints the canvas and throws - which is
+   * what left the overlay permanently stuck on "locating the solar disk"
+   * while the detection behind it was working perfectly well.
+   */
+  disk: DiskFraction;
 }
 
 const fmtNz = (ms: number | null | undefined): string => {
@@ -78,12 +91,17 @@ const fmtRelative = (ms: number): string => {
   return hours < 48 ? `in ${Math.round(hours)} hours` : `in ${(hours / 24).toFixed(1)} days`;
 };
 
-/** Slow, moderate, fast - the same bands the CME notifications use. */
+/**
+ * The bands are the ones the wind itself falls into at 1 AU, not the CME
+ * bands. A CME at 500 km/s is slow; a stream at 500 km/s is a decent one.
+ * They are different populations and sharing a scale would flatter every
+ * hole on the panel.
+ */
 const speedBand = (kms: number): { label: string; colour: string; note: string } => {
-  if (kms < 500) return { label: 'Slow', colour: 'text-neutral-300', note: 'Below 500 km/s. Enough to unsettle the field, rarely enough on its own.' };
-  if (kms < 650) return { label: 'Moderate', colour: 'text-yellow-300', note: 'A moderate stream. Worth watching if the field turns south when it arrives.' };
-  if (kms < 800) return { label: 'Fast', colour: 'text-orange-300', note: 'A fast stream. These are the ones that produce most coronal hole aurora.' };
-  return { label: 'Very fast', colour: 'text-red-400', note: 'Above 800 km/s. A strong stream capable of a good storm by itself.' };
+  if (kms < 400) return { label: 'Slow', colour: 'text-neutral-300', note: 'Ordinary background wind. Enough to unsettle the field, rarely enough on its own.' };
+  if (kms < 500) return { label: 'Moderate', colour: 'text-yellow-300', note: 'A moderate stream. Worth watching if the field turns south when it arrives.' };
+  if (kms < 600) return { label: 'Fast', colour: 'text-orange-300', note: 'A fast stream. These are the ones that produce most coronal hole aurora.' };
+  return { label: 'Very fast', colour: 'text-red-400', note: 'A strong stream, capable of a good night by itself if the field cooperates.' };
 };
 
 export interface CoronalHoleTrackerProps {
@@ -106,7 +124,6 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
 
   const [boxSize, setBoxSize] = useState({ width: 0, height: 0 });
   const [natural, setNatural] = useState<{ width: number; height: number } | null>(null);
-  const [diskFraction, setDiskFraction] = useState<ReturnType<typeof diskAsFraction> | null>(null);
 
   const boxRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -211,8 +228,19 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
         try {
           const result = await detectCoronalHolesFromSuvi195(url, 0);
           if (cancelled || detectRunId.current !== run) return;
-          if (result.succeeded) {
-            found.push({ atMs: new Date(f.ts).getTime(), holes: result.coronalHoles });
+          if (result.succeeded && result.diskRadius > 0) {
+            found.push({
+              atMs: new Date(f.ts).getTime(),
+              holes: result.coronalHoles,
+              // The detector works at a fixed analysis size, so its disk is
+              // turned into fractions of the frame here and scaled back up to
+              // whatever size the image is being displayed at.
+              disk: {
+                cx: result.diskCentreX / ANALYSIS_SIZE,
+                cy: result.diskCentreY / ANALYSIS_SIZE,
+                r: result.diskRadius / ANALYSIS_SIZE,
+              },
+            });
             found.sort((a, b) => a.atMs - b.atMs);
             setDetections([...found]);
           }
@@ -239,26 +267,15 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
       Math.abs(a.atMs - activeFrameMs) <= Math.abs(b.atMs - activeFrameMs) ? a : b);
   }, [detections, activeFrameMs]);
 
-  // ── the disk in the displayed image ───────────────────────────────────────
+  // ── the size of the displayed image ───────────────────────────────────────
+  // Only its natural size is wanted here. Where the disk sits inside it comes
+  // from the detection, which read the same frame through a blob and so could
+  // actually get at the pixels.
   const handleImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget;
-    const w = img.naturalWidth, h = img.naturalHeight;
-    if (!w || !h) return;
-    setNatural({ width: w, height: h });
-    if (diskFraction) return;
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.width = w; canvas.height = h;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      if (!ctx) return;
-      ctx.drawImage(img, 0, 0, w, h);
-      const geom = detectSolarDiskGeometry(ctx.getImageData(0, 0, w, h).data, w, h);
-      if (geom) setDiskFraction(diskAsFraction(geom, { width: w, height: h }));
-    } catch {
-      // Tainted canvas. The overlay stays off rather than being drawn from a
-      // guess at where the disk is.
-    }
-  }, [diskFraction]);
+    if (!img.naturalWidth || !img.naturalHeight) return;
+    setNatural({ width: img.naturalWidth, height: img.naturalHeight });
+  }, []);
 
   useEffect(() => {
     const el = boxRef.current;
@@ -273,14 +290,14 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
 
   /** Where the letterboxed image actually sits, and the disk inside it. */
   const drawGeometry = useMemo((): { geometry: SolarDiskGeometry; offsetX: number; offsetY: number } | null => {
-    if (!diskFraction || !natural || boxSize.width === 0 || boxSize.height === 0) return null;
+    if (!detectionForFrame || !natural || boxSize.width === 0 || boxSize.height === 0) return null;
     const rect = containedImageRect(natural, boxSize);
     return {
-      geometry: diskFromFraction(diskFraction, { width: rect.width, height: rect.height }),
+      geometry: diskFromFraction(detectionForFrame.disk, { width: rect.width, height: rect.height }),
       offsetX: rect.x,
       offsetY: rect.y,
     };
-  }, [diskFraction, natural, boxSize]);
+  }, [detectionForFrame, natural, boxSize]);
 
   // ── drawing the outlines ──────────────────────────────────────────────────
   useEffect(() => {
@@ -327,18 +344,56 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
       ctx.lineWidth = selected ? 2.5 : 1.5;
       ctx.stroke();
 
+      // The label goes below the hole with a leader back to it, rather than
+      // on top of it. A hole is the thing being looked at; covering it with
+      // the name of the thing is the one placement that cannot be right.
       const centre = heliographicToPixel(
         hole.lat, longitudeAt(hole.lon, detectionForFrame.atMs, activeFrameMs), geometry, b0, p);
       if (!centre.onDisk) return;
-      const label = String(i + 1);
-      ctx.font = `600 ${selected ? 15 : 13}px system-ui, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
+
+      const cx = centre.x + offsetX;
+      const cy = centre.y + offsetY;
+      const bottom = Math.max(...pts.map((q) => q.y));
+      const label = `CH${i + 1} · ${hole.widthDeg.toFixed(0)}°`;
+
+      ctx.font = `600 ${selected ? 13 : 12}px system-ui, sans-serif`;
+      const textWidth = ctx.measureText(label).width;
+      const padX = 6, padY = 4;
+      const boxW = textWidth + padX * 2;
+      const boxH = (selected ? 13 : 12) + padY * 2;
+
+      // Clamped so a hole near the bottom or the side of the frame still has
+      // a readable label rather than one half off the edge.
+      const labelX = Math.min(Math.max(cx - boxW / 2, 4), Math.max(4, boxSize.width - boxW - 4));
+      const labelY = Math.min(bottom + 10, Math.max(4, boxSize.height - boxH - 4));
+
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(labelX + boxW / 2, labelY);
+      ctx.strokeStyle = 'rgba(0,0,0,0.7)';
       ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(0,0,0,0.85)';
-      ctx.strokeText(label, centre.x + offsetX, centre.y + offsetY);
+      ctx.stroke();
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.fillStyle = 'rgba(0,0,0,0.78)';
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = selected ? 1.5 : 1;
+      if (typeof (ctx as any).roundRect === 'function') {
+        ctx.beginPath();
+        (ctx as any).roundRect(labelX, labelY, boxW, boxH, 4);
+        ctx.fill();
+        ctx.stroke();
+      } else {
+        ctx.fillRect(labelX, labelY, boxW, boxH);
+        ctx.strokeRect(labelX, labelY, boxW, boxH);
+      }
+
       ctx.fillStyle = colour;
-      ctx.fillText(label, centre.x + offsetX, centre.y + offsetY);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(label, labelX + padX, labelY + padY);
     });
   }, [boxSize, drawGeometry, detectionForFrame, activeFrameMs, selectedId]);
 
@@ -482,7 +537,6 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
                 ref={imgRef}
                 src={activeUrl}
                 alt="SUVI 195 with coronal holes outlined"
-                crossOrigin="anonymous"
                 className="w-full h-full object-contain"
                 onLoad={handleImageLoad}
               />
@@ -496,54 +550,72 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({ onOpenModal }) 
               className="absolute inset-0 pointer-events-none"
               style={{ width: '100%', height: '100%' }}
             />
-            {!diskFraction && activeUrl && (
-              <div className="absolute bottom-2 left-2 text-[11px] text-neutral-400 bg-black/60 px-2 py-1 rounded">
-                Locating the solar disk...
+            {!detectionForFrame && activeUrl && (
+              <div className="absolute top-2 left-2 text-[11px] text-neutral-300 bg-black/70 px-2 py-1 rounded">
+                Measuring coronal holes...
               </div>
             )}
           </div>
 
-          {/* Playback */}
-          <div className="flex items-center gap-2 mt-2">
-            <button
-              type="button"
-              onClick={() => setPlaying((v) => !v)}
-              disabled={windowFrames.length < 2}
-              className="px-3 py-1 text-xs rounded bg-neutral-700 hover:bg-neutral-600 disabled:opacity-40"
-            >{playing ? 'Pause' : 'Play'}</button>
-            <button
-              type="button"
-              onClick={() => setFrameIndex((i) => (i - 1 + windowFrames.length) % windowFrames.length)}
-              disabled={windowFrames.length < 2}
-              className="px-2 py-1 text-xs rounded bg-neutral-700 hover:bg-neutral-600 disabled:opacity-40"
-            >{'<'}</button>
+          {/* Playback - the same controls, in the same order, as the SUVI
+              imagery panel above, so the two do not behave differently. */}
+          <div className="mt-3 space-y-2 flex-shrink-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => { setPlaying(false); setFrameIndex((i) => (i - 1 + windowFrames.length) % windowFrames.length); }}
+                disabled={windowFrames.length < 2}
+                className="px-3 py-1.5 text-xs rounded bg-neutral-700 hover:bg-neutral-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                title="Previous frame"
+              >
+                ◀ Prev
+              </button>
+              <button
+                onClick={() => setPlaying((prev) => !prev)}
+                disabled={windowFrames.length < 2}
+                className="px-3 py-1.5 text-xs rounded bg-sky-700 hover:bg-sky-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold transition-colors"
+                title={playing ? 'Pause' : 'Play'}
+              >
+                {playing ? '⏸ Pause' : '▶ Play'}
+              </button>
+              <button
+                onClick={() => { setPlaying(false); setFrameIndex((i) => (i + 1) % windowFrames.length); }}
+                disabled={windowFrames.length < 2}
+                className="px-3 py-1.5 text-xs rounded bg-neutral-700 hover:bg-neutral-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                title="Next frame"
+              >
+                Next ▶
+              </button>
+              <label className="ml-auto flex items-center gap-2 text-xs text-neutral-300">
+                Speed
+                <select
+                  value={speed}
+                  onChange={(e) => setSpeed(Number(e.target.value))}
+                  className="rounded bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs text-neutral-200"
+                  title="Playback speed"
+                >
+                  {SPEED_OPTIONS.map((s) => (
+                    <option key={`ch-speed-${s}`} value={s}>{s}x</option>
+                  ))}
+                </select>
+              </label>
+            </div>
             <input
               type="range"
               min={0}
               max={Math.max(0, windowFrames.length - 1)}
               value={clampedIndex}
-              onChange={(e) => { setPlaying(false); setFrameIndex(Number(e.target.value)); }}
-              className="flex-grow accent-sky-500"
+              onChange={(e) => {
+                setPlaying(false);
+                setFrameIndex(Number(e.target.value));
+              }}
+              className="w-full accent-sky-500"
             />
-            <button
-              type="button"
-              onClick={() => setFrameIndex((i) => (i + 1) % windowFrames.length)}
-              disabled={windowFrames.length < 2}
-              className="px-2 py-1 text-xs rounded bg-neutral-700 hover:bg-neutral-600 disabled:opacity-40"
-            >{'>'}</button>
-            <select
-              value={speed}
-              onChange={(e) => setSpeed(Number(e.target.value))}
-              className="bg-neutral-800 text-xs rounded px-2 py-1 border border-neutral-700"
-            >
-              {SPEED_OPTIONS.map((s) => <option key={s} value={s}>{s}x</option>)}
-            </select>
-          </div>
-          <div className="text-[11px] text-neutral-500 mt-1 text-center">
-            {activeFrame ? fmtNz(activeFrameMs) : ' - '}
-            {detectionForFrame && detectionForFrame.atMs !== activeFrameMs && (
-              <> · outlines measured {fmtRelative(detectionForFrame.atMs)}, rotated to this frame</>
-            )}
+            <div className="mt-1 text-xs text-neutral-500 text-right">
+              {activeFrame ? `Frame: ${fmtNz(activeFrameMs)}` : 'No frame selected'}
+              {detectionForFrame && detectionForFrame.atMs !== activeFrameMs && (
+                <> · outlines measured {fmtRelative(detectionForFrame.atMs)}, rotated to this frame</>
+              )}
+            </div>
           </div>
         </div>
 

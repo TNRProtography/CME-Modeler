@@ -60,7 +60,16 @@ import type { CoronalHole }            from './coronalHoleData';
 import { estimateHssSpeedFromChWidthAndDarkness } from './solarWindModel';
 
 // ── Tuning constants ──────────────────────────────────────────────────────────
-const ANALYSIS_SIZE           = 400;   // off-screen canvas resolution - 400 gives sharper polygon boundaries
+/**
+ * Off-screen canvas resolution. 400 gives sharper polygon boundaries.
+ *
+ * Exported because `diskRadius`, `diskCentreX` and `diskCentreY` on the result
+ * are in this space, and anything drawing the detected holes back over the
+ * imagery has to scale them out of it. Taking the disk from the detector this
+ * way rather than measuring it again is also the only way to be sure the
+ * outlines land where the detector thought they were.
+ */
+export const ANALYSIS_SIZE    = 400;
 const N_LIMB_ANGLES           = 360;   // directions to scan for limb detection
 const LIMB_SCAN_START         = 0.35;  // start limb scan at this fraction of image half-size
 const LIMB_SCAN_END           = 0.99;  // end limb scan at this fraction of image half-size
