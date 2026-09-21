@@ -28,6 +28,8 @@ async function load(rel) {
 }
 await load('utils/solarEphemeris.ts');
 await load('utils/solarDisk.ts');
+await load('utils/rmEffect.ts');
+const R = await load('utils/rmWindows.ts');
 const P = await load('utils/coronalHolePolarity.ts');
 
 let pass = 0, fail = 0;
@@ -210,38 +212,43 @@ console.log('\nWhat the sector is worth at this time of year');
   const june  = new Date(Date.UTC(2026, 5, 21));
   const dec   = new Date(Date.UTC(2026, 11, 21));
 
-  // Russell-McPherron. Away sector (By > 0) is the geoeffective one around
-  // the September equinox; toward (By < 0) around March. Getting these two
-  // the wrong way round is the single most consequential mistake available
-  // here, because it would confidently tell people the wrong nights.
-  check(P.sectorSeasonNote('away', sept).favourable === true, 'an away sector is favoured in September');
-  check(P.sectorSeasonNote('toward', march).favourable === true, 'a toward sector is favoured in March');
-  check(P.sectorSeasonNote('away', march).favourable === false, 'an away sector is the wrong one in March');
-  check(P.sectorSeasonNote('toward', sept).favourable === false, 'a toward sector is the wrong one in September');
+  // Russell-McPherron, and this is the single most consequential thing in the
+  // file to get right. It was wrong once: "away favours spring" is correct and
+  // easy to remember, and then spring gets read as September by anybody
+  // thinking about New Zealand. It is not a hemisphere property - the effect
+  // is set by the tilt of the geomagnetic dipole relative to the Sun on a
+  // date, so March is March wherever you are standing. Backwards, this tells
+  // people the wrong half of the year with total confidence.
+  //
+  // The published result: away sector (By > 0) peaks around the March equinox,
+  // toward sector around September.
+  check(P.sectorSeasonNote('away', march).favourable === true, 'an away sector is favoured in March');
+  check(P.sectorSeasonNote('toward', sept).favourable === true, 'a toward sector is favoured in September');
+  check(P.sectorSeasonNote('away', sept).favourable === false, 'an away sector is the wrong one in September');
+  check(P.sectorSeasonNote('toward', march).favourable === false, 'a toward sector is the wrong one in March');
+
+  // And the note names the right peak rather than a hardcoded month.
+  check(/March|April/.test(P.sectorSeasonNote('away', sept).note),
+        'and points an away sector at its actual peak', P.sectorSeasonNote('away', sept).note);
+  check(/September|October/.test(P.sectorSeasonNote('toward', march).note),
+        'and a toward sector at its own', P.sectorSeasonNote('toward', march).note);
 
   check(P.sectorSeasonNote('away', june).favourable === null, 'neither is favoured at the June solstice');
   check(P.sectorSeasonNote('toward', dec).favourable === null, 'or the December one');
-  check(/solstice/.test(P.sectorSeasonNote('away', june).note), 'and the note says why', P.sectorSeasonNote('away', june).note);
 
   check(P.sectorSeasonNote('unknown', sept).favourable === null, 'no sector, nothing to say');
   check(P.sectorSeasonNote('unknown', sept).note === '', 'and nothing said');
 
-  // The window is six weeks either side of the equinox, so it opens well
-  // before the date itself - which is the point, since a stream takes days to
-  // arrive and nobody plans around a single day.
-  check(P.sectorSeasonNote('toward', new Date(Date.UTC(2026, 1, 4))).favourable === true,
-        'the March window is already open in early February');
-  check(P.sectorSeasonNote('toward', new Date(Date.UTC(2026, 1, 3))).favourable === null,
-        'but not a day earlier');
-  check(P.sectorSeasonNote('away', new Date(Date.UTC(2026, 10, 1))).favourable === true,
-        'and the September one is still open in early November');
-
-  // Distance to an equinox is measured the short way round the year, so a
-  // date in January is compared against the previous September, not the
-  // three hundred days forward to the next one.
-  const jan = P.sectorSeasonNote('away', new Date(Date.UTC(2027, 0, 1)));
-  check(jan.favourable === null && /solstice/.test(jan.note),
-        'New Year reads as solstice-ish rather than as far from September as possible', jan.note);
+  // The season note and the hourly windows now come from one projection, so
+  // they cannot drift apart. This is the check that they agree.
+  for (const [label, when] of [['March', march], ['September', sept]]) {
+    const awayPeak = R.rmDailyPeak(1, when, 10);
+    const towardPeak = R.rmDailyPeak(-1, when, 10);
+    const noteSaysAway = P.sectorSeasonNote('away', when).favourable === true;
+    check(noteSaysAway === (awayPeak > towardPeak),
+          `${label}: the season note agrees with the projection it is derived from`,
+          `away=${awayPeak.toFixed(3)} toward=${towardPeak.toFixed(3)} noteSaysAway=${noteSaysAway}`);
+  }
 
   // Every day of the year gets an answer, and the two sectors never agree.
   let sane = true;

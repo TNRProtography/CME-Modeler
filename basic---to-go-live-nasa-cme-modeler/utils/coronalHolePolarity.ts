@@ -11,13 +11,22 @@
 // Positive polarity - field pointing out of the Sun - gives an "away" sector,
 // where the field at Earth has By > 0. Negative gives a "toward" sector, By < 0.
 // The Russell-McPherron effect makes one of those far better for aurora
-// depending on the time of year: near the September equinox an away sector
-// (By > 0) projects a southward component onto the geomagnetic field, and near
-// March it is a toward sector that does. Around the solstices neither does
+// depending on the time of year: near the MARCH equinox an away sector (By > 0)
+// projects a southward component onto the geomagnetic field, and near
+// SEPTEMBER it is a toward sector that does. Around the solstices neither does
 // much. So the same hole, with the same width and the same wind speed, is a
 // better or worse prospect depending on the month - and that is worth saying
 // out loud rather than leaving people to wonder why one stream lit up and an
 // identical-looking one did not.
+//
+// This file previously had those two the wrong way round. The trap is that
+// "away favours spring" is correct and easy to remember, and then spring gets
+// read as September by anyone thinking about New Zealand. It is not a
+// hemisphere property: the effect is set by the tilt of the geomagnetic dipole
+// relative to the Sun on a given date, so March is March wherever you are
+// standing. Nothing below decides it by month any more - the season note is
+// computed from the same projection the hourly windows use, so the two cannot
+// disagree again.
 //
 // HOW IT IS MEASURED
 // ──────────────────
@@ -47,6 +56,7 @@
 // the same constraint the width measurement has for the same geometric reason.
 
 import { heliographicToPixel, type SolarDiskGeometry } from './solarDisk';
+import { rmDailyPeak, type BySign } from './rmWindows';
 
 /** Mid-grey either way by this much is treated as no measurable field. */
 export const NEUTRAL_TOLERANCE = 12;
@@ -265,53 +275,55 @@ export function classifyChPolarity(
 /**
  * What that sector is worth at a given time of year.
  *
- * Russell-McPherron: the geomagnetic dipole is tilted, so the Sun's equatorial
- * field gets projected onto it differently through the year. Near the
- * September equinox an away sector gains a southward component and near March
- * a toward sector does. Around the solstices the projection is small either
- * way, which is part of why equinox months produce more storms from the same
- * solar wind.
+ * Derived, not tabulated. It asks the same projection that drives the hourly
+ * windows how much of this sector's By becomes southward field on the best
+ * part of this day, and compares that against the opposite sector. Hard-coding
+ * equinox dates here is what let this get stated backwards in the first place.
  */
 export function sectorSeasonNote(sector: ImfSector, at: Date): { favourable: boolean | null; note: string } {
   if (sector === 'unknown') return { favourable: null, note: '' };
 
-  // Day of year, as an angle through the seasons.
-  const start = Date.UTC(at.getUTCFullYear(), 0, 1);
-  const doy = (Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()) - start) / 86400000;
-
-  const MARCH_EQUINOX = 79;      // about 20 March
-  const SEPT_EQUINOX = 265;      // about 22 September
-
-  const daysFrom = (target: number) => {
-    const d = Math.abs(doy - target);
-    return Math.min(d, 365 - d);
-  };
-
-  const favouredEquinox = sector === 'away' ? SEPT_EQUINOX : MARCH_EQUINOX;
-  const otherEquinox = sector === 'away' ? MARCH_EQUINOX : SEPT_EQUINOX;
-  const near = daysFrom(favouredEquinox);
-  const nearOther = daysFrom(otherEquinox);
-
+  const bySign: BySign = sector === 'away' ? 1 : -1;
+  const mine = rmDailyPeak(bySign, at);
+  const theirs = rmDailyPeak(bySign === 1 ? -1 : 1, at);
   const name = sector === 'away' ? 'away' : 'toward';
-  if (near <= 45) {
+  const best = bestMonthFor(bySign);
+
+  if (mine > 0.22 && mine > theirs * 1.4) {
     return {
       favourable: true,
-      note: `This is the good half of the year for an ${name} sector. Close to the `
-          + `${sector === 'away' ? 'September' : 'March'} equinox the tilt of Earth's field turns an ${name} sector `
-          + `southward, so this stream has a better chance of producing aurora than its speed alone suggests.`,
+      note: `This is the good part of the year for an ${name} sector. The tilt of Earth's field currently turns `
+          + `an ${name} sector southward, so this stream has a better chance of producing aurora than its speed `
+          + `alone suggests - and it does so at particular hours each night rather than steadily.`,
     };
   }
-  if (nearOther <= 45) {
+
+  if (theirs > 0.22 && theirs > mine * 1.4) {
     return {
       favourable: false,
-      note: `This is the wrong half of the year for an ${name} sector. Near the `
-          + `${sector === 'away' ? 'March' : 'September'} equinox the tilt works against it, so expect less from this `
-          + `stream than the same hole would give six months from now.`,
+      note: `This is the wrong part of the year for an ${name} sector. The tilt works against it now and favours `
+          + `it around ${best}, so expect less from this stream than the same hole would give six months from now.`,
     };
   }
+
   return {
     favourable: null,
-    note: `Around the solstices the seasonal tilt does little either way, so the sector matters less than the `
-        + `speed and whatever the field happens to be doing when the stream arrives.`,
+    note: `Between the two peaks, the seasonal tilt does little either way, so the sector matters less than the `
+        + `speed and whatever the field happens to be doing when the stream arrives. An ${name} sector is `
+        + `strongest around ${best}.`,
   };
+}
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+                'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** The month in which this sector's projection is strongest. */
+function bestMonthFor(bySign: BySign): string {
+  let bestPeak = -1;
+  let bestMonth = 0;
+  for (let m = 0; m < 12; m++) {
+    const peak = rmDailyPeak(bySign, new Date(Date.UTC(2001, m, 15)), 30);
+    if (peak > bestPeak) { bestPeak = peak; bestMonth = m; }
+  }
+  return MONTHS[bestMonth];
 }
