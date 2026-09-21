@@ -1,4 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import SunspotLabelOverlay from './SunspotLabelOverlay';
+import { buildRegionLabels } from '../utils/regionLabels';
+import type { RegionInput } from '../utils/regionLabels';
+import type { SolarDiskGeometry } from '../utils/solarDisk';
 import CloseIcon from './icons/CloseIcon';
 import PlayIcon from './icons/PlayIcon';
 import PauseIcon from './icons/PauseIcon';
@@ -14,7 +18,7 @@ const DownloadIcon: React.FC<{className?: string}> = ({ className }) => (
 type MediaObject =
     | { type: 'image', url: string }
     | { type: 'video', url: string }
-    | { type: 'image_with_labels', url: string, labels: { id: string; xPercent: number; yPercent: number; text: string }[] }
+    | { type: 'image_with_labels'; url: string; regions: RegionInput[]; geometry: SolarDiskGeometry; imageNatural: { width: number; height: number }; atMs: number }
     | { type: 'animation', urls: string[] };
 
 interface MediaViewerModalProps {
@@ -27,6 +31,25 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ media, onClose }) =
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLImageElement | HTMLVideoElement>(null);
+
+  // The box the active-region labels are laid out against. Measured rather
+  // than assumed: this view sizes itself to the viewport, so the same disk is
+  // a very different number of pixels here than in the panel it came from.
+  const labelBoxRef = useRef<HTMLDivElement>(null);
+  const [labelBoxSize, setLabelBoxSize] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    const el = labelBoxRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setLabelBoxSize((prev) =>
+        Math.abs(prev.width - width) < 1 && Math.abs(prev.height - height) < 1
+          ? prev
+          : { width, height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [media?.type]);
 
   const [currentFrame, setCurrentFrame] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -196,6 +219,7 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ media, onClose }) =
 
         {media.type === 'image_with_labels' && (
           <div
+            ref={labelBoxRef}
             className="relative max-w-[95vw] max-h-[78vh] cursor-grab active:cursor-grabbing"
             style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})` }}
             onMouseDown={handleMouseDown}
@@ -207,14 +231,21 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ media, onClose }) =
               alt="Full disk with labels"
               className="max-w-[95vw] max-h-[78vh]"
             />
+            {/* Laid out here rather than passed in: this view is far bigger
+                than the panel it was opened from, so the labels have room to
+                sit differently and the leaders should be measured against the
+                size actually on screen. */}
             <div className="absolute inset-0 pointer-events-none">
-              {media.labels.map((label) => (
-                <div key={label.id} className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: `${label.xPercent}%`, top: `${label.yPercent}%` }}>
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap bg-black/75 text-sky-200 border border-sky-500/40">
-                    {label.text}
-                  </span>
-                </div>
-              ))}
+              <SunspotLabelOverlay
+                labels={buildRegionLabels(media.regions, {
+                  geometry: media.geometry,
+                  imageNatural: media.imageNatural,
+                  box: labelBoxSize,
+                  atMs: media.atMs,
+                })}
+                boxSize={labelBoxSize}
+                idPrefix="viewer"
+              />
             </div>
           </div>
         )}

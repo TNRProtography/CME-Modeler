@@ -46,6 +46,7 @@ const D = await load('utils/solarDisk.ts');
 const E = await load('utils/solarEphemeris.ts');
 const L = await load('utils/labelLayout.ts');
 const P = await load('utils/framePlayback.ts');
+const RL = await load('utils/regionLabels.ts');
 
 let pass = 0, fail = 0;
 const check = (ok, label, detail) => {
@@ -458,6 +459,71 @@ console.log('\nAnd the panel says how much data actually arrived');
   check(P.frameSpanHours([frame(0), frame(12)]) === 12, 'twelve hours of frames reports 12');
   check(P.frameSpanHours([frame(0), frame(6), frame(24)]) === 24, 'and it is the full extent, not the gaps');
   check(P.frameSpanHours([{ ts: null }, frame(0), frame(3)]) === 3, 'frames without a timestamp are ignored');
+}
+
+// ── 6. one pipeline for every panel ────────────────────────────────────────
+console.log('\nEvery panel builds its labels the same way');
+{
+  // Five surfaces draw these - the tracker overview, the raw SUVI frame, the
+  // difference view, and the fullscreen viewer for each. They used to grow
+  // their own copies of rotate, project, map, place; a label right in one and
+  // wrong in another is worse than one wrong everywhere.
+  const geometry = { width: 1280, height: 1280, cx: 640, cy: 640, radius: 600 };
+  const imageNatural = { width: 1280, height: 1280 };
+  const atMs = Date.UTC(2026, 8, 21, 1, 45);
+  const regions = [
+    { id: '4533', latitude: -14, longitude: -64, observedAtMs: atMs, magneticClass: 'alpha', spotCount: 1, area: 30, color: '#44dd88' },
+    { id: '4534', latitude: 11, longitude: 8, observedAtMs: atMs, magneticClass: 'beta', spotCount: 8, area: 30, color: '#44dd88' },
+    { id: '4532', latitude: -6, longitude: 54, observedAtMs: atMs, magneticClass: 'beta', spotCount: 4, area: 10, color: '#508cff' },
+    { id: '9999', latitude: 0, longitude: 140, observedAtMs: atMs, color: '#888' },
+  ];
+
+  const panel = RL.buildRegionLabels(regions, { geometry, imageNatural, box: { width: 660, height: 660 }, atMs });
+  check(panel.length === 3, 'the region round the back is dropped', `${panel.length} of 3 expected`);
+  check(panel.every((l) => l.title.startsWith('AR ')), 'each label is titled with its region number');
+  check(panel.find((l) => l.id === '4534')?.detail === 'BETA \u00b7 8 spots',
+        'and carries class and spot count',
+        panel.find((l) => l.id === '4534')?.detail);
+
+  // The fullscreen viewer is the same disk several times larger. Positions
+  // must scale with it rather than being reused from the panel.
+  const big = RL.buildRegionLabels(regions, { geometry, imageNatural, box: { width: 1320, height: 1320 }, atMs });
+  check(big.length === panel.length, 'the viewer shows the same regions');
+  const pa = panel.find((l) => l.id === '4533');
+  const ba = big.find((l) => l.id === '4533');
+  check(Math.abs(ba.label.anchorX - pa.label.anchorX * 2) < 1.5
+        && Math.abs(ba.label.anchorY - pa.label.anchorY * 2) < 1.5,
+        'and each region sits at the same place on the disk, twice the size',
+        `panel (${pa.label.anchorX.toFixed(1)},${pa.label.anchorY.toFixed(1)}) vs viewer (${ba.label.anchorX.toFixed(1)},${ba.label.anchorY.toFixed(1)})`);
+
+  // Narrow panels drop the second line rather than covering the disk with it.
+  const narrow = RL.buildRegionLabels(regions, { geometry, imageNatural, box: { width: 320, height: 320 }, atMs });
+  check(narrow.every((l) => l.detail === ''), 'a narrow panel shows the region number only');
+  check(panel.every((l) => l.detail !== ''), 'while a wide one shows the detail');
+
+  // Letterboxing: the difference panel is wider than it is tall.
+  const wide = RL.buildRegionLabels(regions, { geometry, imageNatural, box: { width: 900, height: 500 }, atMs });
+  check(wide.every((l) => l.label.anchorX > 200 && l.label.anchorX < 700),
+        'in a letterboxed panel the disk is inset, not stretched',
+        wide.map((l) => l.label.anchorX.toFixed(0)).join(', '));
+
+  // And the labels still keep off the spots at every one of those sizes.
+  for (const [name, set, box] of [['panel', panel, 660], ['viewer', big, 1320], ['narrow', narrow, 320]]) {
+    const covered = [];
+    for (const l of set) {
+      for (const other of set) {
+        const dx = Math.max(0, Math.abs(other.label.anchorX - l.label.x) - l.label.width / 2);
+        const dy = Math.max(0, Math.abs(other.label.anchorY - l.label.y) - l.label.height / 2);
+        if (Math.hypot(dx, dy) < 4) covered.push(`${l.id} over ${other.id}`);
+      }
+    }
+    check(covered.length === 0, `no label covers a region in the ${name} layout (${box}px)`, covered.join(', '));
+  }
+
+  check(RL.buildRegionLabels(regions, { geometry, imageNatural, box: { width: 0, height: 0 }, atMs }).length === 0,
+        'an unmeasured panel produces nothing rather than NaN positions');
+  check(RL.buildRegionLabels([], { geometry, imageNatural, box: { width: 660, height: 660 }, atMs }).length === 0,
+        'and no regions produces no labels');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

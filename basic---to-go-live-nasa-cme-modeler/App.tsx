@@ -1,6 +1,8 @@
 // --- START OF FILE App.tsx ---
 
 import React, { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
+import type { RegionInput } from './utils/regionLabels';
+import type { SolarDiskGeometry } from './utils/solarDisk';
 
 /**
  * Wraps React.lazy() with automatic stale-chunk recovery.
@@ -139,7 +141,7 @@ const RefreshIcon: React.FC<{ className?: string }> = ({ className }) => (
 type ViewerMedia =
     | { type: 'image', url: string }
     | { type: 'video', url: string }
-    | { type: 'image_with_labels', url: string, labels: { id: string; xPercent: number; yPercent: number; text: string }[] }
+    | { type: 'image_with_labels'; url: string; regions: RegionInput[]; geometry: SolarDiskGeometry; imageNatural: { width: number; height: number }; atMs: number }
     | { type: 'animation', urls: string[] };
 
 interface NavigationTarget {
