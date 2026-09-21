@@ -17,7 +17,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { readImagePixels } from '../utils/imagePixels';
 import { estimateHssSpeedFromChWidthAndDarkness } from '../utils/solarWindModel';
 import {
-  chGrowth, chOutlineAt, chSpeedForEarth, chTiming,
+  chEarthConnection, chGrowth, chOutlineAt, chSpeedForEarth, chTiming,
   hssArrivalMs, type ChSample,
 } from '../utils/coronalHoleDynamics';
 import {
@@ -376,10 +376,19 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
       : 0;
     const confidence = measurementConfidence(samples.length, spanHours, closestToMeridian);
 
-    const ensemble = choice.speedKms != null
+    // Whether the stream can reach Earth at all. A hole over a pole crosses
+    // the middle of the disk exactly like an equatorial one and sends its wind
+    // straight over the top of us; forecasting an arrival for it would mean a
+    // near-permanent stream that never comes, since polar holes are the Sun's
+    // normal state for most of the cycle.
+    const { b0 } = solarDiskOrientation(new Date(now));
+    const connection = chEarthConnection(latest.lat, b0);
+
+    const ensemble = choice.speedKms != null && connection.reachesEarth
       ? hssArrivalEnsemble({ centralMeridianMs, speedKms: choice.speedKms, confidence })
       : null;
-    const arrival = ensemble ? ensemble.medianMs
+    const arrival = !connection.reachesEarth ? null
+      : ensemble ? ensemble.medianMs
       : (choice.speedKms != null ? hssArrivalMs(choice.speedKms, centralMeridianMs) : null);
 
     const pol = polarity[latest.id] ?? null;
@@ -404,7 +413,7 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
       // Strength from the speed, then whatever the field geometry adds. This
       // is an expectation, not a measurement, and the panel says so.
       const speed = choice.speedKms ?? 0;
-      let strength = Math.max(0, Math.min(100, (speed - 330) / 3.2));
+      let strength = Math.max(0, Math.min(100, (speed - 330) / 3.2)) * connection.factor;
       const bySign = pol ? bySignForPolarity(pol.polarity) : null;
       if (bySign) {
         windows = windowsDuring(
@@ -418,7 +427,7 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
     }
 
     return { timing, choice, growth, centralMeridianMs, arrival, samples, pol, season, gone, latest,
-             arrivalSky, outlook, windows, ensemble, confidence };
+             arrivalSky, outlook, windows, ensemble, confidence, connection };
   }, [selectedTrack, polarity, latestFrameMs, location]);
 
   const windowSpan = frameSpanHours(windowFrames);
@@ -614,7 +623,7 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
 
           {selectedTrack && insight && (() => {
             const { timing, choice, growth, centralMeridianMs, arrival, samples, pol, season, gone, latest,
-                    arrivalSky, outlook, windows, ensemble, confidence } = insight;
+                    arrivalSky, outlook, windows, ensemble, confidence, connection } = insight;
             const band = choice.speedKms != null ? speedBand(choice.speedKms) : null;
             return (
               <div className="bg-neutral-900/60 rounded p-3 text-sm flex flex-col gap-3">
@@ -642,6 +651,11 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
                       </div>
                       {band && <p className="text-xs text-neutral-400 mt-1">{band.note}</p>}
                       <p className="text-xs text-neutral-500 mt-1">{choice.note}</p>
+                      {connection.factor < 1 && (
+                        <p className={`text-xs mt-1 ${connection.reachesEarth ? 'text-yellow-300' : 'text-neutral-400'}`}>
+                          {connection.note}
+                        </p>
+                      )}
                     </>
                   ) : (
                     <p className="text-xs text-neutral-400">{choice.note}</p>
@@ -743,6 +757,11 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
                         </div>
                       )}
                     </>
+                  ) : !connection.reachesEarth ? (
+                    <div>
+                      <div className="text-sm font-semibold text-neutral-400">No arrival forecast</div>
+                      <p className="text-xs text-neutral-400 mt-1">{connection.note}</p>
+                    </div>
                   ) : (
                     <p className="text-xs text-neutral-400">Not enough of this hole has been measured to time its stream.</p>
                   )}

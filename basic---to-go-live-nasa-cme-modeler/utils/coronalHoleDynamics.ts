@@ -194,3 +194,69 @@ export function chOutlineAt(
   }
   return out;
 }
+
+/**
+ * Whether a hole's stream can reach Earth at all, from its latitude.
+ *
+ * This is a different gate from the one CMEs get, and it is easy to miss
+ * because both are called a strike zone. A CME is a broad shell, tens of
+ * degrees across, so what matters is its LONGITUDE - is it aimed near the
+ * middle of the disk. A coronal hole stream is much narrower in latitude: it
+ * follows the open field out along its own heliographic latitude, and Earth
+ * sits within about seven degrees of the solar equator all year.
+ *
+ * So a hole sitting over a pole can cross the middle of the disk in longitude,
+ * tick every box a longitude-only test applies, and still send its wind
+ * entirely over the top of us. Polar holes are the normal state of the Sun for
+ * most of the cycle; treating each one as an incoming stream would produce a
+ * forecast of near-permanent aurora that never arrives.
+ *
+ * What does reach us is a polar hole with an equatorward extension - and that
+ * extension is a separate detection at its own lower latitude, which this
+ * handles correctly by judging each detection where it actually sits.
+ *
+ * @param latitude  The hole's heliographic latitude.
+ * @param b0Deg     Latitude of disk centre, so the comparison is against where
+ *                  Earth actually is rather than against the equator.
+ */
+export function chEarthConnection(latitude: number, b0Deg = 0): {
+  factor: number; reachesEarth: boolean; note: string;
+} {
+  if (!Number.isFinite(latitude)) {
+    return { factor: 0, reachesEarth: false, note: 'No latitude measured for this hole.' };
+  }
+
+  const offset = Math.abs(latitude - b0Deg);
+
+  // Inside this, the stream is squarely aimed along Earth's latitude.
+  const FULL_DEG = 30;
+  // Beyond this, essentially nothing reaches us.
+  const NONE_DEG = 60;
+
+  if (offset <= FULL_DEG) {
+    return {
+      factor: 1,
+      reachesEarth: true,
+      note: `Sitting ${offset.toFixed(0)}° from Earth's latitude on the Sun, so its stream comes straight at us.`,
+    };
+  }
+
+  if (offset >= NONE_DEG) {
+    return {
+      factor: 0,
+      reachesEarth: false,
+      note: `A polar hole, ${offset.toFixed(0)}° from Earth's latitude on the Sun. Its wind goes over the top of `
+          + 'us rather than at us, so no arrival is forecast - however wide or dark it is. Watch for an equatorward '
+          + 'extension instead: that would be detected separately, at its own latitude.',
+    };
+  }
+
+  // Between the two, a glancing contribution that falls off smoothly.
+  const factor = (NONE_DEG - offset) / (NONE_DEG - FULL_DEG);
+  return {
+    factor,
+    reachesEarth: true,
+    note: `${offset.toFixed(0)}° from Earth's latitude on the Sun, so only the equatorward edge of this stream `
+        + 'is aimed our way. The estimate is reduced accordingly.',
+  };
+}
