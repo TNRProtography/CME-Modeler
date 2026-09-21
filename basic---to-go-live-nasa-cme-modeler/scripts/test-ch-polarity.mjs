@@ -120,9 +120,22 @@ console.log('\nSumming the field over a hole footprint');
   check(P.samplePolygonField(allWhite, [{ lat: 0, lon: 0 }, { lat: 1, lon: 1 }], GEOM).total === 0,
         'nor is a two-point one');
 
-  // A hole half round the back is no longer the shape that was detected.
+  // A hole mostly round the back is a sliver, not a hole.
   check(P.samplePolygonField(allWhite, box(0, 85), GEOM).total === 0,
-        'a footprint partly over the limb is not sampled rather than being sampled wrong');
+        'a footprint mostly over the limb is not sampled rather than being sampled wrong');
+
+  // But a big hole with one edge past the limb IS sampled, from the part of it
+  // we can see. Demanding every vertex be on the disk meant the largest holes
+  // - the ones that matter most - were the ones most often refused.
+  const wide = P.samplePolygonField(allWhite, box(0, 40, 25), GEOM);
+  check(wide.total > 100, `a 50 degree hole reaching W65 is still read: ${wide.total} pixels`, String(wide.total));
+  check(wide.positive === wide.total, 'and reads the polarity of the part that is visible');
+
+  // The same hole dead centre reads more of itself, as it should.
+  const centred = P.samplePolygonField(allWhite, box(0, 0, 25), GEOM);
+  check(centred.total > wide.total,
+        'a hole at disk centre is less foreshortened, so more of it is measured',
+        `${centred.total} vs ${wide.total}`);
 
   // The ring outside the hole, which is what `exclude` is for.
   const ring = P.samplePolygonField(allWhite, box(0, 0), GEOM, { scale: 1.8, exclude: 1.05 });

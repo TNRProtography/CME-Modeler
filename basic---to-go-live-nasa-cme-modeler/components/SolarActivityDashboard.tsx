@@ -2021,7 +2021,32 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   // Coronal holes on the imagery. Off by default everywhere: this panel is
   // about sunspot regions, and a disk covered in hole outlines the moment it
   // opens is noise until somebody asks for it.
-  const [showCoronalHoles, setShowCoronalHoles] = useState(false);
+  // One per panel. Sharing a single flag meant turning the holes on beside the
+  // sunspot tracker also turned them on over the SUVI imagery two sections up,
+  // which reads as the toggle defaulting to on. Persisted the same way the
+  // region toggle is, so a deliberate choice survives a reload - but the
+  // default, and the value after any failed read, is off.
+  const [showChOnSuvi, setShowChOnSuvi] = useState<boolean>(() => {
+    try { return localStorage.getItem('suvi_show_ch') === '1'; } catch { return false; }
+  });
+  const toggleChOnSuvi = useCallback(() => {
+    setShowChOnSuvi((prev) => {
+      const next = !prev;
+      try { localStorage.setItem('suvi_show_ch', next ? '1' : '0'); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+
+  const [showChOnSunspots, setShowChOnSunspots] = useState<boolean>(() => {
+    try { return localStorage.getItem('sunspot_show_ch') === '1'; } catch { return false; }
+  });
+  const toggleChOnSunspots = useCallback(() => {
+    setShowChOnSunspots((prev) => {
+      const next = !prev;
+      try { localStorage.setItem('sunspot_show_ch', next ? '1' : '0'); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
   // Read-only: the Coronal Hole Tracker on this same page drives detection,
   // and the store hands out one set of results to everything that asks.
   const chStore = useCoronalHoleDetections([], false);
@@ -2751,8 +2776,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, [activeSuviFrame?.ts]);
 
   const suviChDetection = useMemo(
-    () => (showCoronalHoles ? detectionNear(chStore.detections, suviFrameMs) : null),
-    [showCoronalHoles, chStore.detections, suviFrameMs],
+    () => (showChOnSuvi ? detectionNear(chStore.detections, suviFrameMs) : null),
+    [showChOnSuvi, chStore.detections, suviFrameMs],
   );
 
   const suviNatural = useMemo(() => (
@@ -2762,10 +2787,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   ), [suviDiskGeometry]);
 
   const latestChDetection = useMemo(() => (
-    showCoronalHoles && chStore.detections.length > 0
+    showChOnSunspots && chStore.detections.length > 0
       ? chStore.detections[chStore.detections.length - 1]
       : null
-  ), [showCoronalHoles, chStore.detections]);
+  ), [showChOnSunspots, chStore.detections]);
 
   const overviewNatural = useMemo(() => (
     overviewGeometry ? { width: overviewGeometry.width, height: overviewGeometry.height } : null
@@ -3542,16 +3567,23 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   </button>
                   <button
                     type="button"
-                    onClick={() => setShowCoronalHoles((v) => !v)}
-                    aria-pressed={showCoronalHoles}
+                    onClick={toggleChOnSuvi}
+                    aria-pressed={showChOnSuvi}
                     className={`px-3 py-1 text-xs rounded transition-colors ${
-                      showCoronalHoles
+                      showChOnSuvi
                         ? 'bg-sky-600 text-white'
                         : 'bg-neutral-700 hover:bg-neutral-600'}`}
                     title="Overlay coronal holes detected in SUVI 195, rotated to the frame being shown"
                   >
                     View coronal holes
                   </button>
+                  {showChOnSuvi && activeSunImage !== 'SUVI_195' && (
+                    // Coronal holes are dark in 195 and 193 and not much else,
+                    // so on another channel the outline sits over nothing
+                    // obvious. Saying where it came from stops that reading as
+                    // the overlay being wrong.
+                    <span className="text-[11px] text-neutral-500">measured in 195Å</span>
+                  )}
                 </div>
                 <span className="text-xs text-neutral-500">
                   {activeSuviSourceState?.label ?? ' - '} · {suviFrames.length} frame(s)
@@ -3584,7 +3616,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       >
                         <img src={activeSuviFrameUrl} alt={`${imageryModeLabels[activeSunImage]} frame`} className="w-full h-full object-contain" />
 
-                        {showCoronalHoles && (
+                        {showChOnSuvi && (
                           <CoronalHoleOverlay
                             detection={suviChDetection}
                             atMs={suviFrameMs}
@@ -3632,7 +3664,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         onClick={() => setViewerMedia(openSuviInViewer())}
                       >
                         <canvas ref={suviCanvasRef} className="w-full h-full object-contain" />
-                        {showCoronalHoles && (
+                        {showChOnSuvi && (
                           <CoronalHoleOverlay
                             detection={suviChDetection}
                             atMs={suviFrameMs}
@@ -3778,9 +3810,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 <button onClick={() => setSunspotImageryMode('intensity')} className={`px-3 py-1 text-xs rounded transition-colors ${sunspotImageryMode === 'intensity' ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>HMI Intensity</button>
                 <button
                   type="button"
-                  onClick={() => setShowCoronalHoles((v) => !v)}
-                  aria-pressed={showCoronalHoles}
-                  className={`px-3 py-1 text-xs rounded transition-colors ${showCoronalHoles ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                  onClick={toggleChOnSunspots}
+                  aria-pressed={showChOnSunspots}
+                  className={`px-3 py-1 text-xs rounded transition-colors ${showChOnSunspots ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
                   title="Overlay coronal holes detected in SUVI 195, drawn against this image's own disk"
                 >View coronal holes</button>
                 <div className="ml-auto text-[11px] text-neutral-500">{displayedSunspotRegions.length} Earth-facing regions</div>
@@ -3866,7 +3898,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       </svg>
                     )}
 
-                    {showCoronalHoles && (
+                    {showChOnSunspots && (
                       <CoronalHoleOverlay
                         detection={latestChDetection}
                         atMs={Date.now()}

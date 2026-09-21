@@ -60,6 +60,9 @@ export const UNIPOLAR_IMBALANCE = 0.34;
 /** And this many pixels have to carry any field at all. */
 export const MIN_SIGNAL_FRACTION = 0.04;
 
+/** How much of a hole's outline has to be on the visible disk to sample it. */
+export const MIN_VISIBLE_FRACTION = 0.7;
+
 export type ChPolarity = 'positive' | 'negative' | 'mixed' | 'unknown';
 
 /** Which way the interplanetary field points relative to the Sun. */
@@ -125,9 +128,18 @@ export function samplePolygonField(
     .map((q) => ({ x: q.x, y: q.y }));
 
   const outer = project(scale);
-  // A polygon that has rotated partly off the disk loses vertices and stops
-  // being the shape that was detected, so it is not sampled at all.
-  if (outer.length < polygon.length || outer.length < 3) return { ...EMPTY_SAMPLE };
+  // A hole that runs over the limb loses the vertices that went round the
+  // back, and what is left is the visible part of it - which is the only part
+  // a magnetogram could tell us anything about anyway.
+  //
+  // This used to demand that every vertex project onto the disk. That is the
+  // wrong test: a large hole is easily fifty degrees wide, so one sitting
+  // anywhere but dead centre has an edge past the limb and was refused
+  // outright - the bigger the hole, the more likely it went unread, which is
+  // precisely backwards. What matters is that enough of it is visible for the
+  // remaining outline to still describe the hole rather than a sliver of it.
+  const visibleFraction = polygon.length > 0 ? outer.length / polygon.length : 0;
+  if (visibleFraction < MIN_VISIBLE_FRACTION || outer.length < 3) return { ...EMPTY_SAMPLE };
   const inner = exclude > 0 ? project(exclude) : null;
 
   const xs = outer.map((q) => q.x), ys = outer.map((q) => q.y);

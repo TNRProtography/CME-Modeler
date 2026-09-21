@@ -32,13 +32,24 @@ import { useCoronalHoleDetections } from '../hooks/useCoronalHoleDetections';
 import CoronalHoleOverlay, { holeColour } from './CoronalHoleOverlay';
 import SunspotLabelOverlay from './SunspotLabelOverlay';
 import { buildRegionLabels, type RegionInput } from '../utils/regionLabels';
-import { detectSolarDiskGeometry, diskFromFraction, containedImageRect, longitudeAt } from '../utils/solarDisk';
+import { detectSolarDiskGeometry, diskFromFraction, longitudeAt } from '../utils/solarDisk';
 import { solarDiskOrientation } from '../utils/solarEphemeris';
 import { frameSpanHours } from '../utils/framePlayback';
 
 const SUVI_DIFF_WORKER_BASE = 'https://suvi-difference-imagery.thenamesrock.workers.dev';
-const HMI_MAG_URL = 'https://jsoc1.stanford.edu/data/hmi/images/latest/HMI_latest_Mag_1024x1024.gif';
-const HMI_MAG_FALLBACK = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_HMIB.jpg';
+/**
+ * Where to get a line-of-sight magnetogram, best first.
+ *
+ * Greyscale only: mid-grey is zero field, white is toward us, black is away.
+ * That convention is unambiguous and has not changed, whereas a colour map is
+ * a rendering choice that can be retuned upstream - and reading it backwards
+ * would invert every conclusion while still looking entirely plausible.
+ */
+const MAGNETOGRAM_SOURCES = [
+  { label: 'JSOC 1024', url: 'https://jsoc1.stanford.edu/data/hmi/images/latest/HMI_latest_Mag_1024x1024.gif' },
+  { label: 'SDO 1024', url: 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_HMIB.jpg' },
+  { label: 'SDO 512', url: 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_HMIB.jpg' },
+] as const;
 
 /** The honest width of the arrival window. */
 const ARRIVAL_UNCERTAINTY_HOURS = 7;
@@ -112,6 +123,7 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
 
   const [polarity, setPolarity] = useState<Record<string, ChPolarityResult>>({});
   const [polarityError, setPolarityError] = useState<string | null>(null);
+  const [polarityAttempt, setPolarityAttempt] = useState(0);
 
   const [boxSize, setBoxSize] = useState({ width: 0, height: 0 });
   const [natural, setNatural] = useState<{ width: number; height: number } | null>(null);
@@ -254,11 +266,16 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
   }, []);
 
   // Sunspot regions, using the detector's disk so they line up with the holes.
+  //
+  // The geometry has to be in the image's OWN pixels, not the displayed ones.
+  // buildRegionLabels does the letterboxing itself - it multiplies by
+  // rect.scale and adds the rect offset - so handing it a geometry already
+  // scaled to the display applies that shrink twice and piles every label into
+  // the top-left corner, well off the disk.
   const regionLabels = useMemo(() => {
     if (!showSunspots || !detectionForFrame || !natural || !boxSize.width) return [];
-    const rect = containedImageRect(natural, boxSize);
     return buildRegionLabels(regions, {
-      geometry: diskFromFraction(detectionForFrame.disk, { width: rect.width, height: rect.height }),
+      geometry: diskFromFraction(detectionForFrame.disk, natural),
       imageNatural: natural,
       box: boxSize,
       atMs: activeFrameMs,
@@ -279,13 +296,22 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
       // Through the proxy, at full resolution. Halving a magnetogram averages
       // neighbouring positive and negative network elements into each other,
       // and those cancel - which erodes the exact signal being measured.
+      //
+      // Several sources, because this is the one input with no CORS headers
+      // anywhere in the chain, so there is no fallback path that works when
+      // the proxy does not. The reasons are kept and shown: "could not be
+      // read" on its own is not something anybody can act on.
       let image = null;
-      for (const url of [HMI_MAG_URL, HMI_MAG_FALLBACK]) {
-        try { image = await readImagePixels(url); break; } catch { /* try the other */ }
+      const failures: string[] = [];
+      for (const source of MAGNETOGRAM_SOURCES) {
+        try { image = await readImagePixels(source.url); break; }
+        catch (err) {
+          failures.push(`${source.label}: ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
       if (cancelled) return;
       if (!image) {
-        setPolarityError('The HMI magnetogram could not be read, so polarity is unavailable for now.');
+        setPolarityError(`The HMI magnetogram could not be read, so polarity is unavailable. ${failures.join(' | ')}`);
         return;
       }
 
@@ -312,7 +338,7 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
     })();
 
     return () => { cancelled = true; };
-  }, [latestDetection]);
+  }, [latestDetection, polarityAttempt]);
 
   // ── what to say about the selected hole ───────────────────────────────────
   const insight = useMemo(() => {
@@ -615,7 +641,14 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
                       )}
                     </>
                   ) : polarityError ? (
-                    <p className="text-xs text-neutral-500">{polarityError}</p>
+                    <div>
+                      <p className="text-xs text-neutral-500 break-words">{polarityError}</p>
+                      <button
+                        type="button"
+                        onClick={() => setPolarityAttempt((n) => n + 1)}
+                        className="mt-1 px-2 py-0.5 text-[11px] rounded bg-neutral-700 hover:bg-neutral-600"
+                      >Try again</button>
+                    </div>
                   ) : gone.gone ? (
                     <p className="text-xs text-neutral-500">
                       Polarity is read from the current magnetogram, so it is only available while the hole is visible.
