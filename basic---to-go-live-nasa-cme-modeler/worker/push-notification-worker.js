@@ -607,6 +607,7 @@ async function runScheduledTasks(env) {
     ['shock',      checkShockDetection(env, magPoints, plasmaPoints, tempAvailable, note)],
     ['overnight',  checkOvernightWatch(env, forecastData, substormData, magPoints, plasmaPoints, note)],
     ['visibility', checkVisibilityNotifications(env, substormData, forecastData, magPoints, plasmaPoints, note)],
+    ['cme',        checkEarthDirectedCMEs(env, null, note)],
   ];
   const results = await Promise.allSettled(detectors.map(([, p]) => p));
 
@@ -828,6 +829,207 @@ async function checkSolarFlares(env, /** @type {any[]|null} */ allData = null, n
   } catch (e) {
     note('flare', 'error', e.message);
     reportError(e, env, { handler: 'checkSolarFlares' });
+  }
+}
+
+// ── Earth-directed CME launches ─────────────────────────────────────────────
+//
+// The shock detector says a CME has *arrived*, an hour or so after it passed
+// L1. This says one has *left the Sun* pointed at us, which is one to three
+// days of warning instead of one hour - the difference between "go outside"
+// and "keep the weekend free".
+//
+// The catalogue and the Earth-directed test are the app's own. It reads the
+// same DONKI proxy and applies the same rule (see utils/cmeAnalysis.ts), so a
+// CME that produces an alert is a CME the app draws as heading our way.
+// `npm run test:cme` fails if the two definitions drift apart.
+const DONKI_CME_URL = 'https://nasa-donki-api.thenamesrock.workers.dev/CME';
+
+// Keep in step with EARTH_DIRECTED_MAX_LONGITUDE in utils/cmeAnalysis.ts.
+const CME_EARTH_DIRECTED_MAX_LONGITUDE = 45;
+
+// How far back to consider a CME newsworthy. Also the window a CME stays under
+// review: DONKI revises its analyses for a while after an event, and a first
+// pass often under-reads the speed, so a CME is re-checked on every run until
+// it ages out rather than being judged once on a preliminary number.
+const CME_LOOKBACK_MS = 48 * 60 * 60 * 1000;
+
+// Ids already notified. Bounded, because this is one KV value and a busy
+// fortnight should not grow it without limit.
+const CME_SEEN_KEY = 'STATE_cme_seen';
+const CME_SEEN_MAX = 300;
+
+// The slowest CME anyone can ask to hear about, and what they get before they
+// choose. Must match CME_SPEED_MIN / CME_SPEED_DEFAULT in utils/cmeAnalysis.ts.
+const CME_SPEED_FLOOR_MIN = 300;
+const CME_SPEED_FLOOR_MAX = 3000;
+const CME_SPEED_FLOOR_DEFAULT = 700;
+
+// Plain words for a speed. Boundaries must match CME_SLOW_MAX / CME_MEDIUM_MAX
+// in utils/cmeAnalysis.ts, so the notification and the settings screen describe
+// the same CME the same way.
+const CME_SLOW_MAX = 500;
+const CME_MEDIUM_MAX = 800;
+const CME_SPEED_BAND_TEXT = {
+  slow:   'Slow - below 500 km/s. Usually a glancing effect at most.',
+  medium: 'Medium - 500 to 800 km/s. Can still cause a good storm.',
+  fast:   'Fast - above 800 km/s. The kind worth clearing an evening for.',
+};
+
+function cmeSpeedBand(speed) {
+  if (speed < CME_SLOW_MAX) return 'slow';
+  if (speed < CME_MEDIUM_MAX) return 'medium';
+  return 'fast';
+}
+
+// At most this many alerts from one run. DONKI occasionally publishes a batch
+// after an outage, and an outage is not a reason to send somebody six pushes.
+const CME_MAX_PER_RUN = 3;
+
+/** The analysis to believe: DONKI's own most-accurate flag, else the first. */
+function pickCmeAnalysis(analyses) {
+  if (!Array.isArray(analyses) || analyses.length === 0) return null;
+  return analyses.find(a => a?.isMostAccurate) ?? analyses[0];
+}
+
+function isCmeAnalysisUsable(a) {
+  return !!a && a.speed != null && a.longitude != null && a.latitude != null;
+}
+
+function isCmeEarthDirected(a) {
+  if (!isCmeAnalysisUsable(a)) return false;
+  return Math.abs(a.longitude) < CME_EARTH_DIRECTED_MAX_LONGITUDE;
+}
+
+/** A subscriber's speed floor, clamped to something we can rely on. */
+function cmeSpeedFloorOf(stored) {
+  const raw = stored?.cme_speed_min;
+  // null, undefined and '' all mean "never chose", which is the default rather
+  // than the minimum. Number(null) is 0, so without this an explicit null in a
+  // record would quietly opt someone into every CME down to 300 km/s.
+  if (raw == null || raw === '') return CME_SPEED_FLOOR_DEFAULT;
+  const n = Math.round(Number(raw));
+  if (!isFinite(n)) return CME_SPEED_FLOOR_DEFAULT;
+  return Math.min(CME_SPEED_FLOOR_MAX, Math.max(CME_SPEED_FLOOR_MIN, n));
+}
+
+/**
+ * DONKI's predicted arrival for a CME, if it has linked one.
+ *
+ * Same trick the app uses: a linked -GST event's activityID begins with the
+ * predicted timestamp. Returns null when there is no linked geomagnetic storm,
+ * which is the common case for a fresh CME.
+ */
+function cmePredictedArrival(cme) {
+  const linked = cme?.linkedEvents;
+  if (!Array.isArray(linked)) return null;
+  const gst = linked.find(e => typeof e?.activityID === 'string' && e.activityID.includes('-GST'));
+  if (!gst) return null;
+  const d = gst.activityID.slice(0, 13);
+  const parsed = Date.parse(
+    `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}T${d.slice(9, 11)}:${d.slice(11, 13)}:00Z`);
+  return isFinite(parsed) ? parsed : null;
+}
+
+async function checkEarthDirectedCMEs(env, cmeData = null, note = /** @type {(name?: string, status?: string, detail?: string) => void} */ (() => {})) {
+  try {
+    if (!cmeData) {
+      const response = await fetchWithRetry(DONKI_CME_URL);
+      if (!response) { note('cme', 'skipped', 'DONKI CME feed unreachable'); return; }
+      cmeData = await response.json().catch(() => null);
+    }
+    if (!Array.isArray(cmeData)) { note('cme', 'skipped', 'DONKI CME feed unparseable'); return; }
+
+    const state = await kv(env).get(CME_SEEN_KEY, 'json');
+    const seen = new Set(state?.ids ?? []);
+    const cutoff = Date.now() - CME_LOOKBACK_MS;
+
+    const fresh = [];
+    let earthDirected = 0;
+    for (const cme of cmeData) {
+      const id = cme?.activityID;
+      if (!id || seen.has(id)) continue;
+      const startMs = Date.parse(cme.startTime);
+      if (!isFinite(startMs) || startMs < cutoff) continue;
+
+      const a = pickCmeAnalysis(cme.cmeAnalyses);
+      if (!isCmeEarthDirected(a)) continue;
+      earthDirected++;
+      fresh.push({
+        id, startMs,
+        speed: Math.round(a.speed),
+        longitude: +Number(a.longitude).toFixed(1),
+        latitude: +Number(a.latitude).toFixed(1),
+        halfAngle: a.halfAngle ?? 30,
+        arrivalMs: cmePredictedArrival(cme),
+      });
+    }
+
+    // First ever run: adopt the current window as already-known rather than
+    // announcing two days of history to everybody at once.
+    if (!state) {
+      await kv(env).put(CME_SEEN_KEY, JSON.stringify({
+        ids: fresh.map(c => c.id).slice(-CME_SEEN_MAX), primedAt: Date.now(),
+      }));
+      note('cme', 'skipped',
+           `first run - adopted ${fresh.length} recent Earth-directed CME(s) as already seen`);
+      return;
+    }
+
+    if (fresh.length === 0) {
+      note('cme', 'quiet',
+           `no new Earth-directed CME in the last ${Math.round(CME_LOOKBACK_MS / 3600000)}h `
+           + `(${cmeData.length} catalogued)`);
+      return;
+    }
+
+    // Fastest first, so a capped run reports the one that matters most.
+    fresh.sort((a, b) => b.speed - a.speed);
+    const toSend = fresh.slice(0, CME_MAX_PER_RUN);
+
+    for (const c of toSend) {
+      const arrival = c.arrivalMs
+        ? `Predicted arrival: ${formatNzTime(c.arrivalMs)}`
+        : 'Arrival typically 1-3 days; watch for the shock alert when it reaches the satellites.';
+      const band = cmeSpeedBand(c.speed);
+      const payload = {
+        title: `🌞 Earth-Directed CME - ${c.speed} km/s`,
+        body: [
+          'A CME has been detected heading toward Earth.',
+          '',
+          `Speed: ${c.speed} km/s`,
+          CME_SPEED_BAND_TEXT[band],
+          `Launched: ${formatNzTime(c.startMs)}`,
+          `Source: ${c.longitude >= 0 ? 'west' : 'east'} ${Math.abs(c.longitude)}deg, `
+            + `${c.latitude >= 0 ? 'north' : 'south'} ${Math.abs(c.latitude)}deg`,
+          '',
+          arrival,
+        ].join('\n'),
+        tag: 'cme-earth-directed',
+        data: { url: '/?page=modeler', category: 'cme-earth-directed' },
+        ts: Date.now(),
+      };
+      await kv(env).put('LATEST_ALERT_cme-earth-directed', JSON.stringify(payload),
+                        { expirationTtl: 86400 });
+      // Per-subscriber, because the speed floor is each subscriber's own.
+      await enqueueDelivery(env, {
+        kind: 'cme', topic: 'cme-earth-directed', payload,
+        params: { id: c.id, speed: c.speed },
+      });
+    }
+
+    // Everything examined this run is now known, including the ones the cap
+    // skipped - otherwise the next run would send them and the cap would only
+    // have delayed the burst.
+    const ids = [...seen, ...fresh.map(c => c.id)].slice(-CME_SEEN_MAX);
+    await kv(env).put(CME_SEEN_KEY, JSON.stringify({ ids, updatedAt: Date.now() }));
+
+    note('cme', 'fired',
+         `${toSend.length} Earth-directed CME(s) queued, fastest ${toSend[0].speed} km/s`
+         + (fresh.length > toSend.length ? ` (${fresh.length - toSend.length} more capped)` : ''));
+  } catch (e) {
+    note('cme', 'error', e.message);
+    reportError(e, env, { handler: 'checkEarthDirectedCMEs' });
   }
 }
 
@@ -1538,9 +1740,9 @@ const ALL_TOPICS = [
   'overnight-watch',
   // solar
   'flare-M1', 'flare-M5', 'flare-X1',
-  'flare-X5', 'flare-X10', 'shock-ff',
-  'flare-peak', 'shock-sf', 'shock-fr',
-  'shock-sr',
+  'flare-X5', 'flare-X10', 'cme-earth-directed',
+  'shock-ff', 'flare-peak', 'shock-sf',
+  'shock-fr', 'shock-sr',
   // announcements
   'admin-broadcast',
   // no group - live but not shown in the app
@@ -1555,8 +1757,8 @@ const TOPIC_DEFAULT_ON = new Set([
   'visibility-dslr', 'visibility-phone', 'visibility-naked',
   'overnight-watch', 'flare-M1', 'flare-M5',
   'flare-X1', 'flare-X5', 'flare-X10',
-  'admin-broadcast', 'flare-event', 'flare-peak',
-  'substorm-forecast',
+  'cme-earth-directed', 'shock-ff', 'admin-broadcast',
+  'flare-event', 'flare-peak', 'substorm-forecast',
 ]);
 
 // The icon a notification shows, by topic. Sent with the payload rather than
@@ -1572,6 +1774,7 @@ const TOPIC_ICONS = {
   'flare-X1': '/icons/icon-flare-event.png',
   'flare-X5': '/icons/icon-flare-event.png',
   'flare-X10': '/icons/icon-flare-event.png',
+  'cme-earth-directed': '/icons/icon-cme-sheath.png',
   'shock-ff': '/icons/icon-shock-detection.png',
   'admin-broadcast': '/icons/icon-default.png',
   'flare-event': '/icons/icon-flare-event.png',
@@ -1598,6 +1801,7 @@ const TOPIC_BADGES = {
   'flare-X1': '/icons/icon-badge-flare.png',
   'flare-X5': '/icons/icon-badge-flare.png',
   'flare-X10': '/icons/icon-badge-flare.png',
+  'cme-earth-directed': '/icons/icon-badge-shock.png',
   'shock-ff': '/icons/icon-badge-shock.png',
   'flare-event': '/icons/icon-badge-flare.png',
   'flare-peak': '/icons/icon-badge-flare.png',
@@ -1630,7 +1834,12 @@ const TOPIC_BADGES = {
 //   additive    a preference a user has actually set is never overwritten.
 //               Only keys that are absent get filled in.
 
-const MIGRATION_VERSION = 2;
+// 3: fills in cme-earth-directed for everyone who subscribed before it
+//    existed. A new default-on topic reaches nobody until this runs, because
+//    the send requires preferences[topic] === true and their record has no
+//    such key at all. The pass only ever fills keys that are undefined, so it
+//    cannot overwrite a choice somebody made.
+const MIGRATION_VERSION = 3;
 const MIGRATION_KEY = 'MIGRATION';
 const migrationShardKey = (ch) => `MIGSHARD_${ch}`;
 
@@ -1941,7 +2150,7 @@ async function handleUpdateLocation(request, env) {
 async function handleSaveSubscription(request, env) {
   if (!kv(env)) return new Response('KV namespace missing.', { status: 500 });
   try {
-    const { subscription, preferences, timezone, latitude, longitude, overnight_mode } = await request.json();
+    const { subscription, preferences, timezone, latitude, longitude, overnight_mode, cme_speed_min } = await request.json();
     if (!subscription?.endpoint) return new Response('Invalid subscription', { status: 400 });
 
     const cfLat = request.cf?.latitude != null ? Number(request.cf.latitude) : null;
@@ -1970,6 +2179,12 @@ async function handleSaveSubscription(request, env) {
       preferences,
       location,
       overnight_mode: overnight_mode || existing.overnight_mode || 'phone',
+      // The speed floor for Earth-directed CME alerts. Kept beside
+      // overnight_mode rather than in preferences, because it is a number the
+      // subscriber chose, not an on/off switch.
+      cme_speed_min: cme_speed_min != null
+        ? Math.min(CME_SPEED_FLOOR_MAX, Math.max(CME_SPEED_FLOOR_MIN, Math.round(Number(cme_speed_min)) || CME_SPEED_FLOOR_DEFAULT))
+        : (existing.cme_speed_min ?? CME_SPEED_FLOOR_DEFAULT),
       // Additive. Lets the census report how many subscriptions are still
       // being refreshed by a live app rather than just how many rows exist.
       lastSeenAt: Date.now(),
@@ -2757,6 +2972,14 @@ async function decideForSubscriber(env, job, keyName, stored, meter = { ops: 0 }
     return { payload: job.payload };
   }
 
+  if (job.kind === 'cme') {
+    if (prefs['cme-earth-directed'] !== true) return null;
+    // The only alert whose threshold belongs to the subscriber rather than to
+    // the detector: everyone gets the same CME judged against their own floor.
+    if ((job.params?.speed ?? 0) < cmeSpeedFloorOf(stored)) return null;
+    return { payload: job.payload };
+  }
+
   if (job.kind === 'overnight') {
     if (prefs['overnight-watch'] !== true) return null;
     const p = job.params;
@@ -3277,6 +3500,9 @@ async function runCensusShard(env, censusId, ch) {
   let unreadable = resuming ? prior.unreadable : 0;
   const unreadableShapes = resuming ? { ...prior.unreadableShapes } : {};
   const overnightModes = resuming ? { ...prior.overnightModes } : {};
+  // The CME speed floors people chose. Worth knowing before tuning the alert:
+  // if everyone sits on the default, the choice is not being used.
+  const cmeSpeedFloors = resuming ? { ...prior.cmeSpeedFloors } : {};
   const services = resuming ? { ...prior.services } : {};
   // Which front end each subscription came from, both as a category and as the
   // literal origin. The origin is the one that answers "how many on the live
@@ -3330,6 +3556,9 @@ async function runCensusShard(env, censusId, ch) {
       const mode = stored.overnight_mode || 'phone';
       overnightModes[mode] = (overnightModes[mode] ?? 0) + 1;
 
+      const floor = cmeSpeedFloorOf(stored);
+      cmeSpeedFloors[floor] = (cmeSpeedFloors[floor] ?? 0) + 1;
+
       // Which push service this device uses. Worth having because failures
       // cluster by platform - if a send goes badly, this says whose.
       const svc = pushServiceOf(stored.subscription?.endpoint);
@@ -3361,7 +3590,7 @@ async function runCensusShard(env, censusId, ch) {
     censusId, shard: ch, state, cursor: complete ? null : (cursor ?? null),
     lastKey: complete ? null : lastKey,
     subscribers, withGps, active, anyTopic, counts, overnightModes, services,
-    sites, origins,
+    sites, origins, cmeSpeedFloors,
     unreadable, unreadableShapes, at: Date.now(),
   }), { expirationTtl: CENSUS_SHARD_TTL });
 
@@ -3398,6 +3627,7 @@ async function tryFinishCensus(env, censusId) {
   let subscribers = 0, withGps = 0, active = 0, anyTopic = 0, unreadable = 0;
   const overnightModes = {};
   const services = {};
+  const cmeSpeedFloors = {};
   const sites = {};
   const origins = {};
   const unreadableShapes = {};
@@ -3410,6 +3640,9 @@ async function tryFinishCensus(env, censusId) {
     }
     for (const [svc, n] of Object.entries(p.services ?? {})) {
       services[svc] = (services[svc] ?? 0) + n;
+    }
+    for (const [floor, n] of Object.entries(p.cmeSpeedFloors ?? {})) {
+      cmeSpeedFloors[floor] = (cmeSpeedFloors[floor] ?? 0) + n;
     }
     for (const [site, n] of Object.entries(p.sites ?? {})) {
       sites[site] = (sites[site] ?? 0) + n;
@@ -3439,6 +3672,10 @@ async function tryFinishCensus(env, censusId) {
     withoutLocation: subscribers - withGps,
     byCategory,
     overnightModes,
+    // Keyed by km/s. Sorted numerically rather than by count, so it reads as a
+    // distribution.
+    cmeSpeedFloors: Object.fromEntries(
+      Object.entries(cmeSpeedFloors).sort((a, b) => Number(a[0]) - Number(b[0]))),
     byPushService: Object.fromEntries(Object.entries(services).sort((a, b) => b[1] - a[1])),
     // Which site each subscription was created on. A push subscription belongs
     // to the origin that made it, so the same person on both sites is two rows

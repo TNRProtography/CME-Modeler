@@ -1,3 +1,4 @@
+import { clampCmeSpeed, CME_SPEED_DEFAULT } from './cmeAnalysis';
 // --- START OF FILE src/utils/notifications.ts ---
 
 /**
@@ -302,6 +303,7 @@ const sendPushSubscriptionToServer = async (
     preferences,
     timezone,
     overnight_mode: getOvernightMode(),
+    cme_speed_min: getCmeSpeedMin(),
     ...(coords ? { latitude: coords.latitude, longitude: coords.longitude } : {}),
   });
   console.log("DIAGNOSTIC: Request Body being sent:", body);
@@ -506,6 +508,30 @@ export const setOvernightMode = (mode: OvernightMode) => {
     localStorage.setItem(OVERNIGHT_MODE_KEY, mode);
   } catch (e) {
     console.error('Error saving overnight mode:', e);
+  }
+};
+
+// --- Earth-directed CME speed floor ---
+// How fast an Earth-directed CME has to be before it is worth a notification.
+// Unlike every other setting here this is a number rather than a switch, and it
+// lives on the subscription record so the worker can judge each CME per person.
+const CME_SPEED_KEY = 'notification_cme_speed_min';
+
+export const getCmeSpeedMin = (): number => {
+  try {
+    const stored = localStorage.getItem(CME_SPEED_KEY);
+    if (stored == null) return CME_SPEED_DEFAULT;
+    return clampCmeSpeed(stored);
+  } catch {
+    return CME_SPEED_DEFAULT;
+  }
+};
+
+export const setCmeSpeedMin = (speed: number) => {
+  try {
+    localStorage.setItem(CME_SPEED_KEY, String(clampCmeSpeed(speed)));
+  } catch (e) {
+    console.error('Error saving CME speed threshold:', e);
   }
 };
 

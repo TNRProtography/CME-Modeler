@@ -1,7 +1,7 @@
 /**
  * Spot The Aurora — Browser Service Worker
  * Handles Web Push notifications and notification click events.
- * @version 2.3.0
+ * @version 2.4.0
  *
  * The icon now comes from the push payload when the worker sends one, so the
  * category manifest in the app is the single place an icon is chosen. The map
@@ -20,7 +20,7 @@
 // /sw.js is what actually triggers an update, so this is not load-bearing - it
 // exists so a device can be asked what it is running, and so a version stuck in
 // the field is a fact somebody can read rather than a theory.
-const SW_VERSION = '2.3.0';
+const SW_VERSION = '2.4.0';
 
 // Maps notification topic/tag to a specific icon
 const TOPIC_ICONS = {
@@ -35,6 +35,7 @@ const TOPIC_ICONS = {
   'flare-X1':          '/icons/icon-flare-event.png',
   'flare-X5':          '/icons/icon-flare-event.png',
   'flare-X10':         '/icons/icon-flare-event.png',
+  'cme-earth-directed':'/icons/icon-cme-sheath.png',
   'shock-ff':          '/icons/icon-shock-detection.png',
   'shock-sf':          '/icons/icon-shock-detection.png',
   'shock-fr':          '/icons/icon-shock-detection.png',
@@ -63,6 +64,7 @@ const TOPIC_BADGES = {
   'flare-X1':          '/icons/icon-badge-flare.png',
   'flare-X5':          '/icons/icon-badge-flare.png',
   'flare-X10':         '/icons/icon-badge-flare.png',
+  'cme-earth-directed':'/icons/icon-badge-shock.png',
   'shock-ff':          '/icons/icon-badge-shock.png',
   'shock-sf':          '/icons/icon-badge-shock.png',
   'shock-fr':          '/icons/icon-badge-shock.png',

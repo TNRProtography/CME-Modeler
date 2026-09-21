@@ -1,4 +1,5 @@
 import { CMEData, ProcessedCME } from '../types';
+import { pickAnalysis, isUsableAnalysis, isEarthDirected } from '../utils/cmeAnalysis';
 
 // --- NEW TYPE DEFINITIONS ---
 // NOTE: These types are added here to contain changes to a single file.
@@ -161,9 +162,11 @@ const processCMEData = (data: CMEData[]): ProcessedCME[] => {
   const modelableCMEs: ProcessedCME[] = [];
   data.forEach(cme => {
     if (cme.cmeAnalyses && cme.cmeAnalyses.length > 0) {
-      const analysis = cme.cmeAnalyses.find(a => a.isMostAccurate) || cme.cmeAnalyses[0];
-      if (analysis.speed != null && analysis.longitude != null && analysis.latitude != null) {
-        const isEarthDirected = Math.abs(analysis.longitude) < 45;
+      // Shared with the push worker, so an alert cannot disagree with what the
+      // app draws. See utils/cmeAnalysis.ts.
+      const analysis = pickAnalysis(cme.cmeAnalyses)!;
+      if (isUsableAnalysis(analysis)) {
+        const earthDirected = isEarthDirected(analysis);
         
         modelableCMEs.push({
           id: cme.activityID,
@@ -171,7 +174,7 @@ const processCMEData = (data: CMEData[]): ProcessedCME[] => {
           speed: analysis.speed,
           longitude: analysis.longitude,
           latitude: analysis.latitude,
-          isEarthDirected,
+          isEarthDirected: earthDirected,
           note: cme.note || 'No additional details.',
           predictedArrivalTime: getPredictedArrivalTime(cme),
           link: cme.link,

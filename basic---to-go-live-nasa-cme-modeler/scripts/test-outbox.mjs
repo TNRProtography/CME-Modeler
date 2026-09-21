@@ -321,9 +321,15 @@ console.log('\n7. migrating existing subscribers');
   check(plainPrefs['overnight-watch'] === true && plainPrefs['visibility-naked'] === true,
         'never-seen topics take the app\'s own default rather than false',
         JSON.stringify({ overnight: plainPrefs['overnight-watch'], naked: plainPrefs['visibility-naked'] }));
-  check(plainPrefs['shock-imf'] === false && plainPrefs['shock-ff'] === false,
+  check(plainPrefs['shock-imf'] === false,
         'a topic the app defaults to off stays off',
         JSON.stringify({ imf: plainPrefs['shock-imf'], ff: plainPrefs['shock-ff'] }));
+  // shock-ff is default-on: the CME arrival alert is the most actionable one
+  // this worker sends, and leaving it off by default meant it reached almost
+  // nobody.
+  check(plainPrefs['shock-ff'] === true,
+        'and the CME arrival alert defaults on',
+        JSON.stringify({ ff: plainPrefs['shock-ff'] }));
   check(plainPrefs['flare-M1'] === true, 'their one real choice is preserved');
 
   check(store.get(optedOut) === before.optedOut,

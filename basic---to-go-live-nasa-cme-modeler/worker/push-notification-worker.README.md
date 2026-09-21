@@ -189,6 +189,43 @@ The census shards the same way as delivery, so it never walks the whole list
 in one invocation. `/diagnostics` reads this snapshot rather than counting
 subscribers itself.
 
+## Earth-directed CME alerts
+
+`checkEarthDirectedCMEs` reads the app's own DONKI proxy
+(`nasa-donki-api.thenamesrock.workers.dev/CME`) and applies the app's own test
+for Earth-directed: DONKI's most-accurate analysis, launched within 45 degrees
+of the Sun-Earth line. That rule lives in `utils/cmeAnalysis.ts`; the worker
+carries a copy because it cannot import TypeScript, and `npm run test:cme`
+fails if the two drift apart. A CME that triggers an alert is a CME the app
+draws as heading our way.
+
+This is the **launch**, not the arrival - one to three days of warning. The
+`shock-ff` alert is what fires when it actually reaches the satellites.
+
+The speed threshold belongs to the subscriber, not the detector. It is stored
+as `cme_speed_min` on the subscription record (beside `overnight_mode`, not in
+the preference map, because it is a number rather than a switch), and every
+subscriber is judged against their own:
+
+| Band | Speed | What it means |
+| --- | --- | --- |
+| Slow | below 500 km/s | usually a glancing effect at most |
+| Medium | 500-800 km/s | can still cause a good storm |
+| Fast | above 800 km/s | worth clearing an evening for |
+
+Default floor is 700 km/s. `/stats` reports the distribution as
+`cmeSpeedFloors`, keyed by km/s.
+
+Two things stop a backlog becoming a flood: a CME is only considered for 48
+hours after launch, and at most three alerts go out per run - fastest first,
+with the rest marked seen so the cap does not merely delay them. The first
+ever run adopts everything in the window as already-seen and sends nothing.
+
+A CME stays under review for the whole 48 hours rather than being judged once,
+because DONKI revises its analyses and a first pass often under-reads the
+speed. Someone with a high floor still hears about a CME that gets revised
+upward.
+
 ## Two front ends
 
 The live site and the Pages dev deploys both talk to this worker:

@@ -11,6 +11,8 @@ import {
   setNotificationPreference,
   getOvernightMode,
   setOvernightMode,
+  getCmeSpeedMin,
+  setCmeSpeedMin,
   type OvernightMode,
   requestNotificationPermission,
   sendTestNotification,
@@ -20,6 +22,8 @@ import {
 } from '../utils/notifications.ts';
 import { PageViewStats } from '../utils/pageViews';
 import { COMING_SOON_IDS, GROUPED_FOR_UI } from '../utils/notificationCategories';
+import { CME_SPEED_PRESETS, CME_SPEED_MIN, CME_SPEED_MAX, CME_SPEED_STEP, clampCmeSpeed,
+         CME_SPEED_BANDS, cmeSpeedBand } from '../utils/cmeAnalysis';
 import {
   NOTIFICATION_PRESETS,
   NOTIFICATION_TEMPLATE_KEY,
@@ -298,6 +302,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [notificationSettings, setNotificationSettings] = useState<Record<string, boolean>>({});
   const [overnightMode, setOvernightModeState] = useState<OvernightMode>(() => getOvernightMode());
+  const [cmeSpeed, setCmeSpeedState] = useState<number>(() => getCmeSpeedMin());
   const [notifHistory, setNotifHistory] = useState<NotificationHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -641,6 +646,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   }, []);
 
   /**
+   * The speed floor for Earth-directed CME alerts.
+   *
+   * Saved locally straight away so the box does not fight the typing, and
+   * pushed to the worker with the rest of the preferences - the worker judges
+   * every CME against each subscriber's own number.
+   */
+  const handleCmeSpeedChange = useCallback((speed: number) => {
+    const clamped = clampCmeSpeed(speed);
+    setCmeSpeedState(clamped);
+    setCmeSpeedMin(clamped);
+    void updatePushSubscriptionPreferences();
+  }, []);
+
+  /**
    * User picked a template card. For non-custom presets, rewrite all the
    * per-notification prefs and the overnight-watch mode in one go so the
    * full preset takes effect immediately. For 'custom', we just reveal the
@@ -947,6 +966,68 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                               )}
                             </div>
                             <p className={`text-xs mt-1 ml-1 ${isShock ? 'text-neutral-700' : 'text-neutral-600'}`}>{item.description}</p>
+                            {/* Speed floor - only for the Earth-directed CME alert.
+                                Every other category is a plain on/off; this one
+                                needs a number, because "fast enough to care
+                                about" is a different figure for each person. */}
+                            {item.id === 'cme-earth-directed' && notificationSettings[item.id] && (
+                              <div className="mt-3 ml-1 p-3 bg-neutral-800/60 border border-neutral-700/50 rounded-lg">
+                                <p className="text-xs font-semibold text-neutral-300 mb-2">Only tell me about CMEs faster than…</p>
+                                <div className="flex flex-wrap gap-1.5 mb-3">
+                                  {CME_SPEED_PRESETS.map(preset => (
+                                    <button
+                                      key={preset.speed}
+                                      onClick={() => handleCmeSpeedChange(preset.speed)}
+                                      title={preset.note}
+                                      className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors ${
+                                        cmeSpeed === preset.speed
+                                          ? 'bg-sky-500/15 border-sky-500/40 text-sky-200'
+                                          : 'bg-neutral-900/60 border-neutral-700/60 text-neutral-400 hover:text-neutral-200'}`}
+                                    >
+                                      {preset.label} · {preset.speed}
+                                    </button>
+                                  ))}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="number"
+                                    inputMode="numeric"
+                                    min={CME_SPEED_MIN}
+                                    max={CME_SPEED_MAX}
+                                    step={CME_SPEED_STEP}
+                                    value={cmeSpeed}
+                                    onChange={(e) => setCmeSpeedState(Number(e.target.value))}
+                                    onBlur={(e) => handleCmeSpeedChange(Number(e.target.value))}
+                                    className="w-24 px-2 py-1.5 rounded-lg bg-neutral-900 border border-neutral-700 text-sm text-neutral-100 focus:outline-none focus:border-sky-500"
+                                    aria-label="Minimum CME speed in kilometres per second"
+                                  />
+                                  <span className="text-xs text-neutral-400">km/s</span>
+                                </div>
+                                <p className="text-[11px] text-neutral-400 leading-relaxed mt-2">
+                                  At {cmeSpeed} km/s you will hear about{' '}
+                                  <span className="text-neutral-200 font-medium">
+                                    {cmeSpeedBand(cmeSpeed) === 'slow' ? 'every' : `${CME_SPEED_BANDS[cmeSpeedBand(cmeSpeed)].label.toLowerCase()} and faster`}
+                                  </span>{' '}
+                                  Earth-directed CMEs.
+                                </p>
+                                {/* What the numbers mean. Without this the box is
+                                    just a number with no scale attached to it. */}
+                                <dl className="mt-2 space-y-1">
+                                  {(['slow', 'medium', 'fast'] as const).map(band => (
+                                    <div key={band} className="flex gap-2 text-[11px] leading-relaxed">
+                                      <dt className={`flex-shrink-0 w-14 font-medium ${
+                                        cmeSpeedBand(cmeSpeed) === band ? 'text-sky-300' : 'text-neutral-400'}`}>
+                                        {CME_SPEED_BANDS[band].label}
+                                      </dt>
+                                      <dd className="text-neutral-500">{CME_SPEED_BANDS[band].detail}</dd>
+                                    </div>
+                                  ))}
+                                </dl>
+                                <p className="text-[11px] text-neutral-600 leading-relaxed mt-2">
+                                  This is the launch, not the arrival — a CME takes one to three days to reach us.
+                                </p>
+                              </div>
+                            )}
                             {/* Mode selector - only for overnight-watch */}
                             {item.id === 'overnight-watch' && notificationSettings[item.id] && (
                               <div className="mt-3 ml-1 p-3 bg-neutral-800/60 border border-neutral-700/50 rounded-lg">
