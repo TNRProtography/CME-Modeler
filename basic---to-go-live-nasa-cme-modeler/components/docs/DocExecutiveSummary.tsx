@@ -14,7 +14,7 @@ const DocExecutiveSummary: React.FC = () => (
         Spot The Aurora is a real-time aurora forecasting progressive web app built specifically for
         New Zealand. It combines solar wind measurements from NASA and NOAA satellites, a direct
         geomagnetic measurement from Canterbury, and a custom scoring algorithm to estimate aurora
-        visibility on a 0–100% scale referenced to the South Island. It is free, ad-free, and
+        visibility on a 0-100% scale referenced to the South Island. It is free, ad-free, and
         entirely transparent about how it works.
       </p>
     </Card>
@@ -81,12 +81,12 @@ const DocExecutiveSummary: React.FC = () => (
       <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-4">Score thresholds - South Island NZ reference</p>
       <div className="space-y-1.5">
         {[
-          { range: '80–100%', label: 'Go outside now - significant display, possible curtains overhead', color: '#ef4444', w: 100 },
-          { range: '65–79%',  label: 'Visible naked eye - distinct glow or pillars to the south',       color: '#f97316', w: 80 },
-          { range: '50–64%',  label: 'Faint glow possible to the south in a very dark spot',             color: '#eab308', w: 65 },
-          { range: '35–49%',  label: 'Phone night mode will detect it - not reliably naked-eye',         color: '#84cc16', w: 48 },
-          { range: '20–34%',  label: 'Very faint - long-exposure DSLR on a tripod only',                 color: '#22c55e', w: 32 },
-          { range: '0–19%',   label: 'Conditions too quiet - nothing to see tonight',                    color: '#16a34a', w: 18 },
+          { range: '80-100%', label: 'Go outside now - significant display, possible curtains overhead', color: '#ef4444', w: 100 },
+          { range: '65-79%',  label: 'Visible naked eye - distinct glow or pillars to the south',       color: '#f97316', w: 80 },
+          { range: '50-64%',  label: 'Faint glow possible to the south in a very dark spot',             color: '#eab308', w: 65 },
+          { range: '35-49%',  label: 'Phone night mode will detect it - not reliably naked-eye',         color: '#84cc16', w: 48 },
+          { range: '20-34%',  label: 'Very faint - long-exposure DSLR on a tripod only',                 color: '#22c55e', w: 32 },
+          { range: '0-19%',   label: 'Conditions too quiet - nothing to see tonight',                    color: '#16a34a', w: 18 },
         ].map(item => (
           <div key={item.range} className="flex items-center gap-3">
             <span className="font-mono text-xs w-16 text-neutral-300 flex-shrink-0">{item.range}</span>

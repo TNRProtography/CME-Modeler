@@ -13,10 +13,10 @@ const DocNotifications: React.FC = () => (
     <DataTable
       headers={['Category', 'Trigger condition', 'Location-aware', 'Default']}
       rows={[
-        ['visibility-dslr',  'Aurora oval equatorward boundary reaches subscriber\'s DSLR visibility horizon. Threshold adjusted for moon illumination: <20% → base offsets; 40–60% → shifted conservatively; >80% → DSLR suppressed entirely.', 'Yes - per GPS', 'On'],
-        ['visibility-phone', 'Oval within phone-camera visibility range. Suppressed at moon >80%; takes DSLR\'s role at 60–80%.', 'Yes - per GPS', 'On'],
+        ['visibility-dslr',  'Aurora oval equatorward boundary reaches subscriber\'s DSLR visibility horizon. Threshold adjusted for moon illumination: <20% → base offsets; 40-60% → shifted conservatively; >80% → DSLR suppressed entirely.', 'Yes - per GPS', 'On'],
+        ['visibility-phone', 'Oval within phone-camera visibility range. Suppressed at moon >80%; takes DSLR\'s role at 60-80%.', 'Yes - per GPS', 'On'],
         ['visibility-naked', 'Oval equatorward boundary within ~5° geomagnetic lat of subscriber. Threshold tightens with moon: base 5°; >40% → 8°; >60% → 10°; >80% → 12°.', 'Yes - per GPS', 'On'],
-        ['overnight-watch',  'Nightly summary between 18:00–21:00 NZST. Send condition based on user mode: every-night (score ≥0), camera (≥25), phone (≥40), eye (≥55). Once per NZ calendar day per subscriber.', 'NZ timezone', 'On'],
+        ['overnight-watch',  'Nightly summary between 18:00-21:00 NZST. Send condition based on user mode: every-night (score ≥0), camera (≥25), phone (≥40), eye (≥55). Once per NZ calendar day per subscriber.', 'NZ timezone', 'On'],
         ['flare-event',      'Solar flare confirmed at peak ≥M1.0. "Confirmed" = flux still ≥M1 after 5 min of declining trend (avoids false peaks).', 'No', 'On'],
         ['shock-ff',         'Fast Forward Shock - speed↑, density↑, temp↑, Bt↑ across median pre/post windows (18/12 min). Classic CME arrival signature. 4-hour cooldown.', 'No', 'On'],
         ['shock-sf',         'Slow Forward Shock - speed↑, density↑, temp↑, Bt↓. Weaker compression, often SIR or CME flank. 4-hour cooldown.', 'No', 'On'],

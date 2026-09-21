@@ -485,7 +485,7 @@ const DebugPanel: React.FC<DebugPanelProps> = ({ isOpen, onClose }) => {
           <div className="flex items-start justify-between gap-4 py-2 border-b border-neutral-800/60">
             <span className="text-xs text-neutral-500 w-40">Window open</span>
             <span className={`text-xs font-semibold ${windowOpen ? 'text-emerald-400' : 'text-amber-400'}`}>
-              {windowOpen ? 'Yes (5pm–10pm)' : `No - window is 5pm–10pm NZT (now ${nzHour}:xx)`}
+              {windowOpen ? 'Yes (5pm-10pm)' : `No - window is 5pm-10pm NZT (now ${nzHour}:xx)`}
             </span>
           </div>
           <Row label="Mode" value={overnightMode} mono />

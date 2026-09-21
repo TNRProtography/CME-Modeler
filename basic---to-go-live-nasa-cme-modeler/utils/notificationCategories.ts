@@ -97,7 +97,7 @@ export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
     badge: '/icons/icon-badge-dslr.png',
     label: 'DSLR camera visible',
     description: 'Aurora detectable with a DSLR on a tripod - furthest early warning.',
-    tooltip: 'The earliest warning - sent when aurora is just becoming detectable from your location using a DSLR camera on a tripod with a long exposure (5–15 seconds). This is the first sign conditions are developing toward something worth watching. Great if you want maximum lead time to get to a dark spot.',
+    tooltip: 'The earliest warning - sent when aurora is just becoming detectable from your location using a DSLR camera on a tripod with a long exposure (5-15 seconds). This is the first sign conditions are developing toward something worth watching. Great if you want maximum lead time to get to a dark spot.',
   },
   {
     id: 'visibility-phone',
@@ -129,7 +129,7 @@ export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
     badge: '/icons/icon-badge-moon.png',
     label: 'Worth watching tonight',
     description: 'Sent around sunset when solar wind conditions are elevated.',
-    tooltip: 'Sent once per day around sunset (6–9 PM NZST) when solar wind conditions are elevated enough to be worth monitoring tonight. Includes Bz direction, solar wind speed, and moon illumination so you can decide whether to head out. Not sent on quiet nights.',
+    tooltip: 'Sent once per day around sunset (6-9 PM NZST) when solar wind conditions are elevated enough to be worth monitoring tonight. Includes Bz direction, solar wind speed, and moon illumination so you can decide whether to head out. Not sent on quiet nights.',
   },
 
   // ── Solar events ─────────────────────────────────────────────────────────
@@ -201,7 +201,7 @@ export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
     icon: '/icons/icon-shock-detection.png',
     badge: '/icons/icon-badge-shock.png',
     label: 'CME arrival - fast forward shock',
-    description: 'A CME or solar wind stream has slammed into the L1 satellites. Aurora conditions may change within 45–60 minutes.',
+    description: 'A CME or solar wind stream has slammed into the L1 satellites. Aurora conditions may change within 45-60 minutes.',
     tooltip: 'A fast forward shock (FF) is the most common and impactful type of interplanetary shock. It happens when a fast-moving CME or solar wind stream ploughs into slower wind ahead of it, compressing everything - speed, density, temperature, and magnetic field all jump up simultaneously. This is the classic "CME has arrived" signature and is one of the most actionable alerts. Conditions on Earth can shift from quiet to active within an hour.',
   },
 

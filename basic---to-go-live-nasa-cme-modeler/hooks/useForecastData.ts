@@ -472,7 +472,7 @@ export const useForecastData = (
   const [substormForecast, setSubstormForecast] = useState<SubstormForecast>({
     status: 'QUIET',
     likelihood: 0,
-    windowLabel: '30 – 90 min',
+    windowLabel: '30 - 90 min',
     action: 'Low chance for now.',
     p30: 0,
     p60: 0,
@@ -620,11 +620,11 @@ export const useForecastData = (
 
     const likelihood = Math.round((0.4 * clamp01(probs.P30) + 0.6 * clamp01(probs.P60)) * 100);
 
-    let windowLabel = '30 – 90 min';
-    if (status === "ONSET") windowLabel = "Now – 10 min";
-    else if (status === "IMMINENT_30") windowLabel = "0 – 30 min";
-    else if (status === "LIKELY_60") windowLabel = "10 – 60 min";
-    else if (status === "WATCH") windowLabel = "20 – 90 min";
+    let windowLabel = '30 - 90 min';
+    if (status === "ONSET") windowLabel = "Now - 10 min";
+    else if (status === "IMMINENT_30") windowLabel = "0 - 30 min";
+    else if (status === "LIKELY_60") windowLabel = "10 - 60 min";
+    else if (status === "WATCH") windowLabel = "20 - 90 min";
     
     let action = 'Default action message.';
     const now = Date.now();

@@ -17,7 +17,7 @@ const DocSubstormModel: React.FC = () => (
           quantifies total magnetospheric loading over recent minutes - a stronger predictor of
           substorm onset than any instantaneous measurement.
         </p>
-        <Formula note="Historical threshold for significant NZ aurora activity: ~5–10 sustained over 30 min at typical solar wind speeds.">
+        <Formula note="Historical threshold for significant NZ aurora activity: ~5-10 sustained over 30 min at typical solar wind speeds.">
 {`dΦ/dt = V^(4/3) · BT^(2/3) · |sin(θ/2)|^(8/3)
 
 newell_now     = current-point value
@@ -82,7 +82,7 @@ P30 = clamp(0.15 + 0.7×base + bzBoost,
       headers={['Slot', 'Primary source', 'Secondary source', 'Confidence']}
       rows={[
         ['Now',    'Substorm Risk current status + aurora score from Forecast Worker', 'Confirmed sighting reports from within ~200 km in the last 30 min', 'High - reflects current measured conditions'],
-        ['15 min', 'P30 probability + Newell coupling trend + Bay onset flag', 'L1 data reflects conditions ~45–60 min from Earth (partially overlaps)', 'High - primary window of reliable near-term forecasting'],
+        ['15 min', 'P30 probability + Newell coupling trend + Bay onset flag', 'L1 data reflects conditions ~45-60 min from Earth (partially overlaps)', 'High - primary window of reliable near-term forecasting'],
         ['30 min', 'P30 and P60 interpolated + Bz persistence model', 'Sustained southward Bz extrapolation from current trend', 'Medium - conditions can change significantly in 30 min'],
         ['60 min', 'P60 probability projection', 'Aurora score composite', 'Low - guidance only. Treat as "conditions are currently building" rather than a specific prediction'],
       ]}

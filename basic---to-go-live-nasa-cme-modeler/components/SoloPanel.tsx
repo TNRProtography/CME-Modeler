@@ -276,7 +276,7 @@ const HeliocentricMap: React.FC<{ data: PositionData }> = ({ data }) => {
               fill="#52525b" fontSize={7 * inv} fontFamily="inherit">{r} AU</text>
           ))}
 
-          {/* Sun–Earth reference line */}
+          {/* Sun-Earth reference line */}
           <line x1={CX} y1={CY} x2={ep.sx} y2={ep.sy}
             stroke="#60a5fa" strokeWidth={0.5 * inv} strokeDasharray={`${3 * inv} ${3 * inv}`}
             opacity="0.2" vectorEffect="non-scaling-stroke" />
@@ -681,7 +681,7 @@ const SoloPanel: React.FC = () => {
       <div>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-base font-semibold text-neutral-200">EUI Solar Imagery</h3>
-          <span className="text-[11px] text-neutral-600">ESA/NASA Helioviewer · hours–days latency</span>
+          <span className="text-[11px] text-neutral-600">ESA/NASA Helioviewer · hours-days latency</span>
         </div>
 
         {/* Channel selector */}

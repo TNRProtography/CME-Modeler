@@ -138,7 +138,7 @@ export interface EpamWarning {
     // v2 sequence diagnostics
     dispersionLeadMin: number | null;   // how far high channels led low ones
     spreadRecent: number | null;        // current inter-channel log spread
-    spreadPast: number | null;          // spread 8–14h ago
+    spreadPast: number | null;          // spread 8-14h ago
     dipDepthLog: number | null;         // depth of pre-arrival depression
     fdPctNow: number | null;            // neutron monitor % vs its 7-day baseline
     nmAvailable: boolean;

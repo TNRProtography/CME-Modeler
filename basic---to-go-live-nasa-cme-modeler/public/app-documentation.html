@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Spot The Aurora — Technical Architecture</title>
+<title>Spot The Aurora - Technical Architecture</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
@@ -135,8 +135,8 @@ code{font-family:var(--mono);font-size:10.5px;background:rgba(255,255,255,.07);p
 <body>
 
 <div class="ph">
-  <h1>Spot The Aurora — Technical Architecture</h1>
-  <p class="sub">A fully transparent, detailed account of how every layer of this app works — from raw NOAA and NASA data through scoring algorithms, propagation physics, notification crypto, and backend workers. No hand-waving.</p>
+  <h1>Spot The Aurora - Technical Architecture</h1>
+  <p class="sub">A fully transparent, detailed account of how every layer of this app works - from raw NOAA and NASA data through scoring algorithms, propagation physics, notification crypto, and backend workers. No hand-waving.</p>
   <div class="tags">
     <span class="tag">React 18 + Vite PWA</span>
     <span class="tag">Cloudflare Pages + Workers</span>
@@ -169,7 +169,7 @@ code{font-family:var(--mono);font-size:10.5px;background:rgba(255,255,255,.07);p
 <div class="wrap">
 
 <!-- ══════════════════════════════════════════════════════════
-     01 — SYSTEM OVERVIEW
+     01 - SYSTEM OVERVIEW
 ═══════════════════════════════════════════════════════════ -->
 <div class="sec" id="s01">
   <div class="sec-hd"><span class="sec-n">01</span><h2>System Overview</h2></div>
@@ -181,7 +181,7 @@ code{font-family:var(--mono);font-size:10.5px;background:rgba(255,255,255,.07);p
       <div class="lb"><div class="cards">
         <div class="card"><div class="ct">📱 Progressive Web App</div><div class="cb"><p>Installs to phone home screen with no app store. A service worker caches the UI shell for offline startup and handles push delivery when the app is closed.</p></div></div>
         <div class="card"><div class="ct">📍 Optional GPS</div><div class="cb"><p>If granted, latitude adjusts the displayed score ±0.2 % per 10 km from Greymouth. Also silently refreshed to the Push Worker 3 s after page load to keep location-aware alerts accurate. Never logged or shared.</p></div></div>
-        <div class="card"><div class="ct">🔔 Push Subscriptions</div><div class="cb"><p>Browser generates a push endpoint + P-256 key pair via the Web Push API. Preferences (8 categories) stored locally and sent to the Push Worker KV on subscribe. Fully opt-in — nothing is sent before the user enables notifications.</p></div></div>
+        <div class="card"><div class="ct">🔔 Push Subscriptions</div><div class="cb"><p>Browser generates a push endpoint + P-256 key pair via the Web Push API. Preferences (8 categories) stored locally and sent to the Push Worker KV on subscribe. Fully opt-in - nothing is sent before the user enables notifications.</p></div></div>
         <div class="card"><div class="ct">📌 Aurora Sightings</div><div class="cb"><p>Reports (naked eye / phone / DSLR / nothing / cloudy) submitted with optional GPS. One report per 5 min enforced via localStorage. Feed into the forecast "Now" slot and the live map.</p></div></div>
       </div></div>
     </div>
@@ -190,8 +190,8 @@ code{font-family:var(--mono);font-size:10.5px;background:rgba(255,255,255,.07);p
       <div class="ll"><span class="ln">Client</span><span class="ls">React 18 browser app</span></div>
       <div class="lb"><div class="cards">
         <div class="card"><div class="ct">🔄 Parallel Data Fetching</div><div class="cb"><p>On load: Forecast API, Solar Wind IMF, GOES-18 Hp, GOES-19 Hp, NZ mag (EY2M), and IPS alerts fetched in parallel via <code>Promise.allSettled</code>. Substorm Risk Worker polled separately. All forecast data auto-refreshes every 60 s silently.</p></div></div>
-        <div class="card"><div class="ct">🧮 Client-Side Calculations</div><div class="cb"><p>Newell coupling integral, P30/P60 substorm probabilities, location score adjustment, visibility text selection, substorm status classification — all computed in the browser from raw API responses. No server round-trip needed for display logic.</p></div></div>
-        <div class="card"><div class="ct">☀️ SUVI CH Detection</div><div class="cb"><p>On the CME Visualization page: fetches GOES-19 SUVI 195 Å image via CORS proxy, draws to an off-screen 400 × 400 canvas, runs a 10-step coronal hole pipeline. Entirely client-side — no server compute involved.</p></div></div>
+        <div class="card"><div class="ct">🧮 Client-Side Calculations</div><div class="cb"><p>Newell coupling integral, P30/P60 substorm probabilities, location score adjustment, visibility text selection, substorm status classification - all computed in the browser from raw API responses. No server round-trip needed for display logic.</p></div></div>
+        <div class="card"><div class="ct">☀️ SUVI CH Detection</div><div class="cb"><p>On the CME Visualization page: fetches GOES-19 SUVI 195 Å image via CORS proxy, draws to an off-screen 400 × 400 canvas, runs a 10-step coronal hole pipeline. Entirely client-side - no server compute involved.</p></div></div>
         <div class="card"><div class="ct">🌌 3D Scene (60 fps)</div><div class="cb"><p>Three.js r128. DBM propagation engine precomputes CME trajectories at 60 s resolution, then queries them in O(1) via binary-search interpolation. Parker spiral arms are parametric curves. Sun rotation uses <code>ω = 2.61799 × 10⁻⁶ rad/s</code> (27.27-day synodic period).</p></div></div>
       </div></div>
     </div>
@@ -213,10 +213,10 @@ code{font-family:var(--mono);font-size:10.5px;background:rgba(255,255,255,.07);p
     <div class="lane l-ext">
       <div class="ll"><span class="ln">External APIs</span><span class="ls">Third-party data</span></div>
       <div class="lb"><div class="cards">
-        <div class="card"><div class="ct">🌐 NOAA SWPC</div><div class="cb"><p>GOES-18/19 Hp, X-ray flux (0.1–0.8 nm + 0.05–0.4 nm), proton flux, solar-regions.txt, sunspot JSON, SUVI 195 Å, CCOR-1 video. Updated 1–5 min.</p></div></div>
+        <div class="card"><div class="ct">🌐 NOAA SWPC</div><div class="cb"><p>GOES-18/19 Hp, X-ray flux (0.1-0.8 nm + 0.05-0.4 nm), proton flux, solar-regions.txt, sunspot JSON, SUVI 195 Å, CCOR-1 video. Updated 1-5 min.</p></div></div>
         <div class="card"><div class="ct">🚀 NASA DONKI</div><div class="cb"><p>CME catalog: activityID, startTime, speed, halfAngle, longitude, latitude, type, linkedEvents (flare IDs, GST shock IDs). FLR list. GST shock events. Proxied to protect rate limits.</p></div></div>
-        <div class="card"><div class="ct">🛸 IMAP / DSCOVR L1</div><div class="cb"><p>Real-time solar wind at L1 (~1.5 M km from Earth). ~45–60 min travel time to Earth at typical speeds. IMAP primary, DSCOVR RTSW fallback.</p></div></div>
-        <div class="card"><div class="ct">🌏 GeoNet Tilde (EY2M)</div><div class="cb"><p>Eyrewell Observatory, Canterbury — 1-min mean dH (rate of change of horizontal magnetic field component). Direct NZ local geomagnetic measurement.</p></div></div>
+        <div class="card"><div class="ct">🛸 IMAP / DSCOVR L1</div><div class="cb"><p>Real-time solar wind at L1 (~1.5 M km from Earth). ~45-60 min travel time to Earth at typical speeds. IMAP primary, DSCOVR RTSW fallback.</p></div></div>
+        <div class="card"><div class="ct">🌏 GeoNet Tilde (EY2M)</div><div class="cb"><p>Eyrewell Observatory, Canterbury - 1-min mean dH (rate of change of horizontal magnetic field component). Direct NZ local geomagnetic measurement.</p></div></div>
         <div class="card"><div class="ct">☁️ OpenWeatherMap</div><div class="cb"><p>7-day cloud cover + moon phase + sunrise/sunset. Shown on score trend chart. Used for moon arc chart and overnight-watch notifications.</p></div></div>
         <div class="card"><div class="ct">🔆 SDO/HMI</div><div class="cb"><p>JSOC Stanford primary: HMI Colorized, Magnetogram, Intensitygram at 1024 px and 4096 px. NASA SDO fallback if JSOC fails.</p></div></div>
       </div></div>
@@ -225,20 +225,20 @@ code{font-family:var(--mono);font-size:10.5px;background:rgba(255,255,255,.07);p
     <div class="lane l-store">
       <div class="ll"><span class="ln">KV Storage</span><span class="ls">Cloudflare edge KV</span></div>
       <div class="lb"><div class="cards">
-        <div class="card"><div class="ct">🗄 Push Subscriptions</div><div class="cb"><p>Key: SHA-256(endpoint). Value: subscription object (endpoint, p256dh, auth), category preferences, GPS lat/lon, timezone. No TTL — deleted on 410/404 from push service.</p></div></div>
+        <div class="card"><div class="ct">🗄 Push Subscriptions</div><div class="cb"><p>Key: SHA-256(endpoint). Value: subscription object (endpoint, p256dh, auth), category preferences, GPS lat/lon, timezone. No TTL - deleted on 410/404 from push service.</p></div></div>
         <div class="card"><div class="ct">🗄 CH Snapshots</div><div class="cb"><p>Key: <code>ch-snapshot:{iso-timestamp}</code>. TTL: 96 h. Max 144 entries. Sorted index key for range queries. Dedup within 10-min windows.</p></div></div>
         <div class="card"><div class="ct">🗄 Notification State</div><div class="cb"><p><code>COOLDOWN_{topic}</code> per category, <code>STATE_xray</code> flare machine, <code>STATE_substorm</code>, <code>STATE_shock</code>, <code>STATE_cme_sheath</code>, <code>STATE_overnight_watch</code>. TTLs aligned to cooldown windows.</p></div></div>
-        <div class="card"><div class="ct">🗄 Sightings + Banner</div><div class="cb"><p>Sightings as one JSON array key — single read+write per POST. Banner as one key. Both invalidate Cloudflare edge cache on write.</p></div></div>
+        <div class="card"><div class="ct">🗄 Sightings + Banner</div><div class="cb"><p>Sightings as one JSON array key - single read+write per POST. Banner as one key. Both invalidate Cloudflare edge cache on write.</p></div></div>
       </div></div>
     </div>
   </div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════
-     02 — DATA SOURCES
+     02 - DATA SOURCES
 ═══════════════════════════════════════════════════════════ -->
 <div class="sec" id="s02">
-  <div class="sec-hd"><span class="sec-n">02</span><h2>Data Sources — What We Fetch and When</h2></div>
+  <div class="sec-hd"><span class="sec-n">02</span><h2>Data Sources - What We Fetch and When</h2></div>
   <p class="sec-desc">Every data point shown in the app traces back to one of the entries below. Refresh rates are exact values from the source code.</p>
 
   <div class="lanes">
@@ -248,14 +248,14 @@ code{font-family:var(--mono);font-size:10.5px;background:rgba(255,255,255,.07);p
         <table class="t">
           <thead><tr><th>Source</th><th>What is fetched</th><th>Refresh</th><th>Used for</th></tr></thead>
           <tbody>
-            <tr><td>Forecast Worker</td><td>Aurora baseScore (0–100, Greymouth ref), all gauge inputs, 24 h score history array, IPS flag, moon phase/times, lastUpdated</td><td>Auto 60 s</td><td>Primary score, all gauges, score history chart</td></tr>
+            <tr><td>Forecast Worker</td><td>Aurora baseScore (0-100, Greymouth ref), all gauge inputs, 24 h score history array, IPS flag, moon phase/times, lastUpdated</td><td>Auto 60 s</td><td>Primary score, all gauges, score history chart</td></tr>
             <tr><td>Substorm Risk Worker</td><td>Status (QUIET→ONSET), P30/P60, Newell coupling now/30m/60m, Bay onset flag, geomag score, solar loading score, full metrics object</td><td>Auto 60 s</td><td>Substorm panel, visibility forecast slots, substorm badge</td></tr>
-            <tr><td>IMAP Solar Wind Worker</td><td>24 h merged Bz/Bt/Bx/By (nT), speed (km/s), density (cm⁻³), temperature (K) — per-point source label (IMAP or DSCOVR)</td><td>Auto 60 s</td><td>IMF chart, IMF clock angle, solar wind charts</td></tr>
+            <tr><td>IMAP Solar Wind Worker</td><td>24 h merged Bz/Bt/Bx/By (nT), speed (km/s), density (cm⁻³), temperature (K) - per-point source label (IMAP or DSCOVR)</td><td>Auto 60 s</td><td>IMF chart, IMF clock angle, solar wind charts</td></tr>
             <tr><td>NOAA GOES-18 (primary)</td><td>1-day Hp magnetometer: time_tag, Hp (GW auroral power proxy), satellite status</td><td>Auto 60 s</td><td>Hemispheric power gauge (averaged with GOES-19)</td></tr>
             <tr><td>NOAA GOES-19 (secondary)</td><td>Same structure as GOES-18</td><td>Auto 60 s</td><td>Hemispheric power gauge</td></tr>
             <tr><td>GeoNet Tilde (EY2M)</td><td>1-day dH at 1-min mean intervals, Eyrewell station, Canterbury</td><td>Auto 60 s</td><td>NZ Magnetometer chart, geomag score input, Bay onset detection</td></tr>
             <tr><td>Forecast Worker /ips</td><td>DONKI GST shock events from last 24 h</td><td>Auto 60 s</td><td>IPS alert banner when shock present</td></tr>
-            <tr><td>OpenWeatherMap</td><td>7-day hourly cloud cover %, moon phase (0–1), moonrise/moonset, sunrise/sunset per NZ location</td><td>On demand</td><td>Cloud cover overlay on trend chart, moon arc chart, overnight-watch notification</td></tr>
+            <tr><td>OpenWeatherMap</td><td>7-day hourly cloud cover %, moon phase (0-1), moonrise/moonset, sunrise/sunset per NZ location</td><td>On demand</td><td>Cloud cover overlay on trend chart, moon arc chart, overnight-watch notification</td></tr>
           </tbody>
         </table>
       </div>
@@ -267,20 +267,20 @@ code{font-family:var(--mono);font-size:10.5px;background:rgba(255,255,255,.07);p
         <table class="t">
           <thead><tr><th>Source</th><th>What is fetched</th><th>Refresh</th><th>Used for</th></tr></thead>
           <tbody>
-            <tr><td>NOAA GOES (primary)</td><td>X-ray flux 1-day: energy band 0.1–0.8 nm and 0.05–0.4 nm, flux (W/m²), time_tag — 5 min cadence</td><td>On open / manual</td><td>GOES X-ray chart, flare class labels (A/B/C/M/X)</td></tr>
+            <tr><td>NOAA GOES (primary)</td><td>X-ray flux 1-day: energy band 0.1-0.8 nm and 0.05-0.4 nm, flux (W/m²), time_tag - 5 min cadence</td><td>On open / manual</td><td>GOES X-ray chart, flare class labels (A/B/C/M/X)</td></tr>
             <tr><td>NOAA GOES (secondary)</td><td>Proton flux 1-day: ≥10 MeV, ≥50 MeV, ≥100 MeV channels (pfu)</td><td>On open / manual</td><td>Proton flux chart, S-scale event threshold at 10 pfu</td></tr>
             <tr><td>NASA DONKI (via proxy)</td><td>FLR list: classType, beginTime, peakTime, endTime, sourceLocation, activeRegionNum, linkedEvents (CME activityIDs)</td><td>On open / manual</td><td>Flares list, X-ray chart annotation, CME link button in flare modal</td></tr>
-            <tr><td>NOAA solar-regions.txt</td><td>Plain-text: region number, location string (e.g. S15E79), area (MSH), classification, spot count, magnetic class — one line per region</td><td>On open / manual</td><td>Sunspot Tracker — authoritative region list. TXT defines which regions exist and their positions. JSON is supplementary only.</td></tr>
-            <tr><td>NOAA sunspot_report.json</td><td>Per-region M/X/proton flare probabilities, spot count, magnetic class, observedTime — potentially multiple entries per region</td><td>On open / manual</td><td>Sunspot detail panel — latest entry per region wins by observedTime</td></tr>
-            <tr><td>NOAA solar_regions.json</td><td>Same data, different field names — fetched in parallel with sunspot_report.json</td><td>On open / manual</td><td>Sunspot detail panel — merged with sunspot_report.json, latest-per-region wins</td></tr>
-            <tr><td>SDO/HMI (JSOC Stanford)</td><td>HMI_latest_color_Mag_1024×1024.jpg, HMI_latest_Mag_1024×1024.gif, HMI_latest_colInt_1024×1024.jpg — and 4096 px versions</td><td>On open / manual</td><td>Sunspot Tracker solar disk imagery. 4096 px prefetched when a dot is selected for the close-up lightbox</td></tr>
-            <tr><td>NASA SDO (nasa.gov)</td><td>latest_1024_HMIBC/HMIB/HMII.jpg — same images, alternate host</td><td>On JSOC failure</td><td>Automatic fallback if JSOC images fail to load</td></tr>
+            <tr><td>NOAA solar-regions.txt</td><td>Plain-text: region number, location string (e.g. S15E79), area (MSH), classification, spot count, magnetic class - one line per region</td><td>On open / manual</td><td>Sunspot Tracker - authoritative region list. TXT defines which regions exist and their positions. JSON is supplementary only.</td></tr>
+            <tr><td>NOAA sunspot_report.json</td><td>Per-region M/X/proton flare probabilities, spot count, magnetic class, observedTime - potentially multiple entries per region</td><td>On open / manual</td><td>Sunspot detail panel - latest entry per region wins by observedTime</td></tr>
+            <tr><td>NOAA solar_regions.json</td><td>Same data, different field names - fetched in parallel with sunspot_report.json</td><td>On open / manual</td><td>Sunspot detail panel - merged with sunspot_report.json, latest-per-region wins</td></tr>
+            <tr><td>SDO/HMI (JSOC Stanford)</td><td>HMI_latest_color_Mag_1024×1024.jpg, HMI_latest_Mag_1024×1024.gif, HMI_latest_colInt_1024×1024.jpg - and 4096 px versions</td><td>On open / manual</td><td>Sunspot Tracker solar disk imagery. 4096 px prefetched when a dot is selected for the close-up lightbox</td></tr>
+            <tr><td>NASA SDO (nasa.gov)</td><td>latest_1024_HMIBC/HMIB/HMII.jpg - same images, alternate host</td><td>On JSOC failure</td><td>Automatic fallback if JSOC images fail to load</td></tr>
             <tr><td>NOAA SUVI 195 Å + CCOR-1</td><td>Latest EUV coronal image and coronagraph video</td><td>On open / manual</td><td>SUVI imagery panel, CCOR-1 video player</td></tr>
           </tbody>
         </table>
         <div class="co info" style="margin-top:12px">
           <span class="ci">ℹ️</span>
-          <div><strong>Sunspot dot positioning:</strong> Region dots are mapped using the known native HMI coordinate constants — <code>cx = 2048, cy = 2048, radius = 1980</code> for 4096 px images — scaled proportionally to the displayed image size. Pixel-brightness scanning is deliberately not used: it produced incorrect results on colourised magnetogram images because the false-colour mapping created misleading brightness gradients. The native constants are stable across all HMI products.</div>
+          <div><strong>Sunspot dot positioning:</strong> Region dots are mapped using the known native HMI coordinate constants - <code>cx = 2048, cy = 2048, radius = 1980</code> for 4096 px images - scaled proportionally to the displayed image size. Pixel-brightness scanning is deliberately not used: it produced incorrect results on colourised magnetogram images because the false-colour mapping created misleading brightness gradients. The native constants are stable across all HMI products.</div>
         </div>
       </div>
     </div>
@@ -291,8 +291,8 @@ code{font-family:var(--mono);font-size:10.5px;background:rgba(255,255,255,.07);p
         <table class="t">
           <thead><tr><th>Source</th><th>What is fetched</th><th>Refresh</th><th>Used for</th></tr></thead>
           <tbody>
-            <tr><td>NASA DONKI (via proxy)</td><td>CME catalog: activityID, startTime, speed (km/s), halfAngle (°), longitude (Stonyhurst), latitude (°), type (C/O/S/R), sourceLocation, linkedEvents — "most accurate" GCS analysis used per event</td><td>On page load; manual only after</td><td>3D CME objects, CME list panel, DBM propagation input, impact forecast</td></tr>
-            <tr><td>IMAP Solar Wind Worker</td><td>Latest solar wind speed reading — single most-recent 5-min point</td><td>On page load</td><td>Ambient wind parameter w for the DBM engine. Calibrates drag model to current conditions.</td></tr>
+            <tr><td>NASA DONKI (via proxy)</td><td>CME catalog: activityID, startTime, speed (km/s), halfAngle (°), longitude (Stonyhurst), latitude (°), type (C/O/S/R), sourceLocation, linkedEvents - "most accurate" GCS analysis used per event</td><td>On page load; manual only after</td><td>3D CME objects, CME list panel, DBM propagation input, impact forecast</td></tr>
+            <tr><td>IMAP Solar Wind Worker</td><td>Latest solar wind speed reading - single most-recent 5-min point</td><td>On page load</td><td>Ambient wind parameter w for the DBM engine. Calibrates drag model to current conditions.</td></tr>
             <tr><td>GOES-19 SUVI 195 Å</td><td>Latest coronal image via CORS proxy (/api/proxy/image)</td><td>Every 15 min on page</td><td>Coronal hole detection pipeline input</td></tr>
             <tr><td>CH History Worker</td><td>72 h snapshot archive of CH detections; SUVI 195 Å frame index (one per 2 h)</td><td>After each live detection; on page load</td><td>72 h CH history tracking, historical backfill analysis</td></tr>
           </tbody>
@@ -303,11 +303,11 @@ code{font-family:var(--mono);font-size:10.5px;background:rgba(255,255,255,.07);p
 </div>
 
 <!-- ══════════════════════════════════════════════════════════
-     03 — AURORA SCORING
+     03 - AURORA SCORING
 ═══════════════════════════════════════════════════════════ -->
 <div class="sec" id="s03">
   <div class="sec-hd"><span class="sec-n">03</span><h2>Aurora Scoring Algorithm</h2></div>
-  <p class="sec-desc">The aurora score (0–100 %) is a composite metric computed by the Forecast Worker every 5 minutes and served from KV cache. It combines solar wind coupling physics, direct geomagnetic measurements, and hemispheric power into a single visibility probability estimate for the South Island of New Zealand.</p>
+  <p class="sec-desc">The aurora score (0-100 %) is a composite metric computed by the Forecast Worker every 5 minutes and served from KV cache. It combines solar wind coupling physics, direct geomagnetic measurements, and hemispheric power into a single visibility probability estimate for the South Island of New Zealand.</p>
 
   <div class="lanes">
     <div class="lane l-worker">
@@ -316,7 +316,7 @@ code{font-family:var(--mono);font-size:10.5px;background:rgba(255,255,255,.07);p
         <div class="sh" style="color:var(--purple)">Primary Inputs</div>
         <div class="g2">
           <div class="card">
-            <div class="ct">🌀 IMF Bz — the critical driver</div>
+            <div class="ct">🌀 IMF Bz - the critical driver</div>
             <div class="cb">
               <p>The southward component of the Interplanetary Magnetic Field. When Bz is negative (pointing toward Earth's south magnetic pole) it drives magnetic reconnection at the dayside magnetopause, allowing solar wind kinetic energy to couple directly into the magnetosphere.</p>
               <p>Both instantaneous Bz and rolling 10 and 30-minute averages are used. Sustained Bz below −5 nT for 15+ minutes is the strongest single predictor of aurora at subauroral latitudes. Brief southward excursions that immediately recover contribute much less.</p>
@@ -337,20 +337,20 @@ BT = sqrt(By² + Bz²)  [total transverse IMF, nT]
           <div class="card">
             <div class="ct">🌎 Hemispheric Power (GOES Hp)</div>
             <div class="cb">
-              <p>NOAA's GOES-18 and GOES-19 satellites directly measure the total auroral power being deposited into Earth's ionosphere in gigawatts, via particle precipitation measurements over the auroral zones. GOES-18 (primary) and GOES-19 (secondary) values are averaged. This is a direct measurement of how much aurora energy is being produced right now — not a model prediction from solar wind.</p>
+              <p>NOAA's GOES-18 and GOES-19 satellites directly measure the total auroral power being deposited into Earth's ionosphere in gigawatts, via particle precipitation measurements over the auroral zones. GOES-18 (primary) and GOES-19 (secondary) values are averaged. This is a direct measurement of how much aurora energy is being produced right now - not a model prediction from solar wind.</p>
               <p>&gt;20 GW: active. &gt;50 GW: significant. &gt;100 GW: major storm.</p>
             </div>
           </div>
           <div class="card">
             <div class="ct">📡 NZ Geomagnetic dH (EY2M)</div>
             <div class="cb">
-              <p>Eyrewell Observatory (Canterbury, NZ) 1-minute dH — rate of change of the horizontal magnetic field component. This is the only data source in the scoring system that is geographically specific to New Zealand. A sharp negative bay in dH (−50 nT or more over 15 min) indicates a substorm electrojet is active directly overhead, which means aurora is happening at that latitude right now.</p>
+              <p>Eyrewell Observatory (Canterbury, NZ) 1-minute dH - rate of change of the horizontal magnetic field component. This is the only data source in the scoring system that is geographically specific to New Zealand. A sharp negative bay in dH (−50 nT or more over 15 min) indicates a substorm electrojet is active directly overhead, which means aurora is happening at that latitude right now.</p>
               <p>This is why the NZ score can differ significantly from global Kp: Kp is a planetary average, EY2M tells us what's happening over Canterbury specifically.</p>
             </div>
           </div>
         </div>
 
-        <div class="sh" style="color:var(--purple);margin-top:4px">Location Adjustment — Exact Formula</div>
+        <div class="sh" style="color:var(--purple);margin-top:4px">Location Adjustment - Exact Formula</div>
         <div class="card w">
           <div class="ct">📍 GPS Latitude Correction</div>
           <div class="cb">
@@ -374,12 +374,12 @@ user_lat < GREYMOUTH_LATITUDE  →  finalScore = baseScore + adjustment</div>
           <div class="ct">Score Thresholds (South Island NZ reference)</div>
           <div class="cb">
             <div class="sc">
-              <div class="sr"><div class="sb" style="width:80px;background:linear-gradient(90deg,#ef4444,#f97316)"></div><div class="sv">80–100 %</div><div class="sl">Go outside now — significant display, possible curtains and colour overhead</div></div>
-              <div class="sr"><div class="sb" style="width:65px;background:#f97316"></div><div class="sv">65–79 %</div><div class="sl">Visible naked eye — distinct glow or pillars to the south</div></div>
-              <div class="sr"><div class="sb" style="width:50px;background:#eab308"></div><div class="sv">50–64 %</div><div class="sl">Faint glow possible to the south in a very dark spot</div></div>
-              <div class="sr"><div class="sb" style="width:35px;background:#84cc16"></div><div class="sv">35–49 %</div><div class="sl">Phone camera night mode will pick it up — not reliably naked-eye</div></div>
-              <div class="sr"><div class="sb" style="width:20px;background:#22c55e"></div><div class="sv">20–34 %</div><div class="sl">Very faint — long-exposure DSLR on a tripod only</div></div>
-              <div class="sr"><div class="sb" style="width:10px;background:#16a34a"></div><div class="sv">0–19 %</div><div class="sl">Conditions too quiet — nothing to see tonight</div></div>
+              <div class="sr"><div class="sb" style="width:80px;background:linear-gradient(90deg,#ef4444,#f97316)"></div><div class="sv">80-100 %</div><div class="sl">Go outside now - significant display, possible curtains and colour overhead</div></div>
+              <div class="sr"><div class="sb" style="width:65px;background:#f97316"></div><div class="sv">65-79 %</div><div class="sl">Visible naked eye - distinct glow or pillars to the south</div></div>
+              <div class="sr"><div class="sb" style="width:50px;background:#eab308"></div><div class="sv">50-64 %</div><div class="sl">Faint glow possible to the south in a very dark spot</div></div>
+              <div class="sr"><div class="sb" style="width:35px;background:#84cc16"></div><div class="sv">35-49 %</div><div class="sl">Phone camera night mode will pick it up - not reliably naked-eye</div></div>
+              <div class="sr"><div class="sb" style="width:20px;background:#22c55e"></div><div class="sv">20-34 %</div><div class="sl">Very faint - long-exposure DSLR on a tripod only</div></div>
+              <div class="sr"><div class="sb" style="width:10px;background:#16a34a"></div><div class="sv">0-19 %</div><div class="sl">Conditions too quiet - nothing to see tonight</div></div>
             </div>
           </div>
         </div>
@@ -389,7 +389,7 @@ user_lat < GREYMOUTH_LATITUDE  →  finalScore = baseScore + adjustment</div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════
-     04 — SUBSTORM MODEL
+     04 - SUBSTORM MODEL
 ═══════════════════════════════════════════════════════════ -->
 <div class="sec" id="s04">
   <div class="sec-hd"><span class="sec-n">04</span><h2>Substorm Risk Model</h2></div>
@@ -403,13 +403,13 @@ user_lat < GREYMOUTH_LATITUDE  →  finalScore = baseScore + adjustment</div>
           <div class="card">
             <div class="ct">🌊 Newell Coupling Integral</div>
             <div class="cb">
-              <p>The same Newell function computed in the client (see §03) is integrated over a rolling 30-minute and 60-minute window here using the L1 time series. This accumulated integral quantifies total magnetospheric loading over recent minutes — a stronger predictor of substorm onset than any instantaneous measurement.</p>
+              <p>The same Newell function computed in the client (see §03) is integrated over a rolling 30-minute and 60-minute window here using the L1 time series. This accumulated integral quantifies total magnetospheric loading over recent minutes - a stronger predictor of substorm onset than any instantaneous measurement.</p>
               <div class="fx">dΦ/dt = V^(4/3) · BT^(2/3) · |sin(θ/2)|^(8/3)
 
 newell_now    = current-point value
 newell_avg_30m = mean over last 30 min
 newell_avg_60m = mean over last 60 min</div>
-              <p class="fn">Historical threshold for significant NZ aurora activity: ~5–10 sustained over 30 min at typical solar wind speeds. This is used as input to the P30/P60 probability model below.</p>
+              <p class="fn">Historical threshold for significant NZ aurora activity: ~5-10 sustained over 30 min at typical solar wind speeds. This is used as input to the P30/P60 probability model below.</p>
             </div>
           </div>
           <div class="card">
@@ -420,11 +420,11 @@ newell_avg_60m = mean over last 60 min</div>
   max_drop > 50 nT  AND
   drop occurs within any 15-min window
   in the recent EY2M data</div>
-              <p class="fn">If the bay flag is raised, substorm status advances directly to ONSET regardless of probability values. The auroral oval boundary is also shifted equatorward — this is fed into the visibility notification geometry.</p>
+              <p class="fn">If the bay flag is raised, substorm status advances directly to ONSET regardless of probability values. The auroral oval boundary is also shifted equatorward - this is fed into the visibility notification geometry.</p>
             </div>
           </div>
           <div class="card">
-            <div class="ct">📊 Probability Model — Exact Formulas</div>
+            <div class="ct">📊 Probability Model - Exact Formulas</div>
             <div class="cb">
               <p>Probability of substorm onset in the next 30 and 60 minutes, computed client-side from Substorm Risk Worker metrics in <code>useForecastData.ts</code>:</p>
               <div class="fx">base = tanh(0.015 × dΦ_15min_avg
@@ -439,18 +439,18 @@ P60 = clamp(0.25 + 0.6×base + bzBoost,
 
 P30 = clamp(0.15 + 0.7×base + bzBoost,
             0.01, 0.90)</div>
-              <p class="fn">The tanh saturation prevents overconfident probabilities at extreme inputs. P30 is more sensitive to current coupling rate (higher 0.7 coefficient), while P60 gives more weight to sustained conditions (0.6 × averaged base). Probabilities are always clamped to [0.01, 0.90] — we never claim certainty.</p>
+              <p class="fn">The tanh saturation prevents overconfident probabilities at extreme inputs. P30 is more sensitive to current coupling rate (higher 0.7 coefficient), while P60 gives more weight to sustained conditions (0.6 × averaged base). Probabilities are always clamped to [0.01, 0.90] - we never claim certainty.</p>
             </div>
           </div>
           <div class="card">
             <div class="ct">🚦 Status Classification</div>
             <div class="cb">
               <div style="display:flex;flex-direction:column;gap:7px;margin-top:4px">
-                <div style="display:flex;align-items:center;gap:9px"><span class="p pm">QUIET</span><span style="font-size:11px;color:var(--muted)">P30 &lt;15% — solar wind coupling low, energy not loading</span></div>
-                <div style="display:flex;align-items:center;gap:9px"><span class="p pb">WATCH</span><span style="font-size:11px;color:var(--muted)">P30 ≥15% — energy loading, monitor closely</span></div>
-                <div style="display:flex;align-items:center;gap:9px"><span class="p pa">LIKELY_60</span><span style="font-size:11px;color:var(--muted)">P60 ≥50% — high probability within the hour</span></div>
-                <div style="display:flex;align-items:center;gap:9px"><span class="p pr">IMMINENT_30</span><span style="font-size:11px;color:var(--muted)">P30 ≥60% — very likely within 30 min</span></div>
-                <div style="display:flex;align-items:center;gap:9px"><span class="p pr">ONSET</span><span style="font-size:11px;color:var(--muted)">Bay onset confirmed in EY2M — substorm in progress now</span></div>
+                <div style="display:flex;align-items:center;gap:9px"><span class="p pm">QUIET</span><span style="font-size:11px;color:var(--muted)">P30 &lt;15% - solar wind coupling low, energy not loading</span></div>
+                <div style="display:flex;align-items:center;gap:9px"><span class="p pb">WATCH</span><span style="font-size:11px;color:var(--muted)">P30 ≥15% - energy loading, monitor closely</span></div>
+                <div style="display:flex;align-items:center;gap:9px"><span class="p pa">LIKELY_60</span><span style="font-size:11px;color:var(--muted)">P60 ≥50% - high probability within the hour</span></div>
+                <div style="display:flex;align-items:center;gap:9px"><span class="p pr">IMMINENT_30</span><span style="font-size:11px;color:var(--muted)">P30 ≥60% - very likely within 30 min</span></div>
+                <div style="display:flex;align-items:center;gap:9px"><span class="p pr">ONSET</span><span style="font-size:11px;color:var(--muted)">Bay onset confirmed in EY2M - substorm in progress now</span></div>
               </div>
             </div>
           </div>
@@ -462,10 +462,10 @@ P30 = clamp(0.15 + 0.7×base + bzBoost,
             <table class="t">
               <thead><tr><th>Slot</th><th>Primary source</th><th>Secondary source</th><th>Confidence</th></tr></thead>
               <tbody>
-                <tr><td>Now</td><td>Substorm Risk current status + aurora score from Forecast Worker</td><td>Confirmed sighting reports from within ~200 km in the last 30 min</td><td>High — reflects current measured conditions</td></tr>
-                <tr><td>15 min</td><td>P30 probability + Newell coupling trend + Bay onset flag</td><td>L1 data reflects conditions ~45–60 min from Earth (partially overlaps)</td><td>High — primary window of reliable near-term forecasting</td></tr>
-                <tr><td>30 min</td><td>P30 and P60 interpolated + Bz persistence model</td><td>Sustained southward Bz extrapolation from current trend</td><td>Medium — conditions can change significantly in 30 min</td></tr>
-                <tr><td>60 min</td><td>P60 probability projection</td><td>Aurora score composite</td><td>Low — guidance only. Treat as "conditions are currently building" rather than a specific prediction</td></tr>
+                <tr><td>Now</td><td>Substorm Risk current status + aurora score from Forecast Worker</td><td>Confirmed sighting reports from within ~200 km in the last 30 min</td><td>High - reflects current measured conditions</td></tr>
+                <tr><td>15 min</td><td>P30 probability + Newell coupling trend + Bay onset flag</td><td>L1 data reflects conditions ~45-60 min from Earth (partially overlaps)</td><td>High - primary window of reliable near-term forecasting</td></tr>
+                <tr><td>30 min</td><td>P30 and P60 interpolated + Bz persistence model</td><td>Sustained southward Bz extrapolation from current trend</td><td>Medium - conditions can change significantly in 30 min</td></tr>
+                <tr><td>60 min</td><td>P60 probability projection</td><td>Aurora score composite</td><td>Low - guidance only. Treat as "conditions are currently building" rather than a specific prediction</td></tr>
               </tbody>
             </table>
           </div>
@@ -476,15 +476,15 @@ P30 = clamp(0.15 + 0.7×base + bzBoost,
 </div>
 
 <!-- ══════════════════════════════════════════════════════════
-     05 — PAGES & FEATURES
+     05 - PAGES & FEATURES
 ═══════════════════════════════════════════════════════════ -->
 <div class="sec" id="s05">
   <div class="sec-hd"><span class="sec-n">05</span><h2>Pages &amp; Features</h2></div>
-  <p class="sec-desc">Three main pages targeting different user expertise levels. All navigation is URL-based and shareable — deep links work, including specific CME IDs (<code>/?page=modeler&cme=2026-03-17T…</code>). Last-visited page and view mode persist in localStorage and in the URL.</p>
+  <p class="sec-desc">Three main pages targeting different user expertise levels. All navigation is URL-based and shareable - deep links work, including specific CME IDs (<code>/?page=modeler&cme=2026-03-17T…</code>). Last-visited page and view mode persist in localStorage and in the URL.</p>
 
   <div class="lanes">
     <div class="lane l-user">
-      <div class="ll"><span class="ln">Forecast</span><span class="ls">/ — primary page</span></div>
+      <div class="ll"><span class="ln">Forecast</span><span class="ls">/ - primary page</span></div>
       <div class="lb"><div class="cards">
         <div class="card">
           <div class="ct">🌿 Simple View (<code>/?view=simple</code>)</div>
@@ -496,11 +496,11 @@ P30 = clamp(0.15 + 0.7×base + bzBoost,
         </div>
         <div class="card">
           <div class="ct">📈 Forecast Trend Chart</div>
-          <div class="cb"><p>Score history over the past 24–48 h alongside upcoming OWM cloud cover percentage. Sunset and moonrise/moonset annotated as vertical lines. Detected substorm events marked with timestamps. Hover tooltip shows exact score, Bz, speed, and density at any historical point.</p></div>
+          <div class="cb"><p>Score history over the past 24-48 h alongside upcoming OWM cloud cover percentage. Sunset and moonrise/moonset annotated as vertical lines. Detected substorm events marked with timestamps. Hover tooltip shows exact score, Bz, speed, and density at any historical point.</p></div>
         </div>
         <div class="card">
           <div class="ct">🧭 IMF Clock Angle Chart</div>
-          <div class="cb"><p>A circular chart showing the By/Bz vector orientation. 12 o'clock = purely northward Bz (poor coupling). 6 o'clock = purely southward Bz (maximum coupling). Useful for spotting rapid rotations during CME sheath/ejecta transitions — a full southward rotation at 6 o'clock sustained for minutes is the strongest aurora signature.</p></div>
+          <div class="cb"><p>A circular chart showing the By/Bz vector orientation. 12 o'clock = purely northward Bz (poor coupling). 6 o'clock = purely southward Bz (maximum coupling). Useful for spotting rapid rotations during CME sheath/ejecta transitions - a full southward rotation at 6 o'clock sustained for minutes is the strongest aurora signature.</p></div>
         </div>
       </div></div>
     </div>
@@ -510,14 +510,14 @@ P30 = clamp(0.15 + 0.7×base + bzBoost,
       <div class="lb"><div class="cards">
         <div class="card">
           <div class="ct">☀️ GOES X-ray Flux Chart</div>
-          <div class="cb"><p>24 h real-time GOES flux. Flare class thresholds (B/C/M/X) marked. Each detected flare is clickable for a detail modal: begin/peak/end times in NZT, source location, active region number, direct NASA DONKI link. If the flare has a linked CME in DONKI, a button navigates directly to that CME in the CME Visualization — the CME's activityID is extracted from the linkedEvents array and matched to the 3D scene object.</p></div>
+          <div class="cb"><p>24 h real-time GOES flux. Flare class thresholds (B/C/M/X) marked. Each detected flare is clickable for a detail modal: begin/peak/end times in NZT, source location, active region number, direct NASA DONKI link. If the flare has a linked CME in DONKI, a button navigates directly to that CME in the CME Visualization - the CME's activityID is extracted from the linkedEvents array and matched to the 3D scene object.</p></div>
         </div>
         <div class="card">
           <div class="ct">🌑 Active Sunspot Tracker</div>
           <div class="cb">
             <p>Three SDO/HMI image modes: HMI Colorized Magnetogram, B&amp;W Magnetogram, Intensitygram. Close-up tap opens a fullscreen CSS-zoom lightbox (no canvas, no CORS complications).</p>
             <p><strong>Data merge logic:</strong> solar-regions.txt is the authoritative list (defines which regions exist + lat/lon). JSON endpoints are supplementary for flare probabilities only, one entry per region, latest by observedTime. TXT wins for identity and position; JSON fills in M/X/proton probabilities.</p>
-            <p><strong>Dot positions:</strong> <code>cx=2048, cy=2048, r=1980</code> native HMI constants scaled to display size — deterministic, no pixel scanning.</p>
+            <p><strong>Dot positions:</strong> <code>cx=2048, cy=2048, r=1980</code> native HMI constants scaled to display size - deterministic, no pixel scanning.</p>
           </div>
         </div>
         <div class="card">
@@ -536,28 +536,28 @@ P30 = clamp(0.15 + 0.7×base + bzBoost,
         </div>
         <div class="card">
           <div class="ct">📅 Timeline Scrubber</div>
-          <div class="cb"><p>Always shows 7 days past + however many days selected in the controls (1/3/7 days) into the future. CMEs move along their propagation paths. Sun rotation is computed from a stable Unix epoch reference (<code>angle = ω × (timelineMs / 1000)</code>) — not from <code>Date.now()</code> each frame. Earth rotation is frozen when the timeline is active and paused, preventing the constant slow-rotation glitch.</p></div>
+          <div class="cb"><p>Always shows 7 days past + however many days selected in the controls (1/3/7 days) into the future. CMEs move along their propagation paths. Sun rotation is computed from a stable Unix epoch reference (<code>angle = ω × (timelineMs / 1000)</code>) - not from <code>Date.now()</code> each frame. Earth rotation is frozen when the timeline is active and paused, preventing the constant slow-rotation glitch.</p></div>
         </div>
         <div class="card">
           <div class="ct">🎨 CME Colour Scale</div>
           <div class="cb">
             <p>CME colour transitions in real-time as the DBM engine updates speed each frame:</p>
-            <div class="csw"><div class="csw-dot" style="background:#808080"></div><span style="font-size:11px;color:var(--muted)">≤350 km/s — grey (slow, approaching wind speed)</span></div>
-            <div class="csw"><div class="csw-dot" style="background:linear-gradient(90deg,#808080,#ffff00)"></div><span style="font-size:11px;color:var(--muted)">350–500 km/s — grey → yellow gradient</span></div>
-            <div class="csw"><div class="csw-dot" style="background:#ffff00"></div><span style="font-size:11px;color:var(--muted)">500 km/s — yellow</span></div>
-            <div class="csw"><div class="csw-dot" style="background:#ffa500"></div><span style="font-size:11px;color:var(--muted)">800 km/s — orange</span></div>
-            <div class="csw"><div class="csw-dot" style="background:#ff4500"></div><span style="font-size:11px;color:var(--muted)">1000 km/s — red-orange</span></div>
-            <div class="csw"><div class="csw-dot" style="background:#9370db"></div><span style="font-size:11px;color:var(--muted)">1800 km/s — purple</span></div>
-            <div class="csw"><div class="csw-dot" style="background:#ff69b4"></div><span style="font-size:11px;color:var(--muted)">≥2500 km/s — pink (extreme X-class associated events)</span></div>
+            <div class="csw"><div class="csw-dot" style="background:#808080"></div><span style="font-size:11px;color:var(--muted)">≤350 km/s - grey (slow, approaching wind speed)</span></div>
+            <div class="csw"><div class="csw-dot" style="background:linear-gradient(90deg,#808080,#ffff00)"></div><span style="font-size:11px;color:var(--muted)">350-500 km/s - grey → yellow gradient</span></div>
+            <div class="csw"><div class="csw-dot" style="background:#ffff00"></div><span style="font-size:11px;color:var(--muted)">500 km/s - yellow</span></div>
+            <div class="csw"><div class="csw-dot" style="background:#ffa500"></div><span style="font-size:11px;color:var(--muted)">800 km/s - orange</span></div>
+            <div class="csw"><div class="csw-dot" style="background:#ff4500"></div><span style="font-size:11px;color:var(--muted)">1000 km/s - red-orange</span></div>
+            <div class="csw"><div class="csw-dot" style="background:#9370db"></div><span style="font-size:11px;color:var(--muted)">1800 km/s - purple</span></div>
+            <div class="csw"><div class="csw-dot" style="background:#ff69b4"></div><span style="font-size:11px;color:var(--muted)">≥2500 km/s - pink (extreme X-class associated events)</span></div>
           </div>
         </div>
         <div class="card">
           <div class="ct">📊 Simulated Impact Forecast</div>
-          <div class="cb"><p>7-day speed and density chart at Earth, starting 6 h before now. Speed = decelerated CME arrival speed (binary-searched to find exact 1 AU crossing time). Density: 1 CME → 5–10 cm⁻³ (scaled by arrival speed); 3 concurrent → ~20 cm⁻³; 5+ → capped at 50 cm⁻³. HSS density peaks 18 h before speed rise (SIR physics). "Now" marked with a yellow vertical line. Background ambient wind = 280 km/s.</p></div>
+          <div class="cb"><p>7-day speed and density chart at Earth, starting 6 h before now. Speed = decelerated CME arrival speed (binary-searched to find exact 1 AU crossing time). Density: 1 CME → 5-10 cm⁻³ (scaled by arrival speed); 3 concurrent → ~20 cm⁻³; 5+ → capped at 50 cm⁻³. HSS density peaks 18 h before speed rise (SIR physics). "Now" marked with a yellow vertical line. Background ambient wind = 280 km/s.</p></div>
         </div>
         <div class="card">
           <div class="ct">🌀 Coronal Hole Spirals <span class="p pa" style="font-size:9px;margin-left:4px">BETA</span></div>
-          <div class="cb"><p>Parker spiral arms from the current live SUVI detection. Static geometry — always the most recent CH position and estimated HSS source speed. Spiral reach: 1.65 AU (beyond Earth orbit). Beta because the GPU cost of spiral geometry affects older devices. Toggle in Controls panel.</p></div>
+          <div class="cb"><p>Parker spiral arms from the current live SUVI detection. Static geometry - always the most recent CH position and estimated HSS source speed. Spiral reach: 1.65 AU (beyond Earth orbit). Beta because the GPU cost of spiral geometry affects older devices. Toggle in Controls panel.</p></div>
         </div>
       </div></div>
     </div>
@@ -565,7 +565,7 @@ P30 = clamp(0.15 + 0.7×base + bzBoost,
 </div>
 
 <!-- ══════════════════════════════════════════════════════════
-     06 — CME PROPAGATION PHYSICS
+     06 - CME PROPAGATION PHYSICS
 ═══════════════════════════════════════════════════════════ -->
 <div class="sec" id="s06">
   <div class="sec-hd"><span class="sec-n">06</span><h2>CME Propagation Physics</h2></div>
@@ -575,7 +575,7 @@ P30 = clamp(0.15 + 0.7×base + bzBoost,
     <div class="lane l-phys">
       <div class="ll"><span class="ln">DBM Engine</span><span class="ls">heliosphericPropagation.ts</span></div>
       <div class="lb">
-        <div class="sh" style="color:var(--pink)">Drag-Based Model — Vršnak et al. 2013</div>
+        <div class="sh" style="color:var(--pink)">Drag-Based Model - Vršnak et al. 2013</div>
         <div class="g2">
           <div class="card">
             <div class="ct">Governing Equation</div>
@@ -592,12 +592,12 @@ r(t) = r₀ + w·t + ln(1 + γ·(v₀−w)·t) / γ</div>
               <p>For an accelerating CME (v₀ &lt; w):</p>
               <div class="fx">v(t) = w − (w − v₀) / (1 + γ·(w−v₀)·t)
 r(t) = r₀ + w·t − ln(1 + γ·(w−v₀)·t) / γ</div>
-              <p class="fn">Inner boundary: 21.5 solar radii (≈0.1 AU) — DBM is only valid beyond the solar wind acceleration zone. All eruptions start at this point in the engine. Max propagation window: 10 days. Trajectory precomputed at 60 s timesteps; per-frame queries use O(log n) binary-search interpolation.</p>
+              <p class="fn">Inner boundary: 21.5 solar radii (≈0.1 AU) - DBM is only valid beyond the solar wind acceleration zone. All eruptions start at this point in the engine. Max propagation window: 10 days. Trajectory precomputed at 60 s timesteps; per-frame queries use O(log n) binary-search interpolation.</p>
               <p class="fn">Refs: Vršnak et al. 2013, Solar Phys. 285:295 · Vršnak &amp; Žic 2007, A&amp;A 472:937</p>
             </div>
           </div>
           <div class="card">
-            <div class="ct">Drag Parameter γ — Per-CME Estimation</div>
+            <div class="ct">Drag Parameter γ - Per-CME Estimation</div>
             <div class="cb">
               <p>γ is estimated from the GCS cone parameters in the DONKI catalog. Exact formulas from <code>estimateGamma()</code>:</p>
               <div class="fx">speedClamp = clamp(speed, 200, 3000) km/s
@@ -611,14 +611,14 @@ widthFactor = 0.7 + 0.6 × (halfAngle / 45)
 
 γ = speedFactor × widthFactor × 10⁻⁷ km⁻¹
   clamped to [0.05, 5.0] × 10⁻⁷ km⁻¹</div>
-              <p class="fn">Operational range 0.1–2.0 × 10⁻⁷ km⁻¹ is consistent with the statistical distribution from Vršnak et al. 2013 and Dumbović et al. 2021. The speed exponent of −0.55 reflects that faster CMEs are empirically less drag-affected per unit distance.</p>
+              <p class="fn">Operational range 0.1-2.0 × 10⁻⁷ km⁻¹ is consistent with the statistical distribution from Vršnak et al. 2013 and Dumbović et al. 2021. The speed exponent of −0.55 reflects that faster CMEs are empirically less drag-affected per unit distance.</p>
               <p class="fn">Refs: Cargill 2004, Solar Phys. 221:135 · Dumbović et al. 2021</p>
             </div>
           </div>
           <div class="card">
             <div class="ct">Ambient Wind Speed Model</div>
             <div class="cb">
-              <p>The background solar wind speed w is not a single constant — it is computed per-CME from three inputs in <code>getAmbientWindSpeed()</code>:</p>
+              <p>The background solar wind speed w is not a single constant - it is computed per-CME from three inputs in <code>getAmbientWindSpeed()</code>:</p>
               <div class="fx">1. Measured baseline: latest L1 speed from IMAP/DSCOVR
    (default 380 km/s if unavailable)
 
@@ -627,9 +627,9 @@ widthFactor = 0.7 + 0.6 × (halfAngle / 45)
    If within influenceRadius = max(15°, CH_width × 0.7):
 
    temporalProfile(dtHours):
-     0–18h:  ramp up   (profile = dtHours / 18)
-     18–54h: plateau   (profile = 1.0)
-     54–102h: decay    (profile = linear to 0)
+     0-18h:  ramp up   (profile = dtHours / 18)
+     18-54h: plateau   (profile = 1.0)
+     54-102h: decay    (profile = linear to 0)
 
    angularWeight = exp(−0.5 × (dLon / (r×0.5))²)
    hssBoost = (peakSpeed − 380) × profile × weight
@@ -641,10 +641,10 @@ widthFactor = 0.7 + 0.6 × (halfAngle / 45)
             </div>
           </div>
           <div class="card">
-            <div class="ct">CME–CME Preconditioning &amp; Compression</div>
+            <div class="ct">CME-CME Preconditioning &amp; Compression</div>
             <div class="cb">
               <p>When multiple CMEs propagate along similar trajectories, two interaction modes are modelled:</p>
-              <p style="margin-top:8px"><strong style="color:var(--green)">Preconditioning</strong> — A leading CME sweeps through the heliosphere, creating a rarefied wake with reduced ambient density. A following CME propagating through this depleted medium experiences reduced drag:</p>
+              <p style="margin-top:8px"><strong style="color:var(--green)">Preconditioning</strong> - A leading CME sweeps through the heliosphere, creating a rarefied wake with reduced ambient density. A following CME propagating through this depleted medium experiences reduced drag:</p>
               <div class="fx">dtEruption_sec = t_follower_start − t_leader_start
 
 preconditionDecay = exp(−dtEruption_sec / (3.5×86400))
@@ -654,9 +654,9 @@ precondFactor = 1.0 − 0.5 × preconditionDecay
   → range [0.5, 1.0]; 0.5 = maximum 50% drag reduction
 
 γ_effective = γ × precondFactor</div>
-              <p class="fn">A follower erupting 1 day after a leader sees ~40% drag reduction. 3.5 days later: ~18% reduction. 7 days later: ~3% reduction. Temmer et al. 2017 found preconditioning lasts 2–5 days — this exponential model with τ=3.5 days sits in the middle of that range.</p>
+              <p class="fn">A follower erupting 1 day after a leader sees ~40% drag reduction. 3.5 days later: ~18% reduction. 7 days later: ~3% reduction. Temmer et al. 2017 found preconditioning lasts 2-5 days - this exponential model with τ=3.5 days sits in the middle of that range.</p>
 
-              <p style="margin-top:8px"><strong style="color:var(--amber)">Compression</strong> — When a following CME is within 0.05 AU of a leading one (but has not yet overtaken it), the intervening plasma is compressed:</p>
+              <p style="margin-top:8px"><strong style="color:var(--amber)">Compression</strong> - When a following CME is within 0.05 AU of a leading one (but has not yet overtaken it), the intervening plasma is compressed:</p>
               <div class="fx">gap_km = leader_dist − follower_dist
 
 if 0 < gap_km < 0.05 AU (7.5M km):
@@ -667,7 +667,7 @@ if 0 < gap_km < 0.05 AU (7.5M km):
           </div>
         </div>
 
-        <div class="sh" style="color:var(--pink);margin-top:8px">Scene Positioning — Simple Deceleration Model</div>
+        <div class="sh" style="color:var(--pink);margin-top:8px">Scene Positioning - Simple Deceleration Model</div>
         <div class="card w">
           <div class="cb">
             <p>While the DBM engine handles speed queries and colour transitions, the actual 3D position of each CME in the scene uses a simpler empirical formula from <code>calculateDistanceWithDeceleration()</code>. This avoids requiring the full engine for every CME mesh update:</p>
@@ -690,7 +690,7 @@ If a < 0 (decelerating):
 Scene units = dist / AU_IN_KM × SCENE_SCALE
   AU_IN_KM   = 149,597,870.7
   SCENE_SCALE = 3.0</div>
-            <p class="fn">For Earth-directed CMEs that have a confirmed DONKI arrival time, the scene position is interpolated directly between the start time and arrival time — the model is not used. This ensures confirmed Earth-directed events hit Earth exactly when NASA predicts them to.</p>
+            <p class="fn">For Earth-directed CMEs that have a confirmed DONKI arrival time, the scene position is interpolated directly between the start time and arrival time - the model is not used. This ensures confirmed Earth-directed events hit Earth exactly when NASA predicts them to.</p>
           </div>
         </div>
 
@@ -705,7 +705,7 @@ GCS_AXIAL_DEPTH_FRAC = 0.38  (depth vs lateral extent)
 lateral = max(dist × tan(halfAngle°), sunRadius × 0.3)
 sXZ = lateral / GCS_ARC_RADIUS_FRAC
 CME scale: (sXZ, sXZ × 0.38, sXZ)</div>
-            <p class="fn">The propagation direction is set by the DONKI longitude and latitude values. Each CME is an oriented Three.js mesh — the GCS arc opens perpendicular to the propagation vector. Particle positions are laid out along helical paths on the arc, with animated arrow textures showing the flux-rope structure.</p>
+            <p class="fn">The propagation direction is set by the DONKI longitude and latitude values. Each CME is an oriented Three.js mesh - the GCS arc opens perpendicular to the propagation vector. Particle positions are laid out along helical paths on the arc, with animated arrow textures showing the flux-rope structure.</p>
           </div>
         </div>
       </div>
@@ -714,11 +714,11 @@ CME scale: (sXZ, sXZ × 0.38, sXZ)</div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════
-     07 — CORONAL HOLE DETECTION
+     07 - CORONAL HOLE DETECTION
 ═══════════════════════════════════════════════════════════ -->
 <div class="sec" id="s07">
   <div class="sec-hd"><span class="sec-n">07</span><h2>Coronal Hole Detection Pipeline</h2></div>
-  <p class="sec-desc">Coronal holes are regions where the Sun's magnetic field is open to interplanetary space, allowing fast solar wind to escape. The app detects them automatically from the live GOES-19 SUVI 195 Å image, entirely in the browser. Every step runs as plain JavaScript — no server compute, no external detection service.</p>
+  <p class="sec-desc">Coronal holes are regions where the Sun's magnetic field is open to interplanetary space, allowing fast solar wind to escape. The app detects them automatically from the live GOES-19 SUVI 195 Å image, entirely in the browser. Every step runs as plain JavaScript - no server compute, no external detection service.</p>
 
   <div class="lanes">
     <div class="lane l-client">
@@ -736,7 +736,7 @@ CME scale: (sXZ, sXZ × 0.38, sXZ)</div>
           </div>
           <div class="card">
             <div class="ct">3 · Gradient-Based Limb Detection</div>
-            <div class="cb"><p>Scans outward from the disk centre in <code>N_LIMB_ANGLES = 360</code> radial directions (one per degree). Finds the steepest negative brightness gradient in each direction — this locates the sharp photosphere limb boundary rather than the outer faint coronal halo, which extends visually beyond the physical disk. Produces a per-angle radius array with full 360° coverage.</p></div>
+            <div class="cb"><p>Scans outward from the disk centre in <code>N_LIMB_ANGLES = 360</code> radial directions (one per degree). Finds the steepest negative brightness gradient in each direction - this locates the sharp photosphere limb boundary rather than the outer faint coronal halo, which extends visually beyond the physical disk. Produces a per-angle radius array with full 360° coverage.</p></div>
           </div>
           <div class="card">
             <div class="ct">4 · Disk Mask</div>
@@ -767,7 +767,7 @@ candidate if: luma < 0.52 × disk_median_luma</div>
               <div class="fx">MIN_CH_PIXEL_FRAC = 0.003
 
 keep if: region_pixels > 0.003 × disk_pixels</div>
-              <p class="fn">At 400 × 400 px with a disk covering ~75% of the canvas, this passes regions larger than ~360 pixels — approximately 1,000–2,000 MSH equivalent in area. Sub-threshold regions are instrumental noise or small ephemeral bright-point holes that would not drive meaningful HSS streams.</p>
+              <p class="fn">At 400 × 400 px with a disk covering ~75% of the canvas, this passes regions larger than ~360 pixels - approximately 1,000-2,000 MSH equivalent in area. Sub-threshold regions are instrumental noise or small ephemeral bright-point holes that would not drive meaningful HSS streams.</p>
             </div>
           </div>
           <div class="card">
@@ -780,18 +780,18 @@ y_norm = (py - cy) / r_limb   [−1 to +1]
 lat = asin(y_norm)           [heliographic lat]
 lon = atan2(x_norm,          [Carrington lon]
             cos(lat))</div>
-              <p class="fn">No solar rotation correction is applied because SUVI 195 Å is in disk-centre coordinates — the Carrington system already rotates with the Sun.</p>
+              <p class="fn">No solar rotation correction is applied because SUVI 195 Å is in disk-centre coordinates - the Carrington system already rotates with the Sun.</p>
             </div>
           </div>
           <div class="card">
             <div class="ct">10 · Output + Post</div>
-            <div class="cb"><p>Returns <code>CoronalHole[]</code> with id, lat, lon, widthDeg, heightDeg, darkness (0–1 luma deficit fraction), estimated HSS speed, and polygon boundary. Empty array if no holes detected — no simulated fallback. Result is immediately posted to the CH History Worker for the 72 h archive and used to build Parker spiral arms in the 3D scene.</p></div>
+            <div class="cb"><p>Returns <code>CoronalHole[]</code> with id, lat, lon, widthDeg, heightDeg, darkness (0-1 luma deficit fraction), estimated HSS speed, and polygon boundary. Empty array if no holes detected - no simulated fallback. Result is immediately posted to the CH History Worker for the 72 h archive and used to build Parker spiral arms in the 3D scene.</p></div>
           </div>
         </div>
 
         <div class="co warn" style="margin-top:16px">
           <span class="ci">⚠️</span>
-          <div><strong>Known detection limitations:</strong> CHs near the solar limb are foreshortened — their true area is underestimated. Polar holes are partially obscured by viewing geometry. Filament channels (dark elongated structures that are not open-field regions) can occasionally trigger false positives. CH boundaries detected from a single brightness threshold should be treated as approximate outlines, not precise maps.</div>
+          <div><strong>Known detection limitations:</strong> CHs near the solar limb are foreshortened - their true area is underestimated. Polar holes are partially obscured by viewing geometry. Filament channels (dark elongated structures that are not open-field regions) can occasionally trigger false positives. CH boundaries detected from a single brightness threshold should be treated as approximate outlines, not precise maps.</div>
         </div>
 
         <div class="sh" style="color:var(--green);margin-top:8px">HSS Speed Estimation &amp; Parker Spiral</div>
@@ -808,7 +808,7 @@ peakSpeed = clamp(
 
 Parker spiral arm reach: 1.65 AU (extends beyond Earth orbit)
 SIR density peak in impact forecast: 18 h before speed rise</div>
-            <p class="fn">Larger, darker CHs drive faster streams — consistent with empirical studies correlating CH area and peak HSS speed at 1 AU. The 18-hour SIR density lead reflects the known structure of a Stream Interaction Region: compressed slow-wind plasma piles up ahead of the arriving fast stream.</p>
+            <p class="fn">Larger, darker CHs drive faster streams - consistent with empirical studies correlating CH area and peak HSS speed at 1 AU. The 18-hour SIR density lead reflects the known structure of a Stream Interaction Region: compressed slow-wind plasma piles up ahead of the arriving fast stream.</p>
           </div>
         </div>
       </div>
@@ -817,32 +817,32 @@ SIR density peak in impact forecast: 18 h before speed rise</div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════
-     08 — NOTIFICATIONS
+     08 - NOTIFICATIONS
 ═══════════════════════════════════════════════════════════ -->
 <div class="sec" id="s08">
   <div class="sec-hd"><span class="sec-n">08</span><h2>Push Notification System</h2></div>
-  <p class="sec-desc">All notifications are opt-in and category-specific. No third-party push service is used. The complete RFC 8291 Web Push stack — VAPID JWT signing, ECDH key agreement, AES-128-GCM payload encryption — is implemented from scratch in the Push Worker using the Web Crypto API. Zero npm dependencies.</p>
+  <p class="sec-desc">All notifications are opt-in and category-specific. No third-party push service is used. The complete RFC 8291 Web Push stack - VAPID JWT signing, ECDH key agreement, AES-128-GCM payload encryption - is implemented from scratch in the Push Worker using the Web Crypto API. Zero npm dependencies.</p>
 
   <div class="lanes">
     <div class="lane l-worker">
       <div class="ll"><span class="ln">Push Worker</span><span class="ls">Cron: every 5 min</span></div>
       <div class="lb">
-        <div class="sh" style="color:var(--purple)">Notification Categories — Exact Trigger Conditions</div>
+        <div class="sh" style="color:var(--purple)">Notification Categories - Exact Trigger Conditions</div>
         <table class="t">
           <thead><tr><th>Category ID</th><th>Trigger condition</th><th>Location-aware</th><th>Default</th></tr></thead>
           <tbody>
-            <tr><td>visibility-dslr</td><td>Aurora oval equatorward boundary reaches subscriber's DSLR visibility horizon. Threshold adjusted for moon illumination: &lt;20% illuminated → base offsets; 40–60% → shifted conservatively; &gt;80% → DSLR suppressed entirely.</td><td>Yes — per GPS</td><td>On</td></tr>
-            <tr><td>visibility-phone</td><td>Oval within phone-camera visibility range. Suppressed at moon illumination &gt;80%; takes DSLR's role at 60–80%.</td><td>Yes — per GPS</td><td>On</td></tr>
-            <tr><td>visibility-naked</td><td>Oval equatorward boundary within ~5° geomagnetic lat of subscriber. Threshold tightens with moon illumination: base 5°; &gt;40% moon → 8°; &gt;60% → 10°; &gt;80% → 12°.</td><td>Yes — per GPS</td><td>On</td></tr>
-            <tr><td>overnight-watch</td><td>score ≥30 AND Bz &lt;−3 nT AND southward_minutes_30m ≥10 AND trend not decreasing. Sent once per NZ calendar day between 18:00–21:00 NZST only.</td><td>NZ timezone</td><td>On</td></tr>
+            <tr><td>visibility-dslr</td><td>Aurora oval equatorward boundary reaches subscriber's DSLR visibility horizon. Threshold adjusted for moon illumination: &lt;20% illuminated → base offsets; 40-60% → shifted conservatively; &gt;80% → DSLR suppressed entirely.</td><td>Yes - per GPS</td><td>On</td></tr>
+            <tr><td>visibility-phone</td><td>Oval within phone-camera visibility range. Suppressed at moon illumination &gt;80%; takes DSLR's role at 60-80%.</td><td>Yes - per GPS</td><td>On</td></tr>
+            <tr><td>visibility-naked</td><td>Oval equatorward boundary within ~5° geomagnetic lat of subscriber. Threshold tightens with moon illumination: base 5°; &gt;40% moon → 8°; &gt;60% → 10°; &gt;80% → 12°.</td><td>Yes - per GPS</td><td>On</td></tr>
+            <tr><td>overnight-watch</td><td>score ≥30 AND Bz &lt;−3 nT AND southward_minutes_30m ≥10 AND trend not decreasing. Sent once per NZ calendar day between 18:00-21:00 NZST only.</td><td>NZ timezone</td><td>On</td></tr>
             <tr><td>flare-event</td><td>Solar flare confirmed at peak ≥M1.0. "Confirmed" = flux still ≥M1 after 5 min of declining trend (avoids false peaks).</td><td>No</td><td>On</td></tr>
-            <tr><td>shock-detection</td><td>≥3 of 4 criteria met vs 30-min rolling baseline: speed +50 km/s, density ×2.5, pressure ×2.0, Bt +5 nT — all simultaneously. 4-hour cooldown window.</td><td>No</td><td>On</td></tr>
-            <tr><td>cme-sheath</td><td>CME sheath flag raised in Substorm Risk Worker — CME ejecta structure detected at L1. 6-hour cooldown.</td><td>No</td><td>On</td></tr>
-            <tr><td>admin-broadcast</td><td>Manual — sent by admin via banner control panel using a direct browser→Push Worker call. Bypasses the Banner API due to Cloudflare worker-to-worker subrequest restrictions (error 1042).</td><td>No</td><td>On</td></tr>
+            <tr><td>shock-detection</td><td>≥3 of 4 criteria met vs 30-min rolling baseline: speed +50 km/s, density ×2.5, pressure ×2.0, Bt +5 nT - all simultaneously. 4-hour cooldown window.</td><td>No</td><td>On</td></tr>
+            <tr><td>cme-sheath</td><td>CME sheath flag raised in Substorm Risk Worker - CME ejecta structure detected at L1. 6-hour cooldown.</td><td>No</td><td>On</td></tr>
+            <tr><td>admin-broadcast</td><td>Manual - sent by admin via banner control panel using a direct browser→Push Worker call. Bypasses the Banner API due to Cloudflare worker-to-worker subrequest restrictions (error 1042).</td><td>No</td><td>On</td></tr>
           </tbody>
         </table>
 
-        <div class="sh" style="color:var(--purple);margin-top:8px">Location-Aware Visibility Geometry — IGRF-13</div>
+        <div class="sh" style="color:var(--purple);margin-top:8px">Location-Aware Visibility Geometry - IGRF-13</div>
         <div class="card w">
           <div class="cb">
             <p>For the three visibility tier notifications, the auroral oval equatorward boundary is estimated from Substorm Risk Worker Newell coupling averages, then compared to each subscriber's geomagnetic latitude:</p>
@@ -873,11 +873,11 @@ distToVis = subscriber_gmag − visHorizon_gmag
 // Naked tier fires when: distToBoundary ≤ 5°
 
 // All thresholds moon-adjusted (see categories table)</div>
-            <p class="fn">The IGRF-13 dipole pole position (80.65°N, 72.68°W geographic) is used for the geomagnetic latitude conversion. This is the standard approach used in operational aurora forecasting — it correctly accounts for the fact that the geomagnetic and geographic poles do not coincide, which matters significantly for New Zealand's longitude.</p>
+            <p class="fn">The IGRF-13 dipole pole position (80.65°N, 72.68°W geographic) is used for the geomagnetic latitude conversion. This is the standard approach used in operational aurora forecasting - it correctly accounts for the fact that the geomagnetic and geographic poles do not coincide, which matters significantly for New Zealand's longitude.</p>
           </div>
         </div>
 
-        <div class="sh" style="color:var(--purple);margin-top:8px">Push Cryptography — RFC 8291 Web Push from Scratch</div>
+        <div class="sh" style="color:var(--purple);margin-top:8px">Push Cryptography - RFC 8291 Web Push from Scratch</div>
         <div class="g2">
           <div class="card">
             <div class="ct">🔐 VAPID JWT (RFC 8292)</div>
@@ -891,10 +891,10 @@ Payload: {
 }
 
 Signature: ECDSA P-256 using VAPID_PRIVATE_KEY
-  (stored in Worker Secrets — never in KV or logs)
+  (stored in Worker Secrets - never in KV or logs)
 
 Authorization: vapid t={jwt}, k={VAPID_PUBLIC_KEY}</div>
-              <p class="fn">The JWT is generated per delivery using <code>crypto.subtle.sign({ name:'ECDSA', hash:'SHA-256' })</code>. The public key is baked into the client app at build time. No third-party VAPID library — implemented using the Web Crypto API directly.</p>
+              <p class="fn">The JWT is generated per delivery using <code>crypto.subtle.sign({ name:'ECDSA', hash:'SHA-256' })</code>. The public key is baked into the client app at build time. No third-party VAPID library - implemented using the Web Crypto API directly.</p>
             </div>
           </div>
           <div class="card">
@@ -914,7 +914,7 @@ Authorization: vapid t={jwt}, k={VAPID_PUBLIC_KEY}</div>
 9. NONCE = PRK2("Content-Encoding: nonce")     [12B]
 10. Encrypt payload with AES-128-GCM(CEK, NONCE)
 11. Send: salt || record_size || serverPubRaw || ciphertext</div>
-              <p class="fn">Entire key derivation and encryption uses <code>crypto.subtle</code>. No npm dependencies. Validated against RFC 8291 test vectors. This means push payloads are end-to-end encrypted between the Push Worker and the user's browser — the push service (FCM etc.) cannot read the notification content.</p>
+              <p class="fn">Entire key derivation and encryption uses <code>crypto.subtle</code>. No npm dependencies. Validated against RFC 8291 test vectors. This means push payloads are end-to-end encrypted between the Push Worker and the user's browser - the push service (FCM etc.) cannot read the notification content.</p>
             </div>
           </div>
           <div class="card">
@@ -956,18 +956,18 @@ Escalation-only rule:
 </div>
 
 <!-- ══════════════════════════════════════════════════════════
-     09 — BACKEND WORKERS
+     09 - BACKEND WORKERS
 ═══════════════════════════════════════════════════════════ -->
 <div class="sec" id="s09">
-  <div class="sec-hd"><span class="sec-n">09</span><h2>Backend Workers — Detailed Reference</h2></div>
-  <p class="sec-desc">All backend logic runs on Cloudflare Workers — serverless JavaScript running at the edge globally. No persistent file system; all state is in Cloudflare KV. Worker URLs are not published to prevent endpoint abuse. Every worker has CORS headers allowing access from the app's domain only.</p>
+  <div class="sec-hd"><span class="sec-n">09</span><h2>Backend Workers - Detailed Reference</h2></div>
+  <p class="sec-desc">All backend logic runs on Cloudflare Workers - serverless JavaScript running at the edge globally. No persistent file system; all state is in Cloudflare KV. Worker URLs are not published to prevent endpoint abuse. Every worker has CORS headers allowing access from the app's domain only.</p>
 
   <div class="lanes">
     <div class="lane l-worker">
       <div class="ll"><span class="ln">Forecast API</span><span class="ls">Cron: 5 min</span></div>
       <div class="lb"><div class="g2">
-        <div class="card"><div class="ct">What It Does</div><div class="cb"><p>On cron: fetches IMAP solar wind, NOAA GOES-18/19 Hp, EY2M geomag, and IPS shock events. Runs the composite aurora score algorithm. Writes result to KV with a 30 s client-facing TTL. Clients never hit external APIs directly — they read from KV only. Score history (24 h array) accumulates in KV and is trimmed on each write.</p></div></div>
-        <div class="card"><div class="ct">Response Shape</div><div class="cb"><p>baseScore (0–100, Greymouth reference), all raw inputs (Bz, Bt, speed, density, Hp, EY2M dH), 24 h history array with timestamps, moon phase/times, solar event flags, IPS shock flag, lastUpdated epoch. Clients compute finalScore (location-adjusted) from baseScore locally.</p></div></div>
+        <div class="card"><div class="ct">What It Does</div><div class="cb"><p>On cron: fetches IMAP solar wind, NOAA GOES-18/19 Hp, EY2M geomag, and IPS shock events. Runs the composite aurora score algorithm. Writes result to KV with a 30 s client-facing TTL. Clients never hit external APIs directly - they read from KV only. Score history (24 h array) accumulates in KV and is trimmed on each write.</p></div></div>
+        <div class="card"><div class="ct">Response Shape</div><div class="cb"><p>baseScore (0-100, Greymouth reference), all raw inputs (Bz, Bt, speed, density, Hp, EY2M dH), 24 h history array with timestamps, moon phase/times, solar event flags, IPS shock flag, lastUpdated epoch. Clients compute finalScore (location-adjusted) from baseScore locally.</p></div></div>
       </div></div>
     </div>
 
@@ -975,22 +975,22 @@ Escalation-only rule:
       <div class="ll"><span class="ln">Substorm Risk</span><span class="ls">Per-request, 60 s cache</span></div>
       <div class="lb"><div class="card w"><div class="cb">
         <p>Fetches fresh L1 solar wind and EY2M data on every request (result KV-cached 60 s). Computes the full Newell integral over 30 and 60-min windows, geomagnetic bay detection, solar loading score (a composite of active-region flare probabilities and hemispheric power trends), substorm status, and P30/P60 probabilities. Returns the complete metrics object including every intermediate value.</p>
-        <p style="margin-top:8px"><strong>Why separate from the Forecast API?</strong> The substorm bay onset can develop in under 5 minutes. The Forecast Worker runs on a 5-min cron — there could be up to 5 minutes of lag before it reflects a rapid onset. The Substorm Risk Worker is per-request (with 60 s cache), so the status it returns is always within 60 seconds of current conditions. This difference is meaningful for real-time bay detection.</p>
+        <p style="margin-top:8px"><strong>Why separate from the Forecast API?</strong> The substorm bay onset can develop in under 5 minutes. The Forecast Worker runs on a 5-min cron - there could be up to 5 minutes of lag before it reflects a rapid onset. The Substorm Risk Worker is per-request (with 60 s cache), so the status it returns is always within 60 seconds of current conditions. This difference is meaningful for real-time bay detection.</p>
       </div></div></div>
     </div>
 
     <div class="lane l-worker">
       <div class="ll"><span class="ln">IMAP Solar Wind</span><span class="ls">Per-request, 60 s cache</span></div>
       <div class="lb"><div class="card w"><div class="cb">
-        <p><strong>Merge strategy:</strong> Attempts IMAP-Hi L1 data first. If unavailable or stale (IMAP is a newer NASA mission and data gaps occur), falls back to NOAA DSCOVR RTSW. Each data point in the 24 h returned time series is individually labelled with its source — <span class="p pp" style="font-size:9px">IMAP</span> or <span class="p pm" style="font-size:9px">NOAA RTSW</span> — shown on the IMF chart.</p>
-        <p style="margin-top:8px"><strong>L1 travel time reminder:</strong> All L1 measurements shown in the app reflect conditions that are currently 45–60 minutes from arriving at Earth at typical solar wind speeds. A southward Bz visible in the IMF chart means aurora may develop within the hour — not that it is happening right now. The "15 min" forecast slot accounts for the current L1 reading; the "Now" slot is based on the geomagnetic/Hp measurements already at Earth.</p>
+        <p><strong>Merge strategy:</strong> Attempts IMAP-Hi L1 data first. If unavailable or stale (IMAP is a newer NASA mission and data gaps occur), falls back to NOAA DSCOVR RTSW. Each data point in the 24 h returned time series is individually labelled with its source - <span class="p pp" style="font-size:9px">IMAP</span> or <span class="p pm" style="font-size:9px">NOAA RTSW</span> - shown on the IMF chart.</p>
+        <p style="margin-top:8px"><strong>L1 travel time reminder:</strong> All L1 measurements shown in the app reflect conditions that are currently 45-60 minutes from arriving at Earth at typical solar wind speeds. A southward Bz visible in the IMF chart means aurora may develop within the hour - not that it is happening right now. The "15 min" forecast slot accounts for the current L1 reading; the "Now" slot is based on the geomagnetic/Hp measurements already at Earth.</p>
       </div></div></div>
     </div>
 
     <div class="lane l-worker">
       <div class="ll"><span class="ln">DONKI Proxy</span><span class="ls">Cron: hourly</span></div>
       <div class="lb"><div class="card w"><div class="cb">
-        <p>Fetches CME catalog, FLR list, and GST shock events from NASA DONKI on an hourly cron. Stores in KV. All client requests are served from KV — no browser ever calls NASA directly. This protects the shared NASA API key from being rate-limited by multiple concurrent users. The NASA API key is stored in Worker Secrets and is never present in any client-facing response.</p>
+        <p>Fetches CME catalog, FLR list, and GST shock events from NASA DONKI on an hourly cron. Stores in KV. All client requests are served from KV - no browser ever calls NASA directly. This protects the shared NASA API key from being rate-limited by multiple concurrent users. The NASA API key is stored in Worker Secrets and is never present in any client-facing response.</p>
         <p style="margin-top:8px"><strong>CME processing:</strong> For each CME, the "most accurate" GCS analysis is selected (or the first if no most-accurate flag). Only CMEs with valid speed, longitude, and latitude values are included in the modellable set. Earth-directed classification: <code>|longitude| &lt; 45°</code>. Predicted arrival time extracted from linked GST activityID if present.</p>
       </div></div></div>
     </div>
@@ -1006,40 +1006,40 @@ Escalation-only rule:
     <div class="lane l-worker">
       <div class="ll"><span class="ln">Banner API</span><span class="ls">On demand</span></div>
       <div class="lb"><div class="card w"><div class="cb">
-        <p>Admin-controlled sitewide banner (BANNER_AUTH_TOKEN in Worker Secrets). Stores content in KV. Fetched on every page load — shown as a strip above the app content. The dynamic substorm alert visible in the app's global header is separate: it is generated entirely client-side from the Substorm Risk Worker response.</p>
-        <p style="margin-top:8px"><strong>Push broadcast limitation:</strong> The admin broadcast is sent by the admin's browser calling the Push Worker directly — not routed through this API. This is because Cloudflare prohibits worker-to-worker subrequests on the same account via public URLs (returns error 1042). The admin panel calls the Push Worker's broadcast endpoint directly from the browser using the admin key as authentication.</p>
+        <p>Admin-controlled sitewide banner (BANNER_AUTH_TOKEN in Worker Secrets). Stores content in KV. Fetched on every page load - shown as a strip above the app content. The dynamic substorm alert visible in the app's global header is separate: it is generated entirely client-side from the Substorm Risk Worker response.</p>
+        <p style="margin-top:8px"><strong>Push broadcast limitation:</strong> The admin broadcast is sent by the admin's browser calling the Push Worker directly - not routed through this API. This is because Cloudflare prohibits worker-to-worker subrequests on the same account via public URLs (returns error 1042). The admin panel calls the Push Worker's broadcast endpoint directly from the browser using the admin key as authentication.</p>
       </div></div></div>
     </div>
   </div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════
-     10 — SIGHTINGS
+     10 - SIGHTINGS
 ═══════════════════════════════════════════════════════════ -->
 <div class="sec" id="s10">
   <div class="sec-hd"><span class="sec-n">10</span><h2>Aurora Sightings</h2></div>
-  <p class="sec-desc">User-submitted reports provide real-world ground truth that solar wind models cannot. "Nothing" reports are explicitly valuable — they calibrate when the model over-predicts.</p>
+  <p class="sec-desc">User-submitted reports provide real-world ground truth that solar wind models cannot. "Nothing" reports are explicitly valuable - they calibrate when the model over-predicts.</p>
 
   <div class="lanes">
     <div class="lane l-user">
       <div class="ll"><span class="ln">What You Submit</span></div>
       <div class="lb"><div class="cards">
-        <div class="card"><div class="ct">8 Status Values</div><div class="cb"><p>Naked Eye · Phone Camera · DSLR/Mirrorless · Nothing (Naked Eye) · Nothing (Phone) · Nothing (DSLR) · Cloudy. Negative sightings ("Nothing") explicitly confirm clear-sky absence of aurora when the model predicts activity — this is calibration data, not noise. Cloudy reports confirm obstructed sky rather than absent aurora.</p></div></div>
-        <div class="card"><div class="ct">Rate Limiting + Privacy</div><div class="cb"><p>One report per 5 minutes via localStorage timestamp. This works offline-then-online correctly, unlike server-side IP limiting which fails for mobile users on carrier NAT. Name trimmed to 50 chars, HTML stripped. GPS coordinates are stored only in the sighting record and used only to position the map dot — not linked to any persistent identity.</p></div></div>
+        <div class="card"><div class="ct">8 Status Values</div><div class="cb"><p>Naked Eye · Phone Camera · DSLR/Mirrorless · Nothing (Naked Eye) · Nothing (Phone) · Nothing (DSLR) · Cloudy. Negative sightings ("Nothing") explicitly confirm clear-sky absence of aurora when the model predicts activity - this is calibration data, not noise. Cloudy reports confirm obstructed sky rather than absent aurora.</p></div></div>
+        <div class="card"><div class="ct">Rate Limiting + Privacy</div><div class="cb"><p>One report per 5 minutes via localStorage timestamp. This works offline-then-online correctly, unlike server-side IP limiting which fails for mobile users on carrier NAT. Name trimmed to 50 chars, HTML stripped. GPS coordinates are stored only in the sighting record and used only to position the map dot - not linked to any persistent identity.</p></div></div>
       </div></div>
     </div>
     <div class="lane l-worker">
       <div class="ll"><span class="ln">Sightings Worker</span></div>
       <div class="lb"><div class="g2">
-        <div class="card"><div class="ct">Storage Design</div><div class="cb"><p>All reports in one JSON array under a single KV key. Each POST: read → append → prune entries older than 24 h → write back. This is exactly one KV read + one write per submission — very cheap. GET responses served from Cloudflare edge cache with <code>Cache-Control: max-age=60</code>. Daily cron resets the array as a safety net. Write invalidates the edge cache immediately so new reports appear globally within 1–2 seconds.</p></div></div>
-        <div class="card"><div class="ct">Use in Forecast</div><div class="cb"><p>Reports from the past 30 minutes within approximately 200 km of the user's location are counted. If ≥2 naked-eye reports exist nearby, the "Now" visibility slot shows a sightings-confirmed message alongside the model prediction. Model prediction and sightings are displayed as separate, independent information — sightings never override or suppress the score.</p></div></div>
+        <div class="card"><div class="ct">Storage Design</div><div class="cb"><p>All reports in one JSON array under a single KV key. Each POST: read → append → prune entries older than 24 h → write back. This is exactly one KV read + one write per submission - very cheap. GET responses served from Cloudflare edge cache with <code>Cache-Control: max-age=60</code>. Daily cron resets the array as a safety net. Write invalidates the edge cache immediately so new reports appear globally within 1-2 seconds.</p></div></div>
+        <div class="card"><div class="ct">Use in Forecast</div><div class="cb"><p>Reports from the past 30 minutes within approximately 200 km of the user's location are counted. If ≥2 naked-eye reports exist nearby, the "Now" visibility slot shows a sightings-confirmed message alongside the model prediction. Model prediction and sightings are displayed as separate, independent information - sightings never override or suppress the score.</p></div></div>
       </div></div>
     </div>
   </div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════
-     11 — TRANSPARENCY & LIMITATIONS
+     11 - TRANSPARENCY & LIMITATIONS
 ═══════════════════════════════════════════════════════════ -->
 <div class="sec" id="s11">
   <div class="sec-hd"><span class="sec-n">11</span><h2>Transparency &amp; Limitations</h2></div>
@@ -1051,11 +1051,11 @@ Escalation-only rule:
       <div class="lb"><div class="cards">
         <div class="card">
           <div class="ct">⏱ L1 Travel Time Uncertainty</div>
-          <div class="cb"><p>Solar wind data is measured at L1, approximately 1.5 million km from Earth. At 400–600 km/s, the data shown in the IMF charts is 45–60 minutes away from arriving at Earth. We cannot know if those conditions will persist, intensify, or die out before arrival. The "15 min" slot accounts for this lag; the uncertainty cannot be eliminated.</p></div>
+          <div class="cb"><p>Solar wind data is measured at L1, approximately 1.5 million km from Earth. At 400-600 km/s, the data shown in the IMF charts is 45-60 minutes away from arriving at Earth. We cannot know if those conditions will persist, intensify, or die out before arrival. The "15 min" slot accounts for this lag; the uncertainty cannot be eliminated.</p></div>
         </div>
         <div class="card">
           <div class="ct">🌎 Ionospheric Variability</div>
-          <div class="cb"><p>Identical solar wind conditions produce different aurora on different nights. Ionospheric conductivity, substorm phase, ring current state, and magnetospheric pre-conditioning all affect the visible outcome. The score is a probability estimate — not a deterministic forecast. A score of 60% means significant aurora is more likely than not, not that it is guaranteed.</p></div>
+          <div class="cb"><p>Identical solar wind conditions produce different aurora on different nights. Ionospheric conductivity, substorm phase, ring current state, and magnetospheric pre-conditioning all affect the visible outcome. The score is a probability estimate - not a deterministic forecast. A score of 60% means significant aurora is more likely than not, not that it is guaranteed.</p></div>
         </div>
         <div class="card">
           <div class="ct">🌑 CH Detection Accuracy</div>
@@ -1063,7 +1063,7 @@ Escalation-only rule:
         </div>
         <div class="card">
           <div class="ct">🚀 CME Trajectory Deflection</div>
-          <div class="cb"><p>CME trajectories can deflect significantly between Sun and Earth due to interaction with the background solar wind, helmet streamer belts, and other CMEs. A CME modelled as Earth-directed from DONKI GCS parameters may still miss Earth. Conversely, a flank CME can produce aurora through its compressed sheath. The visualizer shows the DONKI catalog parameters as-is — no deflection model is included.</p></div>
+          <div class="cb"><p>CME trajectories can deflect significantly between Sun and Earth due to interaction with the background solar wind, helmet streamer belts, and other CMEs. A CME modelled as Earth-directed from DONKI GCS parameters may still miss Earth. Conversely, a flank CME can produce aurora through its compressed sheath. The visualizer shows the DONKI catalog parameters as-is - no deflection model is included.</p></div>
         </div>
         <div class="card">
           <div class="ct">📊 Score ≠ Kp</div>
@@ -1071,15 +1071,15 @@ Escalation-only rule:
         </div>
         <div class="card">
           <div class="ct">🔔 5-Minute Notification Lag</div>
-          <div class="cb"><p>Notification checks run every 5 minutes on a cron. A rapid onset can go from quiet to naked-eye visible in under 5 minutes — faster than the check cycle. The "overnight watch" notification around sunset is the practical hedge: it provides advance notice so users are already watching when conditions peak.</p></div>
+          <div class="cb"><p>Notification checks run every 5 minutes on a cron. A rapid onset can go from quiet to naked-eye visible in under 5 minutes - faster than the check cycle. The "overnight watch" notification around sunset is the practical hedge: it provides advance notice so users are already watching when conditions peak.</p></div>
         </div>
         <div class="card">
           <div class="ct">📐 DBM Model Uncertainty</div>
-          <div class="cb"><p>The drag parameter γ is estimated from CME speed and half-angle — the actual value depends on CME mass, cross-section, and ambient density, all of which are uncertain from remote sensing. The DBM arrival time uncertainty is typically ±6–12 hours at 1 AU. For confirmed Earth-directed events with a DONKI-supplied arrival time, the catalog value is used instead of the model estimate.</p></div>
+          <div class="cb"><p>The drag parameter γ is estimated from CME speed and half-angle - the actual value depends on CME mass, cross-section, and ambient density, all of which are uncertain from remote sensing. The DBM arrival time uncertainty is typically ±6-12 hours at 1 AU. For confirmed Earth-directed events with a DONKI-supplied arrival time, the catalog value is used instead of the model estimate.</p></div>
         </div>
         <div class="card">
           <div class="ct">🌐 Data Source Outages</div>
-          <div class="cb"><p>All data sources can become unavailable. IMAP is a relatively new mission with occasional data gaps — DSCOVR fallback is automatic. NOAA SWPC occasionally has maintenance outages. The app is built to degrade gracefully: missing data shows stale values with timestamps rather than crashing. The impact forecast uses a geometry-based fallback when the propagation engine hasn't built yet.</p></div>
+          <div class="cb"><p>All data sources can become unavailable. IMAP is a relatively new mission with occasional data gaps - DSCOVR fallback is automatic. NOAA SWPC occasionally has maintenance outages. The app is built to degrade gracefully: missing data shows stale values with timestamps rather than crashing. The impact forecast uses a geometry-based fallback when the propagation engine hasn't built yet.</p></div>
         </div>
       </div>
 

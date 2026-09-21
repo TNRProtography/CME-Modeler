@@ -15,6 +15,7 @@
 // with no icon.
 
 import { readFileSync, existsSync, statSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadManifest, workerTopics, workerSentTopics } from './topic-manifest.mjs';
@@ -199,6 +200,37 @@ console.log('\nThe site ships what it promises');
           `every page _redirects points at exists (${targets.length} checked)`,
           missing.join(', '));
   }
+}
+
+console.log('\nHouse style: no em dashes in anything a user reads');
+{
+  // Em and en dashes were swept out of every user-visible string. Code
+  // comments keep whatever they had - nobody using the app reads those - so
+  // this checks the strings and the JSX prose only.
+  const DASH = /[\u2014\u2013]/;
+  const isCommentOnly = (line) => {
+    const t = line.trimStart();
+    return t.startsWith('//') || t.startsWith('*') || t.startsWith('/*');
+  };
+
+  const files = execSync('git ls-files "*.ts" "*.tsx" "*.js" "*.html"', { cwd: APP, encoding: 'utf8' })
+    .split('\n').filter(Boolean);
+  const offenders = [];
+  for (const rel of files) {
+    const file = join(APP, rel.replace(/^basic---to-go-live-nasa-cme-modeler\//, ''));
+    if (!existsSync(file)) continue;
+    const text = readFileSync(file, 'utf8');
+    if (!DASH.test(text)) continue;
+    text.split('\n').forEach((line, i) => {
+      if (!DASH.test(line)) return;
+      if (!rel.endsWith('.html') && isCommentOnly(line)) return;
+      offenders.push(`${rel}:${i + 1}  ${line.trim().slice(0, 70)}`);
+    });
+  }
+  check(offenders.length === 0,
+        `no em or en dash in user-visible text (${files.length} files scanned)`,
+        offenders.slice(0, 6).join('\n        ')
+          + (offenders.length > 6 ? `\n        ...and ${offenders.length - 6} more` : ''));
 }
 
 console.log('\nPresets only name real topics');

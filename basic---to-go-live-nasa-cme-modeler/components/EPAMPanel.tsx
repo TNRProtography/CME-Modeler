@@ -277,11 +277,11 @@ const mkDs = (pts: any[], timeKey: string, valueKey: string, color: string, labe
 // L1 raw views: 5 proton channels (same keys across active / SOLAR-1 / IMAP -
 // the worker maps every HAPI ion feed onto these legacy fields).
 const L1_CH = [
-  {k:'p1',c:'#60a5fa',l:'P1 47–68 keV'},
-  {k:'p3',c:'#34d399',l:'P3 115–195 keV'},
-  {k:'p5',c:'#facc15',l:'P5 310–580 keV'},
-  {k:'p7',c:'#fb923c',l:'P7 795–1193 keV'},
-  {k:'p8',c:'#f87171',l:'P8 1–1.9 MeV'},
+  {k:'p1',c:'#60a5fa',l:'P1 47-68 keV'},
+  {k:'p3',c:'#34d399',l:'P3 115-195 keV'},
+  {k:'p5',c:'#facc15',l:'P5 310-580 keV'},
+  {k:'p7',c:'#fb923c',l:'P7 795-1193 keV'},
+  {k:'p8',c:'#f87171',l:'P8 1-1.9 MeV'},
 ];
 
 const SHOCK_COLORS: Record<string, string> = {
@@ -308,11 +308,11 @@ function shockMarkerDataset(t: number, yMin: number, yMax: number, color: string
 
 // ─── View metadata ────────────────────────────────────────────────────────────
 const VIEW_INFO: Record<ViewKey, {title: string; subtitle: string; note?: string}> = {
-  'ace-raw':  {title: 'Solar Storm Early Warning (ACE EPAM)', subtitle: 'Real-time particle readings from ACE EPAM - satellites parked 1.5 million km in front of Earth, about 45–60 minutes upstream of us. When the lines start rising together across all colours and converging on the graph, that is the pattern that often precedes a solar storm arriving at Earth. The earlier the lines rise, the more warning time you have.'},
+  'ace-raw':  {title: 'Solar Storm Early Warning (ACE EPAM)', subtitle: 'Real-time particle readings from ACE EPAM - satellites parked 1.5 million km in front of Earth, about 45-60 minutes upstream of us. When the lines start rising together across all colours and converging on the graph, that is the pattern that often precedes a solar storm arriving at Earth. The earlier the lines rise, the more warning time you have.'},
   'ace-roc':  {title: 'ACE - Rate of Change (15-min)', subtitle: 'How fast the averaged ACE particle flux is climbing or falling, expressed as the change in log-flux over a rolling 15-minute window. Flat near zero means steady. A sharp positive spike means the flux is jumping - the near-vertical climb that marks a CME shock front arriving. Sustained negative values mean a stream is decaying. This is the leading-edge view: it reacts before the raw flux looks dramatic.', note: 'Reads in log-units per 15 min: +0.30 ≈ a doubling, +0.60 ≈ a 4× jump in 15 minutes. Brief single-point spikes are noise; a real onset shows several rising steps in a row.'},
   'solar1-raw': {title: 'SOLAR-1 EPAM - Independent Confirmation', subtitle: 'A second, fully independent spacecraft at the L1 point measuring the same particle environment with its own instrument. If SOLAR-1 is elevated at the same time as the primary feed, the storm signal is much more reliable - two different detectors agreeing is hard to fake with instrument noise.'},
   'imap-raw': {title: 'IMAP - Independent Confirmation', subtitle: 'NASA\u2019s IMAP spacecraft at L1, providing a third independent particle measurement. Like SOLAR-1, simultaneous elevation here cross-confirms what the primary feed is seeing.', note: 'IMAP\u2019s real-time particle feed is new - gaps and outages are expected while SWPC brings it fully online. When no data is available the panel simply marks IMAP as unavailable.'},
-  'stereo-raw': {title: 'STEREO-A - Ahead-of-Earth Satellite', subtitle: 'Particle readings from a satellite that orbits slightly ahead of Earth, giving an early peek at what is coming along the Sun–Earth line.', note: '⚠ STEREO-A orbits about 10–15° ahead of Earth and sees the Sun from a different angle - so elevated readings here do not always mean the same storm will hit Earth. Think of it as a neighbour getting rain before you - useful context, but not a direct forecast for your location.'},
+  'stereo-raw': {title: 'STEREO-A - Ahead-of-Earth Satellite', subtitle: 'Particle readings from a satellite that orbits slightly ahead of Earth, giving an early peek at what is coming along the Sun-Earth line.', note: '⚠ STEREO-A orbits about 10-15° ahead of Earth and sees the Sun from a different angle - so elevated readings here do not always mean the same storm will hit Earth. Think of it as a neighbour getting rain before you - useful context, but not a direct forecast for your location.'},
   'combined': {title: 'All Spacecraft - Combined Overview', subtitle: 'One averaged trend line per spacecraft, making it easy to compare every source at a glance. If the independent L1 feeds are rising together, that is the strongest possible signal. Toggle individual spacecraft on or off with the buttons below.'},
 };
 
@@ -365,7 +365,7 @@ const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) =
       <span class='block mt-1'><strong class='text-green-400'>Quiet</strong> - at normal background. No storm signature.</span>
       <span class='block'><strong class='text-yellow-300'>Watch</strong> - particle levels just starting to lift. Could be the front edge of something, could settle back down.</span>
       <span class='block'><strong class='text-sky-300'>Elevated</strong> - clearly and persistently above background across multiple energy channels. Something real is upstream.</span>
-      <span class='block'><strong class='text-orange-300'>Storm Arrival Incoming</strong> - flux climbing fast and coherently: the classic lead-in to a CME shock. Typically 30–90 minutes of warning.</span>
+      <span class='block'><strong class='text-orange-300'>Storm Arrival Incoming</strong> - flux climbing fast and coherently: the classic lead-in to a CME shock. Typically 30-90 minutes of warning.</span>
       <span class='block'><strong class='text-red-300'>Shock</strong> - the disturbance is passing the upstream spacecraft right now. Earth-side effects within the hour.</span></p>
 
       <p><strong>The stats, and what each one means:</strong>
@@ -373,15 +373,15 @@ const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) =
       <span class='block'><strong>Sustained, not a glitch</strong> - how long flux has stayed elevated. Single spikes are usually instrument noise; real events persist for 30+ minutes.</span>
       <span class='block'><strong>Multiple channels rising</strong> - whether different particle energies (47 keV up to 1.9 MeV) are rising together. Real solar events are broadband; a single channel alone is usually an artifact.</span>
       <span class='block'><strong>Sharp rate of climb</strong> - how fast flux is changing over 15 minutes, in log units: +0.30 means it doubled, +0.60 means it quadrupled. Shock fronts produce near-vertical climbs; slow solar-wind streams do not. The <strong>Rate of Change</strong> chart view plots exactly this.</span>
-      <span class='block'><strong>Fast particles arrived first</strong> - velocity dispersion: the highest-energy particles from a fresh eruption outrun the slower ones, so the MeV channels rise hours before the keV channels. Seeing this means an eruption's particles are connecting to Earth - the earliest hint, sometimes 1–2 days before arrival.</span>
+      <span class='block'><strong>Fast particles arrived first</strong> - velocity dispersion: the highest-energy particles from a fresh eruption outrun the slower ones, so the MeV channels rise hours before the keV channels. Seeing this means an eruption's particles are connecting to Earth - the earliest hint, sometimes 1-2 days before arrival.</span>
       <span class='block'><strong>Channels converging</strong> - as a shock gets close it accelerates lower-energy particles locally, so the gap between the channel lines shrinks. On the chart this is the lines visibly squeezing together - a sign the source is getting near.</span>
       <span class='block'><strong>Dip after elevation</strong> - a temporary drop from an elevated plateau, often seen tens of minutes to a couple of hours before a shock arrives. A dip from quiet means nothing, but a dip <em>after</em> sustained elevation followed by a sudden climb is one of the highest-confidence "it's about to hit" patterns EPAM offers.</span>
       <span class='block'><strong>Independent spacecraft confirm</strong> - SOLAR-1 and IMAP each get judged against their OWN 7-day quiet baseline. When one or both are independently elevated at the same time as the primary feed, the warning engine treats the signal as cross-confirmed - different hardware seeing the same physics is the strongest argument against instrument noise.</span>
       <span class='block'><strong>Cosmic-ray decrease (Forbush)</strong> - measured by a ground neutron monitor (Oulu, Finland), not by the L1 spacecraft. When a large CME structure passes near Earth, its magnetic field sweeps away galactic cosmic rays and ground counts drop 1.5%+ below their weekly normal. This independently confirms a major structure is at our doorstep.</span></p>
 
-      <p><strong>Why it matters for aurora:</strong> A CME shock arrival is the trigger event for the biggest aurora displays. When this panel reads <strong>Storm Arrival Incoming</strong> or <strong>Shock</strong>, you typically have 30–90 minutes before effects reach Earth - enough time to get out and get set up. After arrival, whether the aurora actually fires depends on the magnetic field orientation (Bz): strongly southward Bz means the storm couples into Earth's field and the show begins. So treat this panel as the "get ready" signal and Bz as the "go" signal. Elevated particles raise the <em>potential</em> for aurora; they are not a guarantee of one.</p>
+      <p><strong>Why it matters for aurora:</strong> A CME shock arrival is the trigger event for the biggest aurora displays. When this panel reads <strong>Storm Arrival Incoming</strong> or <strong>Shock</strong>, you typically have 30-90 minutes before effects reach Earth - enough time to get out and get set up. After arrival, whether the aurora actually fires depends on the magnetic field orientation (Bz): strongly southward Bz means the storm couples into Earth's field and the show begins. So treat this panel as the "get ready" signal and Bz as the "go" signal. Elevated particles raise the <em>potential</em> for aurora; they are not a guarantee of one.</p>
 
-      <p class='text-xs text-neutral-400'><strong>Advanced:</strong> The level is decided by the <em>combination</em> of signatures, never one number - magnitude, persistence, broadband agreement and rate of climb must coincide, which is what suppresses false alarms from glitches and slow stream interactions. When early-stage signatures fire (dispersion, convergence, a post-elevation dip, a Forbush decrease, or independent spacecraft confirmation), detection thresholds for the later stages are automatically lowered - the system earns extra sensitivity only when the storm sequence is genuinely under way. The score (0–100) is a continuous confidence measure behind the discrete levels.</p>
+      <p class='text-xs text-neutral-400'><strong>Advanced:</strong> The level is decided by the <em>combination</em> of signatures, never one number - magnitude, persistence, broadband agreement and rate of climb must coincide, which is what suppresses false alarms from glitches and slow stream interactions. When early-stage signatures fire (dispersion, convergence, a post-elevation dip, a Forbush decrease, or independent spacecraft confirmation), detection thresholds for the later stages are automatically lowered - the system earns extra sensitivity only when the storm sequence is genuinely under way. The score (0-100) is a continuous confidence measure behind the discrete levels.</p>
     </div>
   `,
     });
@@ -607,9 +607,9 @@ const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) =
       if (!filteredStereo.length) return null;
       const pts = rev(filteredStereo);
       return { datasets: [
-        {...mkDs(pts,'time_tag','sep_lo','#a78bfa','Protons 75–623 keV'), yAxisID:'y'},
-        {...mkDs(pts,'time_tag','sep_hi','#c084fc','Protons 623 keV–21 MeV'), yAxisID:'y'},
-        {...mkDs(pts,'time_tag','electrons_lo','#e879f9','e⁻ 35–65 keV'), yAxisID:'y'},
+        {...mkDs(pts,'time_tag','sep_lo','#a78bfa','Protons 75-623 keV'), yAxisID:'y'},
+        {...mkDs(pts,'time_tag','sep_hi','#c084fc','Protons 623 keV-21 MeV'), yAxisID:'y'},
+        {...mkDs(pts,'time_tag','electrons_lo','#e879f9','e⁻ 35-65 keV'), yAxisID:'y'},
         {...mkDs(pts,'time_tag','speed','#34d399','Speed (km/s)',false), yAxisID:'y2'},
         {...mkDs(pts,'time_tag','bt','#60a5fa','Bt (nT)',false), yAxisID:'y2'},
       ]};

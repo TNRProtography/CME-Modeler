@@ -6,11 +6,11 @@ interface ColorScaleGuideProps {
 
 const colorScaleData = [
   { swatch: 'bg-[#808080]', label: '< 350 km/s' },
-  { swatch: 'bg-gradient-to-r from-[#808080] to-[#ffff00]', label: '350 – 500 km/s' },
-  { swatch: 'bg-gradient-to-r from-[#ffff00] to-[#ffa500]', label: '500 – 800 km/s' },
-  { swatch: 'bg-gradient-to-r from-[#ffa500] to-[#ff4500]', label: '800 – 1000 km/s' },
-  { swatch: 'bg-gradient-to-r from-[#ff4500] to-[#9370db]', label: '1000 – 1800 km/s' },
-  { swatch: 'bg-gradient-to-r from-[#9370db] to-[#ff69b4]', label: '1800 – 2500 km/s' },
+  { swatch: 'bg-gradient-to-r from-[#808080] to-[#ffff00]', label: '350 - 500 km/s' },
+  { swatch: 'bg-gradient-to-r from-[#ffff00] to-[#ffa500]', label: '500 - 800 km/s' },
+  { swatch: 'bg-gradient-to-r from-[#ffa500] to-[#ff4500]', label: '800 - 1000 km/s' },
+  { swatch: 'bg-gradient-to-r from-[#ff4500] to-[#9370db]', label: '1000 - 1800 km/s' },
+  { swatch: 'bg-gradient-to-r from-[#9370db] to-[#ff69b4]', label: '1800 - 2500 km/s' },
   { swatch: 'bg-[#ff69b4]', label: '≥ 2500 km/s' },
 ];
 

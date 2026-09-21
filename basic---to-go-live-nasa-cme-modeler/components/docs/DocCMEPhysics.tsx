@@ -31,7 +31,7 @@ r(t) = r₀ + w·t − ln(1 + γ·(w−v₀)·t) / γ`}
       </Card>
       <Card icon="🎛" title="Drag Parameter γ - Per-CME Estimation">
         <p>γ is estimated from the GCS cone parameters in the DONKI catalog. Exact formulas from <code className="font-mono text-xs bg-neutral-800 px-1 rounded text-purple-300">estimateGamma()</code>:</p>
-        <Formula note="Operational range 0.1–2.0 × 10⁻⁷ km⁻¹ is consistent with the statistical distribution from Vršnak et al. 2013 and Dumbović et al. 2021. The speed exponent of −0.55 reflects that faster CMEs are empirically less drag-affected per unit distance.">
+        <Formula note="Operational range 0.1-2.0 × 10⁻⁷ km⁻¹ is consistent with the statistical distribution from Vršnak et al. 2013 and Dumbović et al. 2021. The speed exponent of −0.55 reflects that faster CMEs are empirically less drag-affected per unit distance.">
 {`speedClamp  = clamp(speed, 200, 3000) km/s
 
 speedFactor = 1.8 × (400 / speedClamp)^0.55
@@ -56,9 +56,9 @@ widthFactor = 0.7 + 0.6 × (halfAngle / 45)
    If within influenceRadius = max(15°, CH_width × 0.7):
 
    temporalProfile(dtHours):
-     0–18h:   ramp up   (= dtHours / 18)
-     18–54h:  plateau   (= 1.0)
-     54–102h: decay     (= linear to 0)
+     0-18h:   ramp up   (= dtHours / 18)
+     18-54h:  plateau   (= 1.0)
+     54-102h: decay     (= linear to 0)
 
    angularWeight = exp(−0.5 × (dLon / (r×0.5))²)
    hssBoost = (peakSpeed − 380) × profile × weight
@@ -66,9 +66,9 @@ widthFactor = 0.7 + 0.6 × (halfAngle / 45)
 3. Preconditioning correction applied separately`}
         </Formula>
       </Card>
-      <Card icon="🌊" title="CME–CME Preconditioning & Compression">
+      <Card icon="🌊" title="CME-CME Preconditioning & Compression">
         <p><strong className="text-green-400">Preconditioning</strong> - a leading CME creates a rarefied wake with reduced ambient density, reducing drag on a following CME:</p>
-        <Formula note="A follower erupting 1 day after a leader sees ~40% drag reduction. 3.5 days later: ~18%. 7 days later: ~3%. Temmer et al. 2017 found preconditioning lasts 2–5 days. Refs: Temmer et al. 2017, ApJ 835:141">
+        <Formula note="A follower erupting 1 day after a leader sees ~40% drag reduction. 3.5 days later: ~18%. 7 days later: ~3%. Temmer et al. 2017 found preconditioning lasts 2-5 days. Refs: Temmer et al. 2017, ApJ 835:141">
 {`preconditionDecay = exp(−dt_eruption / (3.5×86400))
   τ ≈ 3.5 days
 

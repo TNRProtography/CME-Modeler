@@ -424,7 +424,7 @@ const VERT = /* glsl */`
 const FRAG = /* glsl */`
   uniform float uTime;
   uniform float uOpacity;
-  uniform float uSourceSpeed;  // HSS speed at source (km/s), e.g. 800–1400
+  uniform float uSourceSpeed;  // HSS speed at source (km/s), e.g. 800-1400
 
   varying float vFlow;  // 0 = Sun surface, 1 = arm tip
   varying float vEdge;  // 0 = centre, 1 = tube edge
@@ -689,7 +689,7 @@ export function buildParkerSpiralMesh(
       // the stream is still narrow near the Sun but really opens up
       // in the outer heliosphere, matching ENLIL visualizations.
       const tExpand = Math.pow(t, 0.7);
-      const flare   = 1.0 + tExpand * (4.0 * widthFactor);  // 1× at sun → ~5–8× at Earth
+      const flare   = 1.0 + tExpand * (4.0 * widthFactor);  // 1× at sun → ~5-8× at Earth
       // Requested visual: keep the root tied to the CH footprint on the Sun,
       // then gradually thicken outward so the far end of the Parker spiral is
       // about 2× wider than before.
@@ -798,7 +798,7 @@ export function buildTimeVaryingSpiralMesh(
   // ── How long it takes wind to travel from Sun to 1 AU ──────────────
   const AU_KM = 149_597_870.7;
   const speedKms = Math.max(400, ch.estimatedSpeedKms);
-  const maxTravelHours = (AU_KM / speedKms) / 3600;  // ~60–104 hours
+  const maxTravelHours = (AU_KM / speedKms) / 3600;  // ~60-104 hours
 
   // ── Transequatorial damping (same as static version) ───────────────
   const chHalfHeightDeg = (ch.heightDeg ?? ch.widthDeg ?? 20) / 2;

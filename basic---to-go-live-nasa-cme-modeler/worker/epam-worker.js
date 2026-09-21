@@ -109,20 +109,20 @@ const KV_STEREO_KEY          = 'stereo_latest';
 
 const MAX_DAYS       = 7;
 const CACHE_TTL_S    = 4 * 60;
-const HAPI_CACHE_TTL = 60;          // 1-minute data — short edge cache
+const HAPI_CACHE_TTL = 60;          // 1-minute data - short edge cache
 
 // ─── Channel definitions (legacy keys kept EXACTLY — analysis depends on them) ─
 const PROTON_CHANNELS = [
-  { key: 'p1', label: 'P1 (47–68 keV)',     energy_mid: 57.5,  color: '#60a5fa' },
-  { key: 'p3', label: 'P3 (115–195 keV)',   energy_mid: 155,   color: '#34d399' },
-  { key: 'p5', label: 'P5 (310–580 keV)',   energy_mid: 445,   color: '#facc15' },
-  { key: 'p7', label: 'P7 (795–1193 keV)',  energy_mid: 994,   color: '#fb923c' },
-  { key: 'p8', label: 'P8 (1060–1900 keV)', energy_mid: 1480,  color: '#f87171' },
+  { key: 'p1', label: 'P1 (47-68 keV)',     energy_mid: 57.5,  color: '#60a5fa' },
+  { key: 'p3', label: 'P3 (115-195 keV)',   energy_mid: 155,   color: '#34d399' },
+  { key: 'p5', label: 'P5 (310-580 keV)',   energy_mid: 445,   color: '#facc15' },
+  { key: 'p7', label: 'P7 (795-1193 keV)',  energy_mid: 994,   color: '#fb923c' },
+  { key: 'p8', label: 'P8 (1060-1900 keV)', energy_mid: 1480,  color: '#f87171' },
 ];
 
 const ELECTRON_CHANNELS = [
-  { key: 'e1', label: 'e⁻ (38–53 keV)',    color: '#c084fc' },
-  { key: 'e2', label: 'e⁻ (175–315 keV)',  color: '#e879f9' },
+  { key: 'e1', label: 'e⁻ (38-53 keV)',    color: '#c084fc' },
+  { key: 'e2', label: 'e⁻ (175-315 keV)',  color: '#e879f9' },
 ];
 
 // Extra metadata for the full HAPI channel set (additive — nothing reads these
@@ -452,7 +452,7 @@ async function runHapiFetch(env, sourceKey) {
     const newestStoredTs = index?.newest_ts ? new Date(index.newest_ts).getTime() : null;
     const points = await fetchHapiWithWindow(cfg, newestStoredTs);
     if (points.length === 0) {
-      console.warn(`[HAPI ${sourceKey}] no points returned — preserving existing KV data`);
+      console.warn(`[HAPI ${sourceKey}] no points returned - preserving existing KV data`);
       await setHapiStatus(kv, cfg, !cfg.optional, 'empty response');
       return;
     }
@@ -521,7 +521,7 @@ async function backfillHapiSource(env, sourceKey) {
       await storeHapiPoints(kv, cfg, points, { backfill: true });
       console.log(`[HAPI ${sourceKey}] backfilled ${points.length} points (${toHapiTime(timeMin)} → ${toHapiTime(timeMax)})`);
     } else {
-      console.log(`[HAPI ${sourceKey}] backfill window empty (${toHapiTime(timeMin)} → ${toHapiTime(timeMax)}) — archive has no data there`);
+      console.log(`[HAPI ${sourceKey}] backfill window empty (${toHapiTime(timeMin)} → ${toHapiTime(timeMax)}) - archive has no data there`);
     }
 
     // Advance the cursor to timeMin regardless — an empty window means the
@@ -537,7 +537,7 @@ async function backfillHapiSource(env, sourceKey) {
     return true;
   } catch (e) {
     console.warn(`[HAPI ${sourceKey}] backfill failed (will retry next cron): ${e?.message ?? e}`);
-    return true; // a request was attempted — still counts against the per-run cap
+    return true; // a request was attempted - still counts against the per-run cap
   }
 }
 
@@ -668,7 +668,7 @@ async function resolveEpamPoints(env, requestedSource) {
 /** Human-readable `source` string, kept legacy-friendly. */
 function sourceString(meta) {
   if (meta.source_key === 'legacy_ace_epam') return 'ACE EPAM';
-  return `${meta.label} — ${meta.hapi_dataset} (SWPC HAPI)`;
+  return `${meta.label} - ${meta.hapi_dataset} (SWPC HAPI)`;
 }
 
 function validSourceParam(url) {
@@ -779,7 +779,7 @@ async function runStereoFetch(env) {
     console.error('[STEREO] stream error:', e.message);
     return;
   }
-  if (recent.length === 0) { console.warn('[STEREO] no valid points — preserving existing KV data'); return; }
+  if (recent.length === 0) { console.warn('[STEREO] no valid points - preserving existing KV data'); return; }
   recent.sort((a, b) => new Date(a.time_tag).getTime() - new Date(b.time_tag).getTime());
   let indexRaw = await kv.get(KV_STEREO_INDEX_KEY);
   let index = indexRaw ? JSON.parse(indexRaw) : { keys: [], newest_ts: null };
@@ -822,7 +822,7 @@ function sourceErrorJson(sourceKey, message) {
     hapi_dataset: cfg?.id ?? null,
     error: message,
     available_sources: Object.keys(HAPI_SOURCE_CONFIG),
-    note: cfg?.optional ? 'This source is optional — other sources are unaffected.' : undefined,
+    note: cfg?.optional ? 'This source is optional - other sources are unaffected.' : undefined,
   });
 }
 
@@ -945,7 +945,7 @@ async function handleAnalysis(env, url) {
   const goesCurrent = goesData?.[0] ?? null;
   const goesS1      = goesCurrent && (goesCurrent.ge10 ?? 0) >= 10;
   const goesElevated = goesCurrent && (goesCurrent.ge10 ?? 0) >= 1;
-  analysis.goes_validation = { available: !!goesCurrent, ge10_mev_flux: goesCurrent?.ge10 ?? null, ge100_mev_flux: goesCurrent?.ge100 ?? null, s1_alert: goesS1, elevated: goesElevated, confidence_note: goesElevated ? 'Second satellite confirms — the reading is more likely real.' : (goesCurrent ? 'Second satellite is quiet — treat this with some caution for now.' : 'Second satellite data unavailable.') };
+  analysis.goes_validation = { available: !!goesCurrent, ge10_mev_flux: goesCurrent?.ge10 ?? null, ge100_mev_flux: goesCurrent?.ge100 ?? null, s1_alert: goesS1, elevated: goesElevated, confidence_note: goesElevated ? 'Second satellite confirms - the reading is more likely real.' : (goesCurrent ? 'Second satellite is quiet - treat this with some caution for now.' : 'Second satellite data unavailable.') };
 
   // ── NEW: cross-spacecraft particle confirmation (SOLAR-1 / IMAP / others) ──
   // The primary detection is unchanged; this layer reports whether independent
@@ -966,8 +966,8 @@ async function handleAnalysis(env, url) {
     confidence_note: availableConfirm === 0
       ? 'No independent particle sources available for confirmation right now.'
       : confirming.length > 0
-        ? `Independent spacecraft (${confirming.join(', ')}) also show elevated particles — the signal is cross-confirmed.`
-        : 'Independent particle sources are quiet — treat a single-spacecraft signal with some caution.',
+        ? `Independent spacecraft (${confirming.join(', ')}) also show elevated particles - the signal is cross-confirmed.`
+        : 'Independent particle sources are quiet - treat a single-spacecraft signal with some caution.',
   };
 
   return json({
@@ -988,7 +988,7 @@ async function handleGoes(env) {
   let points = await loadAllGoesPoints(kv);
   if (!points || points.length === 0) {
     const legacy = await kv.get(KV_GOES_KEY);
-    if (!legacy) return json({ ok: false, error: 'No GOES data yet — check back after first cron run' });
+    if (!legacy) return json({ ok: false, error: 'No GOES data yet - check back after first cron run' });
     points = JSON.parse(legacy);
   }
   const lastFetch = await kv.get('GOES_LAST_FETCH');
@@ -1000,7 +1000,7 @@ async function handleGoes(env) {
   else if (ge10 >= 1000)   sScale = 3;
   else if (ge10 >= 100)    sScale = 2;
   else if (ge10 >= 10)     sScale = 1;
-  return json({ ok: true, source: 'GOES SEISS (geostationary)', last_fetch: lastFetch ? new Date(Number(lastFetch)).toISOString() : null, count: points.length, current_flux: current, s_scale: sScale, s_scale_label: sScale > 0 ? `S${sScale} Solar Radiation Storm` : 'Below storm threshold', alert_thresholds: { ge10_mev_pfu: { S1: 10, S2: 100, S3: 1000, S4: 10000, S5: 100000 }, ge100_mev_pfu: { event: 1 } }, channels: GOES_CHANNELS, data: points, caveats: ['GOES is at geostationary orbit — magnetospheric trapping can inflate readings.', 'GOES is excellent for confirming real SEP events seen at L1.', 'GOES does NOT detect CME approach signatures — use the L1 particle data for that.'] });
+  return json({ ok: true, source: 'GOES SEISS (geostationary)', last_fetch: lastFetch ? new Date(Number(lastFetch)).toISOString() : null, count: points.length, current_flux: current, s_scale: sScale, s_scale_label: sScale > 0 ? `S${sScale} Solar Radiation Storm` : 'Below storm threshold', alert_thresholds: { ge10_mev_pfu: { S1: 10, S2: 100, S3: 1000, S4: 10000, S5: 100000 }, ge100_mev_pfu: { event: 1 } }, channels: GOES_CHANNELS, data: points, caveats: ['GOES is at geostationary orbit - magnetospheric trapping can inflate readings.', 'GOES is excellent for confirming real SEP events seen at L1.', 'GOES does NOT detect CME approach signatures - use the L1 particle data for that.'] });
 }
 
 async function handleStereo(env) {
@@ -1009,13 +1009,13 @@ async function handleStereo(env) {
   let points = await loadAllStereoPoints(kv);
   if (!points || points.length === 0) {
     const legacy = await kv.get(KV_STEREO_KEY);
-    if (!legacy) return json({ ok: false, error: 'No STEREO data yet — the worker uses tail-streaming so data appears after the first successful cron run.' });
+    if (!legacy) return json({ ok: false, error: 'No STEREO data yet - the worker uses tail-streaming so data appears after the first successful cron run.' });
     points = JSON.parse(legacy);
   }
   const lastFetch = await kv.get('STEREO_LAST_FETCH');
   const current = points[0] ?? null;
   const stereoElevated = current && ((current.sep_hi > 0.01) || (current.sep_lo > 0.1));
-  return json({ ok: true, source: 'STEREO-A IMPACT (heliocentric orbit, ~10–15° ahead of Earth)', last_fetch: lastFetch ? new Date(Number(lastFetch)).toISOString() : null, count: points.length, current: current, particle_elevated: stereoElevated, orbital_context: 'STEREO-A is currently ~10–15° ahead of Earth on the Parker spiral. If particles are elevated here but not at L1, the CME may be glancing. If STEREO-A elevated before L1, the CME has already passed STEREO and is heading toward Earth.', data: points, caveats: ['STEREO-A is NOT at L1 — it sees solar wind from a different magnetic connection angle.', 'Elevated particles at STEREO-A do not guarantee Earth impact.', 'STEREO data latency varies with ground station coverage. Data gaps are normal.', 'Worker uses tail-streaming to avoid loading the full ~23MB NOAA file.'] });
+  return json({ ok: true, source: 'STEREO-A IMPACT (heliocentric orbit, ~10-15° ahead of Earth)', last_fetch: lastFetch ? new Date(Number(lastFetch)).toISOString() : null, count: points.length, current: current, particle_elevated: stereoElevated, orbital_context: 'STEREO-A is currently ~10-15° ahead of Earth on the Parker spiral. If particles are elevated here but not at L1, the CME may be glancing. If STEREO-A elevated before L1, the CME has already passed STEREO and is heading toward Earth.', data: points, caveats: ['STEREO-A is NOT at L1 - it sees solar wind from a different magnetic connection angle.', 'Elevated particles at STEREO-A do not guarantee Earth impact.', 'STEREO data latency varies with ground station coverage. Data gaps are normal.', 'Worker uses tail-streaming to avoid loading the full ~23MB NOAA file.'] });
 }
 
 async function handleCombined(env) {
@@ -1076,15 +1076,15 @@ async function handleCombined(env) {
 
   let confidence, confidenceLabel, summary;
   if (epamElevated && (goesS1Alert || particleConfirmed)) {
-    confidence = 'HIGH'; confidenceLabel = '🔴 Confirmed — Multiple satellites agree';
+    confidence = 'HIGH'; confidenceLabel = '🔴 Confirmed - Multiple satellites agree';
     summary = particleConfirmed && !goesS1Alert
-      ? `Multiple independent upstream particle sources (${confirmingLabels.join(', ')}) agree that energetic particles are elevated. This is a cross-confirmed signal — conditions may be developing for potential aurora.`
-      : 'Both the L1 upstream particle data and the geostationary GOES satellite are detecting elevated particles. This is a confirmed solar particle event — conditions are likely developing for potential aurora.';
+      ? `Multiple independent upstream particle sources (${confirmingLabels.join(', ')}) agree that energetic particles are elevated. This is a cross-confirmed signal - conditions may be developing for potential aurora.`
+      : 'Both the L1 upstream particle data and the geostationary GOES satellite are detecting elevated particles. This is a confirmed solar particle event - conditions are likely developing for potential aurora.';
   }
-  else if (epamElevated && !goesS1Alert) { confidence = 'MEDIUM'; confidenceLabel = '🟡 Possible — Lead satellite elevated, not yet confirmed'; summary = 'The L1 upstream particle data is elevated, but no second source has confirmed it yet. Check back in 30–60 minutes to see if conditions develop.'; }
-  else if (!epamElevated && goesS1Alert) { confidence = 'MEDIUM'; confidenceLabel = '🟡 Mixed reading — satellites disagree'; summary = 'The GOES satellite is detecting elevated particles, but the L1 upstream sensors are quiet. This is sometimes a local effect near Earth rather than a storm on the way. Monitor for the next hour.'; }
-  else if (stereoElevated) { confidence = 'LOW_WATCH'; confidenceLabel = '🔵 Watch — Solar activity detected, not yet Earth-directed'; summary = 'A satellite ahead of Earth on the Sun-facing side is detecting elevated particles, but our primary sensors are still quiet. It may not be heading our way, but it is worth monitoring the solar wind data over the next several hours.'; }
-  else { confidence = 'QUIET'; confidenceLabel = '✅ All quiet — no activity detected'; summary = 'All satellite sensors are reading normal background levels. No solar storm activity.'; }
+  else if (epamElevated && !goesS1Alert) { confidence = 'MEDIUM'; confidenceLabel = '🟡 Possible - Lead satellite elevated, not yet confirmed'; summary = 'The L1 upstream particle data is elevated, but no second source has confirmed it yet. Check back in 30-60 minutes to see if conditions develop.'; }
+  else if (!epamElevated && goesS1Alert) { confidence = 'MEDIUM'; confidenceLabel = '🟡 Mixed reading - satellites disagree'; summary = 'The GOES satellite is detecting elevated particles, but the L1 upstream sensors are quiet. This is sometimes a local effect near Earth rather than a storm on the way. Monitor for the next hour.'; }
+  else if (stereoElevated) { confidence = 'LOW_WATCH'; confidenceLabel = '🔵 Watch - Solar activity detected, not yet Earth-directed'; summary = 'A satellite ahead of Earth on the Sun-facing side is detecting elevated particles, but our primary sensors are still quiet. It may not be heading our way, but it is worth monitoring the solar wind data over the next several hours.'; }
+  else { confidence = 'QUIET'; confidenceLabel = '✅ All quiet - no activity detected'; summary = 'All satellite sensors are reading normal background levels. No solar storm activity.'; }
 
   return json({
     ok: true,
@@ -1163,7 +1163,7 @@ async function handleHealth(env) {
         age_min: epamTs ? Math.round((now - Number(epamTs)) / 60000) : null,
         days_stored: epamIdx?.keys?.length ?? 0,
         newest: epamIdx?.newest_ts ?? null,
-        note: 'Legacy entry — now backed by the active HAPI ion dataset (same storage keys).',
+        note: 'Legacy entry - now backed by the active HAPI ion dataset (same storage keys).',
       },
       goes_seiss: {
         last_fetch: goesTs ? new Date(Number(goesTs)).toISOString() : null,
@@ -1373,31 +1373,31 @@ function analyseEPAM(points) {
   let status, statusLabel, description;
 
   if (sharpSpikeDetected && elevatedChannels >= 4) {
-    status = 'SHOCK_PASSAGE'; statusLabel = '💥 Solar Storm Hitting Now — Aurora Likely';
-    description = 'A fast-moving shockwave from the Sun just hit the L1 monitoring satellites. It will reach Earth in roughly 45–60 minutes. If the solar wind turns southward on arrival, aurora could be visible tonight — keep a close eye on the Bz reading and get ready to head out.';
+    status = 'SHOCK_PASSAGE'; statusLabel = '💥 Solar Storm Hitting Now - Aurora Likely';
+    description = 'A fast-moving shockwave from the Sun just hit the L1 monitoring satellites. It will reach Earth in roughly 45-60 minutes. If the solar wind turns southward on arrival, aurora could be visible tonight - keep a close eye on the Bz reading and get ready to head out.';
 
   } else if (compressionDetected && velocityDispersionDetected && sustainedRiseDetected) {
-    status = 'CME_WATCH'; statusLabel = '🚨 Solar Storm on the Way — Watch Tonight';
-    description = 'The particle sensors are showing the classic build-up pattern that happens in the hours before a solar storm arrives — particles rising steadily across all energy levels. This is a credible early warning. Keep watching the Bz reading on the solar wind gauges. If it turns strongly southward when the storm arrives, aurora could be on the cards.';
+    status = 'CME_WATCH'; statusLabel = '🚨 Solar Storm on the Way - Watch Tonight';
+    description = 'The particle sensors are showing the classic build-up pattern that happens in the hours before a solar storm arrives - particles rising steadily across all energy levels. This is a credible early warning. Keep watching the Bz reading on the solar wind gauges. If it turns strongly southward when the storm arrives, aurora could be on the cards.';
 
   } else if (compressionDetected && sustainedRiseDetected) {
-    status = 'COMPRESSION'; statusLabel = '⚠️ Storm Building — Aurora Possible in Coming Hours';
-    description = 'Particle energy readings are converging and rising steadily — an early sign that a solar disturbance may be approaching. This alone does not mean aurora is guaranteed, but it is worth keeping the forecast open and watching the solar wind data over the next 12–24 hours.';
+    status = 'COMPRESSION'; statusLabel = '⚠️ Storm Building - Aurora Possible in Coming Hours';
+    description = 'Particle energy readings are converging and rising steadily - an early sign that a solar disturbance may be approaching. This alone does not mean aurora is guaranteed, but it is worth keeping the forecast open and watching the solar wind data over the next 12-24 hours.';
 
   } else if (velocityDispersionDetected && sustainedRiseDetected && elevatedChannels >= 3) {
-    status = 'DISPERSION'; statusLabel = '⚠️ Early Activity Signal — Worth Watching';
-    description = 'Fast-moving particles from a distant solar event are arriving ahead of slower ones — a pattern that can show up hours before a storm, but can also fade without developing further. It is an early and uncertain signal. Check back in a few hours and watch the solar wind data for any change.';
+    status = 'DISPERSION'; statusLabel = '⚠️ Early Activity Signal - Worth Watching';
+    description = 'Fast-moving particles from a distant solar event are arriving ahead of slower ones - a pattern that can show up hours before a storm, but can also fade without developing further. It is an early and uncertain signal. Check back in a few hours and watch the solar wind data for any change.';
 
   } else if (anisotropyElevated && anyElevation) {
     status = 'SEP_STREAMING'; statusLabel = '📡 Particles Arriving from the Sun';
-    description = `A directed stream of energetic particles is arriving from the Sun. This is associated with solar activity but does not directly mean aurora tonight — the key factor is whether the solar wind turns southward (negative Bz) when any storm arrives at Earth.`;
+    description = `A directed stream of energetic particles is arriving from the Sun. This is associated with solar activity but does not directly mean aurora tonight - the key factor is whether the solar wind turns southward (negative Bz) when any storm arrives at Earth.`;
 
   } else if (elevatedChannels >= 3) {
     status = 'ELEVATED'; statusLabel = '📈 Particle Levels Above Normal';
-    description = `Particle levels are running above their normal background across multiple sensors — but no clear storm pattern has developed yet. Worth keeping an eye on, but nothing to act on right now.`;
+    description = `Particle levels are running above their normal background across multiple sensors - but no clear storm pattern has developed yet. Worth keeping an eye on, but nothing to act on right now.`;
 
   } else if (anyElevation) {
-    status = 'SLIGHT_ELEVATION'; statusLabel = '📊 Background Variation — Nothing to Act On';
+    status = 'SLIGHT_ELEVATION'; statusLabel = '📊 Background Variation - Nothing to Act On';
     description = 'Particle levels are slightly above normal but well within everyday variability. No action needed.';
 
   } else {
@@ -1429,8 +1429,8 @@ function analyseEPAM(points) {
     },
     channels: PROTON_CHANNELS,
     caveats: [
-      'Rising particle levels are a heads-up, not a guarantee — aurora depends on the solar wind direction (Bz) when the storm actually arrives at Earth.',
-      'The L1 satellites sit ~45–60 minutes upstream of Earth, so any storm detected here is roughly an hour away.',
+      'Rising particle levels are a heads-up, not a guarantee - aurora depends on the solar wind direction (Bz) when the storm actually arrives at Earth.',
+      'The L1 satellites sit ~45-60 minutes upstream of Earth, so any storm detected here is roughly an hour away.',
     ],
   };
 }

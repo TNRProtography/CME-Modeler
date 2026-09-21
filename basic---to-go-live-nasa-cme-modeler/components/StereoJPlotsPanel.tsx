@@ -54,7 +54,7 @@ const STEREO_JPLOTS: StereoJPlotInfo[] = [
     fileName: 'jplot_hi1_ahead_090.gif',
     startAu: 0.056,
     endAu: 0.391,
-    nominalRange: '12–84 R☉',
+    nominalRange: '12-84 R☉',
     color: '#38bdf8',
     fill: 'rgba(56, 189, 248, 0.26)',
   },
@@ -62,11 +62,11 @@ const STEREO_JPLOTS: StereoJPlotInfo[] = [
     key: 'hi2',
     label: 'HI2',
     title: 'STEREO-A HI2 J-plot',
-    description: 'Wide heliospheric view for following structures across Earth-orbit distances along the Sun–Earth line.',
+    description: 'Wide heliospheric view for following structures across Earth-orbit distances along the Sun-Earth line.',
     fileName: 'jplot_hi2_ahead_090.gif',
     startAu: 0.307,
     endAu: 1.479,
-    nominalRange: '66–318 R☉',
+    nominalRange: '66-318 R☉',
     color: '#a78bfa',
     fill: 'rgba(167, 139, 250, 0.24)',
   },
@@ -112,7 +112,7 @@ const StereoFovGuide: React.FC<{ selected: StereoJPlotInfo }> = ({ selected }) =
   return (
     <div className="rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-2">
-        <p className="font-semibold text-neutral-200">Sun–Earth field of view</p>
+        <p className="font-semibold text-neutral-200">Sun-Earth field of view</p>
         <span className="text-[11px] text-neutral-500">AU positions are linear; planet icon sizes are illustrative.</span>
       </div>
       <svg viewBox="0 0 1000 320" role="img" aria-label="Sun, Earth, STEREO-A and instrument field of view ranges on a linear AU scale" className="w-full h-auto overflow-visible">
@@ -168,7 +168,7 @@ const StereoFovGuide: React.FC<{ selected: StereoJPlotInfo }> = ({ selected }) =
 
         <path d={`M ${selectedStart} 284 L ${selectedEnd} 284`} stroke={selected.color} strokeWidth="8" strokeLinecap="round" />
         <text x={(selectedStart + selectedEnd) / 2} y="306" textAnchor="middle" fill="#d4d4d8" fontSize="12">
-          {selected.label}: {formatAu(selected.startAu)}–{formatAu(selected.endAu)} from Sun
+          {selected.label}: {formatAu(selected.startAu)}-{formatAu(selected.endAu)} from Sun
         </text>
       </svg>
     </div>

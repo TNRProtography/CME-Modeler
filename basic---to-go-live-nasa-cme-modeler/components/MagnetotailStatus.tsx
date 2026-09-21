@@ -552,7 +552,7 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
   const currentTierIdx = useMemo(() => { for (let i = TIERS.length - 1; i >= 0; i--) { if (score >= TIERS[i].score) return i; } return -1; }, [score]);
   const chargeText = loadingMinutes >= 180
     ? `${(loadingMinutes / 60).toFixed(loadingMinutes >= 600 ? 0 : 1)} h`
-    : loadingMinutes >= 15 ? `${loadingMinutes} min` : '–';
+    : loadingMinutes >= 15 ? `${loadingMinutes} min` : '-';
 
   const verdict = (() => {
     if (magState === 'SNAPPING') return { text: `Aurora falling now - look south. Expect ${currentTierIdx >= 0 ? TIERS[currentTierIdx].nzNote : 'a faint camera glow'}.`, colour: '#f87171' };

@@ -40,7 +40,7 @@ interface KpSlot {
 interface PopupState { slotIdx: number; anchorX: number; }
 
 interface KpForecastTimelineProps {
-  moonIllumination?: number | null; // 0–100
+  moonIllumination?: number | null; // 0-100
   userLatitude?:     number | null;
   sunriseMs?:        number | null; // Unix ms UTC from celestialTimes.sun.rise
   sunsetMs?:         number | null; // Unix ms UTC from celestialTimes.sun.set
@@ -328,7 +328,7 @@ function getVis(kp: number, moon: number, lat: number | null | undefined, sky: S
       detail:   'Minor storm. Full moon makes conditions difficult. Only the very south of New Zealand is likely to see aurora, and only from truly dark locations.',
       regions:  ['Southland (dark sky sites)','Otago (dark sky sites)'],
       moonNote: `${ml} - aurora is faint at G1 and the moon compounds this.`,
-      tip:      'Use a camera on a tripod, 10–15 second exposure pointed south. Your eyes may see nothing but the camera might.',
+      tip:      'Use a camera on a tripod, 10-15 second exposure pointed south. Your eyes may see nothing but the camera might.',
       summary:  'Minor storm - only extreme south NZ in very dark sites; full moon makes conditions tough.',
     };
     if (moon > 55) return {
@@ -876,7 +876,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
             <div style={{ flex:'1 1 auto', minWidth:0 }}>
               <div style={{ display:'flex', alignItems:'center', gap:7, flexWrap:'wrap' }}>
                 <span style={{ fontSize:13, fontWeight:500, color:'var(--color-text-primary)' }}>
-                  {sel.dayLabel} · {fmt(sel.nztHour)}–{fmtEnd(sel.nztHour)} {nzTimeLabel}
+                  {sel.dayLabel} · {fmt(sel.nztHour)}-{fmtEnd(sel.nztHour)} {nzTimeLabel}
                 </span>
                 <span style={{
                   fontSize:10, padding:'1px 7px', borderRadius:10,

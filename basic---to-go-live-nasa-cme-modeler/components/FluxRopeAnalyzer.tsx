@@ -40,7 +40,7 @@ interface RopeResult {
   thetaFit0:        number;
   estDurMin:        number;
   remainingMin:     number;
-  coldFraction:     number;   // temperature-based rope confidence (0–1)
+  coldFraction:     number;   // temperature-based rope confidence (0-1)
   inPlaneRatio:     number;   // sqrt(By²+Bz²) / Bt - rope field planarity
 }
 
@@ -874,7 +874,7 @@ function drawScene(cvs: HTMLCanvasElement, W: number, result: RopeResult, animAn
   ctx.closePath(); ctx.fillStyle=arCol; ctx.fill();
   ctx.fillStyle='rgba(82,115,158,0.5)'; ctx.font='8px system-ui'; ctx.textAlign='center';
   ctx.fillText('IMF direction', HX, CY+HR+26);
-  ctx.fillText('By–Bz plane · dots = forecast', HX, CY+HR+36);
+  ctx.fillText('By-Bz plane · dots = forecast', HX, CY+HR+36);
 }
 
 // ── InfoModal ────────────────────────────────────────────────────────────────
@@ -1224,7 +1224,7 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
             {/* Orientation diagram */}
             <section>
               <h4 className="font-semibold text-neutral-100 mb-2">Current rope orientation relative to Earth</h4>
-              <p className="text-neutral-500 text-xs mb-3">The cross-section below shows the flux rope looking down its axis (from the Sun toward Earth). Earth sits at the centre. The arrow shows the current IMF direction in the By–Bz plane. Green sectors = Bz southward (aurora-driving); red = northward (suppressed).</p>
+              <p className="text-neutral-500 text-xs mb-3">The cross-section below shows the flux rope looking down its axis (from the Sun toward Earth). Earth sits at the centre. The arrow shows the current IMF direction in the By-Bz plane. Green sectors = Bz southward (aurora-driving); red = northward (suppressed).</p>
               <OrientationDiagram result={result} />
             </section>
 
@@ -1261,7 +1261,7 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
                 <p>Confidence is built from four independent signals:</p>
                 <ul className="list-disc list-inside space-y-1 text-xs pl-2">
                   <li><strong className="text-neutral-200">Rotation quality (R²)</strong> - how cleanly the field rotates versus noise. Current: <span className="text-sky-300">{result.r2.toFixed(2)}</span></li>
-                  <li><strong className="text-neutral-200">Field planarity</strong> - what fraction of the field lies in the By–Bz plane (a perfect rope is 100% planar). Current: <span className={planeColor}>{Math.round(result.inPlaneRatio * 100)}%</span></li>
+                  <li><strong className="text-neutral-200">Field planarity</strong> - what fraction of the field lies in the By-Bz plane (a perfect rope is 100% planar). Current: <span className={planeColor}>{Math.round(result.inPlaneRatio * 100)}%</span></li>
                   <li><strong className="text-neutral-200">Cold plasma fraction</strong> - real flux rope cores contain cold, dense plasma. Higher cold fraction → more confident we're inside a rope. Current: <span className={coldColor}>{Math.round(result.coldFraction * 100)}%</span></li>
                   <li><strong className="text-neutral-200">Data history</strong> - confidence builds over the first ~3 hours as more rotation is observed.</li>
                 </ul>
@@ -1293,7 +1293,7 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
           {/* Orient code + chirality */}
           <span
             className="text-xs font-mono font-semibold px-3 py-1 rounded-full bg-neutral-800 text-neutral-200 tracking-widest"
-            title="Leading–Axial–Trailing field direction code"
+            title="Leading-Axial-Trailing field direction code"
           >
             {result.orientCode}-{result.chiralityCode}
           </span>
@@ -1407,10 +1407,10 @@ const FluxRopeAnalyzer: React.FC<FluxRopeAnalyzerProps> = ({
       {/* ── Footer metadata ── */}
       <div className="pt-2 border-t border-neutral-800/60 flex flex-wrap gap-x-4 gap-y-1 items-center">
         <span className="text-xs text-neutral-600">
-          Left: slinky physically oriented to rope orientation - coil position in canvas matches real By–Bz direction · green = Bz south · red = north · tap ? for detail
+          Left: slinky physically oriented to rope orientation - coil position in canvas matches real By-Bz direction · green = Bz south · red = north · tap ? for detail
         </span>
         <span className="text-xs text-neutral-600">
-          Right: IMF rotating in By–Bz plane · blue trail = measured · coloured dots = forecast (grey = post-rope)
+          Right: IMF rotating in By-Bz plane · blue trail = measured · coloured dots = forecast (grey = post-rope)
         </span>
         <span className="text-xs text-neutral-700 ml-auto">
           B⊥ {result.btMean.toFixed(1)} nT · R² {result.r2.toFixed(2)} · planarity {Math.round(result.inPlaneRatio*100)}% · cold {Math.round(result.coldFraction*100)}%

@@ -85,7 +85,7 @@ lon = atan2(x_norm, cos(lat))[Carrington lon]`}
       <Card icon="10" title="Output & Post">
         <p>
           Returns <code className="font-mono text-xs bg-neutral-800 px-1 rounded text-purple-300">CoronalHole[]</code> with id, lat, lon, widthDeg, heightDeg, darkness
-          (0–1 luma deficit fraction), estimated HSS speed, and polygon boundary. Empty array if
+          (0-1 luma deficit fraction), estimated HSS speed, and polygon boundary. Empty array if
           no holes detected - no simulated fallback. Result is posted to the CH History Worker
           for the 72 h archive and used to build Parker spiral arms in the 3D scene.
         </p>

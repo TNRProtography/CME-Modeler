@@ -93,7 +93,7 @@ const getOnsetTimingText = (level: string, score: number): string | null => {
     // WATCH - 20–90 min window, midpoint ~55 min
     const t = new Date(now + 55 * 60 * 1000);
     const hhmm = t.toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Pacific/Auckland' });
-    return `~${hhmm} (20–90 min)`;
+    return `~${hhmm} (20-90 min)`;
   }
   return null;
 };

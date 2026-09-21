@@ -7,7 +7,7 @@ const DocAuroraScore: React.FC = () => (
     id="s03"
     number="03"
     title="Aurora Scoring Algorithm"
-    subtitle="The aurora score (0–100%) is a composite metric computed by the Forecast Worker every 5 minutes and served from KV cache. It combines solar wind coupling physics, direct geomagnetic measurements, and hemispheric power into a single visibility probability estimate for the South Island of New Zealand."
+    subtitle="The aurora score (0-100%) is a composite metric computed by the Forecast Worker every 5 minutes and served from KV cache. It combines solar wind coupling physics, direct geomagnetic measurements, and hemispheric power into a single visibility probability estimate for the South Island of New Zealand."
   >
     <SubHeading color="text-purple-400">Primary Inputs</SubHeading>
     <CardGrid cols={2}>
@@ -88,12 +88,12 @@ user_lat < GREYMOUTH  →  finalScore = baseScore + adjustment`}
     <div className="bg-neutral-900/70 border border-neutral-700/50 rounded-xl p-5">
       <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-4">Score thresholds - South Island NZ reference point</p>
       <div className="space-y-2.5">
-        <ScoreBar range="80–100%" color="#ef4444" width={100} label="Go outside now - significant display, possible curtains and colour overhead" />
-        <ScoreBar range="65–79%"  color="#f97316" width={80}  label="Visible naked eye - distinct glow or pillars to the south" />
-        <ScoreBar range="50–64%"  color="#eab308" width={65}  label="Faint glow possible to the south in a very dark spot" />
-        <ScoreBar range="35–49%"  color="#84cc16" width={48}  label="Phone camera night mode will pick it up - not reliably naked-eye" />
-        <ScoreBar range="20–34%"  color="#22c55e" width={32}  label="Very faint - long-exposure DSLR on a tripod only" />
-        <ScoreBar range="0–19%"   color="#16a34a" width={18}  label="Conditions too quiet - nothing to see tonight" />
+        <ScoreBar range="80-100%" color="#ef4444" width={100} label="Go outside now - significant display, possible curtains and colour overhead" />
+        <ScoreBar range="65-79%"  color="#f97316" width={80}  label="Visible naked eye - distinct glow or pillars to the south" />
+        <ScoreBar range="50-64%"  color="#eab308" width={65}  label="Faint glow possible to the south in a very dark spot" />
+        <ScoreBar range="35-49%"  color="#84cc16" width={48}  label="Phone camera night mode will pick it up - not reliably naked-eye" />
+        <ScoreBar range="20-34%"  color="#22c55e" width={32}  label="Very faint - long-exposure DSLR on a tripod only" />
+        <ScoreBar range="0-19%"   color="#16a34a" width={18}  label="Conditions too quiet - nothing to see tonight" />
       </div>
     </div>
   </Section>

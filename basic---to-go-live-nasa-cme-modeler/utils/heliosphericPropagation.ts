@@ -268,7 +268,7 @@ interface CMETrajectory {
   /** distance(t) in km, speed(t) in km/s - precomputed at coarse timesteps */
   trajectory: { tSec: number; distKm: number; speedKms: number }[];
   /** Flags set by interaction analysis */
-  preconditioningFactor: number;  // 1.0 = normal, 0.4–0.7 = reduced drag
+  preconditioningFactor: number;  // 1.0 = normal, 0.4-0.7 = reduced drag
   isCannibalised: boolean;
   cannibaliserID: string | null;
   compressionDensityBoost: number;  // multiplier on sheath density
@@ -732,7 +732,7 @@ export function createPropagationEngine(
           // This is the critical parameter for geomagnetic storm intensity
           // Flux rope rotation: Bz goes from one polarity to the other over ~24h
           const rotationAngle = ejectaPhase * Math.PI;
-          const bzAmplitude = 8 + 12 * (speedKms / 1500);  // 8–20 nT for typical CMEs
+          const bzAmplitude = 8 + 12 * (speedKms / 1500);  // 8-20 nT for typical CMEs
 
           // Apply Bothmer-Schwenn chirality
           let ejectaBz: number;

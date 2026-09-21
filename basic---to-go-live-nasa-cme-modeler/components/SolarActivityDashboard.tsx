@@ -1312,7 +1312,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       'GOES X-ray Flux',
       'A live measure of solar X-ray output from flares.',
       'Large spikes mean stronger flares and a higher chance of downstream CME-driven aurora risk in coming days.',
-      'Flare classes scale logarithmically (B/C/M/X) from 1–8 Å flux; geoeffectiveness depends on associated CME speed, direction, and IMF coupling at Earth.'
+      'Flare classes scale logarithmically (B/C/M/X) from 1-8 Å flux; geoeffectiveness depends on associated CME speed, direction, and IMF coupling at Earth.'
     ),
     'proton-flux': buildStatTooltip(
       'GOES Proton Flux (>=10 MeV)',

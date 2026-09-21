@@ -219,7 +219,7 @@ interface NotifTooltipEntry { title: string; whatItIs: string; auroraEffect: str
 const NOTIF_TOOLTIP_CONTENT: Record<string, NotifTooltipEntry> = {
   'visibility-dslr': {
     title: 'DSLR Camera Visible Alert',
-    whatItIs: 'The earliest aurora alert - sent when conditions are just sufficient for a DSLR camera on a tripod with a long exposure (5–15 seconds) to capture aurora from your location.',
+    whatItIs: 'The earliest aurora alert - sent when conditions are just sufficient for a DSLR camera on a tripod with a long exposure (5-15 seconds) to capture aurora from your location.',
     auroraEffect: 'This is the first signal that aurora activity is developing toward something worth heading out for. Great for maximum lead time to reach a dark sky site.',
     advanced: 'Triggered by the aurora oval reaching your geomagnetic latitude at low-activity threshold. May not be visible to the naked eye - a camera will show it before you can see it directly.',
   },
@@ -237,14 +237,14 @@ const NOTIF_TOOLTIP_CONTENT: Record<string, NotifTooltipEntry> = {
   },
   'overnight-watch': {
     title: 'Worth Watching Tonight Alert',
-    whatItIs: 'A once-daily alert sent around sunset (6–9 PM NZST) when solar wind conditions are elevated enough to be worth monitoring tonight.',
+    whatItIs: 'A once-daily alert sent around sunset (6-9 PM NZST) when solar wind conditions are elevated enough to be worth monitoring tonight.',
     auroraEffect: 'Includes Bz direction, solar wind speed, and moon illumination so you can decide whether to head out to a dark location. Not sent on quiet nights - only when there is something worth watching.',
     advanced: 'Uses a composite of live Bz, solar wind speed, Newell coupling, and short-range forecast confidence to decide whether conditions justify an alert. Sent once per evening window.',
   },
   'flare-M1': {
     title: 'Solar Flare M1+ Alert',
     whatItIs: 'Sent when a solar flare reaches at least M1.0 class - the earliest and broadest flare warning threshold.',
-    auroraEffect: 'M1+ flares signal ramping solar activity. While not all flares produce Earth-directed CMEs, frequent M-class activity raises the probability of aurora-supporting disturbances in the 1–4 days following.',
+    auroraEffect: 'M1+ flares signal ramping solar activity. While not all flares produce Earth-directed CMEs, frequent M-class activity raises the probability of aurora-supporting disturbances in the 1-4 days following.',
     advanced: 'Flare class scales logarithmically: M1 = 10× a C1. Geoeffectiveness depends on whether the flare is associated with a CME, the CME speed, and source longitude on the solar disk.',
   },
   'flare-M5': {
@@ -256,14 +256,14 @@ const NOTIF_TOOLTIP_CONTENT: Record<string, NotifTooltipEntry> = {
   'flare-X1': {
     title: 'Solar Flare X1+ Alert',
     whatItIs: 'Sent only for major X-class flares (X1.0 and above) - the strongest category of solar flare.',
-    auroraEffect: 'X-class flares are major solar events with a high association with fast, geoeffective CMEs. An X1+ alert often precedes significant space weather and aurora activity within 1–4 days.',
+    auroraEffect: 'X-class flares are major solar events with a high association with fast, geoeffective CMEs. An X1+ alert often precedes significant space weather and aurora activity within 1-4 days.',
     advanced: 'X-class flares are 10× stronger than M-class. Above X5, radio blackouts and SEP events are common. Source longitude on the disk strongly influences whether the associated CME is Earth-directed.',
   },
   'flare-X5': {
     title: 'Solar Flare X5+ Alert',
     whatItIs: 'High-priority alert for very strong X5+ flares only.',
     auroraEffect: 'X5+ flares represent extreme solar output and are often followed by the most significant geomagnetic storms and wide-latitude aurora events. Very high signal-to-noise ratio.',
-    advanced: 'These events frequently trigger NOAA G3–G5 geomagnetic storm watches. If Earth-directed, CME speeds commonly exceed 1500 km/s with strong compressed IMF fields on arrival.',
+    advanced: 'These events frequently trigger NOAA G3-G5 geomagnetic storm watches. If Earth-directed, CME speeds commonly exceed 1500 km/s with strong compressed IMF fields on arrival.',
   },
   'flare-X10': {
     title: 'Solar Flare X10+ Alert',
@@ -274,7 +274,7 @@ const NOTIF_TOOLTIP_CONTENT: Record<string, NotifTooltipEntry> = {
   'shock-ff': {
     title: 'Fast Forward Shock Alert',
     whatItIs: 'A fast-moving CME or solar wind stream has slammed into the L1 satellites. Speed, density, temperature, and magnetic field all jump simultaneously - the classic CME arrival signature.',
-    auroraEffect: 'The most actionable aurora alert. Conditions on Earth can shift from quiet to active within 30–60 minutes. If the following IMF orientation is southward (Bz negative), significant aurora is likely.',
+    auroraEffect: 'The most actionable aurora alert. Conditions on Earth can shift from quiet to active within 30-60 minutes. If the following IMF orientation is southward (Bz negative), significant aurora is likely.',
     advanced: 'Fast Forward shocks compress the entire solar wind structure. Aurora strength depends on the sheath and magnetic cloud Bz that follows - check the Solar Wind Quick View panel immediately.',
   },
   'admin-broadcast': {
@@ -1024,7 +1024,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                   ))}
                                 </dl>
                                 <p className="text-[11px] text-neutral-600 leading-relaxed mt-2">
-                                  This is the launch, not the arrival — a CME takes one to three days to reach us.
+                                  This is the launch, not the arrival - a CME takes one to three days to reach us.
                                 </p>
                               </div>
                             )}

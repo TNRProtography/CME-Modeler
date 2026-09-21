@@ -31,7 +31,7 @@ const DocPages: React.FC = () => (
       </Card>
       <Card icon="📈" title="Forecast Trend Chart">
         <p>
-          Score history over the past 24–48 h alongside upcoming OWM cloud cover percentage.
+          Score history over the past 24-48 h alongside upcoming OWM cloud cover percentage.
           Sunset and moonrise/moonset annotated as vertical lines. Detected substorm events marked
           with timestamps. Hover tooltip shows exact score, Bz, speed, and density at any
           historical point.
@@ -114,7 +114,7 @@ const DocPages: React.FC = () => (
       <Card icon="📊" title="Simulated Impact Forecast">
         <p>
           7-day speed and density chart at Earth. Speed = decelerated CME arrival speed via DBM.
-          Density: 1 CME → 5–10 cm⁻³; 3 concurrent → ~20 cm⁻³; 5+ → capped at 50 cm⁻³. HSS
+          Density: 1 CME → 5-10 cm⁻³; 3 concurrent → ~20 cm⁻³; 5+ → capped at 50 cm⁻³. HSS
           density peaks 18 h before speed rise (SIR physics). "Now" marked with yellow vertical
           line.
         </p>

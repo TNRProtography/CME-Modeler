@@ -22,7 +22,7 @@ export const DocWorkers: React.FC = () => (
           Score history (24 h array) accumulates in KV and is trimmed on each write.
         </p>
         <p className="mt-2">
-          <strong className="text-neutral-200">Response includes:</strong> baseScore (0–100,
+          <strong className="text-neutral-200">Response includes:</strong> baseScore (0-100,
           Greymouth reference), all raw inputs (Bz, Bt, speed, density, Hp, EY2M dH), 24 h
           history array with timestamps, moon phase/times, IPS shock flag, lastUpdated epoch.
           Clients compute finalScore (location-adjusted) from baseScore locally.
@@ -52,7 +52,7 @@ export const DocWorkers: React.FC = () => (
         </p>
         <p className="mt-2">
           <strong className="text-neutral-200">L1 travel time reminder:</strong> All L1
-          measurements reflect conditions that are currently 45–60 minutes from arriving at Earth
+          measurements reflect conditions that are currently 45-60 minutes from arriving at Earth
           at typical solar wind speeds. A southward Bz in the IMF chart means aurora may develop
           within the hour - not that it is happening right now.
         </p>
@@ -135,7 +135,7 @@ export const DocSightings: React.FC = () => (
           submission - very cheap. GET responses served from Cloudflare edge cache with{' '}
           <code className="font-mono text-xs bg-neutral-800 px-1 rounded text-purple-300">Cache-Control: max-age=60</code>.
           Write invalidates the edge cache immediately so new reports appear globally within
-          1–2 seconds.
+          1-2 seconds.
         </p>
       </Card>
       <Card icon="📊" title="Use in Forecast">
@@ -163,7 +163,7 @@ export const DocTransparency: React.FC = () => (
       <Card icon="⏱" title="L1 Travel Time Uncertainty">
         <p>
           Solar wind data is measured at L1, approximately 1.5 million km from Earth. At
-          400–600 km/s, the data shown in the IMF charts is 45–60 minutes away from arriving at
+          400-600 km/s, the data shown in the IMF charts is 45-60 minutes away from arriving at
           Earth. We cannot know if those conditions will persist, intensify, or die out before
           arrival. The "15 min" slot accounts for this lag; the uncertainty cannot be eliminated.
         </p>
@@ -214,7 +214,7 @@ export const DocTransparency: React.FC = () => (
         <p>
           The drag parameter γ is estimated from CME speed and half-angle - the actual value
           depends on CME mass, cross-section, and ambient density. The DBM arrival time
-          uncertainty is typically ±6–12 hours at 1 AU. For confirmed Earth-directed events with
+          uncertainty is typically ±6-12 hours at 1 AU. For confirmed Earth-directed events with
           a DONKI-supplied arrival time, the catalog value is used instead of the model estimate.
         </p>
       </Card>

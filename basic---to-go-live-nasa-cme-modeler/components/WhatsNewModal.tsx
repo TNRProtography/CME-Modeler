@@ -118,7 +118,7 @@ const WhatsNewModal: React.FC<Props> = ({ isOpen, onClose }) => {
               onChange={(v) => toggle('cme-earth-directed', v)}
             />
             <p className="text-[11px] text-neutral-500 leading-relaxed mt-1.5">
-              Sent when NASA catalogues a CME pointed at us — one to three days of
+              Sent when NASA catalogues a CME pointed at us - one to three days of
               warning, with a forecast arrival time from the same model the 3D
               visualisation uses.
             </p>
@@ -169,13 +169,13 @@ const WhatsNewModal: React.FC<Props> = ({ isOpen, onClose }) => {
           {/* Arrival */}
           <div className="bg-neutral-900/60 border border-neutral-800 rounded-xl p-3">
             <ToggleSwitch
-              label="CME arrival — fast forward shock"
+              label="CME arrival - fast forward shock"
               checked={shockOn}
               onChange={(v) => toggle('shock-ff', v)}
             />
             <p className="text-[11px] text-neutral-500 leading-relaxed mt-1.5">
               The moment it hits the satellites at L1, about 45 to 60 minutes
-              upstream of us. This is the most actionable alert the app sends —
+              upstream of us. This is the most actionable alert the app sends -
               conditions can go from quiet to active within the hour.
             </p>
           </div>

@@ -509,7 +509,7 @@ const SolarWindStructureDiagram: React.FC<Props> = ({ phase, className }) => {
       {readout && (
         <div className="mt-0.5 text-[10px] text-neutral-600">
           Drawn from live values: {readout}
-          {phase.derived.bz != null && phase.derived.bz <= -1 && ' — field is south, so it couples to Earth (green rings)'}
+          {phase.derived.bz != null && phase.derived.bz <= -1 && ' - field is south, so it couples to Earth (green rings)'}
         </div>
       )}
     </div>

@@ -180,7 +180,7 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
         dslr: {
             iso: strong ? '1600-3200' : moderate ? '3200-6400' : '6400+',
             shutter: strong ? '3-6s' : moderate ? '6-10s' : '10-15s',
-            aperture: 'f/1.4 – f/2.8',
+            aperture: 'f/1.4 - f/2.8',
             focus: 'Infinity',
             wb: '3500-4200K',
         },
@@ -396,7 +396,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
         ),
         'newell-coupling': buildStatTooltip(
             'Newell Coupling Function',
-            'A solar wind–magnetosphere coupling proxy derived from IMF orientation and flow speed, indicating energy transfer into Earth’s magnetosphere.',
+            'A solar wind-magnetosphere coupling proxy derived from IMF orientation and flow speed, indicating energy transfer into Earth’s magnetosphere.',
             'Stronger coupling usually supports more active aurora, especially when sustained and paired with southward IMF.',
             'High Newell values can precede substorm activity but do not guarantee immediate visible aurora without release and darkness.'
         ),

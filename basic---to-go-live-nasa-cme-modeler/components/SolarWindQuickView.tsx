@@ -236,7 +236,7 @@ const SolarWindQuickView: React.FC<SolarWindQuickViewProps> = ({
       content: buildStatTooltip(
         'Solar Wind Quick View',
         'Live upstream L1 solar wind data from ACE: IMF Bz/Bt, clock angle (Phi), density, speed, and temperature. Each dot is one instrument reading from the ACE MAG and SWEPAM sensors roughly 1.5 million km from Earth.',
-        'These parameters directly control aurora activity. Southward Bz (negative) opens the magnetosphere to energy input; high speed and density amplify that effect. Watching all five subplots together reveals whether conditions are building, stable, or declining - typically 30–60 minutes before they hit Earth.',
+        'These parameters directly control aurora activity. Southward Bz (negative) opens the magnetosphere to energy input; high speed and density amplify that effect. Watching all five subplots together reveals whether conditions are building, stable, or declining - typically 30-60 minutes before they hit Earth.',
         'Shock events are flagged automatically as dashed vertical markers. Shock types: Fast Forward (FF) - density↑ temp↑ IMF↑ speed↑, the classic CME arrival; Slow Forward (SF) - same but IMF↓; Fast Reverse (FR) - density↓ temp↓ IMF↓ speed↑; Slow Reverse (SR) - density↓ temp↓ IMF↑ speed↑. Detection requires the jump to be sharp (concentrated within minutes, not a gradual ramp) and confirmed by a matching dynamic-pressure change, which filters out slow stream interactions and magnetic sector boundaries. The same detections drive the shock markers on the Energetic Particle Monitor charts.'
       ),
     });

@@ -439,7 +439,7 @@ export const IMFClockChart: React.FC<{
         if (bz <= -3) {
             return {
                 title: 'Moderately favorable IMF',
-                summary: 'Bz is southward. If this holds, aurora chances can improve over the next 20–60 minutes.',
+                summary: 'Bz is southward. If this holds, aurora chances can improve over the next 20-60 minutes.',
                 color: 'text-sky-300'
             };
         }
@@ -518,7 +518,7 @@ export const IMFClockChart: React.FC<{
 
                     <div className="text-xs text-neutral-400 space-y-1.5 w-full max-w-xs">
                         <div className="text-neutral-300">By now appears in the quick-read row because negative By can reinforce auroral coupling when Bz is southward.</div>
-                        <div className="text-neutral-500">Bx is coming toward you. By is horizontal (dawn–dusk). Bz is vertical (north–south).</div>
+                        <div className="text-neutral-500">Bx is coming toward you. By is horizontal (dawn-dusk). Bz is vertical (north-south).</div>
                         <p className="text-neutral-500 pt-2">
                             Easy read: when the pointer spends more time near the lower half (south), aurora coupling is usually stronger.
                         </p>

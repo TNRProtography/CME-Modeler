@@ -99,13 +99,13 @@ const DocOverview: React.FC = () => (
     <SubHeading color="text-amber-400">External APIs</SubHeading>
     <CardGrid cols={3}>
       <Card icon="🌐" title="NOAA SWPC">
-        <p>GOES-18/19 Hp, X-ray flux, proton flux, solar-regions.txt, sunspot JSON, SUVI 195 Å, CCOR-1 video. Updated 1–5 min.</p>
+        <p>GOES-18/19 Hp, X-ray flux, proton flux, solar-regions.txt, sunspot JSON, SUVI 195 Å, CCOR-1 video. Updated 1-5 min.</p>
       </Card>
       <Card icon="🚀" title="NASA DONKI">
         <p>CME catalog (activityID, speed, halfAngle, longitude, latitude, type, linkedEvents), FLR list, GST shock events. Proxied through KV.</p>
       </Card>
       <Card icon="🛸" title="IMAP / DSCOVR L1">
-        <p>Real-time solar wind at L1 (~1.5M km from Earth). ~45–60 min travel time to Earth at typical speeds. IMAP primary, DSCOVR fallback.</p>
+        <p>Real-time solar wind at L1 (~1.5M km from Earth). ~45-60 min travel time to Earth at typical speeds. IMAP primary, DSCOVR fallback.</p>
       </Card>
       <Card icon="🌏" title="GeoNet Tilde (EY2M)">
         <p>Eyrewell Observatory, Canterbury - 1-min mean dH (rate of change of horizontal magnetic field). Direct NZ local geomagnetic measurement.</p>
