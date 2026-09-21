@@ -14,15 +14,18 @@
 //
 // ON MATCHING THE PUBLISHED NUMBERS
 // ─────────────────────────────────
-// There is no authoritative catalogue to copy. NOAA does not number coronal
-// holes at all - no SWPC product assigns them identifiers the way active
-// regions get AR numbers. The numbers people quote come from whichever site
-// they read, and each of those runs its own private sequence, so the same hole
-// is a different number on each. Nothing can be fetched and matched.
+// SWPC does number coronal holes. The Solar Synoptic Analysis chart labels each
+// hole with a CH number and a polarity, and carries a "Next CH No." counter, so
+// there is a real published sequence - it is just published as a drawing rather
+// than as a feed. Nothing machine readable can be fetched and matched against
+// it, so the numbers cannot be adopted automatically.
 //
-// What can be done is to start our own sequence wherever it is useful for it
-// to start, and then be consistent forever after. FIRST_CH_NUMBER is that
-// choice.
+// What can be done is to run our own sequence seeded to agree with that chart
+// at the moment we started, and then stay consistent forever after.
+// FIRST_CH_NUMBER is that seed. It will drift from SWPC over time, because
+// their analysts merge and split holes by eye and we do it by threshold, so
+// treat our numbers as stable local identity rather than as a claim to match
+// the published catalogue.
 
 import { longitudeAt } from './solarDisk';
 
