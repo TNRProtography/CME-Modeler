@@ -1,9 +1,10 @@
 // --- START OF FILE src/components/SolarActivityDashboard.tsx ---
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { regionTiming, earthDirectedRisk, growthSummary, rotationTrack } from '../utils/regionDynamics';
+import { regionTiming, earthDirectedRisk, growthSummary, rotationTrack, diskZoneFor } from '../utils/regionDynamics';
 import { longitudeAt } from '../utils/solarDisk';
 import SunspotLabelOverlay from './SunspotLabelOverlay';
+import CoronalHoleTracker from './CoronalHoleTracker';
 import { buildRegionLabels, type RegionInput } from '../utils/regionLabels';
 import { nextFramePosition, frameSpanHours } from '../utils/framePlayback';
 import { detectSolarDiskGeometry, heliographicToPixel, diskAsFraction, diskFromFraction, type SolarDiskGeometry } from '../utils/solarDisk';
@@ -1336,6 +1337,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       'NOAA active region telemetry including location and magnetic complexity indicators.',
       'Complex, large regions increase the chance of major flares and CME launches that can impact auroral conditions.',
       'Processed imagery overlays map heliographic region coordinates onto the visible disk and add labelled close-up tiles.'
+    ),
+    'coronal-holes': buildStatTooltip(
+      'Coronal Hole Tracker',
+      "Dark patches in SUVI 195 where the Sun's magnetic field is open instead of looping back down, so the solar wind escapes freely.",
+      'The stream from a hole reaches Earth two to four days after the hole crosses the middle of the disk, and a fast one can produce aurora for several nights running with no flare or CME involved at all.',
+      "Speed is estimated from the hole's angular width and darkness, taken from the measurement closest to central meridian passage because a hole is foreshortened near the limb. Polarity is read from the signed flux inside the footprint on the HMI line-of-sight magnetogram: positive gives an away sector (By greater than zero), negative a toward sector, and the Russell-McPherron effect makes one of those far more geoeffective depending on the time of year."
     )
   }), []);
 
@@ -1356,6 +1363,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       else if (id === 'coronagraphy') title = 'About Multi-source Coronagraphy';
       else if (id === 'solar-flares') title = 'About Solar Flares';
       else if (id === 'solar-imagery') title = 'About Solar Imagery Types';
+      else if (id === 'coronal-holes') title = 'About the Coronal Hole Tracker';
       else if (id === 'active-sunspots') title = 'About Active Sunspot Regions';
       else title = (id.charAt(0).toUpperCase() + id.slice(1)).replace(/([A-Z])/g, ' $1').trim();
       setModalState({ isOpen: true, title: title, content: contentData });
@@ -1393,6 +1401,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     else if (id === 'coronagraphy') title = 'About Multi-source Coronagraphy';
     else if (id === 'solar-flares') title = 'About Solar Flares';
     else if (id === 'solar-imagery') title = 'About Solar Imagery Types';
+    else if (id === 'coronal-holes') title = 'About the Coronal Hole Tracker';
     else if (id === 'active-sunspots') title = 'About Active Sunspot Regions';
     else title = (id.charAt(0).toUpperCase() + id.slice(1)).replace(/([A-Z])/g, ' $1').trim();
 
@@ -4198,6 +4207,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               <div className="text-right text-xs text-neutral-500 mt-2">Last updated: {lastSunspotRegionsUpdate || 'N/A'}</div>
             </div>
 
+            <CoronalHoleTracker onOpenModal={openModal} />
+
             {/* IPS section removed entirely */}
 
 
@@ -4214,14 +4225,28 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                     {solarFlares.map((flare: any) => {
                       const { background, text } = getColorForFlareClass(flare.classType);
                       const cmeHighlight = flare.hasCME ? 'border-sky-400 shadow-lg shadow-sky-500/10' : 'border-transparent';
+                      // Where on the disk it went off. The X-rays arrive in
+                      // eight minutes wherever it happened; the longitude is
+                      // what decides whether anything it threw off comes here.
+                      const zone = diskZoneFor(parseLongitude(flare.sourceLocation));
+                      const zoneStyle = zone?.zone === 'earth strike zone'
+                        ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/60'
+                        : 'bg-neutral-700/60 text-neutral-300 border border-neutral-600/60';
                       return (
                         <li key={flare.flrID} onClick={() => setSelectedFlare(flare)} className={`bg-neutral-800 p-2 rounded text-sm cursor-pointer transition-all hover:bg-neutral-700 border-2 ${cmeHighlight}`}>
-                          <div className="flex justify-between items-center">
+                          <div className="flex justify-between items-center gap-2">
                             <span>
                               <strong className={`px-2 py-0.5 rounded ${text}`} style={{ backgroundColor: background }}>{flare.classType}</strong>
                               <span className="ml-2">at {formatNZTimestamp(flare.peakTime)}</span>
                             </span>
-                            {flare.hasCME && <span className="text-xs font-bold text-sky-400 animate-pulse">CME Event</span>}
+                            <span className="flex items-center gap-2 shrink-0">
+                              {zone && (
+                                <span className={`text-[11px] px-2 py-0.5 rounded ${zoneStyle}`} title={`${flare.sourceLocation} - ${zone.note}`}>
+                                  {zone.label}
+                                </span>
+                              )}
+                              {flare.hasCME && <span className="text-xs font-bold text-sky-400 animate-pulse">CME Event</span>}
+                            </span>
                           </div>
                         </li>
                       )

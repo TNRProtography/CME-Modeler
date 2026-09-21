@@ -264,3 +264,53 @@ export function growthSummary(history: RegionSnapshot[]): GrowthSummary {
 
   return { areaPerDay, spotsPerDay, areaChange, spotChange, days, phase, label, classChanged };
 }
+
+/** Which third of the disk something happened on. */
+export type DiskZone = 'east limb' | 'earth strike zone' | 'west limb';
+
+export interface DiskZoneReading {
+  zone: DiskZone;
+  /** The longitude it was read from, west positive. */
+  longitude: number;
+  /** A word for a badge. */
+  label: string;
+  /** What it means for us. */
+  note: string;
+}
+
+/**
+ * Where on the disk a flare went off, and whether that matters to us.
+ *
+ * A flare's X-rays arrive in eight minutes wherever it happened - the Sun does
+ * not aim those. What the longitude decides is whether anything the flare
+ * throws off comes our way. The same plus or minus 45 degrees the CME alert
+ * uses is the strike zone here, so a flare described as being in the zone and
+ * a CME described as Earth-directed always mean the same stretch of disk.
+ *
+ * West of the zone is not nothing: the Parker spiral connects Earth back to
+ * around W60, so western flares are the ones that put protons here fastest
+ * even when their CME misses. East of it is the other way round - whatever it
+ * launches goes wide, but the region is turning toward us.
+ */
+export function diskZoneFor(longitude: number | null | undefined): DiskZoneReading | null {
+  if (longitude == null || !Number.isFinite(longitude)) return null;
+  const edge = EARTH_DIRECTED_MAX_LONGITUDE;
+
+  if (longitude < -edge) {
+    return {
+      zone: 'east limb', longitude, label: 'East limb',
+      note: 'Too far east for anything it launched to reach us, but the region is turning toward Earth.',
+    };
+  }
+  if (longitude > edge) {
+    return {
+      zone: 'west limb', longitude, label: 'West limb',
+      note: 'Past the strike zone, so a CME from here goes wide. Western flares are still the best connected '
+          + 'to Earth along the Parker spiral, which is why they deliver protons fastest.',
+    };
+  }
+  return {
+    zone: 'earth strike zone', longitude, label: 'Earth strike zone',
+    note: 'Aimed closely enough at Earth that a CME from this flare can reach us.',
+  };
+}

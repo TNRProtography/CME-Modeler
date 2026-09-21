@@ -200,5 +200,30 @@ console.log('\nWhether it is still building');
         'snapshots are sorted, so the order they arrive in does not matter');
 }
 
+// ── which third of the disk ──────────────────────────────────────
+console.log('\nWhich third of the disk a flare went off on');
+{
+  check(R.diskZoneFor(0).zone === 'earth strike zone', 'dead centre is the strike zone');
+  check(R.diskZoneFor(44).zone === 'earth strike zone', 'and so is just inside the western edge');
+  check(R.diskZoneFor(-44).zone === 'earth strike zone', 'and the eastern one');
+  check(R.diskZoneFor(46).zone === 'west limb', 'just outside it to the west is the west limb');
+  check(R.diskZoneFor(-46).zone === 'east limb', 'and to the east, the east limb');
+  check(R.diskZoneFor(89).zone === 'west limb', 'right at the western edge of the disk too');
+
+  // The same 45 degrees the CME alert uses, so a flare "in the zone" and a
+  // CME "Earth-directed" can never mean different stretches of disk.
+  const edge = 45;
+  check(R.diskZoneFor(edge).zone === 'earth strike zone' && R.diskZoneFor(edge + 0.1).zone === 'west limb',
+        `the boundary sits exactly at ${edge} degrees, shared with the CME alert`);
+
+  check(R.diskZoneFor(null) === null, 'a flare with no location gets no zone rather than a guess');
+  check(R.diskZoneFor(undefined) === null, 'nor does a missing one');
+  check(R.diskZoneFor(NaN) === null, 'nor an unparseable one');
+
+  check(/Parker/.test(R.diskZoneFor(70).note), 'a western flare is described as the well-connected one');
+  check(/turning toward Earth/.test(R.diskZoneFor(-70).note), 'and an eastern one as still to come');
+  check(R.diskZoneFor(10).label === 'Earth strike zone', 'each zone has a badge');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
