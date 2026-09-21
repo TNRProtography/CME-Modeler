@@ -12,14 +12,15 @@
     "test:outbox": "node scripts/test-outbox.mjs",
     "test:topics": "node scripts/test-topics.mjs",
     "sync:topics": "node scripts/sync-topics.mjs",
-    "test:all": "npm run test:topics && npm run test:sw && npm run test:kp && npm run test:cme && npm run test:solar-disk && npm run test:worker && npm run test:detectors && npm run test:outbox && npm run test:sites",
+    "test:all": "npm run test:topics && npm run test:sw && npm run test:kp && npm run test:cme && npm run test:solar-disk && npm run test:region-dynamics && npm run test:worker && npm run test:detectors && npm run test:outbox && npm run test:sites",
     "test:detectors": "node scripts/test-detectors.mjs",
     "test:scale": "node scripts/test-scale.mjs",
     "test:sw": "node scripts/test-sw.mjs",
     "test:kp": "node scripts/test-kp.mjs",
     "test:sites": "node scripts/test-sites.mjs",
     "test:cme": "node scripts/test-cme.mjs",
-    "test:solar-disk": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/test-solar-disk.mjs"
+    "test:solar-disk": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/test-solar-disk.mjs",
+    "test:region-dynamics": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/test-region-dynamics.mjs"
   },
   "dependencies": {
     "chart.js": "^4.4.3",

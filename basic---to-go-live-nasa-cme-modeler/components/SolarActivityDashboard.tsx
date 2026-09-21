@@ -1,6 +1,8 @@
 // --- START OF FILE src/components/SolarActivityDashboard.tsx ---
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { regionTiming, earthDirectedRisk, growthSummary, rotationTrack } from '../utils/regionDynamics';
+import { longitudeAt } from '../utils/solarDisk';
 import SunspotLabelOverlay from './SunspotLabelOverlay';
 import { buildRegionLabels, type RegionInput } from '../utils/regionLabels';
 import { nextFramePosition, frameSpanHours } from '../utils/framePlayback';
@@ -196,6 +198,9 @@ const SUVI_284_INDEX_URL = 'https://services.swpc.noaa.gov/images/animations/suv
 const SUVI_FRAME_INTERVAL_MINUTES = 4;
 const CORONAGRAPHY_WORKER_BASE = 'https://coronagraphy-processing.thenamesrock.workers.dev';
 const SUVI_DIFF_WORKER_BASE = 'https://suvi-difference-imagery.thenamesrock.workers.dev';
+// The push worker also keeps the daily sunspot region snapshots, because it
+// already runs on a cron and already has the KV namespace to put them in.
+const PUSH_WORKER_BASE = 'https://push-notification-worker.thenamesrock.workers.dev';
 const SOLO_BASE = 'https://solo-worker.thenamesrock.workers.dev';
 const CORONAGRAPH_SOURCES: { key: CoronagraphSourceKey; label: string }[] = [
   { key: 'ccor1', label: 'GOES-19 CCOR-1' },
@@ -2032,6 +2037,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     { geometry: SolarDiskGeometry; naturalWidth: number; naturalHeight: number } | null
   >(null);
 
+  // Hovering a label pops a zoomed crop of that region, so the disk can be
+  // read without clicking through to the detail panel.
+  const [hoveredRegionId, setHoveredRegionId] = useState<string | null>(null);
+
   const [closeupLightbox, setCloseupLightbox] = useState(false);
 
   const openSunspotCloseupInViewer = useCallback(() => {
@@ -2136,6 +2145,101 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       detailMinWidth: 380,
     });
   }, [regionInputs, overviewGeometry, overviewBoxSize]);
+
+  // ── Region history, for the growth read ──────────────────────────────────
+  // NOAA only ever publishes the current state, so the worker keeps a snapshot
+  // a day and this reads them back. Failing is fine: everything else about a
+  // region still works, the growth panel just says it has no history yet.
+  const [regionHistory, setRegionHistory] = useState<Record<string, {
+    atMs: number; area: number | null; spotCount: number | null; magneticClass: string | null;
+  }[]>>({});
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${PUSH_WORKER_BASE}/regions-history?days=14`, { cache: 'no-store' });
+        const data = await res.json();
+        if (!cancelled && data?.history) setRegionHistory(data.history);
+      } catch { /* the panel says "not enough history yet" */ }
+    })();
+    return () => { cancelled = true; };
+  }, [refreshSignal]);
+
+  /** Flares from each region that DONKI links to a CME. */
+  const cmesByRegion = useMemo(() => {
+    const map = new Map<string, SolarFlare[]>();
+    solarFlares.forEach((flare) => {
+      if (!flare.activeRegionNum) return;
+      const launched = (flare.linkedEvents ?? []).some(
+        (e) => typeof e?.activityID === 'string' && e.activityID.includes('-CME'));
+      if (!launched) return;
+      const key = String(flare.activeRegionNum).slice(-4);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(flare);
+    });
+    return map;
+  }, [solarFlares]);
+
+  /**
+   * Everything derived about the region on screen: where it is in its trip
+   * across the disk, how much chance it has left to fire something at us,
+   * whether it is still growing, and what it has already launched.
+   */
+  const selectedRegionInsight = useMemo(() => {
+    const region = selectedSunspotRegion;
+    if (!region || region.longitude === null) return null;
+
+    const now = Date.now();
+    const observedAt = region.observedTime ?? now;
+    const timing = regionTiming(region.longitude, observedAt, now);
+    const risk = earthDirectedRisk(
+      timing, region.mFlareProbability, region.xFlareProbability, region.magneticClass);
+    const growth = growthSummary(regionHistory[region.region] ?? []);
+
+    // What it actually launched, and how much of that happened while it was
+    // pointed at us - which is the only part that could ever have reached here.
+    const cmes = cmesByRegion.get(region.region) ?? [];
+    const cmesInZone = cmes.filter((f) => {
+      const t = Date.parse(f.peakTime ?? f.startTime ?? '');
+      if (!Number.isFinite(t)) return false;
+      const lonThen = longitudeAt(region.longitude as number, observedAt, t);
+      return Math.abs(lonThen) <= 45;
+    });
+
+    return { timing, risk, growth, cmes, cmesInZone, history: regionHistory[region.region] ?? [] };
+  }, [selectedSunspotRegion, regionHistory, cmesByRegion]);
+
+  /**
+   * The path the selected region traces across the disk.
+   *
+   * Four days either side of now. The past is drawn solid and the future
+   * dashed, because one is a record and the other is a prediction, and a
+   * single line would quietly present them as the same thing.
+   */
+  const selectedRegionTrack = useMemo(() => {
+    const region = selectedSunspotRegion;
+    if (!region || region.latitude === null || region.longitude === null) return null;
+    if (!overviewGeometry || !overviewBoxSize.width) return null;
+
+    const now = Date.now();
+    const observed = region.observedTime ?? now;
+    const { b0 } = solarDiskOrientation(new Date(now));
+    const scale = overviewBoxSize.width / overviewGeometry.width;
+
+    const project = (points: { atMs: number; latitude: number; longitude: number }[]) =>
+      points
+        .map((pt) => {
+          const pos = heliographicToPixel(pt.latitude, pt.longitude, overviewGeometry, b0);
+          return pos.onDisk ? { x: pos.x * scale, y: pos.y * scale, atMs: pt.atMs } : null;
+        })
+        .filter((pt): pt is { x: number; y: number; atMs: number } => pt !== null);
+
+    const DAY = 86400000;
+    return {
+      past: project(rotationTrack(region.latitude, region.longitude, observed, now - 4 * DAY, now, 4)),
+      future: project(rotationTrack(region.latitude, region.longitude, observed, now, now + 4 * DAY, 4)),
+    };
+  }, [selectedSunspotRegion, overviewGeometry, overviewBoxSize]);
 
   const displayedSunspotRegions = useMemo(() => {
     return activeSunspotRegions
@@ -3637,14 +3741,95 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/60 text-amber-200 text-sm">Failed to load - tap to retry</div>
                     )}
 
+                    {/* The selected region's path across the disk. Under the
+                        labels, so a track never crosses over a box. */}
+                    {selectedRegionTrack && overviewBoxSize.width > 0 && (
+                      <svg
+                        className="absolute inset-0 w-full h-full pointer-events-none"
+                        viewBox={`0 0 ${overviewBoxSize.width} ${overviewBoxSize.height}`}
+                        aria-hidden="true"
+                      >
+                        {([['past', selectedRegionTrack.past, false],
+                           ['future', selectedRegionTrack.future, true]] as const).map(([key, pts, dashed]) => (
+                          pts.length >= 2 && (
+                            <g key={key}>
+                              <polyline
+                                points={pts.map((pt) => `${pt.x.toFixed(1)},${pt.y.toFixed(1)}`).join(' ')}
+                                fill="none" stroke="rgba(0,0,0,0.7)" strokeWidth={3.4}
+                                strokeLinecap="round" strokeDasharray={dashed ? '5 5' : undefined}
+                              />
+                              <polyline
+                                points={pts.map((pt) => `${pt.x.toFixed(1)},${pt.y.toFixed(1)}`).join(' ')}
+                                fill="none" stroke="#fbbf24" strokeWidth={1.4}
+                                strokeOpacity={dashed ? 0.65 : 0.9}
+                                strokeLinecap="round" strokeDasharray={dashed ? '5 5' : undefined}
+                              />
+                            </g>
+                          )
+                        ))}
+                      </svg>
+                    )}
+
                     <SunspotLabelOverlay
                       labels={laidOutSunspotLabels}
                       boxSize={overviewBoxSize}
                       selectedId={selectedSunspotRegion?.region}
                       onSelect={selectRegionById}
                       titleFor={regionTitle}
+                      onHover={setHoveredRegionId}
                       idPrefix="hmi"
                     />
+
+                    {/* Hover zoom. Sits on the opposite side of the disk from
+                        the region, so the thing being magnified is never under
+                        the card magnifying it. */}
+                    {(() => {
+                      if (!hoveredRegionId || !overviewBoxSize.width || !sunspotOverviewImage.url) return null;
+                      const hovered = laidOutSunspotLabels.find((l) => l.id === hoveredRegionId);
+                      const region = regionById.get(hoveredRegionId);
+                      if (!hovered || !region) return null;
+
+                      const xPct = (hovered.label.anchorX / overviewBoxSize.width) * 100;
+                      const yPct = (hovered.label.anchorY / overviewBoxSize.height) * 100;
+                      const ZOOM = 6;
+                      const CARD = 132;
+                      const onLeft = xPct > 50;
+
+                      return (
+                        <div
+                          className="absolute z-20 pointer-events-none rounded-lg border border-neutral-700 bg-black/90 shadow-xl overflow-hidden"
+                          style={{
+                            width: CARD,
+                            [onLeft ? 'left' : 'right']: 8,
+                            top: Math.max(8, Math.min(overviewBoxSize.height - CARD - 34, hovered.label.anchorY - CARD / 2)),
+                          } as React.CSSProperties}
+                        >
+                          <div className="relative overflow-hidden" style={{ width: CARD, height: CARD }}>
+                            <img
+                              src={sunspotOverviewImage.url}
+                              alt=""
+                              className="absolute max-w-none"
+                              style={{
+                                width: `${ZOOM * 100}%`,
+                                height: `${ZOOM * 100}%`,
+                                left: `${50 - xPct * ZOOM}%`,
+                                top: `${50 - yPct * ZOOM}%`,
+                              }}
+                            />
+                            <div className="absolute inset-0 ring-1 ring-inset ring-white/10" />
+                            {/* Crosshair on the region itself, dead centre. */}
+                            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-7 h-7 rounded-full border border-amber-300/80" />
+                          </div>
+                          <div className="px-2 py-1 border-t border-neutral-800">
+                            <div className="text-[10px] font-bold text-amber-300">AR {region.region}</div>
+                            <div className="text-[9px] text-neutral-400">
+                              {[region.magneticClass?.toUpperCase(), region.area ? `${region.area} MSH` : null]
+                                .filter(Boolean).join(' \u00b7 ') || region.location}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
 
@@ -3776,6 +3961,164 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         })()}
                         <div className="flex justify-between gap-3"><span className="text-neutral-500">Previous activity</span><span className="text-neutral-100 font-semibold text-right max-w-[65%]">{selectedSunspotRegion.previousActivity || ' - '}</span></div>
                       </div>
+
+                      {/* ── Where it is in its trip, and what that means ── */}
+                      {selectedRegionInsight && (() => {
+                        const { timing, risk, growth, cmes, cmesInZone, history } = selectedRegionInsight;
+                        const levelColour = {
+                          none: '#9aa2b1', low: '#44dd88', moderate: '#facc15',
+                          high: '#fb923c', severe: '#ef4444',
+                        }[risk.level];
+                        const days = (n: number) => `${Math.abs(n).toFixed(1)} day${Math.abs(n) === 1 ? '' : 's'}`;
+
+                        // A journey bar: east limb on the left, west on the right,
+                        // with the Earth-facing stretch marked out in the middle.
+                        const pos = ((timing.longitude + 90) / 180) * 100;
+
+                        return (
+                          <div className="mt-4 rounded-lg border border-neutral-800 bg-neutral-900/40 p-3">
+                            <div className="text-[11px] uppercase tracking-widest text-neutral-500 mb-2">
+                              Position and outlook
+                            </div>
+
+                            <div className="relative h-6 mb-1">
+                              {/* The stretch where a CME from here could reach us:
+                                  the same +-45 degrees the CME alert uses. */}
+                              <div className="absolute inset-y-2 left-0 right-0 rounded bg-neutral-800" />
+                              <div className="absolute inset-y-2 rounded bg-sky-500/25 border-x border-sky-500/40"
+                                   style={{ left: '25%', right: '25%' }} />
+                              <div
+                                className="absolute top-0 -translate-x-1/2 flex flex-col items-center"
+                                style={{ left: `${Math.max(0, Math.min(100, pos))}%` }}
+                              >
+                                <div className="w-2 h-2 rounded-full bg-amber-300 ring-2 ring-black" />
+                                <div className="w-px h-3 bg-amber-300/70" />
+                              </div>
+                            </div>
+                            <div className="flex justify-between text-[9px] text-neutral-600 mb-2.5">
+                              <span>East limb</span><span>Faces Earth</span><span>West limb</span>
+                            </div>
+
+                            <div className="space-y-1.5 text-xs">
+                              <div className="flex justify-between">
+                                <span className="text-neutral-500">Facing Earth</span>
+                                <span className="font-semibold text-right" style={{ color: levelColour }}>
+                                  {timing.strikeZonePassed
+                                    ? `Left ${days(timing.daysLeftInStrikeZone || 0)} ago`.replace('0.0 days', 'recently')
+                                    : timing.inStrikeZone
+                                      ? `Yes, for another ${days(timing.daysLeftInStrikeZone)}`
+                                      : `In ${days(timing.daysToStrikeZone)}`}
+                                </span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-neutral-500">
+                                  {timing.daysToCentralMeridian >= 0 ? 'Faces us most directly' : 'Passed the meridian'}
+                                </span>
+                                <span className="text-neutral-100 font-semibold">
+                                  {timing.daysToCentralMeridian >= 0
+                                    ? `in ${days(timing.daysToCentralMeridian)}`
+                                    : `${days(timing.daysToCentralMeridian)} ago`}
+                                </span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-neutral-500">Rotates out of view</span>
+                                <span className="text-neutral-100 font-semibold">
+                                  {timing.daysToWestLimb > 0 ? `in ${days(timing.daysToWestLimb)}` : 'already has'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* The chance figure, with its working shown. */}
+                            <div className="mt-3 pt-2.5 border-t border-neutral-800">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-xs font-semibold" style={{ color: levelColour }}>{risk.label}</span>
+                                {risk.complexField && (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-300 border border-red-500/30">
+                                    COMPLEX FIELD
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-neutral-400 leading-relaxed">{risk.note}</p>
+                            </div>
+
+                            {/* Growth, from the worker's daily snapshots. */}
+                            <div className="mt-3 pt-2.5 border-t border-neutral-800">
+                              <div className="flex justify-between items-baseline mb-1.5">
+                                <span className="text-xs text-neutral-500">Growth</span>
+                                <span className="text-xs font-semibold text-neutral-100">{growth.label}</span>
+                              </div>
+                              {history.length >= 2 ? (
+                                <>
+                                  <svg viewBox="0 0 200 34" className="w-full h-9" preserveAspectRatio="none">
+                                    {(() => {
+                                      const areas = history.map((h) => h.area).filter((a): a is number => a != null);
+                                      if (areas.length < 2) return null;
+                                      const max = Math.max(...areas, 1);
+                                      const pts = history
+                                        .map((h, i) => h.area == null ? null : {
+                                          x: (i / (history.length - 1)) * 200,
+                                          y: 32 - (h.area / max) * 30,
+                                        })
+                                        .filter((pt): pt is { x: number; y: number } => pt !== null);
+                                      const d = pts.map((pt, i) => `${i ? 'L' : 'M'}${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`).join(' ');
+                                      return (
+                                        <>
+                                          <path d={`${d} L200 34 L0 34 Z`} fill="rgba(56,189,248,0.15)" />
+                                          <path d={d} fill="none" stroke="#38bdf8" strokeWidth="1.5" />
+                                          {pts.map((pt, i) => (
+                                            <circle key={i} cx={pt.x} cy={pt.y} r="1.6" fill="#38bdf8" />
+                                          ))}
+                                        </>
+                                      );
+                                    })()}
+                                  </svg>
+                                  <div className="flex justify-between text-[10px] text-neutral-500 mt-0.5">
+                                    <span>{growth.days.toFixed(0)}d ago</span>
+                                    <span>
+                                      {growth.areaChange != null && (growth.areaChange > 0 ? '+' : '')}
+                                      {growth.areaChange ?? ' - '} MSH
+                                      {growth.spotChange != null && growth.spotChange !== 0
+                                        && `, ${growth.spotChange > 0 ? '+' : ''}${growth.spotChange} spots`}
+                                    </span>
+                                    <span>now</span>
+                                  </div>
+                                  {growth.classChanged && (
+                                    <p className="text-[10px] text-amber-300/80 mt-1">
+                                      Magnetic class has changed over this window.
+                                    </p>
+                                  )}
+                                </>
+                              ) : (
+                                <p className="text-[11px] text-neutral-500">
+                                  Day-to-day history builds up from daily snapshots. Not enough days yet for this region.
+                                </p>
+                              )}
+                            </div>
+
+                            {/* What it has actually launched. */}
+                            <div className="mt-3 pt-2.5 border-t border-neutral-800">
+                              <div className="flex justify-between items-baseline">
+                                <span className="text-xs text-neutral-500">CMEs launched</span>
+                                <span className="text-xs font-semibold text-neutral-100">
+                                  {cmes.length === 0 ? 'None in 7 days' : `${cmes.length} in 7 days`}
+                                </span>
+                              </div>
+                              {cmes.length > 0 && (
+                                <p className="text-[11px] text-neutral-400 leading-relaxed mt-1">
+                                  {cmesInZone.length > 0
+                                    ? `${cmesInZone.length} of them left while the region was aimed at Earth.`
+                                    : 'None of them left while the region was aimed at Earth, so none were headed our way.'}
+                                </p>
+                              )}
+                              {timing.strikeZonePassed && (
+                                <p className="text-[11px] text-neutral-500 leading-relaxed mt-1">
+                                  It has rotated past the Earth-facing window. Anything it launches now goes wide.
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* ── Flares from NASA DONKI matched to this region ── */}
                       {(() => {

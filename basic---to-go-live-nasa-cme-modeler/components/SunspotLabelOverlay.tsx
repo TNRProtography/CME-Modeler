@@ -22,7 +22,9 @@ const SunspotLabelOverlay: React.FC<{
   idPrefix: string;
   /** Titles for the buttons, by region id. */
   titleFor?: (id: string) => string;
-}> = ({ labels, boxSize, selectedId, onSelect, idPrefix, titleFor }) => {
+  /** Called with a region id on hover, and null on leave. */
+  onHover?: (id: string | null) => void;
+}> = ({ labels, boxSize, selectedId, onSelect, idPrefix, titleFor, onHover }) => {
   if (labels.length === 0 || !boxSize.width || !boxSize.height) return null;
 
   return (
@@ -85,6 +87,10 @@ const SunspotLabelOverlay: React.FC<{
           <button
             key={`${idPrefix}-label-${id}`}
             onClick={(e) => { e.stopPropagation(); onSelect(id); }}
+            onMouseEnter={() => onHover?.(id)}
+            onMouseLeave={() => onHover?.(null)}
+            onFocus={() => onHover?.(id)}
+            onBlur={() => onHover?.(null)}
             className="absolute -translate-x-1/2 -translate-y-1/2 group opacity-90 hover:opacity-100 transition-opacity"
             style={{ left: `${label.x}px`, top: `${label.y}px` }}
             title={titleFor?.(id)}

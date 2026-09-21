@@ -516,6 +516,7 @@ export default {
     if (url.pathname === '/migration'                 && request.method === 'GET')  return handleMigrationStatus(request, env);
     if (url.pathname === '/run-migration-shard'       && request.method === 'POST') return handleRunMigrationShard(request, env);
     if (url.pathname === '/notification-clicked'      && request.method === 'POST') return handleNotificationClicked(request, env);
+    if (url.pathname === '/regions-history'           && request.method === 'GET')  return handleRegionsHistory(request, env);
     if (url.pathname === '/health')                                                  return handleHealthCheck(env);
     if (url.pathname === '/')                                                        return handleRoot(env);
     return new Response('Not found', { status: 404 });
@@ -607,6 +608,7 @@ async function runScheduledTasks(env) {
     ['overnight',  checkOvernightWatch(env, forecastData, substormData, magPoints, plasmaPoints, note)],
     ['visibility', checkVisibilityNotifications(env, substormData, forecastData, magPoints, plasmaPoints, note)],
     ['cme',        checkEarthDirectedCMEs(env, null, note)],
+    ['regions',    snapshotSolarRegions(env, note)],
   ];
   const results = await Promise.allSettled(detectors.map(([, p]) => p));
 
@@ -828,6 +830,130 @@ async function checkSolarFlares(env, /** @type {any[]|null} */ allData = null, n
   } catch (e) {
     note('flare', 'error', e.message);
     reportError(e, env, { handler: 'checkSolarFlares' });
+  }
+}
+
+// ── Daily sunspot region snapshots ──────────────────────────────────────────
+//
+// NOAA publishes the current state of every numbered region and nothing about
+// yesterday's. That makes "is this region still growing?" unanswerable from a
+// single response, even though rapid growth is one of the few genuinely useful
+// flare precursors - a region that doubled overnight is a different
+// proposition from one the same size that has sat there all week.
+//
+// So the cron keeps a snapshot a day. One key per day, a month of them, and
+// the app reads them back as a per-region history.
+const NOAA_SOLAR_REGIONS_URL = 'https://services.swpc.noaa.gov/json/solar_regions.json';
+const REGION_SNAPSHOT_PREFIX = 'REGIONS_';
+const REGION_SNAPSHOT_DAYS = 30;
+const REGION_SNAPSHOT_TTL = (REGION_SNAPSHOT_DAYS + 2) * 24 * 60 * 60;
+// Rewriting today's snapshot on every cron tick would be hundreds of KV writes
+// a day for a value that barely changes. A few refreshes a day keeps it
+// current without spending the quota.
+const REGION_SNAPSHOT_MIN_GAP_MS = 3 * 60 * 60 * 1000;
+
+const regionSnapshotKey = (dayIso) => `${REGION_SNAPSHOT_PREFIX}${dayIso}`;
+const utcDayIso = (ms) => new Date(ms).toISOString().slice(0, 10);
+
+function toFiniteOrNull(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Keep one snapshot of today's regions, if today's is missing or stale. */
+async function snapshotSolarRegions(env, note = /** @type {(name?: string, status?: string, detail?: string) => void} */ (() => {})) {
+  try {
+    const today = utcDayIso(Date.now());
+    const key = regionSnapshotKey(today);
+
+    const existing = await kv(env).get(key, 'json');
+    if (existing?.at && Date.now() - existing.at < REGION_SNAPSHOT_MIN_GAP_MS) {
+      note('regions', 'quiet',
+           `today's snapshot is ${Math.round((Date.now() - existing.at) / 60000)} min old`);
+      return;
+    }
+
+    const response = await fetchWithRetry(NOAA_SOLAR_REGIONS_URL);
+    if (!response) { note('regions', 'skipped', 'solar_regions feed unreachable'); return; }
+    const raw = await response.json().catch(() => null);
+    if (!Array.isArray(raw)) { note('regions', 'skipped', 'solar_regions feed unparseable'); return; }
+
+    // Only the fields the growth read needs. The rest is re-fetched live by
+    // the app anyway, and a smaller value is a cheaper daily write.
+    const regions = [];
+    for (const r of raw) {
+      const id = String(r?.region ?? '').trim();
+      if (!id) continue;
+      regions.push({
+        region: id,
+        area: toFiniteOrNull(r?.area),
+        spotCount: toFiniteOrNull(r?.number_spots ?? r?.spot_count),
+        magneticClass: r?.mag_class ?? r?.magnetic_class ?? null,
+        classification: r?.spot_class ?? r?.classification ?? null,
+        location: r?.location ?? null,
+      });
+    }
+    if (regions.length === 0) { note('regions', 'skipped', 'no numbered regions in the feed'); return; }
+
+    await kv(env).put(key, JSON.stringify({ day: today, at: Date.now(), regions }),
+                      { expirationTtl: REGION_SNAPSHOT_TTL });
+    note('regions', 'fired', `snapshot for ${today}: ${regions.length} regions`);
+  } catch (e) {
+    note('regions', 'error', e.message);
+    reportError(e, env, { handler: 'snapshotSolarRegions' });
+  }
+}
+
+/**
+ * GET /regions-history?days=10
+ *
+ * Per-region history, newest last. Public: it is NOAA's own data with nothing
+ * about anybody in it, and requiring a secret would mean shipping one in the
+ * app just to read a sunspot's area.
+ */
+async function handleRegionsHistory(request, env) {
+  try {
+    const url = new URL(request.url);
+    const asked = Number(url.searchParams.get('days'));
+    const days = Math.max(2, Math.min(REGION_SNAPSHOT_DAYS, Number.isFinite(asked) ? asked : 14));
+
+    const wanted = [];
+    for (let i = 0; i < days; i++) wanted.push(utcDayIso(Date.now() - i * 86400000));
+
+    const snapshots = await Promise.all(
+      wanted.map((day) => kv(env).get(regionSnapshotKey(day), 'json')),
+    );
+
+    /** @type {Record<string, {atMs:number,area:number|null,spotCount:number|null,magneticClass:string|null,classification:string|null}[]>} */
+    const history = {};
+    let daysWithData = 0;
+    for (const snap of snapshots) {
+      if (!snap?.regions) continue;
+      daysWithData++;
+      // Midday UTC, not the write time: these describe a day, and using the
+      // write time would make the spacing jitter by hours.
+      const atMs = Date.parse(`${snap.day}T12:00:00Z`);
+      for (const r of snap.regions) {
+        (history[r.region] ??= []).push({
+          atMs,
+          area: r.area ?? null,
+          spotCount: r.spotCount ?? null,
+          magneticClass: r.magneticClass ?? null,
+          classification: r.classification ?? null,
+        });
+      }
+    }
+    for (const list of Object.values(history)) list.sort((a, b) => a.atMs - b.atMs);
+
+    return json({
+      days, daysWithData, regions: Object.keys(history).length, history,
+      note: daysWithData < 2
+        ? 'Not enough days recorded yet for a growth trend. Snapshots start from the day this was deployed.'
+        : undefined,
+    });
+  } catch (e) {
+    reportError(e, env, { handler: 'handleRegionsHistory' });
+    return json({ error: e.message }, 500);
   }
 }
 

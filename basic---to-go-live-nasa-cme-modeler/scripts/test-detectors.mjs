@@ -28,7 +28,8 @@ const dir = mkdtempSync(join(tmpdir(), 'detectors-'));
 const copy = join(dir, 'w.mjs');
 writeFileSync(copy, readFileSync(SRC, 'utf8') +
   '\nexport { checkSolarFlares, checkShockDetection, checkSubstormActivity,' +
-  ' checkVisibilityNotifications, checkOvernightWatch, geoToGmag };\n');
+  ' checkVisibilityNotifications, checkOvernightWatch, geoToGmag,' +
+  ' snapshotSolarRegions, handleRegionsHistory };\n');
 const W = await import(pathToFileURL(copy).href);
 
 // ── harness ────────────────────────────────────────────────────────────────
@@ -276,6 +277,79 @@ console.log('\nA half-configured worker');
   const sent = await queuedTopics();
   check(sent.includes('substorm-forecast'),
         'a substorm still fires with the config key missing', notes.join(', '));
+}
+
+// ── daily region snapshots ────────────────────────────────────────────────
+console.log('\nSunspot region history');
+{
+  store.clear();
+  const feed = (area, spots, cls) => ([
+    { region: '4534', area, number_spots: spots, mag_class: cls, spot_class: 'Dkc', location: 'N11W08' },
+    { region: '4532', area: 10, number_spots: 4, mag_class: 'beta', location: 'S06W54' },
+  ]);
+
+  let served = feed(30, 8, 'beta');
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = typeof input === 'string' ? input : input.url ?? String(input);
+    if (url.includes('solar_regions')) return new Response(JSON.stringify(served), { status: 200 });
+    return new Response('[]', { status: 200 });
+  };
+
+  const notes = [];
+  const note = (n, st, d) => notes.push(`${n}:${st}:${d ?? ''}`);
+
+  await W.snapshotSolarRegions(env, note);
+  const today = new Date().toISOString().slice(0, 10);
+  const stored = JSON.parse(store.get(`REGIONS_${today}`) ?? 'null');
+  check(!!stored && stored.regions.length === 2, 'a cron run stores today\'s regions', notes.join(' | '));
+  check(stored?.regions[0].area === 30 && stored?.regions[0].spotCount === 8,
+        'with the fields the growth read needs', JSON.stringify(stored?.regions[0]));
+
+  // A second run moments later must not spend another KV write.
+  notes.length = 0;
+  served = feed(999, 99, 'beta-gamma-delta');
+  await W.snapshotSolarRegions(env, note);
+  const again = JSON.parse(store.get(`REGIONS_${today}`) ?? 'null');
+  check(again?.regions[0].area === 30,
+        'a second run within the gap does not rewrite it',
+        'hundreds of KV writes a day for a value that barely changes');
+  check(notes.some((n) => n.startsWith('regions:quiet')), 'and says why it skipped', notes.join(' | '));
+
+  // Once the gap has passed it refreshes.
+  const aged = JSON.parse(store.get(`REGIONS_${today}`));
+  aged.at = Date.now() - 4 * 60 * 60 * 1000;
+  store.set(`REGIONS_${today}`, JSON.stringify(aged));
+  await W.snapshotSolarRegions(env, () => {});
+  check(JSON.parse(store.get(`REGIONS_${today}`)).regions[0].area === 999,
+        'but does refresh once the gap has passed');
+
+  // Backfill a few days and read the history out.
+  for (let d = 1; d <= 3; d++) {
+    const day = new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
+    store.set(`REGIONS_${day}`, JSON.stringify({
+      day, at: Date.now(),
+      regions: [{ region: '4534', area: 30 * (4 - d), spotCount: 4 - d, magneticClass: 'beta' }],
+    }));
+  }
+  const res = await W.handleRegionsHistory(
+    new Request('https://w.invalid/regions-history?days=7'), env);
+  const body = await res.json();
+  check(body.daysWithData === 4, 'the history endpoint returns every day it has', String(body.daysWithData));
+  const h = body.history['4534'];
+  check(Array.isArray(h) && h.length === 4, 'with one entry per day for a region', String(h?.length));
+  check(h[0].atMs < h[h.length - 1].atMs, 'oldest first, so a chart can plot it straight');
+  check(h.every((e) => typeof e.atMs === 'number' && Number.isFinite(e.atMs)),
+        'and every timestamp is real');
+
+  const few = await (await W.handleRegionsHistory(
+    new Request('https://w.invalid/regions-history?days=1'), env)).json();
+  check(few.days === 2, 'asking for fewer than two days is raised to two', String(few.days));
+  const many = await (await W.handleRegionsHistory(
+    new Request('https://w.invalid/regions-history?days=999'), env)).json();
+  check(many.days === 30, 'and asking for more than is kept is capped', String(many.days));
+
+  globalThis.fetch = realFetch;
 }
 
 // ── no emojis in anything that reaches a phone ─────────────────────────────
