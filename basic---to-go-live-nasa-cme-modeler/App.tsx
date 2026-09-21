@@ -83,7 +83,7 @@ const LoadingOverlay = retryLazyLoad(() => import('./components/LoadingOverlay')
 const MediaViewerModal = retryLazyLoad(() => import('./components/MediaViewerModal'));
 import { fetchCMEData } from './services/nasaService';
 import { refreshLocationOnServer } from './utils/notifications';
-import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity, InterplanetaryShock, ImpactDataPoint } from './types';
+import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity, InterplanetaryShock } from './types';
 
 // Icon Imports
 import SettingsIcon from './components/icons/SettingsIcon';
@@ -314,7 +314,6 @@ const App: React.FC = () => {
 
   // --- NEW: State for the impact graph modal ---
   const [isImpactGraphOpen, setIsImpactGraphOpen] = useState(false);
-  const [impactGraphData, setImpactGraphData] = useState<ImpactDataPoint[]>([]);
 
   const [showLabels, setShowLabels] = useState(true);
   const [showExtraPlanets, setShowExtraPlanets] = useState(true);
@@ -1292,15 +1291,11 @@ const App: React.FC = () => {
     (substormActivityStatus.probability ?? 0) > 0,
   [substormActivityStatus]);
 
-  // --- NEW: Handler for opening the impact graph modal ---
+  // The modal builds its own forecast from the shared timeline now, rather
+  // than being handed a profile the 3D scene computed for itself. That was a
+  // second copy of the arithmetic and a second thing to drift.
   const handleOpenImpactGraph = useCallback(() => {
-    if (canvasRef.current) {
-      const data = canvasRef.current.calculateImpactProfile();
-      if (data) {
-        setImpactGraphData(data);
-        navigateToModelerOverlay('impact-graph');
-      }
-    }
+    navigateToModelerOverlay('impact-graph');
   }, [navigateToModelerOverlay]);
 
   const handleViewCMEInVisualization = useCallback((cmeId: string) => {
@@ -1825,7 +1820,6 @@ const App: React.FC = () => {
             <ImpactGraphModal
               isOpen={isImpactGraphOpen}
               onClose={() => navigateToModelerOverlay(null)}
-              data={impactGraphData}
             />
 
             {isGameOpen && <AuroraGame onClose={handleCloseGame} />}
