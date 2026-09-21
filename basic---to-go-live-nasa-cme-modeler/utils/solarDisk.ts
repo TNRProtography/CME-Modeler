@@ -131,7 +131,10 @@ export function detectSolarDiskGeometry(
   const diskLevel = probe[Math.floor(probe.length / 2)];
   // Never go below the old fixed floor, so a dim frame cannot drive the cut
   // down into the noise.
-  const LIT = Math.max(40, diskLevel * 0.35);
+  // Half the disk's own brightness. The corona in a 304 or 195 composite is
+  // bright enough to clear a third of it in places, which would be counted as
+  // disk and report a Sun larger than the one in the picture.
+  const LIT = Math.max(40, diskLevel * 0.5);
 
   const rows: { y: number; len: number; mid: number }[] = [];
   for (let y = 0; y < height; y += step) {
@@ -242,4 +245,47 @@ export function containedImageRect(
   const w = natural.width * scale;
   const h = natural.height * scale;
   return { x: (box.width - w) / 2, y: (box.height - h) / 2, width: w, height: h, scale };
+}
+
+// ── Reusing a measurement across frames of the same product ────────────────
+
+export interface DiskFraction {
+  /** Centre as a fraction of width and height, radius as a fraction of the short side. */
+  cx: number;
+  cy: number;
+  r: number;
+}
+
+/** A measured disk expressed as fractions of its frame. */
+export function diskAsFraction(
+  geometry: SolarDiskGeometry,
+  natural: { width: number; height: number },
+): DiskFraction {
+  return {
+    cx: geometry.cx / natural.width,
+    cy: geometry.cy / natural.height,
+    r: geometry.radius / Math.min(natural.width, natural.height),
+  };
+}
+
+/**
+ * Turn remembered proportions back into pixels for a frame of any size.
+ *
+ * Every SUVI composite shares a plate scale whatever the channel, so a disk
+ * measured on 131 describes 284 just as well. That matters because individual
+ * frames are often unusable - the 284 channel frequently arrives nearly blank -
+ * and without this a channel whose own frames all fail would show no labels at
+ * all rather than borrowing a perfectly good measurement.
+ */
+export function diskFromFraction(
+  fraction: DiskFraction,
+  natural: { width: number; height: number },
+): SolarDiskGeometry {
+  return {
+    width: natural.width,
+    height: natural.height,
+    cx: fraction.cx * natural.width,
+    cy: fraction.cy * natural.height,
+    radius: fraction.r * Math.min(natural.width, natural.height),
+  };
 }

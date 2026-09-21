@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import SunspotLabelOverlay from './SunspotLabelOverlay';
 import { buildRegionLabels, type RegionInput } from '../utils/regionLabels';
 import { nextFramePosition, frameSpanHours } from '../utils/framePlayback';
-import { detectSolarDiskGeometry, heliographicToPixel, type SolarDiskGeometry } from '../utils/solarDisk';
+import { detectSolarDiskGeometry, heliographicToPixel, diskAsFraction, diskFromFraction, type SolarDiskGeometry } from '../utils/solarDisk';
 import { solarDiskOrientation } from '../utils/solarEphemeris';
 import { createPortal } from 'react-dom';
 import { Line } from 'react-chartjs-2';
@@ -2452,25 +2452,103 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, []);
   const activeSuviFrameUrl = resolveSuviWorkerUrl(activeSuviFrame?.url);
 
-  // Measure the SUVI disk once per source. Frames from one source share a
-  // geometry, so this keys off the first frame rather than the active one.
-  const suviGeometryProbeUrl = resolveSuviWorkerUrl(suviFrames[0]?.url);
+  /**
+   * The SUVI disk, measured from the imagery.
+   *
+   * This used to probe one frame - the oldest in the window - once per source,
+   * and give up for good if it did not measure. SUVI frames are not all
+   * usable: the 284 channel in particular often arrives nearly blank, and a
+   * 24 hour window puts a day-old frame at that position. So a single bad
+   * frame silently switched the labels off for a whole channel, which is
+   * exactly what happened to 304, 195, 284 and to 131 at 24h.
+   *
+   * Now it tries several frames spread across the window, and remembers the
+   * result as a fraction of the frame rather than as pixels. Every SUVI
+   * composite shares a plate scale whatever the channel, so a measurement
+   * taken on 131 is a valid measurement for 284 - which means a channel whose
+   * own frames are all unusable still gets labels.
+   */
+  const suviDiskFractionRef = useRef<{ cx: number; cy: number; r: number } | null>(null);
+
   useEffect(() => {
-    if (!showRegionsOnImagery || !suviGeometryProbeUrl) { setSuviDiskGeometry(null); return; }
+    if (!showRegionsOnImagery || suviFrames.length === 0) { setSuviDiskGeometry(null); return; }
+
+    // The frame on screen first, then ones spread across the window. A blank
+    // frame is common; several blank in a row is not.
+    const candidateIndexes = [
+      clampedSuviFrameIndex,
+      suviFrames.length - 1,
+      Math.floor(suviFrames.length / 2),
+      0,
+      Math.floor(suviFrames.length / 4),
+      Math.floor((suviFrames.length * 3) / 4),
+    ];
+    const urls = [...new Set(
+      candidateIndexes
+        .map((i) => resolveSuviWorkerUrl(suviFrames[Math.max(0, Math.min(i, suviFrames.length - 1))]?.url))
+        .filter((u): u is string => !!u),
+    )];
+    if (urls.length === 0) { setSuviDiskGeometry(null); return; }
+
     let cancelled = false;
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
+
+    const loadAndMeasure = (url: string) => new Promise<
+      { geometry: SolarDiskGeometry; naturalWidth: number; naturalHeight: number } | null
+    >((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const naturalWidth = img.naturalWidth;
+        const naturalHeight = img.naturalHeight;
+        const geometry = measureDiskFromImage(img, naturalWidth, naturalHeight);
+        resolve(geometry ? { geometry, naturalWidth, naturalHeight } : null);
+      };
+      img.onerror = () => resolve(null);
+      img.src = url;
+    });
+
+    (async () => {
+      for (const url of urls) {
+        const measured = await loadAndMeasure(url);
+        if (cancelled) return;
+        if (measured) {
+          suviDiskFractionRef.current = diskAsFraction(measured.geometry, {
+            width: measured.naturalWidth, height: measured.naturalHeight,
+          });
+          setSuviDiskGeometry(measured);
+          return;
+        }
+      }
+
       if (cancelled) return;
-      const naturalWidth = img.naturalWidth;
-      const naturalHeight = img.naturalHeight;
-      const geometry = measureDiskFromImage(img, naturalWidth, naturalHeight);
-      setSuviDiskGeometry(geometry ? { geometry, naturalWidth, naturalHeight } : null);
-    };
-    img.onerror = () => { if (!cancelled) setSuviDiskGeometry(null); };
-    img.src = suviGeometryProbeUrl;
+
+      // Nothing in this channel measured. Fall back to the proportions of the
+      // last SUVI disk that did - they are the same instrument and the same
+      // product, so the Sun sits in the same place in the frame.
+      const known = suviDiskFractionRef.current;
+      const sizeUrl = urls[0];
+      if (!known || !sizeUrl) { setSuviDiskGeometry(null); return; }
+
+      const sizer = new Image();
+      sizer.onload = () => {
+        if (cancelled) return;
+        const naturalWidth = sizer.naturalWidth || 1280;
+        const naturalHeight = sizer.naturalHeight || 1280;
+        setSuviDiskGeometry({
+          naturalWidth,
+          naturalHeight,
+          geometry: diskFromFraction(known, { width: naturalWidth, height: naturalHeight }),
+        });
+      };
+      sizer.onerror = () => { if (!cancelled) setSuviDiskGeometry(null); };
+      sizer.src = sizeUrl;
+    })();
+
     return () => { cancelled = true; };
-  }, [showRegionsOnImagery, suviGeometryProbeUrl, activeSuviSourceKey]);
+    // clampedSuviFrameIndex is deliberately absent: re-measuring on every frame
+    // of playback would be wasteful, and the window's frames all share a disk.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showRegionsOnImagery, activeSuviSourceKey, suviFrameWindowHours, suviFrames.length > 0]);
 
   /**
    * Active regions placed on the SUVI frame currently being shown.
@@ -3320,8 +3398,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         />
 
                         {showRegionsOnImagery && suviRegionLabels.length === 0 && (
-                          <div className="absolute bottom-1 left-2 text-[10px] text-neutral-500 pointer-events-none">
-                            No active regions to place on this frame
+                          // Top-left: the frame carries a burned-in timestamp
+                          // along the bottom that this used to sit on top of.
+                          <div className="absolute top-1 left-2 text-[10px] text-neutral-400 bg-black/60 rounded px-1.5 py-0.5 pointer-events-none">
+                            {suviDiskGeometry
+                              ? 'No active regions on the visible disk'
+                              : 'Measuring the disk\u2026'}
                           </div>
                         )}
                       </div>

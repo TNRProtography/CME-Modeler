@@ -231,6 +231,82 @@ console.log('\nAnd through the corona, on EUV imagery');
         'and the centre is right', g ? `(${g.cx.toFixed(1)},${g.cy.toFixed(1)})` : 'null');
 }
 
+console.log('\nAnd through a bright corona, as 304 and 195 have');
+{
+  // The 304 and 195 composites have a corona far brighter relative to the disk
+  // than 131 does. A threshold set too low counts it as disk and reports a Sun
+  // bigger than the one on screen - and because that halo is roughly round,
+  // the circularity check waves it through.
+  const W = 400, H = 400, cx = 200, cy = 200, r = 130, halo = 185;
+  const d = new Uint8ClampedArray(W * H * 4);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4;
+      const dist = Math.hypot(x - cx, y - cy);
+      const v = dist <= r ? 220 : dist <= halo ? 90 : 0;   // corona at 40% of disk
+      d[i] = v; d[i + 1] = Math.round(v * 0.45); d[i + 2] = Math.round(v * 0.2); d[i + 3] = 255;
+    }
+  }
+  const g = D.detectSolarDiskGeometry(d, W, H);
+  check(g && Math.abs(g.radius - r) <= 3,
+        `a corona at 40% of disk brightness is excluded (want r=${r}, halo ${halo})`,
+        g ? `got ${g.radius.toFixed(1)}` : 'null');
+}
+
+console.log('\nA frame with no usable disk says so');
+{
+  // Some SUVI frames arrive nearly blank - the 284 channel in particular. The
+  // detector has to report that rather than inventing a disk, so the caller
+  // can try a different frame instead of drawing labels on nothing.
+  const W = 300, H = 300;
+  const blank = new Uint8ClampedArray(W * H * 4);
+  for (let i = 3; i < blank.length; i += 4) blank[i] = 255;
+  // one small dim blob off to one side, like the 284 frame in the report
+  for (let y = 120; y < 180; y++) for (let x = 40; x < 100; x++) {
+    const i = (y * W + x) * 4;
+    blank[i] = 30; blank[i + 1] = 50; blank[i + 2] = 140;
+  }
+  check(D.detectSolarDiskGeometry(blank, W, H) === null,
+        'a nearly blank frame with one blob is not mistaken for a disk');
+}
+
+console.log('\nA measurement from one channel serves the others');
+{
+  // Every SUVI composite shares a plate scale whatever the channel, so a disk
+  // measured on 131 describes 284 too. That is what stops a channel whose own
+  // frames are all unusable from showing nothing.
+  const measured = { width: 1280, height: 1280, cx: 640, cy: 630, radius: 470 };
+  const f = D.diskAsFraction(measured, { width: 1280, height: 1280 });
+  check(Math.abs(f.cx - 0.5) < 1e-9 && Math.abs(f.r - 470 / 1280) < 1e-9,
+        'a measurement converts to fractions of its frame', JSON.stringify(f));
+
+  const same = D.diskFromFraction(f, { width: 1280, height: 1280 });
+  check(Math.abs(same.cx - measured.cx) < 1e-9
+        && Math.abs(same.cy - measured.cy) < 1e-9
+        && Math.abs(same.radius - measured.radius) < 1e-9,
+        'and back again unchanged at the same size');
+
+  const bigger = D.diskFromFraction(f, { width: 2560, height: 2560 });
+  check(Math.abs(bigger.radius - 940) < 1e-9 && Math.abs(bigger.cx - 1280) < 1e-9,
+        'and scales to a frame of a different size', `r=${bigger.radius}`);
+
+  // The borrowed geometry has to put regions in the same place on the disk.
+  const atMs = Date.UTC(2026, 8, 21, 1, 45);
+  const region = [{ id: '4534', latitude: 11, longitude: 8, observedAtMs: atMs, color: '#fff' }];
+  const a = RL.buildRegionLabels(region, {
+    geometry: measured, imageNatural: { width: 1280, height: 1280 },
+    box: { width: 640, height: 640 }, atMs,
+  })[0];
+  const b = RL.buildRegionLabels(region, {
+    geometry: bigger, imageNatural: { width: 2560, height: 2560 },
+    box: { width: 640, height: 640 }, atMs,
+  })[0];
+  check(Math.abs(a.label.anchorX - b.label.anchorX) < 0.001
+        && Math.abs(a.label.anchorY - b.label.anchorY) < 0.001,
+        'so a borrowed measurement lands the region in the same place',
+        `(${a.label.anchorX.toFixed(2)},${a.label.anchorY.toFixed(2)}) vs (${b.label.anchorX.toFixed(2)},${b.label.anchorY.toFixed(2)})`);
+}
+
 console.log('\nA letterboxed image maps back to its panel');
 {
   // The imagery panel is wider than it is tall and the Sun is square, so the
