@@ -2468,24 +2468,42 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
    * taken on 131 is a valid measurement for 284 - which means a channel whose
    * own frames are all unusable still gets labels.
    */
-  const suviDiskFractionRef = useRef<{ cx: number; cy: number; r: number } | null>(null);
+  const suviDiskFractionRef = useRef<{ cx: number; cy: number; r: number } | null>((() => {
+    // Persisted, so the first successful measurement on any channel keeps
+    // every channel working on later visits too.
+    try {
+      const raw = localStorage.getItem('suvi_disk_fraction');
+      const parsed = raw ? JSON.parse(raw) : null;
+      return parsed && [parsed.cx, parsed.cy, parsed.r].every((n) => typeof n === 'number' && isFinite(n))
+        ? parsed : null;
+    } catch { return null; }
+  })());
 
   useEffect(() => {
     if (!showRegionsOnImagery || suviFrames.length === 0) { setSuviDiskGeometry(null); return; }
 
-    // The frame on screen first, then ones spread across the window. A blank
-    // frame is common; several blank in a row is not.
-    const candidateIndexes = [
-      clampedSuviFrameIndex,
-      suviFrames.length - 1,
-      Math.floor(suviFrames.length / 2),
-      0,
-      Math.floor(suviFrames.length / 4),
-      Math.floor((suviFrames.length * 3) / 4),
+    // The frame on screen first, then others spread across the window, then
+    // frames from the other channels. Every SUVI composite shares a plate
+    // scale, so any of them answers the question - which is what makes "if one
+    // view works they all should" true rather than lucky.
+    const spread = (frames: { url?: string | null }[], count: number) => {
+      if (frames.length === 0) return [];
+      const picks = count === 1 ? [frames.length - 1] : Array.from(
+        { length: count }, (_, i) => Math.round((i / (count - 1)) * (frames.length - 1)));
+      return picks.map((i) => frames[i]);
+    };
+
+    const ownFrames = [
+      suviFrames[Math.max(0, Math.min(clampedSuviFrameIndex, suviFrames.length - 1))],
+      ...spread(suviFrames, 5),
     ];
+    const otherFrames = Object.entries(suviWorkerState?.sources ?? {})
+      .filter(([key]) => key !== activeSuviSourceKey)
+      .flatMap(([, src]) => spread((src as { frames?: { url?: string | null }[] })?.frames ?? [], 2));
+
     const urls = [...new Set(
-      candidateIndexes
-        .map((i) => resolveSuviWorkerUrl(suviFrames[Math.max(0, Math.min(i, suviFrames.length - 1))]?.url))
+      [...ownFrames, ...otherFrames]
+        .map((f) => resolveSuviWorkerUrl(f?.url))
         .filter((u): u is string => !!u),
     )];
     if (urls.length === 0) { setSuviDiskGeometry(null); return; }
@@ -2512,9 +2530,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         const measured = await loadAndMeasure(url);
         if (cancelled) return;
         if (measured) {
-          suviDiskFractionRef.current = diskAsFraction(measured.geometry, {
+          const fraction = diskAsFraction(measured.geometry, {
             width: measured.naturalWidth, height: measured.naturalHeight,
           });
+          suviDiskFractionRef.current = fraction;
+          try { localStorage.setItem('suvi_disk_fraction', JSON.stringify(fraction)); } catch { /* ignore */ }
           setSuviDiskGeometry(measured);
           return;
         }
@@ -2548,7 +2568,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     // clampedSuviFrameIndex is deliberately absent: re-measuring on every frame
     // of playback would be wasteful, and the window's frames all share a disk.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showRegionsOnImagery, activeSuviSourceKey, suviFrameWindowHours, suviFrames.length > 0]);
+  }, [showRegionsOnImagery, activeSuviSourceKey, suviFrameWindowHours, suviFrames.length > 0, suviWorkerState?.sources]);
 
   /**
    * Active regions placed on the SUVI frame currently being shown.
@@ -3348,13 +3368,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                     type="button"
                     onClick={toggleRegionsOnImagery}
                     aria-pressed={showRegionsOnImagery}
-                    className={`text-xs px-2 py-1 rounded border transition-colors ${
+                    // Same pill as the channel and time-range buttons beside
+                    // it, so the imagery controls read as one set.
+                    className={`px-3 py-1 text-xs rounded transition-colors ${
                       showRegionsOnImagery
-                        ? 'bg-amber-500/15 border-amber-500/40 text-amber-200'
-                        : 'bg-neutral-900 border-neutral-700 text-neutral-400 hover:text-neutral-200'}`}
-                    title="Overlay NOAA active regions, positioned for the frame being shown"
+                        ? 'bg-sky-600 text-white'
+                        : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                    title="Overlay NOAA sunspot regions, positioned for the frame being shown"
                   >
-                    Active regions
+                    View sunspot regions
                   </button>
                 </div>
                 <span className="text-xs text-neutral-500">
