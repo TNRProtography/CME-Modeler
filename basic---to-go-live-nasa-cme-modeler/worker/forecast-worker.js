@@ -214,6 +214,13 @@ export async function runForecast(env, modules) {
   const now = Date.now();
   const { b0 } = solarDiskOrientation(new Date(now));
 
+  // Oldest sample we actually have, floored to the hour the timeline steps on.
+  // Capped at three days so a feed that suddenly returns a long history cannot
+  // stretch the chart without anyone deciding to.
+  const observedFromMs = observed.length > 0
+    ? Math.max(Math.min(...observed.map((s) => s.atMs)), now - 3 * 86400000)
+    : null;
+
   const streams = [];
   const issued = [];
 
@@ -254,7 +261,13 @@ export async function runForecast(env, modules) {
   }
 
   const timeline = buildForecastTimeline(observed, streams, {
-    fromMs: now - 3 * 86400000,
+    // Start where the measurements start, not at an arbitrary three days.
+    // The L1 feed is a rolling 24 hours, so asking for three days of past gave
+    // two days with nothing observed in them. Those hours fell back to modelled
+    // ambient and drew as a dead flat line on the left of the chart - under a
+    // caption promising that side was measured. Better to show a shorter past
+    // that is true than a longer one that is not.
+    fromMs: observedFromMs ?? now - 86400000,
     toMs: now + 7 * 86400000,
     stepMs: 3600000,
   });
