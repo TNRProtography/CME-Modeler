@@ -106,6 +106,10 @@ Then check:
 
 ```bash
 curl -s https://spot-the-aurora-forecast-worker.<subdomain>.workers.dev/health
+
+# Force a run rather than waiting for the hourly cron. Throttled to once a
+# minute; inside that window it answers 429 with the seconds remaining.
+curl -s https://spot-the-aurora-forecast-worker.<subdomain>.workers.dev/run
 ```
 
 `hasForecast: false` immediately after deploy is expected - nothing has run

@@ -38,6 +38,9 @@ const FORECASTS_KEY = 'forecast:pending';
 const SCORES_KEY = 'forecast:scores';
 const LAST_RUN_KEY = 'forecast:last-run';
 
+/** Throttle for the manual /run trigger. */
+const MIN_MANUAL_RUN_GAP_MS = 60000;
+
 /** Keep a rolling window rather than growing without limit. */
 const MAX_PENDING = 60;
 const MAX_SCORES = 200;
@@ -288,6 +291,43 @@ export function makeHandler(modules) {
       if (url.pathname === '/track-record') {
         const scores = await readJson(env.FORECAST_KV, SCORES_KEY, []);
         return json({ ok: true, ...modules.buildTrackRecord(scores), scores: scores.slice(-20) });
+      }
+
+      // Forcing a run, for when waiting an hour to find out whether a fix
+      // worked is the slowest part of fixing it. Deliberately unauthenticated
+      // but self-limiting: inside the throttle it reports how long is left
+      // and does nothing, so it cannot be used to hammer the upstreams or to
+      // burn through the daily KV write allowance.
+      if (url.pathname === '/run') {
+        if (!env.FORECAST_KV) return json({ ok: false, error: 'FORECAST_KV binding is missing' }, 500);
+        const last = await readJson(env.FORECAST_KV, LAST_RUN_KEY, null);
+        const sinceMs = last?.startedMs ? Date.now() - last.startedMs : Infinity;
+        if (sinceMs < MIN_MANUAL_RUN_GAP_MS) {
+          return json({
+            ok: false,
+            error: 'Ran too recently',
+            waitSeconds: Math.ceil((MIN_MANUAL_RUN_GAP_MS - sinceMs) / 1000),
+            lastRun: last,
+          }, 429);
+        }
+        const startedMs = Date.now();
+        try {
+          const payload = await runForecast(env, modules);
+          const scoring = await runScoring(env, modules);
+          const entry = {
+            ok: true, startedMs, finishedMs: Date.now(),
+            scored: scoring?.scored ?? 0, inputs: payload.inputs, manual: true,
+          };
+          await recordRun(env, entry);
+          return json({ ok: true, lastRun: entry });
+        } catch (error) {
+          const entry = {
+            ok: false, startedMs, finishedMs: Date.now(),
+            error: String(error?.message ?? error), manual: true,
+          };
+          await recordRun(env, entry);
+          return json({ ok: false, lastRun: entry }, 500);
+        }
       }
 
       if (url.pathname === '/health') {
