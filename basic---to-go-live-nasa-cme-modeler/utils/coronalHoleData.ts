@@ -21,7 +21,14 @@ export interface CoronalHole {
   /** Heliographic latitude of centroid (degrees, +N) */
   lat: number;
 
-  /** Heliographic longitude of centroid (degrees, Carrington) */
+  /**
+   * Heliographic longitude of the centroid, in degrees, west positive.
+   *
+   * Stonyhurst, not Carrington: it is measured from the centre of the visible
+   * disk, so zero means "facing Earth right now" and the value climbs about
+   * 13.2 degrees a day as the Sun turns. Comparing two measurements taken at
+   * different times means carrying the older one forward first.
+   */
   lon: number;
 
   /** Angular east-west width (degrees).  Drives HSS speed estimate. */

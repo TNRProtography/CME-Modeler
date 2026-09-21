@@ -56,7 +56,7 @@
 //
 //   PROXY_TTL_SECONDS      Cloudflare edge cache TTL for the proxied image.
 
-import { CoronalHole }                 from './coronalHoleData';
+import type { CoronalHole }            from './coronalHoleData';
 import { estimateHssSpeedFromChWidthAndDarkness } from './solarWindModel';
 
 // ── Tuning constants ──────────────────────────────────────────────────────────
@@ -382,10 +382,14 @@ function isCoronalHoleCandidate(region: PixelRegion, diskPixelCount: number): bo
 // ── Pixel → heliographic (orthographic projection) ───────────────────────────
 //
 // Standard solar disk orthographic projection:
-//   u = (x - cx) / r_disk        normalised horizontal  (positive = east on disk)
+//   u = (x - cx) / r_disk        normalised horizontal  (positive = right = WEST)
 //   v = (y - cy) / r_disk        normalised vertical    (positive = down = south)
 //   lat = -arcsin(v)             heliographic latitude  (positive = north)
-//   lon =  arcsin(u / cos(lat))  heliographic longitude (positive = east / left on disk)
+//   lon =  arcsin(u / cos(lat))  heliographic longitude (positive = west)
+//
+// West is positive, the same way NOAA writes a sunspot's location. The comment
+// here used to say east, which is the opposite of what the arithmetic does:
+// with solar north up, right on the image is west on the Sun.
 //
 // The disk centre corresponds to the Earth-facing point at the time of observation.
 // So lon=0 is the sub-Earth point, and values range ±90°.

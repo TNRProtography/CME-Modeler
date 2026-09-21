@@ -16,7 +16,8 @@
 //
 // ═══════════════════════════════════════════════════════════════════════
 
-import { CoronalHole } from './coronalHoleData';
+import type { CoronalHole } from './coronalHoleData';
+import { longitudeAt } from './solarDisk';
 import { detectCoronalHolesFromSuvi195 } from './suviCoronalHoleDetector';
 
 // ─── Worker endpoint ──────────────────────────────────────────────────
@@ -68,7 +69,7 @@ export interface SuviFrameInfo {
 }
 
 // ─── Constants ────────────────────────────────────────────────────────
-const SUN_SYNODIC_DEG_PER_HOUR = 13.2 / 24;
+// Rotation now comes from longitudeAt, which the rest of the app shares.
 const CH_MATCH_THRESHOLD_DEG = 25;
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -281,10 +282,17 @@ export function buildEvolutionTracks(
 
     // For each historical snapshot, find the matching CH.
     //
-    // IMPORTANT: SUVI detector outputs Carrington coordinates which are
-    // fixed to the Sun's surface. A CH at lon=45° stays near lon=45°
-    // across snapshots (with small drift from physical evolution).
-    // NO solar rotation correction is needed.
+    // IMPORTANT: the SUVI detector does NOT output Carrington coordinates,
+    // whatever the old comment here said. pixelToHG measures longitude from
+    // the centre of the disk, so it is Stonyhurst - fixed to the Earth-facing
+    // direction, not to the Sun's surface - and a hole's longitude therefore
+    // climbs about 13.2 degrees a day as the Sun turns.
+    //
+    // Matching on the raw value against a 25 degree threshold meant a snapshot
+    // two days old was already 26 degrees adrift and could not match itself,
+    // while one a day old could match a *neighbouring* hole more closely than
+    // its own earlier self. So each historical longitude is carried forward to
+    // now before being compared.
     for (const snap of history.snapshots) {
       const hoursAgo = (now - snap.timestampMs) / (3600 * 1000);
 
@@ -292,8 +300,9 @@ export function buildEvolutionTracks(
       let bestDist = CH_MATCH_THRESHOLD_DEG;
 
       for (const chData of snap.coronalHoles) {
-        // Simple proximity match in Carrington coordinates
-        const dLon = Math.abs(chData.lon - currentCH.lon);
+        // Where that measurement would sit on today's disk.
+        const projectedLon = longitudeAt(chData.lon, snap.timestampMs, now);
+        const dLon = Math.abs(projectedLon - currentCH.lon);
         const dLat = Math.abs(chData.lat - currentCH.lat);
         const dist = Math.sqrt(dLon * dLon + dLat * dLat);
         if (dist < bestDist) {
