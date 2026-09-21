@@ -36,6 +36,9 @@ import { buildRegionLabels, type RegionInput } from '../utils/regionLabels';
 import { detectSolarDiskGeometry, diskFromFraction, longitudeAt } from '../utils/solarDisk';
 import { solarDiskOrientation } from '../utils/solarEphemeris';
 import { frameSpanHours } from '../utils/framePlayback';
+import { bestSkyWithin, skyConditionsAt, visibilityOutlook } from '../utils/skyConditions';
+import { bySignForPolarity, rmWindows, windowsDuring } from '../utils/rmWindows';
+import { locationLabel, resolveViewerLocation, type ViewerLocation } from '../utils/viewerLocation';
 
 const SUVI_DIFF_WORKER_BASE = 'https://suvi-difference-imagery.thenamesrock.workers.dev';
 /**
@@ -129,6 +132,11 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
   const [boxSize, setBoxSize] = useState({ width: 0, height: 0 });
   const [natural, setNatural] = useState<{ width: number; height: number } | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [location, setLocation] = useState<ViewerLocation>(() => resolveViewerLocation());
+
+  // Asked for once and remembered, so the forecast page and this one do not
+  // each prompt for the same position.
+  useEffect(() => { resolveViewerLocation(setLocation); }, []);
 
   const boxRef = useRef<HTMLDivElement | null>(null);
 
@@ -363,8 +371,40 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
     const season = pol ? sectorSeasonNote(pol.sector, new Date()) : null;
     const gone = chDisappearance(selectedTrack, now, latestFrameMs || selectedTrack.lastSeenMs);
 
-    return { timing, choice, growth, centralMeridianMs, arrival, samples, pol, season, gone, latest };
-  }, [selectedTrack, polarity, latestFrameMs]);
+    // A stream arrives into a sky, and the sky costs more than the difference
+    // between a moderate stream and a fast one. A full Moon overhead, or the
+    // Sun already up, and there is nothing to see however good the wind is.
+    let arrivalSky = null;
+    let outlook = null;
+    let windows: ReturnType<typeof rmWindows> = [];
+    if (arrival != null) {
+      // The whole arrival window, not the nominal moment: the Moon sets and
+      // twilight ends inside seven hours, so the best part of it is often not
+      // the middle.
+      const from = arrival - ARRIVAL_UNCERTAINTY_HOURS * 3600000;
+      const to = arrival + ARRIVAL_UNCERTAINTY_HOURS * 3600000;
+      arrivalSky = bestSkyWithin(from, to, location.latitude, location.longitude)
+        ?? skyConditionsAt(arrival, location.latitude, location.longitude);
+
+      // Strength from the speed, then whatever the field geometry adds. This
+      // is an expectation, not a measurement, and the panel says so.
+      const speed = choice.speedKms ?? 0;
+      let strength = Math.max(0, Math.min(100, (speed - 330) / 3.2));
+      const bySign = pol ? bySignForPolarity(pol.polarity) : null;
+      if (bySign) {
+        windows = windowsDuring(
+          rmWindows(bySign, from - 12 * 3600000, to + 2 * DAY_MS, { byMagnitudeNt: 6 }),
+          from, to + 2 * DAY_MS,
+        );
+        if (season?.favourable === true) strength *= 1.25;
+        else if (season?.favourable === false) strength *= 0.8;
+      }
+      outlook = visibilityOutlook(strength, arrivalSky);
+    }
+
+    return { timing, choice, growth, centralMeridianMs, arrival, samples, pol, season, gone, latest,
+             arrivalSky, outlook, windows };
+  }, [selectedTrack, polarity, latestFrameMs, location]);
 
   const windowSpan = frameSpanHours(windowFrames);
   const historyDays = store.history.length > 1
@@ -558,7 +598,8 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
           </div>
 
           {selectedTrack && insight && (() => {
-            const { timing, choice, growth, centralMeridianMs, arrival, samples, pol, season, gone, latest } = insight;
+            const { timing, choice, growth, centralMeridianMs, arrival, samples, pol, season, gone, latest,
+                    arrivalSky, outlook, windows } = insight;
             const band = choice.speedKms != null ? speedBand(choice.speedKms) : null;
             return (
               <div className="bg-neutral-900/60 rounded p-3 text-sm flex flex-col gap-3">
@@ -616,6 +657,66 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
                         disk ({fmtNz(centralMeridianMs)}), at the speed above. The seven hour window is real: a stream is
                         broadened by the hole's own width and slowed where it runs into slower wind ahead of it.
                       </p>
+
+                      {/* What the sky will be doing, which decides whether any
+                          of the above is worth going outside for. */}
+                      {arrivalSky && outlook && (
+                        <div className="mt-2 rounded bg-neutral-800/60 border border-neutral-700 p-2">
+                          <div className={`text-sm font-semibold ${
+                            outlook.tier === 'eye' ? 'text-emerald-300'
+                              : outlook.tier === 'phone' ? 'text-sky-300'
+                              : outlook.tier === 'camera' ? 'text-yellow-300'
+                              : 'text-neutral-400'}`}>
+                            {outlook.label}
+                          </div>
+                          <p className="text-xs text-neutral-400 mt-0.5">{outlook.note}</p>
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-neutral-500 mt-1.5">
+                            <div>
+                              Moon: <span className="text-neutral-300">
+                                {arrivalSky.phase.name}, {Math.round(arrivalSky.phase.illumination * 100)}% lit
+                              </span>
+                            </div>
+                            <div>
+                              {arrivalSky.moonAltitude > 0
+                                ? <>Moon is <span className="text-neutral-300">{arrivalSky.moonAltitude.toFixed(0)}° up</span></>
+                                : <>Moon is <span className="text-neutral-300">below the horizon</span></>}
+                            </div>
+                            <div>Sky: <span className="text-neutral-300">{arrivalSky.darkness}</span></div>
+                            <div>Best moment: <span className="text-neutral-300">{fmtNz(arrivalSky.atMs)}</span></div>
+                          </div>
+                          <p className="text-[10px] text-neutral-600 mt-1">
+                            For {locationLabel(location)}. The best moment is the darkest point inside the arrival
+                            window, which is usually not its middle - the Moon sets and twilight ends inside seven hours.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* The hours the field geometry actually favours. */}
+                      {windows.length > 0 && (
+                        <div className="mt-2">
+                          <div className="text-neutral-400 text-xs uppercase tracking-wide mb-1">
+                            Best hours for this sector
+                          </div>
+                          <ul className="text-xs text-neutral-300 space-y-0.5">
+                            {windows.slice(0, 4).map((w) => (
+                              <li key={w.startMs} className="font-mono">
+                                {fmtNz(w.startMs)} → {new Date(w.endMs).toLocaleTimeString('en-NZ', {
+                                  timeZone: 'Pacific/Auckland', hour: '2-digit', minute: '2-digit', hour12: true })}
+                                <span className="text-neutral-500 ml-2 font-sans">
+                                  peak {new Date(w.peakMs).toLocaleTimeString('en-NZ', {
+                                    timeZone: 'Pacific/Auckland', hour: '2-digit', minute: '2-digit', hour12: true })}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                          <p className="text-[10px] text-neutral-600 mt-1">
+                            Earth's field is tilted, and that tilt turns once a day, so a {pol?.sector} sector only
+                            projects southward for part of each night. These are those hours - they recur every night
+                            the stream lasts, which is why the good nights can be named without knowing the arrival
+                            to the hour.
+                          </p>
+                        </div>
+                      )}
                     </>
                   ) : (
                     <p className="text-xs text-neutral-400">Not enough of this hole has been measured to time its stream.</p>
