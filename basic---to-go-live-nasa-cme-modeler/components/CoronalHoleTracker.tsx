@@ -37,6 +37,7 @@ import { detectSolarDiskGeometry, diskFromFraction, longitudeAt } from '../utils
 import { solarDiskOrientation } from '../utils/solarEphemeris';
 import { frameSpanHours } from '../utils/framePlayback';
 import { bestSkyWithin, skyConditionsAt, visibilityOutlook } from '../utils/skyConditions';
+import { describeSpread, hssArrivalEnsemble, measurementConfidence } from '../utils/arrivalEnsemble';
 import { bySignForPolarity, rmWindows, windowsDuring } from '../utils/rmWindows';
 import { locationLabel, resolveViewerLocation, type ViewerLocation } from '../utils/viewerLocation';
 
@@ -54,9 +55,6 @@ const MAGNETOGRAM_SOURCES = [
   { label: 'SDO 1024', url: 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_HMIB.jpg' },
   { label: 'SDO 512', url: 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_HMIB.jpg' },
 ] as const;
-
-/** The honest width of the arrival window. */
-const ARRIVAL_UNCERTAINTY_HOURS = 7;
 
 const DAY_MS = 86400000;
 const WINDOW_OPTIONS = [6, 12, 24] as const;
@@ -365,7 +363,24 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
     const growth = chGrowth(samples);
 
     const centralMeridianMs = now + timing.daysToCentralMeridian * DAY_MS;
-    const arrival = choice.speedKms != null ? hssArrivalMs(choice.speedKms, centralMeridianMs) : null;
+
+    // How well this hole is actually measured, which is what the spread
+    // should respond to. A hole seen fifty times while it crossed the middle
+    // of the disk is a different proposition from one glimpsed once near the
+    // limb, and a fixed plus-or-minus cannot say so.
+    const closestToMeridian = samples.length > 0
+      ? samples.reduce((a, b) => (Math.abs(a) <= Math.abs(b.longitude) ? a : b.longitude), 180)
+      : 90;
+    const spanHours = samples.length > 1
+      ? (samples[samples.length - 1].atMs - samples[0].atMs) / 3600000
+      : 0;
+    const confidence = measurementConfidence(samples.length, spanHours, closestToMeridian);
+
+    const ensemble = choice.speedKms != null
+      ? hssArrivalEnsemble({ centralMeridianMs, speedKms: choice.speedKms, confidence })
+      : null;
+    const arrival = ensemble ? ensemble.medianMs
+      : (choice.speedKms != null ? hssArrivalMs(choice.speedKms, centralMeridianMs) : null);
 
     const pol = polarity[latest.id] ?? null;
     const season = pol ? sectorSeasonNote(pol.sector, new Date()) : null;
@@ -381,8 +396,8 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
       // The whole arrival window, not the nominal moment: the Moon sets and
       // twilight ends inside seven hours, so the best part of it is often not
       // the middle.
-      const from = arrival - ARRIVAL_UNCERTAINTY_HOURS * 3600000;
-      const to = arrival + ARRIVAL_UNCERTAINTY_HOURS * 3600000;
+      const from = ensemble ? ensemble.p10Ms : arrival - 7 * 3600000;
+      const to = ensemble ? ensemble.p90Ms : arrival + 7 * 3600000;
       arrivalSky = bestSkyWithin(from, to, location.latitude, location.longitude)
         ?? skyConditionsAt(arrival, location.latitude, location.longitude);
 
@@ -403,7 +418,7 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
     }
 
     return { timing, choice, growth, centralMeridianMs, arrival, samples, pol, season, gone, latest,
-             arrivalSky, outlook, windows };
+             arrivalSky, outlook, windows, ensemble, confidence };
   }, [selectedTrack, polarity, latestFrameMs, location]);
 
   const windowSpan = frameSpanHours(windowFrames);
@@ -599,7 +614,7 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
 
           {selectedTrack && insight && (() => {
             const { timing, choice, growth, centralMeridianMs, arrival, samples, pol, season, gone, latest,
-                    arrivalSky, outlook, windows } = insight;
+                    arrivalSky, outlook, windows, ensemble, confidence } = insight;
             const band = choice.speedKms != null ? speedBand(choice.speedKms) : null;
             return (
               <div className="bg-neutral-900/60 rounded p-3 text-sm flex flex-col gap-3">
@@ -639,23 +654,33 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
                   {arrival != null ? (
                     <>
                       <div className="flex items-baseline gap-3 flex-wrap">
-                        <span className="font-mono text-base text-sky-300">
-                          {fmtNz(arrival)} <span className="text-neutral-400">± {ARRIVAL_UNCERTAINTY_HOURS} hours</span>
-                        </span>
+                        <span className="font-mono text-base text-sky-300">{fmtNz(arrival)}</span>
+                        {ensemble && (
+                          <span className="text-xs text-neutral-400">{describeSpread(ensemble)}</span>
+                        )}
                         {arrival > nowMs && (
                           <span className="font-mono text-sm text-emerald-300">{fmtCountdown(arrival, nowMs)}</span>
                         )}
                       </div>
-                      <div className="text-xs text-neutral-400 mt-0.5">
-                        NZ time · window {fmtNz(arrival - ARRIVAL_UNCERTAINTY_HOURS * 3600000)}
-                        {' to '}{fmtNz(arrival + ARRIVAL_UNCERTAINTY_HOURS * 3600000)}
-                      </div>
+                      {ensemble && (
+                        <div className="text-xs text-neutral-400 mt-0.5">
+                          NZ time · 8 in 10 land between {fmtNz(ensemble.p10Ms)} and {fmtNz(ensemble.p90Ms)}
+                        </div>
+                      )}
                       {/* Where we are in the arrival window, as a bar. */}
                       <ArrivalBar arrivalMs={arrival} nowMs={nowMs} centralMeridianMs={centralMeridianMs} />
                       <p className="text-xs text-neutral-500 mt-1">
                         Run from the moment the hole {timing.facingEarthOrPast ? 'crossed' : 'crosses'} the middle of the
-                        disk ({fmtNz(centralMeridianMs)}), at the speed above. The seven hour window is real: a stream is
-                        broadened by the hole's own width and slowed where it runs into slower wind ahead of it.
+                        disk ({fmtNz(centralMeridianMs)}), at the speed above.
+                        {ensemble && (
+                          <> The window is not asserted: {ensemble.members} runs with the speed, the crossing time and
+                          the chance of being held up by slower wind all varied by as much as they are actually
+                          uncertain. It is lopsided because the physics is - a stream can be delayed by slower wind
+                          ahead of it, but nothing makes it arrive early. This hole is
+                          {confidence > 0.66 ? ' well measured, so the band is as tight as it gets'
+                            : confidence > 0.33 ? ' reasonably measured'
+                            : ' barely measured yet, so the band is wide'}.</>
+                        )}
                       </p>
 
                       {/* What the sky will be doing, which decides whether any
