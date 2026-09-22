@@ -62,6 +62,8 @@ interface ControlsPanelProps {
   onShowSunspotsChange: (show: boolean) => void;
   /** How many NOAA regions are currently on the Earth-facing disk. */
   sunspotCount?: number;
+  /** When NOAA measured them, so the reader can judge the placement. */
+  sunspotObservedAtMs?: number | null;
   chDetectionStatus?: 'idle' | 'loading' | 'detected' | 'empty' | 'error';
   cmeFilter: CMEFilter;
   onCmeFilterChange: (filter: CMEFilter) => void;
@@ -113,6 +115,7 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
   showSunspots,
   onShowSunspotsChange,
   sunspotCount = 0,
+  sunspotObservedAtMs = null,
   chDetectionStatus,
   cmeFilter,
   onCmeFilterChange,
@@ -256,6 +259,18 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
             <p className="text-xs text-neutral-500 -mt-1">
               NOAA active regions, sized by area and placed where they are now rather than where they
               were reported - the Sun turns about half a degree an hour.
+              {showSunspots && sunspotObservedAtMs != null && (() => {
+                const hours = (Date.now() - sunspotObservedAtMs) / 3600000;
+                return (
+                  <>
+                    {' '}Measured <span className="text-neutral-400">
+                      {hours < 1 ? 'within the hour' : `${Math.round(hours)} hours ago`}
+                    </span>, so they have been carried{' '}
+                    <span className="text-neutral-400">{(hours * 0.54).toFixed(0)}°</span> west of the
+                    reported position. NOAA issues this once a day; there is no faster source.
+                  </>
+                );
+              })()}
             </p>
 
             {/* ── High-Speed Stream toggle ──────────────────────────────────── */}

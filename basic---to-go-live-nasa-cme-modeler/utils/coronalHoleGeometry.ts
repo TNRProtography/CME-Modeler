@@ -50,6 +50,7 @@
 
 import { CoronalHole } from './coronalHoleData';
 import { interpolateCHAtTimeMs, type CHEvolution } from './coronalHoleHistory';
+import { longitudeAt } from './solarDisk';
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 const SPIRAL_POINTS          = 220;
@@ -1084,8 +1085,31 @@ export function buildTimeVaryingSpiralMesh(
  */
 export function buildSunspotMarker(
   THREE: any,
-  region: { latitude: number; longitude: number; area?: number | null; color: string },
+  region: {
+    latitude: number;
+    longitude: number;
+    /** When NOAA measured it. Null means treat the report as current. */
+    observedAtMs?: number | null;
+    area?: number | null;
+    color: string;
+  },
   sunRadius: number,
+  /**
+   * The frame the marker is placed in.
+   *
+   * NOAA issues the Solar Region Summary once a day, from observations taken
+   * around 2400 UT, so a report can be most of a day old - and the Sun turns
+   * 13.2 degrees in that time. Drawing a region at its REPORTED longitude
+   * puts it that far east of where it actually is, which is why the markers
+   * slide off the groups they name as the day wears on.
+   *
+   * Every report is therefore carried into one fixed epoch. Fixed matters:
+   * carrying into "now" instead would advance the markers on every refresh
+   * while the Sun advanced underneath them, so they would creep west at twice
+   * the solar rate. With a fixed epoch a rebuild changes nothing, and the
+   * Sun's own rotation does all the moving.
+   */
+  epochMs: number,
 ): any {
   const area = Math.max(0, region.area ?? 0);
   // Square root, because area is an area: doubling the radius quadruples it,
@@ -1110,7 +1134,10 @@ export function buildSunspotMarker(
   const mesh = new THREE.Mesh(geometry, material);
   mesh.renderOrder = 12;
 
-  const normal = hgToVec(THREE, region.latitude, region.longitude).normalize();
+  const longitude = region.observedAtMs != null
+    ? longitudeAt(region.longitude, region.observedAtMs, epochMs)
+    : region.longitude;
+  const normal = hgToVec(THREE, region.latitude, longitude).normalize();
   // Above the CH patches at 1.018, so a region inside a hole reads as being
   // inside it rather than being swallowed by it.
   mesh.position.copy(normal.clone().multiplyScalar(sunRadius * 1.025));

@@ -19,7 +19,17 @@ export const CARTO_DARK_TILE_URL = `https://{s}.basemaps.cartocdn.com/dark_all/{
 
 export const AU_IN_KM = 149597870.7;
 export const SCENE_SCALE = 3.0; // Affects visual scaling of distances and CMEs relative to planets
-export const SUN_ANGULAR_VELOCITY = 2.61799e-6; // rad/sec (approx for 27.27 day synodic period)
+// Synodic - the turn as seen from Earth, which is what every longitude in
+// this app is measured against.
+//
+// This was 2.61799e-6, described in a comment as 27.27 days but actually
+// 27.78: 12.96 degrees a day against the 13.199 that solarDisk's
+// SOLAR_SYNODIC_DEG_PER_DAY uses. Everything placed by carrying a longitude
+// forward - sunspot markers, coronal hole patches - therefore drifted against
+// the surface it was drawn on by 1.67 degrees a week. Derived from the same
+// Carrington period as the rest of the app so the two cannot part company.
+export const SUN_SYNODIC_PERIOD_DAYS = 27.2753;
+export const SUN_ANGULAR_VELOCITY = (2 * Math.PI) / (SUN_SYNODIC_PERIOD_DAYS * 86400); // rad/sec
 
 // Angles are vestigial (kept for PlanetData type compatibility).
 // Actual positions are computed per-frame in SimulationCanvas using

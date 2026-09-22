@@ -617,6 +617,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const chShapeBucketRef = useRef<number>(0);
   /** What was last built, so an unchanged Sun is not rebuilt. */
   const chSignatureRef = useRef<string>('');
+  /**
+   * The frame the sunspot markers are placed in, fixed for the session.
+   *
+   * See buildSunspotMarker: reports are carried into this epoch so a stale
+   * bulletin lands where the regions actually are. It must not follow the
+   * clock, or every refresh would advance the markers while the Sun advanced
+   * underneath them.
+   */
+  const spotEpochRef = useRef<number>(Date.now());
   // The two surface-label sets are produced by different effects on different
   // triggers, so they are kept apart and merged on publish - otherwise
   // toggling the sunspots would silently drop the hole labels.
@@ -1986,7 +1995,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const sunR = PLANET_DATA_MAP.SUN.size;
     const spotLabels: SurfaceLabelInfo[] = [];
     sunspotRegions.forEach((region) => {
-      const marker = buildSunspotMarker(THREE, region, sunR);
+      const marker = buildSunspotMarker(THREE, region, sunR, spotEpochRef.current);
       group.add(marker);
       spotLabels.push({
         id: `spot-${region.id}`,

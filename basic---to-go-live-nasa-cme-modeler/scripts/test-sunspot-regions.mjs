@@ -150,6 +150,55 @@ try {
           'a numeric longitude inside a hemisphere is still trusted');
   }
 
+
+  console.log('\nA day-old bulletin is drawn where the regions are now');
+  {
+    // NOAA issues the Solar Region Summary once a day, from observations
+    // around 2400 UT, and the Sun turns 13.2 degrees between issues. There is
+    // no faster authoritative source, so the age has to be corrected for
+    // rather than waited out.
+    const SYNODIC = 360 / 27.2753;
+    const carry = (lon, observedAtMs, epochMs) => lon + SYNODIC * ((epochMs - observedAtMs) / DAY);
+
+    const epoch = now;
+    check(Math.abs(carry(0, now, epoch)) < 1e-9, 'a report measured at the epoch is not moved');
+    check(Math.abs(carry(0, now - DAY, epoch) - 13.2) < 0.05,
+          `a day-old report is carried 13.2° west (${carry(0, now - DAY, epoch).toFixed(2)}°)`,
+          carry(0, now - DAY, epoch).toFixed(2));
+    check(Math.abs(carry(0, now - 12 * 3600000, epoch) - 6.6) < 0.05,
+          'and a half-day-old one by half that');
+
+    // The trap: carrying into "now" rather than a fixed epoch. Each refresh
+    // would advance the markers while the Sun advanced underneath them, so
+    // they would creep west at twice the solar rate and leave the groups they
+    // name within a day.
+    const observed = now - DAY;
+    const fixedEpoch = [0, 6, 12].map((h) => carry(0, observed, epoch));
+    check(new Set(fixedEpoch.map((v) => v.toFixed(6))).size === 1,
+          'with a fixed epoch, refreshing changes nothing and the Sun does the moving');
+
+    const movingEpoch = [0, 6, 12].map((h) => carry(0, observed, now + h * 3600000));
+    const creep = movingEpoch[2] - movingEpoch[0];
+    check(Math.abs(creep - 12 * (SYNODIC / 24)) < 0.01,
+          `whereas carrying into "now" adds ${creep.toFixed(1)}° of its own over 12 hours, on top of the Sun's`,
+          creep.toFixed(2));
+  }
+
+  console.log('\nThe age is reported, because a daily source cannot hide it');
+  {
+    const rows = [
+      { region: 4400, location: 'N10W20', area: 100, observed_date: dateStr(now - DAY) },
+      { region: 4401, location: 'S05E30', area: 100, observed_date: dateStr(now) },
+    ];
+    const got = normaliseRegions(rows, now);
+    check(got.length === 2, 'both regions survive');
+    check(got.every((r) => r.observedAtMs != null),
+          'and every one carries the time it was measured, which is what the correction needs');
+    const newest = Math.max(...got.map((r) => r.observedAtMs));
+    check(newest === Date.parse(`${dateStr(now)}T00:00:00Z`),
+          'the newest measurement is what the panel reports the age from');
+  }
+
 } finally {
   rmSync(out, { recursive: true, force: true });
 }

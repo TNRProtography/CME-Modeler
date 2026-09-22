@@ -451,7 +451,11 @@ try {
     // the holes hang in space while the surface turns under them. That is
     // what was happening, and it got worse when the rebuild started firing
     // every two simulated hours instead of only on fresh imagery.
-    const SUN_AV = 2.61799e-6;            // rad/s, as in constants.ts
+    // As in constants.ts, derived from the same Carrington synodic period as
+    // solarDisk's SOLAR_SYNODIC_DEG_PER_DAY. They used to disagree by 0.24
+    // degrees a day, so anything placed by carrying a longitude forward
+    // drifted against the surface it was drawn on by 1.67 degrees a week.
+    const SUN_AV = (2 * Math.PI) / (27.2753 * 86400);
     const sunRotation = (ms) => SUN_AV * (ms / 1000);
     const anchorMs = now;
 
@@ -465,14 +469,16 @@ try {
     check(frozenMove < 1e-9,
           `re-capturing the anchor freezes the holes exactly (${frozenMove.toFixed(6)}°/day)`,
           frozenMove.toFixed(6));
-    check(Math.abs(correctMove - 12.96) < 0.05,
+    check(Math.abs(correctMove - SOLAR_SYNODIC_DEG_PER_DAY) < 0.05,
           `a constant anchor turns them with the Sun (${correctMove.toFixed(2)}°/day)`,
           correctMove.toFixed(2));
+    check(Math.abs(correctMove - SOLAR_SYNODIC_DEG_PER_DAY) < 0.05,
+          'at exactly the rate every longitude in the app is carried at, so nothing drifts');
 
     // And the rate has to be the Sun's, which is why this is invisible in a
     // live view and only obvious when the timeline is scrubbed: half a degree
     // an hour.
-    check(Math.abs(correctMove / 24 - 0.54) < 0.01,
+    check(Math.abs(correctMove / 24 - 0.55) < 0.01,
           `which is ${(correctMove / 24).toFixed(2)}° an hour - why it reads as static in real time`,
           (correctMove / 24).toFixed(3));
   }

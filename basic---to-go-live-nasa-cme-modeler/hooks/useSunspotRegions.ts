@@ -9,7 +9,7 @@
 //
 // Through the image proxy's data route: SWPC sends no CORS headers.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { longitudeAt } from '../utils/solarDisk';
 import type { RegionInput } from '../utils/regionLabels';
 
@@ -135,6 +135,8 @@ export function normaliseRegions(rows: any[], nowMs = Date.now()): SunspotRegion
 
 export function useSunspotRegions(enabled = true): {
   regions: SunspotRegion[];
+  /** When NOAA measured the newest region in the set. */
+  observedAtMs: number | null;
   error: string | null;
 } {
   const [regions, setRegions] = useState<SunspotRegion[]>([]);
@@ -171,5 +173,13 @@ export function useSunspotRegions(enabled = true): {
     return () => { cancelled = true; clearInterval(id); };
   }, [enabled]);
 
-  return { regions, error };
+  // The bulletin is daily, so how old it is matters: the Sun turns 13.2
+  // degrees between issues, and a reader comparing markers against live
+  // imagery deserves to know which of the two is behind.
+  const observedAtMs = useMemo(() => {
+    const times = regions.map((r) => r.observedAtMs).filter((t): t is number => t != null);
+    return times.length ? Math.max(...times) : null;
+  }, [regions]);
+
+  return { regions, observedAtMs, error };
 }
