@@ -58,9 +58,9 @@ interface ControlsPanelProps {
   onShowFluxRopeChange: (show: boolean) => void; // --- NEW: Handler for Flux Rope ---
   showHss: boolean;
   onShowHssChange: (show: boolean) => void;
-  /** Streams as walls a CME's spread cannot cross - 3D view only. */
-  hssBarrier?: boolean;
-  onHssBarrierChange?: (on: boolean) => void;
+  /** Experimental CME/HSS interactions - 3D view only. */
+  experimentalInteractions?: boolean;
+  onExperimentalInteractionsChange?: (on: boolean) => void;
   showSunspots: boolean;
   onShowSunspotsChange: (show: boolean) => void;
   /** How many NOAA regions are currently on the Earth-facing disk. */
@@ -115,8 +115,8 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
   onShowFluxRopeChange,
   showHss,
   onShowHssChange,
-  hssBarrier = false,
-  onHssBarrierChange,
+  experimentalInteractions = false,
+  onExperimentalInteractionsChange,
   showSunspots,
   onShowSunspotsChange,
   sunspotCount = 0,
@@ -328,17 +328,24 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
                 </p>
               </div>
             )}
-            {showHss && onHssBarrierChange && (
+            {onExperimentalInteractionsChange && (
               <>
-                <ToggleSwitch
-                  id="hss-barrier-toggle"
-                  label="HSS barrier (experimental)"
-                  checked={hssBarrier}
-                  onChange={onHssBarrierChange}
-                />
+                <div className="flex items-center justify-between">
+                  <ToggleSwitch
+                    id="experimental-interactions-toggle"
+                    label="Experimental Interactions - CMEs and HSS"
+                    checked={experimentalInteractions}
+                    onChange={onExperimentalInteractionsChange}
+                  />
+                  <span className="ml-2 flex-shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                    EXPERIMENTAL
+                  </span>
+                </div>
                 <p className="text-xs text-neutral-500 -mt-1">
-                  Treats each stream as a wall. A CME keeps the direction and speed NASA measured, but a
-                  flank that would spread into a stream stops at its edge and piles up there (brighter).
+                  How storms and high-speed streams interact with each other, in a real-world manner.
+                  Streams are walls: a CME flank that would spread into one stops at its edge. CMEs that
+                  meet squeeze each other, with the faster, wider one giving less ground; a CME that
+                  catches another compresses into it. Squeezed parts glow brighter. Turns the HSS view on.
                   3D view only - forecasts and arrival times are unchanged.
                 </p>
               </>

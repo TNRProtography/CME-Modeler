@@ -326,8 +326,9 @@ const App: React.FC = () => {
   // markers before anybody asks for them.
   const [showSunspots, setShowSunspots] = useState(false);
   const [rerunHssInteraction] = useState(true);
-  // Experimental: streams as walls to CME spread, drawn only - off by default.
-  const [hssBarrier, setHssBarrier] = useState(false);
+  // Experimental: streams as walls to CME spread and CMEs squeezing each
+  // other, in the 3D view only - off by default.
+  const [experimentalInteractions, setExperimentalInteractions] = useState(false);
   const [rerunToken, setRerunToken] = useState(0);
   const [rerunAwaitingHssData, setRerunAwaitingHssData] = useState(false);
   const [sharedSuvi195Url, setSharedSuvi195Url] = useState<string | null>(null);
@@ -1071,6 +1072,13 @@ const App: React.FC = () => {
     if (!next) setRerunAwaitingHssData(false);
   }, []);
 
+  // The streams are half of what the interactions are about, so switching them
+  // on brings the HSS view with them.
+  const handleExperimentalInteractionsChange = useCallback((next: boolean) => {
+    setExperimentalInteractions(next);
+    if (next) handleShowHssChange(true);
+  }, [handleShowHssChange]);
+
   const filteredCmes = useMemo(() => { if (cmeFilter === CMEFilter.ALL) return cmeData; return cmeData.filter((cme: ProcessedCME) => cmeFilter === CMEFilter.EARTH_DIRECTED ? cme.isEarthDirected : !cme.isEarthDirected); }, [cmeData, cmeFilter]);
   
   const cmesToRender = useMemo(() => {
@@ -1552,7 +1560,7 @@ const App: React.FC = () => {
               <Suspense fallback={null}>
               <div className="w-full h-full flex-grow min-h-0 flex">
                 <div id="controls-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-xs fixed top-[4.25rem] left-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isControlsOpen ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:top-auto lg:left-auto lg:h-auto lg:transform-none`}>
-                    <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => navigateToModelerOverlay(null)} onOpenGuide={handleOpenTutorial} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} showHss={showHss} onShowHssChange={handleShowHssChange} hssBarrier={hssBarrier} onHssBarrierChange={setHssBarrier} showSunspots={showSunspots} onShowSunspotsChange={setShowSunspots} sunspotCount={sunspotRegions.length} sunspotObservedAtMs={sunspotObservedAtMs} chDetectionStatus={chDetectionStatus} />
+                    <ControlsPanel activeTimeRange={activeTimeRange} onTimeRangeChange={handleTimeRangeChange} activeView={activeView} onViewChange={handleViewChange} activeFocus={activeFocus} onFocusChange={handleFocusChange} isLoading={isLoading} onClose={() => navigateToModelerOverlay(null)} onOpenGuide={handleOpenTutorial} showLabels={showLabels} onShowLabelsChange={setShowLabels} showExtraPlanets={showExtraPlanets} onShowExtraPlanetsChange={setShowExtraPlanets} showMoonL1={showMoonL1} onShowMoonL1Change={setShowMoonL1} cmeFilter={cmeFilter} onCmeFilterChange={setCmeFilter} showFluxRope={showFluxRope} onShowFluxRopeChange={setShowFluxRope} showHss={showHss} onShowHssChange={handleShowHssChange} experimentalInteractions={experimentalInteractions} onExperimentalInteractionsChange={handleExperimentalInteractionsChange} showSunspots={showSunspots} onShowSunspotsChange={setShowSunspots} sunspotCount={sunspotRegions.length} sunspotObservedAtMs={sunspotObservedAtMs} chDetectionStatus={chDetectionStatus} />
                 </div>
 
                 <main id="simulation-canvas-main" className="flex-1 relative min-w-0 h-full">
@@ -1643,7 +1651,7 @@ const App: React.FC = () => {
                         measuredWindSpeedKms={measuredWindSpeedKms}
                         rerunToken={rerunToken}
                         rerunHssInteraction={rerunHssInteraction}
-                        hssBarrier={showHss && hssBarrier}
+                        experimentalInteractions={experimentalInteractions}
                     />
                     {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
                     {showLabels && rendererDomElement && threeCamera && sunInfo && surfaceLabels.length > 0 && (

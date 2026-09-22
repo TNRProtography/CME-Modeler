@@ -13,7 +13,14 @@
  * sliver of its overshoot so the pile-up has some depth, and marked so the
  * fragment shader can brighten it - the compression, made visible.
  *
+ * The same patch squeezes along the CME's depth for CME–CME catch-ups:
+ * uHbRadial holds the (back, front) radii the body is held between, and a
+ * particle past either is pulled back onto it, keeping a little more of its
+ * overshoot than at a wall so the body reads as compressed, not sliced.
+ *
  * Pass the front's uniforms when patching its tail so both obey one wall.
+ * (The tail gets its own uHbRadial - it trails far behind the body, and
+ * squeezing it onto the body's back would fold it away.)
  *
  * r128 does not upload viewMatrix to a PointsMaterial, so the camera's view
  * comes in as uHbView, set by bindHssBarrierView just before the object is
@@ -26,6 +33,7 @@ export function attachHssBarrierShader(THREE: any, material: any, shared?: any) 
     uHbWest: { value: new THREE.Vector2(10, 0) },
     uHbEast: { value: new THREE.Vector2(10, 0) },
     uHbView: { value: new THREE.Matrix4() },
+    uHbRadial: { value: new THREE.Vector2(0, 1e9) },
   };
   material.userData.hssBarrier = u;
   material.onBeforeCompile = (shader: any) => {
@@ -37,6 +45,7 @@ uniform float uHbAz;
 uniform vec2 uHbWest;
 uniform vec2 uHbEast;
 uniform mat4 uHbView;
+uniform vec2 uHbRadial;
 varying float vHbSquash;`)
       .replace('#include <project_vertex>', `vec4 mvPosition = modelViewMatrix * vec4( transformed, 1.0 );
 vHbSquash = 0.0;
@@ -59,6 +68,14 @@ if ( uHbOn > 0.5 ) {
   float hbC = cos( hbD );
   float hbS = sin( hbD );
   hbWorld.xz = vec2( hbWorld.x * hbC + hbWorld.z * hbS, hbWorld.z * hbC - hbWorld.x * hbS );
+  float hbL = length( hbWorld.xyz );
+  if ( hbL > uHbRadial.y ) {
+    hbWorld.xyz *= ( uHbRadial.y + ( hbL - uHbRadial.y ) * 0.12 ) / hbL;
+    vHbSquash = max( vHbSquash, clamp( ( hbL - uHbRadial.y ) / ( 0.25 * uHbRadial.y ), 0.25, 1.0 ) );
+  } else if ( hbL < uHbRadial.x && hbL > 0.0 ) {
+    hbWorld.xyz *= ( uHbRadial.x - ( uHbRadial.x - hbL ) * 0.12 ) / hbL;
+    vHbSquash = max( vHbSquash, clamp( ( uHbRadial.x - hbL ) / ( 0.25 * uHbRadial.x ), 0.25, 1.0 ) );
+  }
   mvPosition = uHbView * hbWorld;
 }
 gl_Position = projectionMatrix * mvPosition;`);

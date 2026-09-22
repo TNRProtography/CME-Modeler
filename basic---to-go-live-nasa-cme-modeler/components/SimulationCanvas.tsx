@@ -39,6 +39,10 @@ import {
   type HssStreamSamples, type StreamSector,
 } from '../utils/hssBarrier';
 import { attachHssBarrierShader, bindHssBarrierView } from '../utils/hssBarrierShader';
+import {
+  resolveCmeInteractions, interactionNotes, shortCmeLabel,
+  type CmeAdjustment, type CmeBody,
+} from '../utils/cmeInteractions';
 import type { SurfaceLabelInfo } from './SolarSurfaceLabels';
 import {
   computeEclipticLongitude,
@@ -469,8 +473,11 @@ interface SimulationCanvasProps {
   rerunToken?: number;
   /** Whether the re-run CME vs HSS interaction mode is active */
   rerunHssInteraction?: boolean;
-  /** Experimental: HSS streams as walls to CME spread, in the 3D view only. */
-  hssBarrier?: boolean;
+  /**
+   * Experimental interactions, 3D view only: HSS streams are walls to CME
+   * spread, and CMEs that meet squeeze each other.
+   */
+  experimentalInteractions?: boolean;
   /** NOAA active regions, drawn on the Sun when showSunspots is on. */
   sunspotRegions?: RegionInput[];
   showSunspots?: boolean;
@@ -488,7 +495,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     showFluxRope, bzSouth = false, showHss, coronalHoles, chDetectedAtMs = null, chEvolutions = [], dataVersion, interactionMode, onSunClick,
     sunspotRegions = [], showSunspots = false, setSurfaceLabels,
     measuredWindSpeedKms, rerunToken = 0, rerunHssInteraction = false,
-    hssBarrier = false,
+    experimentalInteractions = false,
   } = props;
 
   const mountRef           = useRef<HTMLDivElement>(null);
@@ -515,21 +522,23 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   // HSS barrier notes, per CME id, written each frame and read into state a
   // couple of times a second - React has no business re-rendering per frame.
   const barrierNotesRef = useRef<Map<string, string>>(new Map());
+  // CME–CME meetings for the current frame, resolved for all CMEs at once.
+  const cmeInteractionsRef = useRef<Map<string, CmeAdjustment>>(new Map());
   const [barrierNotes, setBarrierNotes] = useState<string[]>([]);
   useEffect(() => {
-    if (!hssBarrier) {
+    if (!experimentalInteractions) {
       barrierNotesRef.current.clear();
       setBarrierNotes([]);
       return;
     }
     const id = window.setInterval(() => {
       const next = Array.from(barrierNotesRef.current.entries())
-        .map(([cmeId, note]) => `${cmeId}: ${note}`)
+        .map(([cmeId, note]) => `${shortCmeLabel(cmeId)}: ${note}`)
         .sort();
       setBarrierNotes((prev) => (prev.join('\n') === next.join('\n') ? prev : next));
     }, 500);
     return () => window.clearInterval(id);
-  }, [hssBarrier]);
+  }, [experimentalInteractions]);
   // Parented to sunMesh alongside chGroup, so the spots turn with the Sun for
   // free rather than needing their longitude advanced every frame.
   const spotGroupRef   = useRef<any>(null);
@@ -729,153 +738,82 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     // CME is placed), which acts on the drawn CME itself.
     let heldDist = dist;
 
-    // ── Visual CME↔CME non-penetration (Physics Model only) ──────────────
-    //
-    //  Physical basis (Lugaz et al. 2017, J. Geophys. Res.):
-    //  When a fast CME overtakes a slower preceding CME, the interaction
-    //  proceeds through several stages:
-    //
-    //  1. SHEATH COMPRESSION - the fast CME's driven sheath compresses
-    //     against the slow CME's trailing magnetic ejecta. Plasma piles up
-    //     at the interface; neither structure can simply phase through the
-    //     other because the magnetic pressure of the ejecta acts as a
-    //     barrier (Manchester et al. 2017, Space Sci. Rev. 212:1159).
-    //
-    //  2. MOMENTUM EXCHANGE - the interaction is approximately an inelastic
-    //     collision. The fast CME decelerates while the slow CME accelerates.
-    //     Gopalswamy et al. (2001, ApJ 548:L91) showed merged speed follows:
-    //       v_merged ≈ (m1·v1 + m2·v2) / (m1 + m2)
-    //     Since mass ∝ v² (kinetic energy proxy), faster CMEs dominate.
-    //
-    //  3. LATERAL DEFLECTION - when angular separation > 0 but < combined
-    //     half-widths, the CMEs deflect away from each other
-    //     (Shen et al. 2012, Solar Phys. 269:389). The deflection angle
-    //     depends on the relative momentum and angular overlap.
-    //
-    //  4. CANNIBALIZATION - if a fast CME fully engulfs a slow one, the
-    //     result is a "complex ejecta" with disordered Bz, enhanced density,
-    //     and intermediate speed (Burlaga et al. 2002, J. Geophys. Res.).
-    //     The consumed CME fades from view (handled by propagation engine).
-    //
-    //  Here we implement stages 1–3 as visual effects: radial holdback,
-    //  sheath compression (scale change), and lateral deflection.
-    //
-    let cmeCmePressure = 0;
-    let cmeCmeBendSign = 0;
-    let cmeCmeCompression = 0;
-
-    if (rerunHssInteraction && cmeFrameStatesRef.current.size > 0) {
-      const thisId = cme.id;
-      const thisLat = Number.isFinite(cme.latitude) ? cme.latitude : 0;
-      const thisLon = Number.isFinite(cme.longitude) ? cme.longitude : 0;
-      const thisHalfAngle = cme.halfAngle ?? 30;
-      const thisDist = sunRadius + heldDist;  // current heliocentric distance
-
-      cmeFrameStatesRef.current.forEach((other, otherId) => {
-        if (otherId === thisId) return;
-        if (other.dist < sunRadius * 0.3) return;  // other CME too close to Sun
-
-        // ── Angular separation (Haversine on the helio sphere) ───────────
-        const otherLat = other.latitude;
-        const otherLon = other.longitude;
-        const dLatR = THREE.MathUtils.degToRad(thisLat - otherLat);
-        const dLonR = THREE.MathUtils.degToRad(thisLon - otherLon);
-        const lat1R = THREE.MathUtils.degToRad(thisLat);
-        const lat2R = THREE.MathUtils.degToRad(otherLat);
-        const sdLat = Math.sin(dLatR * 0.5);
-        const sdLon = Math.sin(dLonR * 0.5);
-        const hav2 = sdLat * sdLat + Math.cos(lat1R) * Math.cos(lat2R) * sdLon * sdLon;
-        const angSep = THREE.MathUtils.radToDeg(2 * Math.asin(Math.min(1, Math.sqrt(Math.max(0, hav2)))));
-
-        // Combined interaction cone - CMEs interact when their half-widths overlap
-        const combinedCone = (thisHalfAngle + (other.halfAngle ?? 30)) * 0.7;
-        if (angSep >= combinedCone) return;
-
-        // ── Radial proximity check ───────────────────────────────────────
-        // We care about cases where THIS CME is approaching or at the same
-        // radial distance as the OTHER CME.
-        const otherDist = other.dist;
-        const radialGap = otherDist - thisDist;  // positive = other is ahead
-
-        // Only apply blocking when this CME is close behind or at the other
-        // (within ~0.15 AU in scene units)
-        const blockingRange = PLANET_DATA_MAP.EARTH.radius * 0.15;
-        if (radialGap < -blockingRange || radialGap > blockingRange * 1.5) return;
-
-        // ── Interaction intensity ────────────────────────────────────────
-        // Peaks when angular separation ≈ 0 and radial gap ≈ 0
-        const angularOverlap2 = 1 - (angSep / combinedCone);
-        const radialCloseness = 1 - Math.abs(radialGap) / (blockingRange * 1.5);
-        const interactionStrength = Math.max(0, angularOverlap2 * radialCloseness);
-
-        // ── Non-penetration: hold this CME back ──────────────────────────
-        // When this (faster) CME catches the other (slower), cap its distance
-        // so it doesn't pass through. The front piles up at the other's rear.
-        if (radialGap > 0 && radialGap < blockingRange) {
-          const penetrationFraction = 1 - radialGap / blockingRange;
-          const holdback = penetrationFraction * angularOverlap2;
-          // Reduce heldDist so this CME stops at the other's trailing edge
-          // Scale factor: at full overlap, hold back up to 65% of closing distance
-          const maxHoldback = radialGap * 0.65 * holdback;
-          heldDist = Math.max(sunRadius * 0.1, heldDist - maxHoldback);
-        }
-        // If this CME has passed the other (radialGap < 0), push it back
-        if (radialGap < 0 && radialGap > -blockingRange * 0.5) {
-          const overshot = Math.abs(radialGap) / (blockingRange * 0.5);
-          heldDist = Math.max(sunRadius * 0.1, heldDist - overshot * angularOverlap2 * blockingRange * 0.3);
-        }
-
-        if (interactionStrength > cmeCmePressure) {
-          cmeCmePressure = interactionStrength;
-          cmeCmeBendSign = Math.sign(thisLon - otherLon) || 1;
-          cmeCmeCompression = interactionStrength;
-        }
-      });
-    }
+    // The old CME↔CME holdback lived here and, like the old stream squash,
+    // only ever reached the colour. CME–CME meetings are now resolved for all
+    // CMEs together before any is drawn (layoutCmes) and applied below.
+    const interaction = experimentalInteractions && cme.id
+      ? cmeInteractionsRef.current.get(cme.id)
+      : undefined;
 
     // Keep position physics simple and stable:
     // - location follows radial propagation distance
     // - no lateral deflection / non-penetration offsets
-    const radialDist = Math.max(0, dist);
+    const radialDist = Math.max(0, dist) + (interaction?.shift ?? 0);
     cmeObject.position.copy(dir.clone().multiplyScalar(sunRadius + radialDist));
     const lateral = Math.max(radialDist * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle ?? 30)), sunRadius * 0.3);
     const sXZ = lateral / GCS_ARC_RADIUS_FRAC;
     const totalAxialStretch = GCS_AXIAL_DEPTH_FRAC;
     cmeObject.scale.set(sXZ, sXZ * totalAxialStretch, sXZ);
 
-    // ── HSS barrier (experimental) ───────────────────────────────────────
+    // ── Experimental interactions: stream walls + CME–CME squeeze ─────────
     // Streams are walls to the CME's spread. The centre and speed are left as
     // measured; a flank that would cross a stream is stopped at the stream's
     // edge and its particles pile up there, which the shader brightens. The
     // walls are read off the arms as drawn, at the CME's back and front
     // distances, so across the CME's depth they follow the spiral.
+    //
+    // Other CMEs are not walls: the caps worked out for this CME in
+    // layoutCmes, where both sides of each meeting gave ground, are folded in
+    // here - whichever of a stream or a CME holds a flank tighter wins.
     const hb = cmeObject.material?.userData?.hssBarrier;
     if (hb) {
       hb.uHbOn.value = 0;
-      const sun = sunMeshRef.current;
-      const group = hssGroupRef.current;
-      let note: string | null = null;
-      if (hssBarrier && sun && group && group.visible && group.children.length > 0) {
-        const groupAngle = sun.rotation.y + group.rotation.y;
-        const streams: HssStreamSamples[] = group.children
-          .map((m: any) => m.userData?.barrier)
-          .filter(Boolean);
-        const barrierCme = {
-          az: Math.atan2(dir.x, dir.z),
-          lat: Math.asin(Math.max(-1, Math.min(1, dir.y))),
-          halfAngle: THREE.MathUtils.degToRad(cme.halfAngle ?? 30),
-        };
+      hb.uHbRadial.value.set(0, 1e9);
+      const notes: string[] = [];
+      if (experimentalInteractions) {
+        const cmeAz = Math.atan2(dir.x, dir.z);
         const rFront = sunRadius + radialDist + lateral;
         const rBack = Math.max(sunRadius * 1.05, sunRadius + radialDist * 0.5);
-        const limitsAt = (R: number) => barrierLimitsFor(
-          barrierCme,
-          streams.map((st) => streamSectorAt(st, R, groupAngle)).filter((x): x is StreamSector => x != null),
-        );
-        const front = limitsAt(rFront);
-        const back = limitsAt(rBack);
 
-        // A flank no stream holds is left unbounded - the shader must not
-        // trim a CME that is merely wider than its nominal cone.
+        // Per flank, the cap at the front and at the back (null = free).
+        let westF: number | null = null, westB: number | null = null;
+        let eastF: number | null = null, eastB: number | null = null;
+
+        const sun = sunMeshRef.current;
+        const group = hssGroupRef.current;
+        if (sun && group && group.visible && group.children.length > 0) {
+          const groupAngle = sun.rotation.y + group.rotation.y;
+          const streams: HssStreamSamples[] = group.children
+            .map((m: any) => m.userData?.barrier)
+            .filter(Boolean);
+          const barrierCme = {
+            az: cmeAz,
+            lat: Math.asin(Math.max(-1, Math.min(1, dir.y))),
+            halfAngle: THREE.MathUtils.degToRad(cme.halfAngle ?? 30),
+          };
+          const limitsAt = (R: number) => barrierLimitsFor(
+            barrierCme,
+            streams.map((st) => streamSectorAt(st, R, groupAngle)).filter((x): x is StreamSector => x != null),
+          );
+          const front = limitsAt(rFront);
+          const back = limitsAt(rBack);
+          if (front.westBy) westF = front.west;
+          if (back.westBy) westB = back.west;
+          if (front.eastBy) eastF = front.east;
+          if (back.eastBy) eastB = back.east;
+          const streamNote = barrierNote(front) ?? barrierNote(back);
+          if (streamNote) notes.push(streamNote);
+        }
+
+        if (interaction) {
+          const min = (x: number | null, y: number | null) => (x == null ? y : y == null ? x : Math.min(x, y));
+          westF = min(westF, interaction.westCap); westB = min(westB, interaction.westCap);
+          eastF = min(eastF, interaction.eastCap); eastB = min(eastB, interaction.eastCap);
+          notes.push(...interactionNotes(interaction));
+        }
+
+        // A flank nothing holds is left unbounded - the shader must not trim
+        // a CME that is merely wider than its nominal cone.
         const FREE = 10;
         const wallLine = (capF: number | null, capB: number | null) => {
           if (capF == null && capB == null) return [FREE, 0];
@@ -883,18 +821,19 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           const slope = (capF - capB) / (rFront - rBack);
           return [capF - slope * rFront, slope];
         };
-        const [wA, wB] = wallLine(front.westBy ? front.west : null, back.westBy ? back.west : null);
-        const [eA, eB] = wallLine(front.eastBy ? front.east : null, back.eastBy ? back.east : null);
-        if (wA !== FREE || eA !== FREE) {
+        const [wA, wB] = wallLine(westF, westB);
+        const [eA, eB] = wallLine(eastF, eastB);
+        const radialHeld = interaction && (interaction.frontCap != null || interaction.backCap != null);
+        if (wA !== FREE || eA !== FREE || radialHeld) {
           hb.uHbOn.value = 1;
-          hb.uHbAz.value = barrierCme.az;
+          hb.uHbAz.value = cmeAz;
           hb.uHbWest.value.set(wA, wB);
           hb.uHbEast.value.set(eA, eB);
+          hb.uHbRadial.value.set(interaction?.backCap ?? 0, interaction?.frontCap ?? 1e9);
         }
-        note = barrierNote(front) ?? barrierNote(back);
       }
       if (cme.id) {
-        if (note) barrierNotesRef.current.set(cme.id, note);
+        if (notes.length) barrierNotesRef.current.set(cme.id, notes.join(' · '));
         else barrierNotesRef.current.delete(cme.id);
       }
     }
@@ -965,7 +904,45 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         tailMesh.material.color.copy(tailColor);
       }
     }
-  }, [coronalHoles, showHss, rerunHssInteraction, hssBarrier]);
+  }, [rerunHssInteraction, experimentalInteractions]);
+
+  // ── layoutCmes - every CME's natural place first, then their meetings ────
+  // A meeting has two sides, so it cannot be settled one CME at a time: each
+  // CME's unhindered body is worked out, all the meetings are resolved
+  // together, and only then is each CME drawn with its share of the squeeze.
+  const layoutCmes = useCallback((placed: [any, number, number][]) => {
+    const THREE = (window as any).THREE;
+    if (!THREE) return;
+    if (experimentalInteractions) {
+      const sunRadius = PLANET_DATA_MAP.SUN.size;
+      const bodies: CmeBody[] = [];
+      for (const [c, d] of placed) {
+        if (d < 0 || !c.visible || !c.userData?.id) continue;
+        const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(c.quaternion);
+        const radialDist = Math.max(0, d - sunRadius);
+        const halfAngle = THREE.MathUtils.degToRad(c.userData.halfAngle ?? 30);
+        const lateral = Math.max(radialDist * Math.tan(halfAngle), sunRadius * 0.3);
+        bodies.push({
+          id: c.userData.id,
+          az: Math.atan2(dir.x, dir.z),
+          lat: Math.asin(Math.max(-1, Math.min(1, dir.y))),
+          halfAngle,
+          speed: c.userData.speed ?? 400,
+          rBack: sunRadius + radialDist,
+          rFront: sunRadius + radialDist + lateral,
+        });
+      }
+      cmeInteractionsRef.current = resolveCmeInteractions(bodies);
+    } else if (cmeInteractionsRef.current.size) {
+      cmeInteractionsRef.current = new Map();
+    }
+    for (const [c, d, tSec] of placed) updateCMEShape(c, d, tSec);
+  }, [experimentalInteractions, updateCMEShape]);
+  // The animation loop is set up once, when the scene is built, so it would
+  // keep calling the layout from that first render - and never see the toggle
+  // change. It calls through this ref instead, which always holds the latest.
+  const layoutCmesRef = useRef(layoutCmes);
+  layoutCmesRef.current = layoutCmes;
 
   useEffect(() => {
     if (!mountRef.current || rendererRef.current) return;
@@ -1567,8 +1544,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           }
         }
         const t = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000);
-        cmeGroupRef.current.children.forEach((c: any) => { if (c.userData?._isTail) return; const s = (t - c.userData.startTime.getTime()) / 1000; updateCMEShape(c, s < 0 ? -1 : calculateDistanceWithDeceleration(c.userData, s), s < 0 ? 0 : s); });
+        const placed: [any, number, number][] = [];
+        cmeGroupRef.current.children.forEach((c: any) => { if (c.userData?._isTail) return; const s = (t - c.userData.startTime.getTime()) / 1000; placed.push([c, s < 0 ? -1 : calculateDistanceWithDeceleration(c.userData, s), s < 0 ? 0 : s]); });
+        layoutCmesRef.current(placed);
       } else {
+        const placed: [any, number, number][] = [];
         cmeGroupRef.current.children.forEach((c: any) => {
           if (c.userData?._isTail) return; // tails are managed by updateCMEShape
           let d = 0; let tSec = 0;
@@ -1580,9 +1560,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
             const t = (Date.now() - c.userData.startTime.getTime()) / 1000;
             tSec = t < 0 ? 0 : t;
             d = calculateDistanceWithDeceleration(c.userData, tSec);
-          } else { updateCMEShape(c, -1); return; }
-          updateCMEShape(c, d, tSec);
+          } else { placed.push([c, -1, 0]); return; }
+          placed.push([c, d, tSec]);
         });
+        layoutCmesRef.current(placed);
       }
 
       // Legacy torus hidden - superseded by Bz field lines
@@ -1788,9 +1769,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         color: getCmeCoreColor(cme.speed)
       });
       // The tail shares the front's walls, so the two cannot disagree.
-      attachHssBarrierShader(THREE, tailMat, barrierUniforms);
+      const tailUniforms = { ...barrierUniforms, uHbRadial: { value: new THREE.Vector2(0, 1e9) } };
+      attachHssBarrierShader(THREE, tailMat, tailUniforms);
       const tailSystem = new THREE.Points(tailGeom, tailMat);
-      bindHssBarrierView(tailSystem, barrierUniforms);
+      bindHssBarrierView(tailSystem, tailUniforms);
       tailSystem.userData = { _isTail: true, _parentCmeId: cme.id };
       tailSystem.visible = false; // hidden until CME propagates far enough
 
@@ -2325,7 +2307,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={mountRef} className="w-full h-full" />
-      {hssBarrier && barrierNotes.length > 0 && (
+      {experimentalInteractions && barrierNotes.length > 0 && (
         <div className="pointer-events-none absolute left-3 bottom-24 z-10 max-w-[70vw] space-y-1">
           {barrierNotes.map((line) => (
             <div key={line} className="rounded-md border border-amber-400/30 bg-black/60 px-2 py-1 text-[11px] text-amber-200">
