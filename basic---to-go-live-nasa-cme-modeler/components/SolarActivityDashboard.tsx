@@ -2073,8 +2073,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       return () => ro.disconnect();
     }, [ref, set, enabled]);
   };
-  useBoxSize(suviBoxRef, setSuviBoxSize, showRegionsOnImagery);
-  useBoxSize(suviDiffBoxRef, setSuviDiffBoxSize, showRegionsOnImagery);
+  useBoxSize(suviBoxRef, setSuviBoxSize, showRegionsOnImagery || showChOnSuvi);
+  useBoxSize(suviDiffBoxRef, setSuviDiffBoxSize, showRegionsOnImagery || showChOnSuvi);
 
   // The disk in a SUVI frame is a different size from the one in an HMI frame,
   // and different again between channels, so it is measured rather than
@@ -2630,8 +2630,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     } catch { return null; }
   })());
 
+  // Two overlays need the disk: the active region labels and the coronal hole
+  // polygons. Measuring it only for the regions quietly made one toggle depend
+  // on the other - holes could not be shown unless regions were on too, because
+  // without geometry the overlay has no idea how big the Sun is. Whoever needs
+  // it asks for it.
+  const suviNeedsDisk = showRegionsOnImagery || showChOnSuvi;
+
   useEffect(() => {
-    if (!showRegionsOnImagery || suviFrames.length === 0) { setSuviDiskGeometry(null); return; }
+    if (!suviNeedsDisk || suviFrames.length === 0) { setSuviDiskGeometry(null); return; }
 
     // The frame on screen first, then others spread across the window, then
     // frames from the other channels. Every SUVI composite shares a plate
@@ -2719,7 +2726,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     // clampedSuviFrameIndex is deliberately absent: re-measuring on every frame
     // of playback would be wasteful, and the window's frames all share a disk.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showRegionsOnImagery, activeSuviSourceKey, suviFrameWindowHours, suviFrames.length > 0, suviWorkerState?.sources]);
+  }, [suviNeedsDisk, activeSuviSourceKey, suviFrameWindowHours, suviFrames.length > 0, suviWorkerState?.sources]);
 
   /**
    * Active regions placed on the SUVI frame currently being shown.

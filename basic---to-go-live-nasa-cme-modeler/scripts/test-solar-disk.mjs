@@ -488,6 +488,16 @@ console.log('\nThe scrubber holds its place when frames arrive');
   const empty = P.nextFramePosition({ frames: [], previousTs: null, previousIndex: 3, switched: false });
   check(empty.index === 0 && empty.stopPlayback === true, 'an empty timeline stops playback');
 
+  // The first load. The timeline key is recorded while the list is still
+  // empty, so the frames arriving afterwards is not a switch - and with no
+  // previous timestamp to hold, this used to fall through to the previous
+  // index and open every timeline on its oldest frame.
+  const firstLoad = P.nextFramePosition({
+    frames, previousTs: null, previousIndex: 0, switched: false,
+  });
+  check(firstLoad.index === 9, 'the first frames to arrive land on the newest, not the oldest');
+  check(firstLoad.stopPlayback === false, 'and arriving is not a switch, so playback is left alone');
+
   // A poll that appends a frame: the moment on screen is still there, one
   // index earlier from the end. Playback must not stop.
   const grown = [...frames, frame(40)];

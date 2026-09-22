@@ -49,6 +49,13 @@ export function nextFramePosition<T extends TimedFrame>(
   if (frames.length === 0) return { index: 0, stopPlayback: true };
   if (switched) return { index: frames.length - 1, stopPlayback: true };
 
+  // Nothing has been on screen yet, so there is no moment to hold on to. This
+  // is the first load: the timeline key was recorded while the list was still
+  // empty, so the frames arriving is not a "switch", and falling through to
+  // the previous index would open every timeline on its oldest frame. People
+  // open these to see now.
+  if (previousTs == null) return { index: frames.length - 1, stopPlayback: false };
+
   if (previousTs) {
     const found = frames.findIndex((f) => f.ts === previousTs);
     if (found >= 0) return { index: found, stopPlayback: false };
