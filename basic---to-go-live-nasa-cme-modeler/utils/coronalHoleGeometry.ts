@@ -51,6 +51,7 @@
 import { CoronalHole } from './coronalHoleData';
 import { interpolateCHAtTimeMs, type CHEvolution } from './coronalHoleHistory';
 import { longitudeAt } from './solarDisk';
+import type { HssStreamSamples } from './hssBarrier';
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 const SPIRAL_POINTS          = 220;
@@ -802,9 +803,92 @@ export function buildParkerSpiralMesh(
 
   const mesh    = new THREE.Mesh(geom, mat);
   mesh.name     = `hss-spiral-${ch.id}`;
-  mesh.userData = { coronalHoleId: ch.id, isHssMesh: true };
+
+  // The stream as the HSS barrier sees it: where a sphere of each radius cuts
+  // the drawn tube. Read off the tube's own vertices, placed as the shader
+  // places them (rotated by uChLon, uSunAngle held at 0 as the scene does), so
+  // the wall is the arm on screen and not an estimate of it. The world frame
+  // is one more Y rotation away - the parent groups' - which the barrier adds.
+  const barrier = hssCutProfile(ch.id, backbone, pos, lonRad);
+  mesh.userData = { coronalHoleId: ch.id, isHssMesh: true, barrier };
   return mesh;
 }
+
+/** Radius bins in a stream's cut profile. */
+const HSS_CUT_BINS = 120;
+
+/**
+ * The azimuth and height a tube covers at each distance from the Sun.
+ *
+ * Azimuths are atan2(x, z) after the shader's rotation by lonRad; each bin
+ * keeps the backbone's azimuth there and the tube's reach either side of it,
+ * so nothing wraps.
+ */
+export function hssCutProfile(id: string, backbone: any[], pos: number[], lonRad: number): HssStreamSamples {
+  const cosA = Math.cos(lonRad), sinA = Math.sin(lonRad);
+  const rot = (x: number, z: number) => [x * cosA - z * sinA, x * sinA + z * cosA];
+  const wrap = (a: number) => {
+    let x = a % (2 * Math.PI);
+    if (x > Math.PI) x -= 2 * Math.PI;
+    if (x <= -Math.PI) x += 2 * Math.PI;
+    return x;
+  };
+
+  const N = backbone.length;
+  const rMin = backbone[0].length();
+  const rMax = backbone[N - 1].length();
+  const bins = HSS_CUT_BINS;
+  const binOf = (r: number) => Math.round(((r - rMin) / (rMax - rMin)) * (bins - 1));
+
+  // The backbone's own azimuth at each bin's radius, unwrapped along the arm.
+  const bbAz: number[] = [];
+  let prev = 0;
+  for (let i = 0; i < N; i++) {
+    const [x, z] = rot(backbone[i].x, backbone[i].z);
+    const a = Math.atan2(x, z);
+    prev = i === 0 ? a : prev + wrap(a - prev);
+    bbAz.push(prev);
+  }
+  const r: number[] = [];
+  const az: number[] = [];
+  for (let b = 0; b < bins; b++) {
+    const R = rMin + ((rMax - rMin) * b) / (bins - 1);
+    const f = ((R - rMin) / (rMax - rMin)) * (N - 1);
+    const i = Math.min(N - 2, Math.floor(f));
+    r.push(R);
+    az.push(wrap(bbAz[i] + (bbAz[i + 1] - bbAz[i]) * (f - i)));
+  }
+
+  const offLo = new Array(bins).fill(Infinity);
+  const offHi = new Array(bins).fill(-Infinity);
+  const yLo = new Array(bins).fill(Infinity);
+  const yHi = new Array(bins).fill(-Infinity);
+  for (let k = 0; k + 2 < pos.length; k += 3) {
+    const [x, z] = rot(pos[k], pos[k + 2]);
+    const y = pos[k + 1];
+    const b = binOf(Math.hypot(x, y, z));
+    if (b < 0 || b >= bins) continue;
+    const off = wrap(Math.atan2(x, z) - az[b]);
+    if (off < offLo[b]) offLo[b] = off;
+    if (off > offHi[b]) offHi[b] = off;
+    if (y < yLo[b]) yLo[b] = y;
+    if (y > yHi[b]) yHi[b] = y;
+  }
+  // A bin no vertex landed in borrows its nearest filled neighbour.
+  for (let b = 0; b < bins; b++) {
+    if (Number.isFinite(offLo[b])) continue;
+    for (let d = 1; d < bins; d++) {
+      const n = [b - d, b + d].find((j) => j >= 0 && j < bins && Number.isFinite(offLo[j]));
+      if (n != null) {
+        offLo[b] = offLo[n]; offHi[b] = offHi[n]; yLo[b] = yLo[n]; yHi[b] = yHi[n];
+        break;
+      }
+    }
+    if (!Number.isFinite(offLo[b])) { offLo[b] = 0; offHi[b] = 0; yLo[b] = 0; yHi[b] = 0; }
+  }
+  return { id, r, az, offLo, offHi, yLo, yHi };
+}
+
 
 // ═══════════════════════════════════════════════════════════════════════
 //  TIME-VARYING HSS SPIRAL

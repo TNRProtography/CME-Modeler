@@ -34,6 +34,11 @@ import {
   chWasPresentAt,
 } from '../utils/coronalHoleHistory';
 import type { RegionInput } from '../utils/regionLabels';
+import {
+  barrierLimitsFor, barrierNote, streamSectorAt,
+  type HssStreamSamples, type StreamSector,
+} from '../utils/hssBarrier';
+import { attachHssBarrierShader, bindHssBarrierView } from '../utils/hssBarrierShader';
 import type { SurfaceLabelInfo } from './SolarSurfaceLabels';
 import {
   computeEclipticLongitude,
@@ -464,6 +469,8 @@ interface SimulationCanvasProps {
   rerunToken?: number;
   /** Whether the re-run CME vs HSS interaction mode is active */
   rerunHssInteraction?: boolean;
+  /** Experimental: HSS streams as walls to CME spread, in the 3D view only. */
+  hssBarrier?: boolean;
   /** NOAA active regions, drawn on the Sun when showSunspots is on. */
   sunspotRegions?: RegionInput[];
   showSunspots?: boolean;
@@ -481,6 +488,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     showFluxRope, bzSouth = false, showHss, coronalHoles, chDetectedAtMs = null, chEvolutions = [], dataVersion, interactionMode, onSunClick,
     sunspotRegions = [], showSunspots = false, setSurfaceLabels,
     measuredWindSpeedKms, rerunToken = 0, rerunHssInteraction = false,
+    hssBarrier = false,
   } = props;
 
   const mountRef           = useRef<HTMLDivElement>(null);
@@ -504,6 +512,24 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   // hssGroupRef - world-space Parker spiral arms; vertex shader rotates per frame
   const chGroupRef     = useRef<any>(null);
   const hssGroupRef    = useRef<any>(null);
+  // HSS barrier notes, per CME id, written each frame and read into state a
+  // couple of times a second - React has no business re-rendering per frame.
+  const barrierNotesRef = useRef<Map<string, string>>(new Map());
+  const [barrierNotes, setBarrierNotes] = useState<string[]>([]);
+  useEffect(() => {
+    if (!hssBarrier) {
+      barrierNotesRef.current.clear();
+      setBarrierNotes([]);
+      return;
+    }
+    const id = window.setInterval(() => {
+      const next = Array.from(barrierNotesRef.current.entries())
+        .map(([cmeId, note]) => `${cmeId}: ${note}`)
+        .sort();
+      setBarrierNotes((prev) => (prev.join('\n') === next.join('\n') ? prev : next));
+    }, 500);
+    return () => window.clearInterval(id);
+  }, [hssBarrier]);
   // Parented to sunMesh alongside chGroup, so the spots turn with the Sun for
   // free rather than needing their longitude advanced every frame.
   const spotGroupRef   = useRef<any>(null);
@@ -681,7 +707,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   }, []);
 
   // ── updateCMEShape - angular GCS expansion + tail + live colour ───────────
-  const updateCMEShape = useCallback((cmeObject: any, distTraveledInSceneUnits: number, timeSinceEventSeconds?: number) => {
+  const updateCMEShape = useCallback((cmeObject: any, distTraveledInSceneUnits: number, _timeSinceEventSeconds?: number) => {
     const THREE = (window as any).THREE;
     if (!THREE) return;
     const sunRadius = PLANET_DATA_MAP.SUN.size;
@@ -690,6 +716,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     if (distTraveledInSceneUnits < 0) {
       cmeObject.visible = false;
       if (tailMesh) tailMesh.visible = false;
+      if (cmeObject.userData?.id) barrierNotesRef.current.delete(cmeObject.userData.id);
       return;
     }
     cmeObject.visible = true;
@@ -697,60 +724,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const dist = Math.max(0, distTraveledInSceneUnits - sunRadius);
     const cme: any = cmeObject.userData;
 
-    // ── Visual CME↔HSS non-penetration response ───────────────────────────
-    // When a CME propagates through the same angular corridor as a CH-driven
-    // HSS stream, keep the front from cleanly phasing through the stream arm.
-    // We render this as:
-    //   • radial holdback (acts like pile-up at HSS interface)
-    //   • lateral bending around the stream corridor
-    //   • cross-sectional compression + slight axial stretch
-    //   • weak rebound oscillation while overlap persists
-    // This is intentionally visual (not changing the DBM trajectory state).
-    let hssPressure = 0;
-    let hssBendSign = 1;
-    if (showHss && coronalHoles.length > 0) {
-      const cmeLat = Number.isFinite(cme.latitude) ? cme.latitude : 0;
-      const cmeLon = Number.isFinite(cme.longitude) ? cme.longitude : 0;
-
-      coronalHoles.forEach(ch => {
-        const coneDeg = Math.max(10, (ch.expansionHalfAngleDeg ?? ch.widthDeg * 0.45)) + (cme.halfAngle ?? 30) * 0.50;
-        const dLat = THREE.MathUtils.degToRad(cmeLat - ch.lat);
-        const dLon = THREE.MathUtils.degToRad(cmeLon - ch.lon);
-        const lat1 = THREE.MathUtils.degToRad(cmeLat);
-        const lat2 = THREE.MathUtils.degToRad(ch.lat);
-
-        const sinDLat = Math.sin(dLat * 0.5);
-        const sinDLon = Math.sin(dLon * 0.5);
-        const hav = sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLon * sinDLon;
-        const angSepDeg = THREE.MathUtils.radToDeg(2 * Math.asin(Math.min(1, Math.sqrt(Math.max(0, hav)))));
-
-        if (angSepDeg >= coneDeg) return;
-
-        const angularOverlap = 1 - (angSepDeg / coneDeg);
-        const radialFrac = THREE.MathUtils.clamp(dist / (PLANET_DATA_MAP.EARTH.radius * 1.1), 0, 1);
-        const radialEnvelope = Math.pow(Math.sin(Math.PI * radialFrac), 1.2);
-        const pressure = angularOverlap * radialEnvelope;
-
-        if (pressure > hssPressure) {
-          hssPressure = pressure;
-          hssBendSign = Math.sign(cmeLon - ch.lon) || 1;
-        }
-      });
-    }
-
-    const rebound = hssPressure > 0.08
-      ? Math.max(0, Math.sin((timeSinceEventSeconds ?? 0) * 0.012)) * sunRadius * (rerunHssInteraction ? 0.18 : 0.10) * hssPressure
-      : 0;
-    // In re-run mode, HSS acts as a hard barrier - much stronger holdback
-    const holdbackFactor = rerunHssInteraction ? 0.55 : 0.30;
-    let heldDist = Math.max(0, dist * (1 - holdbackFactor * hssPressure) - rebound);
-
-    const sideAxis = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
-    if (sideAxis.lengthSq() < 1e-6) sideAxis.set(1, 0, 0);
-    sideAxis.normalize();
-    // Stronger lateral deflection in re-run mode (CME bends around HSS)
-    const bendStrength = rerunHssInteraction ? 0.38 : 0.22;
-    const bendOffset = sideAxis.multiplyScalar(sunRadius * bendStrength * hssPressure * hssBendSign);
+    // The old CME↔HSS squash lived here: a holdback and bend that only ever
+    // reached the colour. It is replaced by the HSS barrier (below, after the
+    // CME is placed), which acts on the drawn CME itself.
+    let heldDist = dist;
 
     // ── Visual CME↔CME non-penetration (Physics Model only) ──────────────
     //
@@ -866,6 +843,62 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const totalAxialStretch = GCS_AXIAL_DEPTH_FRAC;
     cmeObject.scale.set(sXZ, sXZ * totalAxialStretch, sXZ);
 
+    // ── HSS barrier (experimental) ───────────────────────────────────────
+    // Streams are walls to the CME's spread. The centre and speed are left as
+    // measured; a flank that would cross a stream is stopped at the stream's
+    // edge and its particles pile up there, which the shader brightens. The
+    // walls are read off the arms as drawn, at the CME's back and front
+    // distances, so across the CME's depth they follow the spiral.
+    const hb = cmeObject.material?.userData?.hssBarrier;
+    if (hb) {
+      hb.uHbOn.value = 0;
+      const sun = sunMeshRef.current;
+      const group = hssGroupRef.current;
+      let note: string | null = null;
+      if (hssBarrier && sun && group && group.visible && group.children.length > 0) {
+        const groupAngle = sun.rotation.y + group.rotation.y;
+        const streams: HssStreamSamples[] = group.children
+          .map((m: any) => m.userData?.barrier)
+          .filter(Boolean);
+        const barrierCme = {
+          az: Math.atan2(dir.x, dir.z),
+          lat: Math.asin(Math.max(-1, Math.min(1, dir.y))),
+          halfAngle: THREE.MathUtils.degToRad(cme.halfAngle ?? 30),
+        };
+        const rFront = sunRadius + radialDist + lateral;
+        const rBack = Math.max(sunRadius * 1.05, sunRadius + radialDist * 0.5);
+        const limitsAt = (R: number) => barrierLimitsFor(
+          barrierCme,
+          streams.map((st) => streamSectorAt(st, R, groupAngle)).filter((x): x is StreamSector => x != null),
+        );
+        const front = limitsAt(rFront);
+        const back = limitsAt(rBack);
+
+        // A flank no stream holds is left unbounded - the shader must not
+        // trim a CME that is merely wider than its nominal cone.
+        const FREE = 10;
+        const wallLine = (capF: number | null, capB: number | null) => {
+          if (capF == null && capB == null) return [FREE, 0];
+          if (capF == null || capB == null || rFront - rBack < 1e-6) return [(capF ?? capB) as number, 0];
+          const slope = (capF - capB) / (rFront - rBack);
+          return [capF - slope * rFront, slope];
+        };
+        const [wA, wB] = wallLine(front.westBy ? front.west : null, back.westBy ? back.west : null);
+        const [eA, eB] = wallLine(front.eastBy ? front.east : null, back.eastBy ? back.east : null);
+        if (wA !== FREE || eA !== FREE) {
+          hb.uHbOn.value = 1;
+          hb.uHbAz.value = barrierCme.az;
+          hb.uHbWest.value.set(wA, wB);
+          hb.uHbEast.value.set(eA, eB);
+        }
+        note = barrierNote(front) ?? barrierNote(back);
+      }
+      if (cme.id) {
+        if (note) barrierNotesRef.current.set(cme.id, note);
+        else barrierNotesRef.current.delete(cme.id);
+      }
+    }
+
     // ── Store this CME's frame state for CME–CME checks next frame ───────
     if (rerunHssInteraction && cme.id) {
       cmeFrameStatesRef.current.set(cme.id, {
@@ -932,7 +965,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         tailMesh.material.color.copy(tailColor);
       }
     }
-  }, [coronalHoles, showHss, rerunHssInteraction]);
+  }, [coronalHoles, showHss, rerunHssInteraction, hssBarrier]);
 
   useEffect(() => {
     if (!mountRef.current || rendererRef.current) return;
@@ -1721,7 +1754,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
       const geom = new THREE.BufferGeometry(); geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       const mat = new THREE.PointsMaterial({ size: getCmeParticleSize(cme.speed, SCENE_SCALE), sizeAttenuation: true, map: pt, transparent: true, opacity: getCmeOpacity(cme.speed), blending: THREE.AdditiveBlending, depthWrite: false, color: getCmeCoreColor(cme.speed) });
+      const barrierUniforms = attachHssBarrierShader(THREE, mat);
       const system = new THREE.Points(geom, mat); system.userData = { ...cme };
+      bindHssBarrierView(system, barrierUniforms);
 
       // ── TAIL PARTICLE SYSTEM ─────────────────────────────────────────────
       // Particles distributed from Y=0 (back, near sun) to Y=1 (front, near CME head).
@@ -1752,7 +1787,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         blending: THREE.AdditiveBlending, depthWrite: false,
         color: getCmeCoreColor(cme.speed)
       });
+      // The tail shares the front's walls, so the two cannot disagree.
+      attachHssBarrierShader(THREE, tailMat, barrierUniforms);
       const tailSystem = new THREE.Points(tailGeom, tailMat);
+      bindHssBarrierView(tailSystem, barrierUniforms);
       tailSystem.userData = { _isTail: true, _parentCmeId: cme.id };
       tailSystem.visible = false; // hidden until CME propagates far enough
 
@@ -2287,6 +2325,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={mountRef} className="w-full h-full" />
+      {hssBarrier && barrierNotes.length > 0 && (
+        <div className="pointer-events-none absolute left-3 bottom-24 z-10 max-w-[70vw] space-y-1">
+          {barrierNotes.map((line) => (
+            <div key={line} className="rounded-md border border-amber-400/30 bg-black/60 px-2 py-1 text-[11px] text-amber-200">
+              {line}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

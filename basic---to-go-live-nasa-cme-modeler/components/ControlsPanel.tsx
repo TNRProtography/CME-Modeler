@@ -58,6 +58,9 @@ interface ControlsPanelProps {
   onShowFluxRopeChange: (show: boolean) => void; // --- NEW: Handler for Flux Rope ---
   showHss: boolean;
   onShowHssChange: (show: boolean) => void;
+  /** Streams as walls a CME's spread cannot cross - 3D view only. */
+  hssBarrier?: boolean;
+  onHssBarrierChange?: (on: boolean) => void;
   showSunspots: boolean;
   onShowSunspotsChange: (show: boolean) => void;
   /** How many NOAA regions are currently on the Earth-facing disk. */
@@ -112,6 +115,8 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
   onShowFluxRopeChange,
   showHss,
   onShowHssChange,
+  hssBarrier = false,
+  onHssBarrierChange,
   showSunspots,
   onShowSunspotsChange,
   sunspotCount = 0,
@@ -322,6 +327,21 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
                   Darker/wider holes produce faster source streams (800-1400 km/s).
                 </p>
               </div>
+            )}
+            {showHss && onHssBarrierChange && (
+              <>
+                <ToggleSwitch
+                  id="hss-barrier-toggle"
+                  label="HSS barrier (experimental)"
+                  checked={hssBarrier}
+                  onChange={onHssBarrierChange}
+                />
+                <p className="text-xs text-neutral-500 -mt-1">
+                  Treats each stream as a wall. A CME keeps the direction and speed NASA measured, but a
+                  flank that would spread into a stream stops at its edge and piles up there (brighter).
+                  3D view only - forecasts and arrival times are unchanged.
+                </p>
+              </>
             )}
           </div>
         </div>
