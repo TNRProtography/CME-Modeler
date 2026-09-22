@@ -340,6 +340,8 @@ export interface ExpectedChange {
   atMs: number;
   /** When it peaks. */
   peakMs: number;
+  /** When it has passed, for pairing against nights. */
+  endMs: number;
   /** Speed now, for the comparison. */
   fromSpeedKms: number;
   peakSpeedKms: number;
@@ -358,52 +360,67 @@ export interface ExpectedChange {
 /** A rise smaller than this is noise in the model, not an arrival. */
 const MATERIAL_RISE_KMS = 60;
 
+/**
+ * Every material arrival the forecast expects, soonest first.
+ *
+ * Episodes are separated by a return towards the present speed, so two holes
+ * arriving a day apart are two entries rather than one wide one. That matters
+ * for planning: "450 tomorrow then 675 on Thursday" is two decisions.
+ */
+export function expectedArrivals(
+  timeline: L1State[],
+  nowMs: number,
+  horizonMs = 3 * 86400000,
+): ExpectedChange[] {
+  const future = timeline.filter((p) => p.atMs >= nowMs && p.atMs <= nowMs + horizonMs);
+  if (future.length < 2) return [];
+
+  // "Now" from the timeline rather than from the newest observation, so both
+  // ends of the comparison come from the same model.
+  const fromSpeedKms = future[0].speedKms;
+  const rise = fromSpeedKms + MATERIAL_RISE_KMS;
+  // A lower bar for the edges than for the peak, so an episode is bounded by
+  // where it started rather than by where it became impressive.
+  const edge = fromSpeedKms + MATERIAL_RISE_KMS * 0.25;
+
+  const out: ExpectedChange[] = [];
+  let i = 0;
+  while (i < future.length) {
+    if (future[i].speedKms < rise) { i++; continue; }
+
+    let start = i;
+    while (start > 0 && future[start - 1].speedKms >= edge) start--;
+    let end = i;
+    while (end + 1 < future.length && future[end + 1].speedKms >= edge) end++;
+
+    const episode = future.slice(start, end + 1);
+    const peak = episode.reduce((a, b) => (b.speedKms > a.speedKms ? b : a));
+
+    out.push({
+      atMs: episode[0].atMs,
+      peakMs: peak.atMs,
+      endMs: episode[episode.length - 1].atMs,
+      fromSpeedKms: Math.round(fromSpeedKms),
+      peakSpeedKms: Math.round(peak.speedKms),
+      sourceId: peak.disturbanceId ?? null,
+      kind: peak.disturbance,
+      // Zero is a real answer, not a missing one: a positive-polarity hole at
+      // this time of year projects nothing southward at all.
+      peakSouthwardNt: Math.round(
+        episode.reduce((worst, p) => Math.min(worst, p.bzFromSectorNt), 0) * 10) / 10,
+    });
+
+    i = end + 1;
+  }
+
+  return out;
+}
+
+/** The next arrival only, which is what the structure panel headline wants. */
 export function expectedChange(
   timeline: L1State[],
   nowMs: number,
   horizonMs = 3 * 86400000,
 ): ExpectedChange | null {
-  const future = timeline.filter((p) => p.atMs >= nowMs && p.atMs <= nowMs + horizonMs);
-  if (future.length < 2) return null;
-
-  // "Now" from the timeline rather than from the newest observation, so the
-  // comparison is like for like: both ends come from the same model.
-  const fromSpeedKms = future[0].speedKms;
-  const threshold = fromSpeedKms + MATERIAL_RISE_KMS;
-
-  // The NEXT arrival, not the biggest one. A 450 km/s stream tomorrow and a
-  // 675 in three days are both real, and somebody deciding about tonight
-  // needs the first. Reporting the larger would also put the wrong time on
-  // it - the front edge of the nearer event is when things actually change.
-  const firstIdx = future.findIndex((p) => p.speedKms >= threshold);
-  if (firstIdx === -1) return null;
-
-  // Back to the last quiet point before it, so the time given is when
-  // conditions begin to change rather than when they are already elevated.
-  let startIdx = firstIdx;
-  while (startIdx > 0 && future[startIdx - 1].speedKms - fromSpeedKms >= MATERIAL_RISE_KMS * 0.25) {
-    startIdx--;
-  }
-
-  // Forward to the end of this episode, so the peak belongs to the arrival
-  // being described and not to a separate one behind it.
-  let endIdx = firstIdx;
-  while (endIdx + 1 < future.length
-         && future[endIdx + 1].speedKms - fromSpeedKms >= MATERIAL_RISE_KMS * 0.25) {
-    endIdx++;
-  }
-
-  const episode = future.slice(startIdx, endIdx + 1);
-  const peak = episode.reduce((a, b) => (b.speedKms > a.speedKms ? b : a));
-  const peakSouthwardNt = episode.reduce((worst, p) => Math.min(worst, p.bzFromSectorNt), 0);
-
-  return {
-    atMs: future[startIdx].atMs,
-    peakMs: peak.atMs,
-    fromSpeedKms: Math.round(fromSpeedKms),
-    peakSpeedKms: Math.round(peak.speedKms),
-    sourceId: peak.disturbanceId ?? null,
-    kind: peak.disturbance,
-    peakSouthwardNt: Math.round(peakSouthwardNt * 10) / 10,
-  };
+  return expectedArrivals(timeline, nowMs, horizonMs)[0] ?? null;
 }

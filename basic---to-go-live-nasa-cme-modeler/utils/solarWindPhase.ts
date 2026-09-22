@@ -975,7 +975,9 @@ const incomingNote = (
 ): string | null => {
   if (!expected) return null;
 
-  const what = expected.kind === 'cme'
+  // DisturbanceKind is 'CME sheath' / 'CME ejecta', never the bare 'cme' this
+  // first checked for - so every CME would have been described as a hole.
+  const what = expected.kind.startsWith('CME')
     ? 'A CME'
     : expected.sourceId
       ? `The stream from ${expected.sourceId}`

@@ -44,6 +44,7 @@ import {
     NewellCouplingChart,
     DynamicPressureChart,
 } from './ForecastCharts';
+import ExpectedArrivals from './ExpectedArrivals';
 import { SubstormActivity, SubstormForecast, ActivitySummary, InterplanetaryShock } from '../types';
 
 // --- ORIGINAL CONSTANTS (Moved to top to fix ReferenceError) ---
@@ -677,6 +678,18 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     allMagneticData={allMagneticData}
                                 />
                             </div>
+                            </div>
+                            {/* The only forward-looking thing in the simple
+                                view. Same component and same forecast as the
+                                advanced structure panel, without the physics
+                                line under each entry. */}
+                            <div className="col-span-12 card bg-neutral-950/80 p-4">
+                                <h3 className="text-lg font-semibold text-white mb-1">What to expect</h3>
+                                <p className="text-xs text-neutral-500 mb-3">
+                                    Coronal hole streams and CMEs due to reach Earth in the next three days,
+                                    and what each would be worth seeing.
+                                </p>
+                                <ExpectedArrivals />
                             </div>
                             <div id="aurora-sightings-section" className="col-span-12"><AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} allNewellData={allNewellData} allMagneticData={allMagneticData} auroraScore={auroraScore} rawScore15={ovalProjectedScores.score15} rawScore30={ovalProjectedScores.score30} rawScore60={ovalProjectedScores.score60} rawScore120={ovalProjectedScores.score120} /></div>
                             <div id="kp-forecast-section" className="col-span-12"><KpForecastTimeline

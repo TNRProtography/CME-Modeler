@@ -31,7 +31,7 @@ const HOUR = 3600000;
 const now = Date.UTC(2026, 8, 22, 3, 0, 0);
 
 /** An hourly timeline: speed(hoursFromNow) and southward(hoursFromNow). */
-const series = (hours, speed, southward = () => 0, id = null, kind = 'ambient') =>
+const series = (hours, speed, southward = () => 0, id = null, kind = 'HSS') =>
   Array.from({ length: hours }, (_, h) => ({
     atMs: now + h * HOUR,
     speedKms: speed(h),
@@ -48,14 +48,14 @@ try {
   execFileSync('npx', ['esbuild', join(root, 'utils/forecastTimeline.ts'),
     '--bundle', '--format=esm', `--outfile=${join(out, 't.mjs')}`, '--log-level=error'],
     { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
-  const { expectedChange } = await import(pathToFileURL(join(out, 't.mjs')).href);
+  const { expectedChange, expectedArrivals } = await import(pathToFileURL(join(out, 't.mjs')).href);
 
   console.log('\nA coronal hole stream two days out');
   {
     // Flat 320, rising from hour 48, peaking 675 at hour 56 - CH96 as it
     // actually stands today.
     const tl = series(96, (h) => (h < 48 ? 321 : Math.min(675, 321 + (h - 48) * 45)),
-                      (h) => (h >= 48 && h <= 60 ? -2.6 : 0), 'CH96', 'hss');
+                      (h) => (h >= 48 && h <= 60 ? -2.6 : 0), 'CH96', 'HSS');
     const e = expectedChange(tl, now);
     check(e !== null, 'is found at all');
     check(e.peakSpeedKms === 675, `peak speed is the stream's, not the ambient (${e.peakSpeedKms})`, String(e.peakSpeedKms));
@@ -72,7 +72,7 @@ try {
   console.log('\nA stream whose polarity guarantees nothing');
   {
     const tl = series(96, (h) => (h < 48 ? 321 : Math.min(675, 321 + (h - 48) * 45)),
-                      () => 0, 'CH97', 'hss');
+                      () => 0, 'CH97', 'HSS');
     const e = expectedChange(tl, now);
     check(e.peakSouthwardNt === 0,
           'reports zero rather than omitting it - a positive-polarity hole in September really does project nothing southward',
@@ -94,7 +94,7 @@ try {
 
   console.log('\nThe horizon is respected');
   {
-    const tl = series(24 * 10, (h) => (h < 200 ? 321 : 700), () => 0, 'CHX', 'hss');
+    const tl = series(24 * 10, (h) => (h < 200 ? 321 : 700), () => 0, 'CHX', 'HSS');
     check(expectedChange(tl, now, 3 * 24 * HOUR) === null,
           'something eight days out is not "what is coming" on a three-day horizon');
     check(expectedChange(tl, now, 10 * 24 * HOUR) !== null, 'but is found when asked for ten');
@@ -114,13 +114,45 @@ try {
     // tonight needs the first. Reporting the larger would also put the wrong
     // time on it, since the two are separated by a return to ambient.
     const tl = series(96, (h) => (h >= 12 && h < 20 ? 450 : h >= 48 ? 675 : 321),
-                      () => 0, 'CH96', 'hss');
+                      () => 0, 'CH96', 'HSS');
     const e = expectedChange(tl, now);
     const startH = (e.atMs - now) / HOUR;
     check(startH >= 10 && startH <= 12, `it starts at the nearer event (${startH}h)`, `${startH}h`);
     check(e.peakSpeedKms === 450,
           `and peaks with that event, not the one behind it (${e.peakSpeedKms})`, String(e.peakSpeedKms));
   }
+  console.log('\nEvery arrival in the window, not just the first');
+    {
+      const tl = series(96, (h) => (h >= 12 && h < 20 ? 450 : h >= 48 && h < 72 ? 675 : 321),
+                        () => 0, 'CH96', 'HSS');
+      const all = expectedArrivals(tl, now);
+      check(all.length === 2, `two separate arrivals, not one wide one (${all.length})`, String(all.length));
+      check(all[0].peakSpeedKms === 450 && all[1].peakSpeedKms === 675,
+            'soonest first, each with its own peak',
+            all.map((a) => a.peakSpeedKms).join(','));
+      check(all[0].endMs < all[1].atMs, 'and they do not overlap');
+      check(expectedChange(tl, now).peakSpeedKms === all[0].peakSpeedKms,
+            'the headline is the first of them');
+    }
+  
+    console.log('\nA CME is described as a CME');
+    {
+      // DisturbanceKind is 'CME sheath' / 'CME ejecta'. A check for the bare
+      // string 'cme' never matched, so every CME read as a coronal hole.
+      const tl = series(96, (h) => (h >= 24 ? 900 : 380), () => -8, 'CME-2026-09-22', 'CME sheath');
+      const [a] = expectedArrivals(tl, now);
+      check(a.kind === 'CME sheath', 'the kind survives the round trip', String(a.kind));
+      check(a.kind.startsWith('CME'), 'and matches the test the wording depends on');
+      check(a.peakSpeedKms === 900, `with the CME speed (${a.peakSpeedKms})`, String(a.peakSpeedKms));
+      check(a.peakSouthwardNt === -8, `and its southward field (${a.peakSouthwardNt})`, String(a.peakSouthwardNt));
+    }
+  
+    console.log('\nNothing due is not the same as no forecast');
+    {
+      check(expectedArrivals(series(96, () => 321), now).length === 0,
+            'quiet wind gives an empty list rather than null');
+      check(Array.isArray(expectedArrivals([], now)), 'and an empty timeline still gives an array');
+    }
 } finally {
   rmSync(out, { recursive: true, force: true });
 }
