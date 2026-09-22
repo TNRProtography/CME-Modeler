@@ -1,0 +1,113 @@
+#!/usr/bin/env node
+// Sunspot positions from SDO/HMI SHARPs.
+//
+// The fixture below has the shape of a real response from
+// jsoc_info?ds=hmi.sharp_720s_nrt[][2026.09.22_12:00_TAI/6h] - columns rather
+// than rows, every value a string, NOAA_AR "0" for patches NOAA has not
+// numbered, and the full five-digit NOAA number where everyone else uses four.
+
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const out = mkdtempSync(join(tmpdir(), 'sharp-'));
+
+let pass = 0, fail = 0;
+const check = (ok, label, detail = '') => {
+  if (ok) { pass++; console.log(`  PASS  ${label}`); }
+  else { fail++; console.log(`  FAIL  ${label} ${detail}`); }
+};
+
+const response = {
+  keywords: [
+    { name: 'T_REC', values: [
+      '2026.09.22_12:00:00_TAI', '2026.09.22_17:00:00_TAI',   // HARP 13989, unnumbered
+      '2026.09.22_12:00:00_TAI', '2026.09.22_16:48:00_TAI',   // HARP 14026 = AR 4536
+      '2026.09.22_12:00:00_TAI', '2026.09.22_17:00:00_TAI',   // HARP 14044 = AR 4538
+      '2026.09.22_17:00:00_TAI',                              // HARP 14045, NaN centre
+    ] },
+    { name: 'HARPNUM', values: ['13989', '13989', '14026', '14026', '14044', '14044', '14045'] },
+    { name: 'NOAA_AR', values: ['0', '0', '14536', '14536', '14538', '14538', '14539'] },
+    { name: 'LAT_FWT', values: ['27.77', '27.76', '2.79', '2.75', '11.40', '11.42', 'NaN'] },
+    { name: 'LON_FWT', values: ['-40.1', '-37.4', '6.10', '8.85', '15.20', '17.90', 'NaN'] },
+  ],
+};
+
+try {
+  execFileSync('npx', ['esbuild', join(root, 'utils/sharpPositions.ts'),
+    '--bundle', '--format=esm', `--outfile=${join(out, 's.mjs')}`, '--log-level=error'],
+    { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
+  const S = await import(pathToFileURL(join(out, 's.mjs')).href);
+
+  console.log('\nThe response is read the way JSOC actually sends it');
+  {
+    const rows = S.parseSharpResponse(response);
+    check(rows.length === 2, `two numbered patches with real centres (${rows.length})`, String(rows.length));
+    check(!rows.some((r) => r.harp === 13989), 'an unnumbered patch is dropped - there is no NOAA region to attach it to');
+    check(!rows.some((r) => r.harp === 14045), 'a patch with a NaN centre is dropped, not drawn at 0,0');
+
+    const ar4538 = rows.find((r) => r.harp === 14044);
+    check(ar4538.latitude === 11.42 && ar4538.longitude === 17.9,
+          'the NEWEST record of each patch wins', `${ar4538.latitude},${ar4538.longitude}`);
+    check(new Date(ar4538.atMs).toISOString() === '2026-09-22T16:59:23.000Z',
+          'and its time is converted from TAI to UTC, 37 seconds earlier', new Date(ar4538.atMs).toISOString());
+  }
+
+  console.log('\nNumbers match the way people say them');
+  {
+    check(S.regionKey(14538) === '4538', 'SHARP 14538 is region 4538');
+    check(S.regionKey('4538') === '4538', 'and the SRS 4538 is the same key');
+    check(S.regionKey('AR 4538') === '4538', 'even with a prefix');
+  }
+
+  console.log('\nNOAA says which regions exist; SHARPs say where they are');
+  {
+    const sharp = S.sharpByRegion(S.parseSharpResponse(response));
+    const noaaRow = { region: '4538', latitude: 11, longitude: 9, observedTime: Date.UTC(2026, 8, 22), area: 10 };
+    const moved = S.withSharpPosition(noaaRow, sharp, 'observedTime');
+    check(moved.latitude === 11.42 && moved.longitude === 17.9,
+          `AR 4538 takes its HMI position (N11W09 at midnight becomes ${moved.latitude}, ${moved.longitude})`);
+    check(moved.observedTime === sharp.get('4538').atMs,
+          'and its time, so the rotation correction is only the hour since HMI saw it');
+    check(moved.area === 10 && moved.positionSource === 'sharp',
+          'while everything else still comes from NOAA');
+
+    const unknown = S.withSharpPosition({ region: '4599', latitude: -5, longitude: 20, observedTime: 1 },
+      sharp, 'observedTime');
+    check(unknown.latitude === -5 && unknown.longitude === 20 && unknown.positionSource === 'noaa',
+          'a region with no SHARP yet keeps its NOAA position rather than disappearing');
+  }
+
+  console.log('\nThe query is the form JSOC accepted');
+  {
+    const url = S.sharpQueryUrl(Date.UTC(2026, 8, 22, 18, 0), 6);
+    const ds = decodeURIComponent(new URL(url).searchParams.get('ds'));
+    check(ds === 'hmi.sharp_720s_nrt[][2026.09.22_12:00_TAI/6h]',
+          `a six-hour window ending now, not [$], which JSOC rejected (${ds})`, ds);
+    check(new URL(url).searchParams.get('key') === 'T_REC,HARPNUM,NOAA_AR,LAT_FWT,LON_FWT',
+          'asking for exactly the five columns used');
+    // Everyone inside the same twelve minutes asks the identical question, so
+    // the proxy's edge cache can answer them.
+    const a = S.sharpQueryUrl(Date.UTC(2026, 8, 22, 18, 1));
+    const b = S.sharpQueryUrl(Date.UTC(2026, 8, 22, 18, 11));
+    const c = S.sharpQueryUrl(Date.UTC(2026, 8, 22, 18, 13));
+    check(a === b, 'two visitors ten minutes apart share one cacheable URL');
+    check(a !== c, 'but the next twelve-minute cadence asks again');
+  }
+
+  console.log('\nGarbage in');
+  {
+    check(S.parseSharpResponse({ status: 6, error: '' }).length === 0,
+          "JSOC's own error shape is an empty result, not a crash");
+    check(S.parseSharpResponse(null).length === 0, 'nor is nothing at all');
+    check(S.parseTRec('not a time') === null, 'an unreadable T_REC is null');
+  }
+} finally {
+  rmSync(out, { recursive: true, force: true });
+}
+
+console.log(`\n${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

@@ -12,6 +12,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { longitudeAt } from '../utils/solarDisk';
 import type { RegionInput } from '../utils/regionLabels';
+import { fetchSharpByRegion, withSharpPosition } from '../utils/sharpPositions';
 
 const SOURCE = 'https://services.swpc.noaa.gov/json/solar_regions.json';
 const PROXY = '/api/proxy/data';
@@ -158,7 +159,10 @@ export function useSunspotRegions(enabled = true): {
           const rows = await res.json();
           if (cancelled) return;
           if (!Array.isArray(rows)) continue;
-          setRegions(normaliseRegions(rows));
+          // NOAA says which regions exist; HMI SHARPs say where they are now.
+          const sharp = await fetchSharpByRegion();
+          if (cancelled) return;
+          setRegions(normaliseRegions(rows).map((r) => withSharpPosition(r, sharp, 'observedAtMs')));
           setError(null);
           return;
         } catch {

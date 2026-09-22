@@ -38,6 +38,9 @@ export const ALLOWED_DATA_HOSTS = new Set([
   'www.nmdb.eu',
   'nest.nmdb.eu',
   'services.swpc.noaa.gov',
+  // SDO/HMI SHARP positions for sunspot regions, every twelve minutes. JSOC
+  // sends no CORS headers. See utils/sharpPositions.
+  'jsoc.stanford.edu',
 ]);
 
 const BLOCKED_HOST_RE = /(^localhost$)|(^127\.)|(^10\.)|(^192\.168\.)|(^169\.254\.)|(^172\.(1[6-9]|2\d|3[0-1])\.)|(^0\.)/;

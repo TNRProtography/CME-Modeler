@@ -33,6 +33,7 @@ import StarField from './StarField';
 import DriftingMoon from './DriftingMoon';
 import { encodeGif, type GifFrame } from '../utils/gifEncoder';
 import { parseSrsValidTime, latestSrsEpoch } from '../utils/srsTime';
+import { fetchSharpByRegion, withSharpPosition } from '../utils/sharpPositions';
 
 interface SolarActivityDashboardProps {
   setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | { type: 'image_with_labels'; url: string; regions: RegionInput[]; geometry: SolarDiskGeometry; imageNatural: { width: number; height: number }; atMs: number } | null) => void;
@@ -1740,9 +1741,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       // ── Step 2: JSON for supplementary data - one entry per region ─────────
       // sunspot_report.json: flare probabilities, spot count, magnetic class
       // solar_regions.json:  same, different field names - both tried, latest wins
-      const [sunspotReportRaw, solarRegionsRaw] = await Promise.all([
+      // SHARP positions ride along: NOAA says which regions exist, HMI says
+      // where they are now. See utils/sharpPositions.
+      const [sunspotReportRaw, solarRegionsRaw, sharp] = await Promise.all([
         fetchFirstAvailableJson(['https://services.swpc.noaa.gov/json/sunspot_report.json']).catch(() => null),
         fetchFirstAvailableJson(['https://services.swpc.noaa.gov/json/solar_regions.json']).catch(() => null),
+        fetchSharpByRegion(),
       ]);
 
       // Extract JSON entries, keyed by region - keep only the LATEST entry per region
@@ -1801,6 +1805,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           trend,
         };
       })
+      // Before the Earth-facing filter, so a region is judged by where it is
+      // now rather than where it was at midnight.
+      .map(r => withSharpPosition(r, sharp, 'observedTime'))
       .filter(r => isEarthFacingCoordinate(r.latitude, r.longitude))
       .filter(r => (r.area ?? 0) >= ACTIVE_REGION_MIN_AREA_MSH)
       .sort((a, b) => (b.area ?? -1) - (a.area ?? -1));
