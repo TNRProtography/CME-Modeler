@@ -223,9 +223,18 @@ export interface SharpHistoryPoint {
    * plotted on one axis.
    */
   areaMh: number;
+  /**
+   * Where the region was that hour, Stonyhurst, or null if HMI gave no centre.
+   *
+   * Flux and area add across patches; positions do not. For a region split
+   * over two patches this is the centre of whichever patch carried more flux
+   * that hour - the part of the region a reader would point at.
+   */
+  latitude: number | null;
+  longitude: number | null;
 }
 
-const HISTORY_KEYS = 'T_REC,HARPNUM,NOAA_AR,USFLUX,AREA_ACR';
+const HISTORY_KEYS = 'T_REC,HARPNUM,NOAA_AR,USFLUX,AREA_ACR,LAT_FWT,LON_FWT';
 
 /**
  * Hourly SHARPs for the last few days.
@@ -261,6 +270,9 @@ export function parseSharpHistory(json: any): Map<string, SharpHistoryPoint[]> {
   if (!tRec || !noaa || !flux || !area) return new Map();
 
   const harp = columns.get('HARPNUM');
+  const latCol = columns.get('LAT_FWT'), lonCol = columns.get('LON_FWT');
+  // The flux of the patch whose centre each hour currently carries.
+  const positionFlux = new Map<string, number>();
 
   // region -> hour -> summed point
   const byRegion = new Map<string, Map<number, SharpHistoryPoint>>();
@@ -285,13 +297,21 @@ export function parseSharpHistory(json: any): Map<string, SharpHistoryPoint[]> {
     if (seen.has(slot)) continue;
     seen.add(slot);
 
+    const lat = Number(latCol?.[i]);
+    const lon = Number(lonCol?.[i]);
+    const hasCentre = Number.isFinite(lat) && Number.isFinite(lon);
+
     const existing = hours.get(hour);
-    if (existing) {
-      existing.usfluxMx += f;
-      existing.areaMh += a;
-    } else {
-      hours.set(hour, { atMs: hour, usfluxMx: f, areaMh: a });
+    const point = existing ?? { atMs: hour, usfluxMx: 0, areaMh: 0, latitude: null, longitude: null };
+    point.usfluxMx += f;
+    point.areaMh += a;
+    const posKey = `${key}|${hour}`;
+    if (hasCentre && f > (positionFlux.get(posKey) ?? -1)) {
+      point.latitude = lat;
+      point.longitude = lon;
+      positionFlux.set(posKey, f);
     }
+    if (!existing) hours.set(hour, point);
   }
 
   const out = new Map<string, SharpHistoryPoint[]>();
@@ -385,4 +405,38 @@ export async function fetchSharpHistory(): Promise<Map<string, SharpHistoryPoint
   } finally {
     historyInFlight = null;
   }
+}
+
+/**
+ * Where a region was at a moment, from its hourly history.
+ *
+ * The nearest hour within the tolerance, or null - in which case the caller
+ * falls back to NOAA's position carried for rotation. The time returned is
+ * the hour's, so the caller's rotation correction covers the gap exactly.
+ */
+export function positionAt(
+  points: SharpHistoryPoint[],
+  atMs: number,
+  toleranceMs = 90 * 60000,
+): { latitude: number; longitude: number; atMs: number } | null {
+  let best: SharpHistoryPoint | null = null;
+  for (const p of points) {
+    if (p.latitude == null || p.longitude == null) continue;
+    if (!best || Math.abs(p.atMs - atMs) < Math.abs(best.atMs - atMs)) best = p;
+  }
+  if (!best || Math.abs(best.atMs - atMs) > toleranceMs) return null;
+  return { latitude: best.latitude!, longitude: best.longitude!, atMs: best.atMs };
+}
+
+/**
+ * Whether HMI had started tracking a region by a moment.
+ *
+ * NOAA's list is today's regions. Scrubbing back two days should not show a
+ * region that emerged this morning, and the first hour HMI tracked it is the
+ * best available answer to when that was. Regions with no history at all are
+ * given the benefit of the doubt - there is nothing to say they were absent.
+ */
+export function trackedBy(points: SharpHistoryPoint[] | undefined, atMs: number, graceMs = 90 * 60000): boolean {
+  if (!points || points.length === 0) return true;
+  return points[0].atMs - graceMs <= atMs;
 }

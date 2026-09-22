@@ -33,7 +33,13 @@ import StarField from './StarField';
 import DriftingMoon from './DriftingMoon';
 import { encodeGif, type GifFrame } from '../utils/gifEncoder';
 import { parseSrsValidTime, latestSrsEpoch } from '../utils/srsTime';
-import { fetchSharpByRegion, withSharpPosition } from '../utils/sharpPositions';
+import {
+  fetchSharpByRegion, withSharpPosition, fetchSharpHistory, positionAt, trackedBy,
+  regionKey as sharpRegionKey, type SharpHistoryPoint,
+} from '../utils/sharpPositions';
+import { fetchHmiFrames, type HmiFrame } from '../utils/hmiArchive';
+import { proxyImageUrl } from '../utils/imagePixels';
+import FrameScrubber from './FrameScrubber';
 import RegionMagneticHistory from './RegionMagneticHistory';
 
 interface SolarActivityDashboardProps {
@@ -190,6 +196,12 @@ const NOAA_PROTON_FLUX_URLS = [
   'https://services.swpc.noaa.gov/json/goes/integral-protons-plot-7-day.json',
   'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-1-day.json',
 ];
+/**
+ * How far back the sunspot scrubber can look. Three days, because that is the
+ * depth of the HMI position history that places the regions on old frames.
+ */
+const SPOT_WINDOW_OPTIONS = [6, 12, 24, 72] as const;
+
 const NOAA_ACTIVE_REGIONS_TEXT_URL = 'https://services.swpc.noaa.gov/text/solar-regions.txt';
 const NOAA_SOLAR_PROBABILITIES_URL = 'https://services.swpc.noaa.gov/json/solar_probabilities.json';
 const NOAA_ACTIVE_REGIONS_URLS = [
@@ -2212,18 +2224,128 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     return r ? `AR ${r.region} \u00b7 ${r.magneticClass || 'Unknown'} \u00b7 ${r.location}` : `AR ${id}`;
   }, [regionById]);
 
-  // The sunspot tracker's own overview. Its imagery is the latest frame, so
-  // the moment being shown is now.
+  // ── Sunspot history scrubber ──────────────────────────────────────────────
+  // Past frames from SDO's browse archive, with every region placed where HMI
+  // measured it at that hour. The newest frame is the live image exactly as
+  // before, so opening the panel still shows now.
+  const [spotWindowHours, setSpotWindowHours] = useState<number>(12);
+  const [spotArchive, setSpotArchive] = useState<HmiFrame[]>([]);
+  const [spotFrameIndex, setSpotFrameIndex] = useState(0);
+  const [spotPlaying, setSpotPlaying] = useState(false);
+  const [spotSpeed, setSpotSpeed] = useState(1);
+  const [sharpHistory, setSharpHistory] = useState<Map<string, SharpHistoryPoint[]>>(new Map());
+  const [archiveGeometry, setArchiveGeometry] =
+    useState<{ width: number; height: number; cx: number; cy: number; radius: number } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchSharpHistory().then((h) => { if (!cancelled) setSharpHistory(h); });
+    return () => { cancelled = true; };
+  }, [refreshSignal]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const now = Date.now();
+    fetchHmiFrames(sunspotImageryMode, now - spotWindowHours * 3600000, now)
+      .then((frames) => { if (!cancelled) setSpotArchive(frames); });
+    return () => { cancelled = true; };
+  }, [sunspotImageryMode, spotWindowHours, refreshSignal]);
+
+  // Every archive frame of one product shares SDO's framing, which is not
+  // necessarily JSOC's live framing - so it is measured once per product,
+  // not once per frame, which would stall playback.
+  useEffect(() => { setArchiveGeometry(null); }, [sunspotImageryMode]);
+
+  const spotFrames = useMemo(() => [
+    ...spotArchive.map((f) => ({ atMs: f.atMs, url: f.url as string | null, live: false })),
+    { atMs: Date.now(), url: null as string | null, live: true },
+  ], [spotArchive]);
+
+  // Land on now whenever the set of frames changes - the rule every imagery
+  // panel in the app follows.
+  const lastSpotKey = useRef('');
+  useEffect(() => {
+    const key = `${sunspotImageryMode}:${spotWindowHours}:${spotFrames.length}`;
+    if (key === lastSpotKey.current) return;
+    lastSpotKey.current = key;
+    setSpotFrameIndex(spotFrames.length - 1);
+  }, [sunspotImageryMode, spotWindowHours, spotFrames.length]);
+
+  const spotIndex = Math.min(spotFrameIndex, spotFrames.length - 1);
+  const spotFrame = spotFrames[spotIndex];
+  const spotIsLive = spotFrame.live;
+  const spotFrameMs = spotIsLive ? Date.now() : spotFrame.atMs;
+  // Through the proxy: cached at the edge, and same-origin so the one
+  // measurement below can read its pixels.
+  const spotDisplayUrl = spotIsLive ? sunspotOverviewImage.url : proxyImageUrl(spotFrame.url as string, 300);
+
+  const advanceSpotFrame = useCallback(
+    () => setSpotFrameIndex((i) => (i + 1) % Math.max(1, spotFrames.length)),
+    [spotFrames.length],
+  );
+
+  // The next few frames, fetched ahead so playback does not wait on each one.
+  // Not the whole window: three days of 1024px frames is tens of megabytes.
+  useEffect(() => {
+    for (let k = 1; k <= 3; k++) {
+      const next = spotFrames[spotIndex + k];
+      if (next && !next.live && next.url) new Image().src = proxyImageUrl(next.url, 300);
+    }
+  }, [spotIndex, spotFrames]);
+
+  useEffect(() => {
+    if (spotIsLive || archiveGeometry || !spotDisplayUrl) return;
+    let cancelled = false;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      if (cancelled) return;
+      const w = img.naturalWidth || HMI_IMAGE_SIZE;
+      const h = img.naturalHeight || HMI_IMAGE_SIZE;
+      setArchiveGeometry(measureDiskFromImage(img, w, h) ?? fallbackDiskGeometry(w, h));
+    };
+    img.onerror = () => {
+      if (!cancelled) setArchiveGeometry(fallbackDiskGeometry(HMI_IMAGE_SIZE, HMI_IMAGE_SIZE));
+    };
+    img.src = spotDisplayUrl;
+    return () => { cancelled = true; };
+  }, [spotIsLive, archiveGeometry, spotDisplayUrl]);
+
+  const spotGeometry = spotIsLive ? overviewGeometry : (archiveGeometry ?? overviewGeometry);
+
+  /**
+   * The regions as they were at the frame's moment.
+   *
+   * HMI's position for that hour where there is one; otherwise today's
+   * position, which the label builder carries back for rotation. A region HMI
+   * only started tracking after the frame is left off - NOAA's list is
+   * today's, and it should not appear on the Sun before it emerged.
+   */
+  const { spotRegionInputs, spotPlacedFromHmi } = useMemo(() => {
+    if (spotIsLive) return { spotRegionInputs: regionInputs, spotPlacedFromHmi: 0 };
+    let placed = 0;
+    const inputs = regionInputs.flatMap((r) => {
+      const points = sharpHistory.get(sharpRegionKey(r.id));
+      if (!trackedBy(points, spotFrameMs)) return [];
+      const pos = points ? positionAt(points, spotFrameMs) : null;
+      if (!pos) return [r];
+      placed++;
+      return [{ ...r, latitude: pos.latitude, longitude: pos.longitude, observedAtMs: pos.atMs }];
+    });
+    return { spotRegionInputs: inputs, spotPlacedFromHmi: placed };
+  }, [spotIsLive, regionInputs, sharpHistory, spotFrameMs]);
+
+  // The sunspot tracker's own overview, for whichever frame is on screen.
   const laidOutSunspotLabels = useMemo(() => {
-    if (!overviewGeometry) return [];
-    return buildRegionLabels(regionInputs, {
-      geometry: overviewGeometry,
-      imageNatural: { width: overviewGeometry.width, height: overviewGeometry.height },
+    if (!spotGeometry) return [];
+    return buildRegionLabels(spotRegionInputs, {
+      geometry: spotGeometry,
+      imageNatural: { width: spotGeometry.width, height: spotGeometry.height },
       box: overviewBoxSize,
-      atMs: Date.now(),
+      atMs: spotFrameMs,
       detailMinWidth: 380,
     });
-  }, [regionInputs, overviewGeometry, overviewBoxSize]);
+  }, [spotRegionInputs, spotGeometry, overviewBoxSize, spotFrameMs]);
 
   // ── Region history, for the growth read ──────────────────────────────────
   // NOAA only ever publishes the current state, so the worker keeps a snapshot
@@ -3880,7 +4002,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-grow">
-                <div className="lg:col-span-7 rounded-lg border border-neutral-800 bg-black/80 p-3 min-h-0 flex items-center justify-center">
+                <div className="lg:col-span-7 rounded-lg border border-neutral-800 bg-black/80 p-3 min-h-0 flex flex-col justify-center">
                   <div
                     ref={overviewBoxRef}
                     className="relative aspect-square w-full max-w-[700px] max-h-[70vh] md:max-h-[680px] mx-auto cursor-zoom-in"
@@ -3893,6 +4015,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                           false,
                           false,
                         );
+                        return;
+                      }
+                      if (!spotIsLive && spotDisplayUrl) {
+                        setViewerMedia({ url: spotDisplayUrl, type: 'image' });
                         return;
                       }
                       if (!sunspotOverviewImage4k.url) return;
@@ -3910,10 +4036,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       });
                     }}
                   >
-                    {sunspotOverviewImage.url && (
+                    {spotDisplayUrl && (
                       <img
-                        src={sunspotOverviewImage.url}
-                        alt="SDO sunspot overview"
+                        src={spotDisplayUrl}
+                        alt={spotIsLive ? 'SDO sunspot overview' : `SDO sunspot overview, ${new Date(spotFrameMs).toUTCString()}`}
                         className="w-full h-full object-contain rounded-lg"
                       />
                     )}
@@ -3985,7 +4111,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         the region, so the thing being magnified is never under
                         the card magnifying it. */}
                     {(() => {
-                      if (!hoveredRegionId || !overviewBoxSize.width || !sunspotOverviewImage.url) return null;
+                      if (!hoveredRegionId || !overviewBoxSize.width || !spotDisplayUrl) return null;
                       const hovered = laidOutSunspotLabels.find((l) => l.id === hoveredRegionId);
                       const region = regionById.get(hoveredRegionId);
                       if (!hovered || !region) return null;
@@ -3995,7 +4121,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       // Deeper on the 4096px frame, which has the detail to
                       // support it; the 1024px frame stays at 6x, where it
                       // already starts to go blocky.
-                      const sharp4k = sunspotOverviewImage4k.url;
+                      const sharp4k = spotIsLive ? sunspotOverviewImage4k.url : null;
                       const ZOOM = sharp4k ? 14 : 6;
                       const CARD = 168;
                       const onLeft = xPct > 50;
@@ -4011,7 +4137,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         >
                           <div className="relative overflow-hidden" style={{ width: CARD, height: CARD }}>
                             <img
-                              src={sharp4k ?? sunspotOverviewImage.url}
+                              src={sharp4k ?? spotDisplayUrl}
                               alt=""
                               className="absolute max-w-none"
                               style={{
@@ -4035,6 +4161,45 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         </div>
                       );
                     })()}
+                  </div>
+
+                  {/* History. The window buttons sit with the scrubber rather
+                      than in the header, so the imagery buttons up there stay
+                      about WHAT is shown and these about WHEN. */}
+                  <div className="w-full max-w-[700px] mx-auto">
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      {SPOT_WINDOW_OPTIONS.map((h) => (
+                        <button
+                          key={h}
+                          type="button"
+                          onClick={() => { setSpotPlaying(false); setSpotWindowHours(h); }}
+                          className={`px-3 py-1 text-xs rounded transition-colors ${
+                            spotWindowHours === h ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
+                        >{h < 48 ? `${h}h` : `${h / 24}d`}</button>
+                      ))}
+                      <span className="ml-auto text-[11px] text-neutral-500">
+                        {spotArchive.length > 0 ? `${spotFrames.length} frames` : 'Loading history...'}
+                      </span>
+                    </div>
+                    <FrameScrubber
+                      count={spotFrames.length}
+                      index={spotIndex}
+                      onIndex={setSpotFrameIndex}
+                      onAdvance={advanceSpotFrame}
+                      playing={spotPlaying}
+                      onPlaying={setSpotPlaying}
+                      speed={spotSpeed}
+                      onSpeed={setSpotSpeed}
+                      caption={spotIsLive
+                        ? 'Frame: latest'
+                        : <>
+                            Frame: {new Date(spotFrameMs).toLocaleString('en-NZ', {
+                              timeZone: 'Pacific/Auckland', weekday: 'short', day: 'numeric', month: 'short',
+                              hour: 'numeric', minute: '2-digit', hour12: true,
+                            })}
+                            {' · '}{spotPlacedFromHmi} of {spotRegionInputs.length} placed from HMI at this hour
+                          </>}
+                    />
                   </div>
                 </div>
 

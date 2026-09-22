@@ -96,8 +96,9 @@ try {
     check(`${label}: loopback refused`, r.status === 400, String(r.status));
 
     // The two allow-lists are separate on purpose: an image host is not
-    // automatically a text host, and vice versa.
-    r = await call(`${prefix}/data?${q(IMG)}`);
+    // automatically a text host, and vice versa. jsoc1 serves only images;
+    // SDO is on both lists now, because its archive listings are text.
+    r = await call(`${prefix}/data?${q('https://jsoc1.stanford.edu/data/hmi/images/latest/HMI_latest_Mag_1024x1024.gif')}`);
     check(`${label}: image host not allowed on data proxy`, r.status === 400, String(r.status));
 
     r = await call(`${prefix}/image`);

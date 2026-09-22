@@ -156,11 +156,44 @@ try {
     const ds = decodeURIComponent(new URL(url).searchParams.get('ds'));
     check(ds === 'hmi.sharp_720s_nrt[][2026.09.19_18:00_TAI/72h@1h]',
           `three days, one record an hour, rounded to the hour (${ds})`, ds);
-    check(new URL(url).searchParams.get('key') === 'T_REC,HARPNUM,NOAA_AR,USFLUX,AREA_ACR',
-          'asking for flux and area rather than position');
+    check(new URL(url).searchParams.get('key') === 'T_REC,HARPNUM,NOAA_AR,USFLUX,AREA_ACR,LAT_FWT,LON_FWT',
+          'asking for flux, area and position - the scrubber needs where it was, not just how big');
     const plain = decodeURIComponent(new URL(S.sharpHistoryUrl(Date.UTC(2026, 8, 22, 18, 25), 24, null)).searchParams.get('ds'));
     check(plain === 'hmi.sharp_720s_nrt[][2026.09.21_18:00_TAI/24h]',
           'and the unstepped fallback in the form JSOC is known to accept', plain);
+  }
+
+
+  console.log('\nWhere a region was, hour by hour');
+  {
+    const H = (h) => `2026.09.22_${String(h).padStart(2, '0')}:00:00_TAI`;
+    const hist = {
+      keywords: [
+        { name: 'T_REC', values: [H(10), H(10), H(12)] },
+        { name: 'HARPNUM', values: ['14044', '14050', '14044'] },
+        { name: 'NOAA_AR', values: ['14538', '14538', '14538'] },
+        { name: 'USFLUX', values: ['3e21', '9e21', '1e22'] },
+        { name: 'AREA_ACR', values: ['100', '200', '300'] },
+        { name: 'LAT_FWT', values: ['10', '12', '11'] },
+        { name: 'LON_FWT', values: ['5', '8', '9'] },
+      ],
+    };
+    const series = S.parseSharpHistory(hist).get('4538');
+    check(series[0].latitude === 12 && series[0].longitude === 8,
+          'a region over two patches is placed at the one carrying more flux - positions cannot be summed',
+          `${series[0].latitude},${series[0].longitude}`);
+    check(Math.abs(series[0].usfluxMx - 1.2e22) < 1e15, 'while its flux is still the total');
+
+    const at = (h) => Date.UTC(2026, 8, 22, h) - 37000;
+    const p = S.positionAt(series, at(12) + 20 * 60000);
+    check(p && p.latitude === 11 && p.longitude === 9, 'the nearest hour is used');
+    check(p.atMs === series[1].atMs, "with that hour's time, so the rotation correction covers the gap exactly");
+    check(S.positionAt(series, at(16)) === null,
+          'nothing within the tolerance is null, and the caller falls back to NOAA');
+
+    check(!S.trackedBy(series, at(7)), 'a region is not shown three hours before HMI first tracked it');
+    check(S.trackedBy(series, at(9)), 'but is inside the grace period just before');
+    check(S.trackedBy(undefined, at(1)), 'and a region with no history at all is not hidden - nothing says it was absent');
   }
 
 } finally {

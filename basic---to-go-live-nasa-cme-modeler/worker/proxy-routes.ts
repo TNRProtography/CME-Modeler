@@ -41,6 +41,9 @@ export const ALLOWED_DATA_HOSTS = new Set([
   // SDO/HMI SHARP positions for sunspot regions, every twelve minutes. JSOC
   // sends no CORS headers. See utils/sharpPositions.
   'jsoc.stanford.edu',
+  // The SDO browse archive's directory listings, for past HMI frames. See
+  // utils/hmiArchive.
+  'sdo.gsfc.nasa.gov',
 ]);
 
 const BLOCKED_HOST_RE = /(^localhost$)|(^127\.)|(^10\.)|(^192\.168\.)|(^169\.254\.)|(^172\.(1[6-9]|2\d|3[0-1])\.)|(^0\.)/;
