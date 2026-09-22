@@ -865,9 +865,10 @@ const GROW_FRAG = FRAG
   .replace('varying float vFlow;', 'varying float vFlow;\n  varying float vSpeed;\n  varying float vGlow;\n  varying float vEnds;')
   .replace('deceleratedSpeed(uSourceSpeed, vFlow)', 'deceleratedSpeed(max(vSpeed, 300.0), vFlow)')
   .replace('float alpha = uOpacity * fadeIn * edgeFade * tipFade * (0.32 + 0.68 * pulse);',
-    `col = mix(col, vec3(1.0, 0.97, 0.9), vGlow * 0.55);
+    `float glow = smoothstep(0.2, 1.0, vGlow);   // a pile-up glows, denser wind does not
+    col = mix(col, vec3(1.0, 0.97, 0.9), glow * 0.45);
     float alpha = uOpacity * fadeIn * edgeFade * tipFade * (0.32 + 0.68 * pulse)
-      * smoothstep(0.0, 0.08, vEnds) * (1.0 + vGlow * 0.9);`);
+      * smoothstep(0.0, 0.08, vEnds) * (1.0 + glow * 0.5);`);
 
 /** Parcels laid along a growing stream; the tube has this many rings. */
 export const GROWING_STREAM_RINGS = 160;
@@ -944,11 +945,29 @@ export function updateGrowingStreamMesh(
   const r0 = sunRadius * 1.018;
   const span = Math.max(1e-6, maxReach - r0);
 
-  // Resample by position along the parcel string.
+  // Resample by distance along the stream, not by parcel. Where wind has
+  // piled up, many parcels sit close together; one ring per parcel would
+  // stack dozens of wide, faint rings in one spot, and additive blending
+  // turns a stack like that into bright stripes. Evenly spaced rings keep
+  // the tube smooth, and the pile-up shows only as its glow.
+  const cum: number[] = [0];
+  for (let k = 1; k < parcels.length; k++) {
+    const a = parcels[k - 1], b = parcels[k];
+    const ax = a.r * Math.sin(a.az), az0 = a.r * Math.cos(a.az);
+    const bx = b.r * Math.sin(b.az), bz = b.r * Math.cos(b.az);
+    cum.push(cum[k - 1] + Math.hypot(bx - ax, bz - az0));
+  }
+  const total = cum[cum.length - 1] || 1;
   const at = (f: number) => {
-    const x = f * (parcels.length - 1);
-    const i = Math.min(parcels.length - 2, Math.floor(x));
-    const t = x - i;
+    const target = f * total;
+    let lo = 0, hi = parcels.length - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (cum[mid] <= target) lo = mid; else hi = mid;
+    }
+    const i = Math.min(parcels.length - 2, lo);
+    const seg = cum[i + 1] - cum[i];
+    const t = seg > 0 ? Math.min(1, Math.max(0, (target - cum[i]) / seg)) : 0;
     const a = parcels[i], b = parcels[i + 1];
     const mix = (u: number, v: number) => u + (v - u) * t;
     return {
@@ -956,7 +975,9 @@ export function updateGrowingStreamMesh(
       az: mix(a.az, b.az),
       lat: mix(a.state.lat, b.state.lat),
       height: mix(a.state.heightDeg, b.state.heightDeg),
-      width: Math.max(mix(a.state.widthDeg, b.state.widthDeg), mix(a.state.heightDeg, b.state.heightDeg)),
+      // Capped: a detection that merged neighbouring holes can report one
+      // the size of a quadrant, and the tube flares with width.
+      width: Math.min(60, Math.max(mix(a.state.widthDeg, b.state.widthDeg), mix(a.state.heightDeg, b.state.heightDeg))),
       speed: mix(a.state.estimatedSpeedKms, b.state.estimatedSpeedKms),
       glow: mix(a.compression, b.compression),
     };
@@ -980,6 +1001,24 @@ export function updateGrowingStreamMesh(
       s.r * Math.cos(lat) * Math.cos(s.az),
     ));
   }
+
+  // How tightly the stream bends at each ring: the radius of the circle
+  // through its neighbours a few rings either side. A tube fatter than the
+  // bend it follows folds over itself into fins, so the tube is kept inside
+  // it (with the limit spread along the stream, so it narrows smoothly).
+  const bendLimit: number[] = new Array(rings).fill(Infinity);
+  const K = 3;
+  for (let i = K; i < rings - K; i++) {
+    const a = backbone[i - K], b = backbone[i], c = backbone[i + K];
+    const ab = a.distanceTo(b), bc = b.distanceTo(c), ca = c.distanceTo(a);
+    const cross = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a)).length();
+    if (cross > 1e-12) bendLimit[i] = 0.85 * (ab * bc * ca) / (2 * cross);
+  }
+  const limit = bendLimit.map((_, i) => {
+    let m = Infinity;
+    for (let k = Math.max(0, i - 2 * K); k <= Math.min(rings - 1, i + 2 * K); k++) m = Math.min(m, bendLimit[k]);
+    return m;
+  });
 
   const geom = mesh.geometry;
   const pos = geom.getAttribute('position');
@@ -1009,7 +1048,7 @@ export function updateGrowingStreamMesh(
     const tubeR0 = Math.max(sunRadius * Math.sin(halfAngle), sunRadius * 0.07);
     const widthFactor = THREE.MathUtils.clamp(s.width / 30, 0.6, 1.8);
     const tE = Math.pow(flow, 0.7);
-    const rTube = tubeR0 * (1 + tE * 4 * widthFactor) * (1 + tE);
+    const rTube = Math.min(limit[i], tubeR0 * (1 + tE * 4 * widthFactor) * (1 + tE));
     // 0 at either end of the stream, 1 inside it.
     const ends = Math.min(i, rings - 1 - i) / (rings - 1) * 2;
 

@@ -55,11 +55,14 @@ try {
   check(Math.abs(lag - 2.666e-6 * 10 * 3600) < 1e-3, `the oldest wind lags its source by the Sun's turn in 10 h (${(lag * 180 / Math.PI).toFixed(2)}°)`);
 
   console.log('\nEach reading keeps its own speed');
-  const stepped = { firstMs: T0, lastMs: null, stateAt: (ms) => hole(ms < T0 + 12 * H ? 400 : 700) };
-  ps = streamParcels(stepped, opts(T0 + 16 * H));
-  const old = ps.filter((p) => p.emittedMs < T0 + 6 * H);
-  const young = ps.filter((p) => p.emittedMs > T0 + 13 * H);
-  check(old.every((p) => p.state.estimatedSpeedKms === 400) && young.every((p) => p.state.estimatedSpeedKms === 700),
+  // Readings are averaged over 12 h either side, so look further from the change than that.
+  const stepped = { firstMs: T0, lastMs: null, stateAt: (ms) => hole(ms < T0 + 24 * H ? 400 : 700) };
+  ps = streamParcels(stepped, opts(T0 + 60 * H));
+  const old = ps.filter((p) => p.emittedMs < T0 + 11.5 * H);
+  const young = ps.filter((p) => p.emittedMs > T0 + 36.5 * H);
+  check(old.length > 5 && young.length > 5
+    && old.every((p) => Math.abs(p.state.estimatedSpeedKms - 400) < 1e-6)
+    && young.every((p) => Math.abs(p.state.estimatedSpeedKms - 700) < 1e-6),
     'wind keeps the speed it left with');
 
   console.log('\nFast wind piles up behind slow wind');
@@ -73,6 +76,39 @@ try {
   check(peak > 0.5, `the catch-up is marked as compression (${peak.toFixed(2)})`);
   const calm = streamParcels(steady(600, T0), opts(T0 + 60 * H));
   check(Math.max(...calm.map((p) => p.compression)) < 0.05, 'steady wind is not compressed');
+
+  console.log('\nDetector noise is not a pile-up');
+  {
+    // The speed estimate wobbling between readings every two hours, as the
+    // detector's does, around a steady stream.
+    const noisy = { firstMs: T0, lastMs: null, stateAt: (ms) => hole(Math.floor((ms - T0) / (2 * H)) % 2 ? 750 : 550) };
+    const ps2 = streamParcels(noisy, opts(T0 + 96 * H));
+    const peak2 = Math.max(...ps2.map((p) => p.compression));
+    check(peak2 < 0.3, `a wobbling estimate does not bunch the stream up (peak compression ${peak2.toFixed(2)})`);
+    let sideways = 0;
+    for (let i = 1; i < ps2.length; i++) if (ps2[i].r - ps2[i - 1].r < 1e-4) sideways++;
+    check(sideways < ps2.length * 0.02, `and does not fold it sideways (${sideways} stuck parcels)`);
+  }
+
+  console.log('\nA wandering position does not zigzag the stream');
+  {
+    let sd = 3;
+    const r = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
+    const jitter = Array.from({ length: 60 }, () => [(r() - 0.5) * 8, (r() - 0.5) * 8, 450 + r() * 350, 15 + r() * 20]);
+    const wander = { firstMs: T0, lastMs: null, stateAt: (ms) => {
+      const j = jitter[Math.min(59, Math.max(0, Math.round((ms - T0) / (2 * H))))];
+      return { lat: j[0], lon: j[1], widthDeg: j[3], heightDeg: j[3], darkness: 0.5, estimatedSpeedKms: j[2] };
+    } };
+    const ps3 = streamParcels(wander, opts(T0 + 110 * H));
+    // Along the stream, the azimuth should only ever fall behind (the Sun
+    // turning away), never flick back and forth.
+    let reversals = 0;
+    for (let i = 2; i < ps3.length; i++) {
+      const d1 = ps3[i].az - ps3[i - 1].az, d0 = ps3[i - 1].az - ps3[i - 2].az;
+      if (d1 * d0 < 0) reversals++;
+    }
+    check(reversals < ps3.length * 0.05, `noisy readings: ${reversals} zigzags in ${ps3.length} parcels`);
+  }
 
   console.log('\nA closed hole leaves a detached stream');
   ps = streamParcels(steady(600, T0, T0 + 24 * H), opts(T0 + 40 * H));

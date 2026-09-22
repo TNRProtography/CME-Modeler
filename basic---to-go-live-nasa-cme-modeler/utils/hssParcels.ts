@@ -46,7 +46,7 @@ export interface Parcel {
   /** Azimuth in the Sun's frame, radians: atan2(x, z) of the patch frame. */
   az: number;
   state: HoleState;
-  /** 0 = flowing freely, 1 = piled up hard against slower wind ahead. */
+  /** 0 = flowing freely (or merely denser), 1 = piled up hard against slower wind ahead. */
   compression: number;
 }
 
@@ -65,6 +65,19 @@ export interface StreamOptions {
 }
 
 const DEG = Math.PI / 180;
+
+/**
+ * Speeds are averaged over this much either side of a parcel's emission.
+ *
+ * The speed is estimated from each reading's measured width, and a width
+ * measured every two hours wobbles by tens of percent from one frame to the
+ * next. Taken literally, every wobble is fast wind catching slow wind, the
+ * stream piles up on itself everywhere, and the tube folds into slabs. Real
+ * changes in a hole last many hours and survive the averaging; frame-to-frame
+ * noise does not.
+ */
+export const SPEED_SMOOTHING_MS = 12 * 3600000;
+
 
 /** Scene units per km when 1 AU is `sceneScale` units. */
 export const unitsPerKmFor = (sceneScale: number) => sceneScale / 1.495978707e8;
@@ -92,12 +105,42 @@ export function streamParcels(source: StreamSource, o: StreamOptions): Parcel[] 
   const oldest = Math.max(source.firstMs, o.nowMs - longestTripMs);
   if (!(newest > oldest)) return [];
 
+  // What the hole was really like when a parcel left: the readings around
+  // it averaged, within the time the hole was actually emitting. Position
+  // and size as well as speed - the detector's centroid wanders by a few
+  // degrees from frame to frame, more than the Sun turns between frames, and
+  // taken literally the stream zigzags. Finely sampled and tapered at the
+  // ends, so the average does not beat against the readings' cadence.
+  const smoothedState = (ms: number, fallback: HoleState): HoleState => {
+    const acc = { lat: 0, lon: 0, widthDeg: 0, heightDeg: 0, darkness: 0, estimatedSpeedKms: 0 };
+    let weight = 0;
+    const K = 24;
+    for (let k = -K; k <= K; k++) {
+      const at = ms + (k * SPEED_SMOOTHING_MS) / K;
+      if (at < source.firstMs || at > newest) continue;
+      const s = source.stateAt(at);
+      if (!s || !(s.estimatedSpeedKms > 0)) continue;
+      const w = 1 - Math.abs(k) / (K + 1);
+      acc.lat += s.lat * w; acc.lon += s.lon * w;
+      acc.widthDeg += s.widthDeg * w; acc.heightDeg += s.heightDeg * w;
+      acc.darkness += s.darkness * w; acc.estimatedSpeedKms += s.estimatedSpeedKms * w;
+      weight += w;
+    }
+    if (!weight) return fallback;
+    return {
+      lat: acc.lat / weight, lon: acc.lon / weight,
+      widthDeg: acc.widthDeg / weight, heightDeg: acc.heightDeg / weight,
+      darkness: acc.darkness / weight, estimatedSpeedKms: acc.estimatedSpeedKms / weight,
+    };
+  };
+
   // Oldest first: that is the order the pile-up has to be worked out in.
   const raw: Parcel[] = [];
   for (let i = 0; i < o.count; i++) {
     const emittedMs = oldest + ((newest - oldest) * i) / (o.count - 1);
-    const state = source.stateAt(emittedMs);
-    if (!state) continue;
+    const measured = source.stateAt(emittedMs);
+    if (!measured) continue;
+    const state = smoothedState(emittedMs, measured);
     const ageS = Math.max(0, (o.nowMs - emittedMs) / 1000);
     raw.push({
       emittedMs,
@@ -110,17 +153,26 @@ export function streamParcels(source: StreamSource, o: StreamOptions): Parcel[] 
   if (raw.length < 2) return [];
 
   // No overtaking: a parcel may not be further out than the one emitted
-  // before it. Where it would be, it rides up against it instead, and how
+  // before it. Where it would be, it rides up behind it instead, and how
   // much closer it sits than its own speed would put it is the compression.
+  //
+  // It keeps a quarter of its natural spacing even then. Wind squeezed to a
+  // quarter is a hard pile-up; squeezed to nothing, a run of parcels would
+  // sit at one distance side by side, and the tube through them would fold
+  // sideways into a slab.
   const minGap = span * 1e-5;
   for (let i = 1; i < raw.length; i++) {
     const ahead = raw[i - 1];
     const p = raw[i];
     const nominalGap = Math.max(minGap,
       p.state.estimatedSpeedKms * o.unitsPerKm * ((p.emittedMs - ahead.emittedMs) / 1000));
-    if (p.r > ahead.r - minGap) p.r = ahead.r - minGap;
-    const gap = ahead.r - p.r;
-    p.compression = Math.max(0, Math.min(1, 1 - gap / nominalGap));
+    const closest = Math.max(minGap, nominalGap * 0.25);
+    if (p.r > ahead.r - closest) p.r = ahead.r - closest;
+    // Compression counts from half the natural spacing down to the floor:
+    // wind a little closer together than usual is just denser wind, and
+    // only a real pile-up should be drawn as one.
+    const ratio = (ahead.r - p.r) / nominalGap;
+    p.compression = Math.max(0, Math.min(1, (0.5 - ratio) / 0.25));
   }
   // The pile-up is felt on both sides of it.
   for (let i = raw.length - 2; i >= 0; i--) {
