@@ -2230,6 +2230,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   // before, so opening the panel still shows now.
   const [spotWindowHours, setSpotWindowHours] = useState<number>(12);
   const [spotArchive, setSpotArchive] = useState<HmiFrame[]>([]);
+  // Distinguishes "still fetching" from "SDO does not archive this view", which
+  // look identical as an empty list and need different words.
+  const [spotArchiveLoading, setSpotArchiveLoading] = useState(true);
   const [spotFrameIndex, setSpotFrameIndex] = useState(0);
   const [spotPlaying, setSpotPlaying] = useState(false);
   const [spotSpeed, setSpotSpeed] = useState(1);
@@ -2246,8 +2249,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   useEffect(() => {
     let cancelled = false;
     const now = Date.now();
+    setSpotArchiveLoading(true);
     fetchHmiFrames(sunspotImageryMode, now - spotWindowHours * 3600000, now)
-      .then((frames) => { if (!cancelled) setSpotArchive(frames); });
+      .then((frames) => {
+        if (cancelled) return;
+        setSpotArchive(frames);
+        setSpotArchiveLoading(false);
+      });
     return () => { cancelled = true; };
   }, [sunspotImageryMode, spotWindowHours, refreshSignal]);
 
@@ -4178,7 +4186,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         >{h < 48 ? `${h}h` : `${h / 24}d`}</button>
                       ))}
                       <span className="ml-auto text-[11px] text-neutral-500">
-                        {spotArchive.length > 0 ? `${spotFrames.length} frames` : 'Loading history...'}
+                        {spotArchive.length > 0
+                          ? `${spotFrames.length} frames`
+                          : spotArchiveLoading
+                            ? 'Loading history...'
+                            : 'SDO does not archive this view - try another'}
                       </span>
                     </div>
                     <FrameScrubber

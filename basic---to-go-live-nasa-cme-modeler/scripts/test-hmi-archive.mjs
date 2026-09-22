@@ -34,17 +34,49 @@ try {
 
   console.log('\nReading a listing');
   {
-    const bc = A.parseBrowseListing(listing, 'colorized', dir);
+    const bc = A.parseBrowseListing(listing, 'HMIBC', dir);
     check(bc.length === 4, `four colorised frames, each listed twice, counted once (${bc.length})`, String(bc.length));
     check(bc[0].url === `${dir}20260922_000011_1024_HMIBC.jpg`, 'with the full archive URL');
     check(new Date(bc[1].atMs).toISOString() === '2026-09-22T00:15:11.000Z', 'and the time from the name, seconds included');
 
-    const b = A.parseBrowseListing(listing, 'magnetogram', dir);
+    const b = A.parseBrowseListing(listing, 'HMIB', dir);
     check(b.length === 4 && b.every((f) => /_HMIB\.jpg$/.test(f.url)),
           'HMIB does not also match HMIBC, whose name contains it');
-    check(A.parseBrowseListing(listing, 'intensity', dir).length === 4, 'intensity frames are found too');
-    check(A.parseBrowseListing('<html>no files</html>', 'colorized', dir).length === 0,
+    check(A.parseBrowseListing('<html>no files</html>', 'HMIBC', dir).length === 0,
           "the app's own index.html - what an undeployed proxy returns - is an empty list");
+  }
+
+  console.log('\nAgainst a real day\'s listing');
+  {
+    // Copied from https://sdo.gsfc.nasa.gov/assets/img/browse/2026/09/22/ on
+    // the day: AIA channels, the AIA/HMI composite, and HMI only as HMID and
+    // HMII - no HMIBC, HMIB or HMIIF in the stretch it covered.
+    const real = [
+      '20260922_000006_1024_4500.jpg', '20260922_000014_1024_0335.jpg',
+      '20260922_000335_1024_094335193.jpg', '20260922_000335_1024_HMI171.jpg',
+      '20260922_001038_1024_HMID.jpg', '20260922_001038_1024_HMII.jpg',
+      '20260922_001038_4096_HMII.jpg', '20260922_001038_512_HMII.jpg',
+      '20260922_002538_1024_HMII.jpg',
+    ].map((n) => `<a href="${n}">${n}</a>`).join('\n');
+
+    check(A.chooseProduct([real], 'intensity') === 'HMII',
+          'the intensity view falls back to HMII, which the archive does carry');
+    const frames = A.parseBrowseListing(real, 'HMII', dir);
+    check(frames.length === 2, `only the 1024px intensitygrams, not the 512 or 4096 (${frames.length})`, String(frames.length));
+    check(!frames.some((f) => /HMI171|HMID/.test(f.url)),
+          'and not the composite or the Dopplergram, whose names also start HMI');
+    check(A.chooseProduct([real], 'colorized') === null,
+          'a view with no archived product at all says so, rather than borrowing a different measurement');
+    check(A.chooseProduct([real + '\n<a href="20260922_003000_1024_HMIB.jpg">x</a>'], 'colorized') === 'HMIB',
+          'the colorised view falls back to the plain magnetogram - the same measurement in grey');
+  }
+
+  console.log('\nThe choice is made once for the whole window');
+  {
+    const today = '<a href="20260922_000011_1024_HMIBC.jpg">x</a>';
+    const yesterday = '<a href="20260921_230011_1024_HMIB.jpg">x</a>';
+    check(A.chooseProduct([yesterday, today], 'colorized') === 'HMIBC',
+          'the preferred product wins if any day has it, so a scrub across midnight does not flip colour');
   }
 
   console.log('\nThinning keeps playback light');

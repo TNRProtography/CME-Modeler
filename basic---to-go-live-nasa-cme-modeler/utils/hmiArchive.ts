@@ -16,10 +16,21 @@
 
 export type HmiMode = 'colorized' | 'magnetogram' | 'intensity';
 
-const PRODUCT: Record<HmiMode, string> = {
-  colorized: 'HMIBC',
-  magnetogram: 'HMIB',
-  intensity: 'HMIIF',
+/**
+ * Archive product names to try for each view, best first.
+ *
+ * The live "latest" directory serves HMIBC, HMIB and HMIIF, but a real day's
+ * browse listing showed HMII (intensitygram) and HMID (Dopplergram) at the
+ * times it covered, so the browse archive does not necessarily carry the same
+ * set. Each view therefore takes the first of its candidates the listing
+ * actually has. The colorised view falls back to the plain magnetogram, the
+ * same measurement drawn in grey; the intensity view to the unflattened
+ * intensitygram, which only differs by limb darkening.
+ */
+const PRODUCTS: Record<HmiMode, string[]> = {
+  colorized: ['HMIBC', 'HMIB'],
+  magnetogram: ['HMIB', 'HMIBC'],
+  intensity: ['HMIIF', 'HMII', 'HMIIC'],
 };
 
 const BROWSE = 'https://sdo.gsfc.nasa.gov/assets/img/browse';
@@ -37,14 +48,31 @@ export function browseDirUrl(dayMs: number): string {
   return `${BROWSE}/${d.getUTCFullYear()}/${pad(d.getUTCMonth() + 1)}/${pad(d.getUTCDate())}/`;
 }
 
+/** The products to try for a view, best first. */
+export const productsFor = (mode: HmiMode): string[] => PRODUCTS[mode];
+
+/**
+ * Which of a view's candidate products these listings actually hold.
+ *
+ * Chosen once for the whole window, not per day, so a scrub across midnight
+ * does not flip between a colorised frame and a grey one.
+ */
+export function chooseProduct(listings: string[], mode: HmiMode): string | null {
+  for (const product of PRODUCTS[mode]) {
+    const re = new RegExp(`_1024_${product}\\.jpg`);
+    if (listings.some((html) => re.test(html))) return product;
+  }
+  return null;
+}
+
 /**
  * Frames of one product from one day's listing, oldest first.
  *
  * Anchored on the product suffix followed by ".jpg", so HMIB does not also
  * pick up HMIBC files - the colorised name contains the plain one.
  */
-export function parseBrowseListing(html: string, mode: HmiMode, dirUrl: string): HmiFrame[] {
-  const re = new RegExp(`(\\d{8})_(\\d{6})_1024_${PRODUCT[mode]}\\.jpg`, 'g');
+export function parseBrowseListing(html: string, product: string, dirUrl: string): HmiFrame[] {
+  const re = new RegExp(`(\\d{8})_(\\d{6})_1024_${product}\\.jpg`, 'g');
   const seen = new Set<string>();
   const out: HmiFrame[] = [];
   for (const m of String(html ?? '').matchAll(re)) {
@@ -126,10 +154,14 @@ export async function fetchHmiFrames(
 
   const listings = await Promise.all(days.map(async (d) => {
     const dir = browseDirUrl(d);
-    const html = await fetchListing(dir, dir === todayKey);
-    return html ? parseBrowseListing(html, mode, dir) : [];
+    return { dir, html: await fetchListing(dir, dir === todayKey) };
   }));
 
-  const inWindow = listings.flat().filter((f) => f.atMs >= fromMs && f.atMs <= toMs);
+  const product = chooseProduct(listings.map((l) => l.html ?? ''), mode);
+  if (!product) return [];
+
+  const inWindow = listings
+    .flatMap(({ dir, html }) => (html ? parseBrowseListing(html, product, dir) : []))
+    .filter((f) => f.atMs >= fromMs && f.atMs <= toMs);
   return thinFrames(inWindow, intervalMs);
 }
