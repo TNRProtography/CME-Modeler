@@ -105,6 +105,64 @@ try {
     check(S.parseSharpResponse(null).length === 0, 'nor is nothing at all');
     check(S.parseTRec('not a time') === null, 'an unreadable T_REC is null');
   }
+
+  console.log('\nHistory: flux and area per region, hourly');
+  {
+    const H = (h) => `2026.09.22_${String(h).padStart(2, '0')}:00:00_TAI`;
+    const hist = {
+      keywords: [
+        { name: 'T_REC', values: [H(10), H(10), H(11), H(11), H(11), H(12), H(12)] },
+        // 14044 and 14050 are two patches of one region; 14044 is repeated at 11:00.
+        { name: 'HARPNUM', values: ['14044', '14050', '14044', '14044', '14050', '14044', '14050'] },
+        { name: 'NOAA_AR', values: ['14538', '14538', '14538', '14538', '14538', '14538', '14538'] },
+        { name: 'USFLUX', values: ['1e22', '2e21', '1.1e22', '1.1e22', '2e21', '1.2e22', '3e21'] },
+        { name: 'AREA_ACR', values: ['300', '50', '320', '320', '50', '340', '60'] },
+      ],
+    };
+    const series = S.parseSharpHistory(hist).get('4538');
+    check(series?.length === 3, `one point per hour (${series?.length})`, String(series?.length));
+    check(Math.abs(series[0].usfluxMx - 1.2e22) < 1e15,
+          'two patches of one region are summed - flux is a total and both halves are the region',
+          String(series[0].usfluxMx));
+    check(Math.abs(series[1].usfluxMx - 1.3e22) < 1e15,
+          'but a patch measured twice in the same hour counts once',
+          String(series[1].usfluxMx));
+    check(series[2].areaMh === 400, 'area is summed the same way', String(series[2].areaMh));
+    check(series.every((p, i) => i === 0 || p.atMs > series[i - 1].atMs), 'oldest first');
+  }
+
+  console.log('\nThe trend is said in words, carefully');
+  {
+    const mk = (fluxes) => fluxes.map((f, i) => ({ atMs: Date.UTC(2026, 8, 21, 12) + i * 3600000, usfluxMx: f, areaMh: 100 }));
+    const day = (from, to) => mk(Array.from({ length: 25 }, (_, i) => from + (to - from) * (i / 24)));
+
+    const fast = S.fluxTrend(day(1e22, 1.4e22));
+    check(fast.label === 'Flux emerging fast' && Math.round(fast.change24hPct) === 40,
+          `+40% in a day is emerging fast (${fast.label})`);
+    check(/worth watching/.test(fast.note) && !/will flare/.test(fast.note),
+          'and is worded as worth watching, not as a flare forecast');
+
+    check(S.fluxTrend(day(1e22, 1.1e22)).label === 'Growing', '+10% is growing');
+    check(S.fluxTrend(day(1e22, 1.02e22)).label === 'Stable', '+2% is stable');
+    check(S.fluxTrend(day(1e22, 0.8e22)).label === 'Decaying', '-20% is decaying');
+    check(S.fluxTrend(mk([1e22])).change24hPct === null, 'one point is not a trend');
+    check(S.fluxTrend(mk([1e22, 2e22, 3e22])).change24hPct === null,
+          'nor are three hours - too short to call, however steep');
+  }
+
+  console.log('\nThe history query');
+  {
+    const url = S.sharpHistoryUrl(Date.UTC(2026, 8, 22, 18, 25), 72, '1h');
+    const ds = decodeURIComponent(new URL(url).searchParams.get('ds'));
+    check(ds === 'hmi.sharp_720s_nrt[][2026.09.19_18:00_TAI/72h@1h]',
+          `three days, one record an hour, rounded to the hour (${ds})`, ds);
+    check(new URL(url).searchParams.get('key') === 'T_REC,HARPNUM,NOAA_AR,USFLUX,AREA_ACR',
+          'asking for flux and area rather than position');
+    const plain = decodeURIComponent(new URL(S.sharpHistoryUrl(Date.UTC(2026, 8, 22, 18, 25), 24, null)).searchParams.get('ds'));
+    check(plain === 'hmi.sharp_720s_nrt[][2026.09.21_18:00_TAI/24h]',
+          'and the unstepped fallback in the form JSOC is known to accept', plain);
+  }
+
 } finally {
   rmSync(out, { recursive: true, force: true });
 }

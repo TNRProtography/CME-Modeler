@@ -34,6 +34,7 @@ import DriftingMoon from './DriftingMoon';
 import { encodeGif, type GifFrame } from '../utils/gifEncoder';
 import { parseSrsValidTime, latestSrsEpoch } from '../utils/srsTime';
 import { fetchSharpByRegion, withSharpPosition } from '../utils/sharpPositions';
+import RegionMagneticHistory from './RegionMagneticHistory';
 
 interface SolarActivityDashboardProps {
   setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | { type: 'image_with_labels'; url: string; regions: RegionInput[]; geometry: SolarDiskGeometry; imageNatural: { width: number; height: number }; atMs: number } | null) => void;
@@ -2102,6 +2103,23 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   // read without clicking through to the detail panel.
   const [hoveredRegionId, setHoveredRegionId] = useState<string | null>(null);
 
+  // The 4096px imagery on the first hover, not only on selection.
+  //
+  // The hover card magnifies the region, and magnifying the 1024px image
+  // further than it already was only shows bigger pixels - the detail is not
+  // in it. The 4096px frame has four times the resolution, so the close-up can
+  // go more than twice as deep before it turns to blocks. The files are
+  // already prefetched into the HTTP cache a couple of seconds after load, so
+  // this is usually instant; it runs once per page.
+  const hover4kRequestedRef = useRef(false);
+  useEffect(() => {
+    if (!hoveredRegionId || hover4kRequestedRef.current) return;
+    hover4kRequestedRef.current = true;
+    fetchImage(resolveSdoImageUrl(SDO_HMI_BC_4096_URL, forceDirectSdoRef.current), setSdoHmiBc4096, false, false, SDO_HMI_BC_4096_FALLBACK);
+    fetchImage(resolveSdoImageUrl(SDO_HMI_B_4096_URL, forceDirectSdoRef.current), setSdoHmiB4096, false, false, SDO_HMI_B_4096_FALLBACK);
+    fetchImage(resolveSdoImageUrl(SDO_HMI_IF_4096_URL, forceDirectSdoRef.current), setSdoHmiIf4096, false, false, SDO_HMI_IF_4096_FALLBACK);
+  }, [hoveredRegionId, fetchImage]);
+
   const [closeupLightbox, setCloseupLightbox] = useState(false);
 
   const openSunspotCloseupInViewer = useCallback(() => {
@@ -3974,8 +3992,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
                       const xPct = (hovered.label.anchorX / overviewBoxSize.width) * 100;
                       const yPct = (hovered.label.anchorY / overviewBoxSize.height) * 100;
-                      const ZOOM = 6;
-                      const CARD = 132;
+                      // Deeper on the 4096px frame, which has the detail to
+                      // support it; the 1024px frame stays at 6x, where it
+                      // already starts to go blocky.
+                      const sharp4k = sunspotOverviewImage4k.url;
+                      const ZOOM = sharp4k ? 14 : 6;
+                      const CARD = 168;
                       const onLeft = xPct > 50;
 
                       return (
@@ -3989,7 +4011,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         >
                           <div className="relative overflow-hidden" style={{ width: CARD, height: CARD }}>
                             <img
-                              src={sunspotOverviewImage.url}
+                              src={sharp4k ?? sunspotOverviewImage.url}
                               alt=""
                               className="absolute max-w-none"
                               style={{
@@ -4277,6 +4299,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                                 </p>
                               )}
                             </div>
+
+                            {/* Hourly, from the same instrument as the image. */}
+                            <RegionMagneticHistory region={selectedSunspotRegion.region} />
 
                             {/* What it has actually launched. */}
                             <div className="mt-3 pt-2.5 border-t border-neutral-800">
