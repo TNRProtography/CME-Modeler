@@ -26,6 +26,49 @@ export interface SunspotRegion extends RegionInput {
   areaMsh: number | null;
 }
 
+/**
+ * Not Number() alone: Number(null) and Number('') are both 0, which is a
+ * perfectly finite equator. A region with no reported position would be drawn
+ * at 0,0 - dead centre of the disk, the most prominent place on the Sun.
+ */
+const num = (v: unknown): number | null =>
+  (v === null || v === undefined || v === '' ? null : (Number.isFinite(Number(v)) ? Number(v) : null));
+
+/**
+ * Stonyhurst degrees from the report, west positive.
+ *
+ * The `location` string ("N12W34") is preferred because it is unambiguously
+ * Stonyhurst - degrees from the central meridian, which is what placing a
+ * marker on the visible disk needs. The bare `longitude` field is not always
+ * that: SWPC also publishes Carrington longitude, which runs 0-360 and is
+ * measured from a rotating prime meridian that has nothing to do with where
+ * Earth is. Reading one as the other put every region past the limb, where
+ * the Earth-facing filter then dropped it - which is why none appeared.
+ *
+ * So the numeric field is only trusted when it falls in the range a
+ * Stonyhurst longitude can occupy.
+ */
+const parsePosition = (row: any): { latitude: number; longitude: number } | null => {
+  const location = String(row?.location ?? row?.lat_long ?? row?.latLong ?? '').toUpperCase().replace(/\s+/g, '');
+  const m = location.match(/([NS])(\d{1,2})([EW])(\d{1,3})/);
+  if (m) {
+    return {
+      latitude: m[1] === 'N' ? Number(m[2]) : -Number(m[2]),
+      longitude: m[3] === 'W' ? Number(m[4]) : -Number(m[4]),
+    };
+  }
+
+  const latitude = num(row?.latitude ?? row?.lat);
+  const longitude = num(row?.longitude ?? row?.lon);
+  if (latitude === null || longitude === null) return null;
+  if (Math.abs(latitude) > 90) return null;
+  // Anything beyond a hemisphere is Carrington, not Stonyhurst, and there is
+  // no way to convert it here without the Carrington longitude of the central
+  // meridian. Better to draw nothing than to draw it in the wrong place.
+  if (Math.abs(longitude) > 90) return null;
+  return { latitude, longitude };
+};
+
 const parseObserved = (raw: any): number | null => {
   const value = raw?.observed_date ?? raw?.time_tag ?? raw?.date;
   if (!value) return null;
@@ -54,15 +97,9 @@ export function normaliseRegions(rows: any[], nowMs = Date.now()): SunspotRegion
 
   const out: SunspotRegion[] = [];
   for (const [id, row] of newest) {
-    // Not Number() alone: Number(null) and Number('') are both 0, which is a
-    // perfectly finite equator. A region with no reported position would have
-    // been drawn at 0,0 - dead centre of the disk, the most prominent place
-    // on the Sun - rather than skipped.
-    const num = (v: unknown): number | null =>
-      (v === null || v === undefined || v === '' ? null : (Number.isFinite(Number(v)) ? Number(v) : null));
-    const latitude = num(row?.latitude);
-    const longitude = num(row?.longitude);
-    if (latitude === null || longitude === null) continue;
+    const position = parsePosition(row);
+    if (!position) continue;
+    const { latitude, longitude } = position;
 
     const observedAtMs = parseObserved(row);
     // A report more than three days old is a region that has almost certainly

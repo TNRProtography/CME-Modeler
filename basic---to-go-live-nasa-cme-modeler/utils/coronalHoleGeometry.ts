@@ -1096,17 +1096,43 @@ export function buildSunspotMarker(
   const material = new THREE.MeshBasicMaterial({
     color: new THREE.Color(region.color),
     transparent: true,
-    opacity: 0.85,
+    opacity: 0.95,
     side: THREE.DoubleSide,
     depthWrite: false,
+    // Drawn over whatever is already there rather than depth-sorted against
+    // it. The Sun carries a photosphere overlay and an additively blended
+    // corona, and a marker a percent above the surface loses to both - it was
+    // there and simply never visible. Depth testing off plus a high render
+    // order puts it on top; being parented to the Sun and facing outwards is
+    // what still hides it when it rotates round the back.
+    depthTest: false,
   });
   const mesh = new THREE.Mesh(geometry, material);
+  mesh.renderOrder = 12;
 
   const normal = hgToVec(THREE, region.latitude, region.longitude).normalize();
-  // Just clear of the photosphere, and under the CH patches at 1.018 so a
-  // region inside a hole does not z-fight with it.
-  mesh.position.copy(normal.clone().multiplyScalar(sunRadius * 1.012));
+  // Above the CH patches at 1.018, so a region inside a hole reads as being
+  // inside it rather than being swallowed by it.
+  mesh.position.copy(normal.clone().multiplyScalar(sunRadius * 1.025));
   mesh.lookAt(normal.clone().multiplyScalar(sunRadius * 3));
   mesh.name = `sunspot-${(region as any).id ?? ''}`;
+
+  // A dark core, so a marker reads as a spot group rather than a dot of
+  // colour - and so it is still legible against the bright limb.
+  const core = new THREE.Mesh(
+    new THREE.CircleGeometry(radius * 0.45, 20),
+    new THREE.MeshBasicMaterial({
+      color: new THREE.Color('#1c1207'),
+      transparent: true,
+      opacity: 0.9,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      depthTest: false,
+    }),
+  );
+  core.renderOrder = 13;
+  core.position.set(0, 0, 0.0001);
+  mesh.add(core);
+
   return mesh;
 }

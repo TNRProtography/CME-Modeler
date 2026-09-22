@@ -109,6 +109,47 @@ try {
           got.map((r) => r.areaMsh).join(','));
     check(got[0].color !== got[2].color, 'and the big one is not the same colour as the small one');
   }
+
+  console.log('\nLongitude is read as Stonyhurst, or not at all');
+  {
+    // The location string is unambiguous: degrees from the central meridian.
+    const located = normaliseRegions(
+      [{ region: 4300, location: 'S14W23', area: 200, observed_date: dateStr(now) }], now);
+    check(located.length === 1, 'a location string is enough on its own');
+    check(located[0].latitude === -14 && located[0].longitude === 23,
+          'S14W23 is 14 south, 23 west',
+          `${located[0]?.latitude},${located[0]?.longitude}`);
+
+    const east = normaliseRegions(
+      [{ region: 4301, location: 'N07E45', area: 200, observed_date: dateStr(now) }], now);
+    check(east[0].longitude === -45, 'and east is negative', String(east[0]?.longitude));
+
+    // The bare numeric field is NOT always Stonyhurst - SWPC also publishes
+    // Carrington longitude, which runs 0-360 from a rotating prime meridian
+    // that has nothing to do with where Earth is. Reading one as the other put
+    // every region past the limb, where the Earth-facing filter dropped it,
+    // which is why none of them appeared on the Sun at all.
+    const carrington = normaliseRegions(
+      [{ region: 4302, latitude: 10, longitude: 287, area: 200, observed_date: dateStr(now) }], now);
+    check(carrington.length === 0,
+          'a Carrington longitude is refused rather than drawn in the wrong place',
+          JSON.stringify(carrington));
+
+    // But the location string wins even when both are present, so a report
+    // carrying Carrington alongside a location still lands correctly.
+    const both = normaliseRegions(
+      [{ region: 4303, location: 'N05W10', latitude: 5, longitude: 287, area: 200,
+         observed_date: dateStr(now) }], now);
+    check(both.length === 1 && both[0].longitude === 10,
+          'and the location string wins when a report carries both',
+          JSON.stringify(both.map((r) => r.longitude)));
+
+    const plausible = normaliseRegions(
+      [{ region: 4304, latitude: 10, longitude: -35, area: 200, observed_date: dateStr(now) }], now);
+    check(plausible.length === 1 && plausible[0].longitude === -35,
+          'a numeric longitude inside a hemisphere is still trusted');
+  }
+
 } finally {
   rmSync(out, { recursive: true, force: true });
 }

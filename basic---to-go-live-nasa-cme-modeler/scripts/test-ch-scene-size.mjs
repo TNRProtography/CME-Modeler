@@ -297,6 +297,45 @@ try {
           'converting a measurement already in the anchor frame changes nothing');
   }
 
+
+  console.log('\nAn unchanged Sun is not rebuilt');
+  {
+    // The rebuild re-triangulates every patch AND rebuilds every Parker
+    // spiral, which are shader meshes. A week-long timeline played through in
+    // a minute ticks a ten-minute bucket about fifteen times a second; doing
+    // the full rebuild on each one collapsed the frame rate, and the scene
+    // stopped appearing to move at all. Two things stop that: the shape clock
+    // runs at the detector's own cadence, and identical output is skipped.
+    const QUANTUM = 2 * 3600000;
+    check(QUANTUM === 2 * 3600000, 'the shape clock quantum is the detector cadence, not ten minutes');
+
+    const buckets = (spanMs) => Math.ceil(spanMs / QUANTUM);
+    check(buckets(7 * 24 * HOUR) === 84,
+          `a week of timeline is 84 rebuild opportunities, not 1008 (${buckets(7 * 24 * HOUR)})`,
+          String(buckets(7 * 24 * HOUR)));
+
+    // The signature the scene compares. Rounded, so floating-point noise in an
+    // interpolation is not mistaken for a hole that moved.
+    const sign = (drawn) => drawn
+      .map(({ ch, scale }) => `${ch.id}:${ch.lat.toFixed(1)}:${ch.lon.toFixed(1)}:${scale.toFixed(2)}`)
+      .sort().join('|');
+
+    const a = [{ ch: { id: 'CH96', lat: -20, lon: 5 }, scale: 1 }];
+    const bNoise = [{ ch: { id: 'CH96', lat: -20.0001, lon: 5.0002 }, scale: 1.0001 }];
+    const bReal = [{ ch: { id: 'CH96', lat: -20, lon: 5 }, scale: 1.4 }];
+    const bGone = [];
+    const bExtra = [...a, { ch: { id: 'CH97', lat: 30, lon: -12 }, scale: 1 }];
+
+    check(sign(a) === sign(bNoise), 'interpolation noise does not trigger a rebuild');
+    check(sign(a) !== sign(bReal), 'but a hole that has actually grown does');
+    check(sign(a) !== sign(bGone), 'as does a hole disappearing');
+    check(sign(a) !== sign(bExtra), 'and one appearing');
+
+    // Order must not matter, or a reshuffle would rebuild the whole Sun.
+    check(sign(bExtra) === sign([...bExtra].reverse()),
+          'the order the holes come in is not a change');
+  }
+
 } finally {
   rmSync(out, { recursive: true, force: true });
 }

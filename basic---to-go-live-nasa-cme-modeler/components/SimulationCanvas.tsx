@@ -56,6 +56,14 @@ const TEX = {
 
 // Small empirical trim between SUVI longitudes and the photosphere texture.
 // Main phase alignment is anchored to CH detection timestamp.
+/**
+ * How finely the CH shapes follow the timeline.
+ *
+ * The detector measures every couple of hours, so there is no information
+ * between two frames to show. Anything finer just rebuilds the same Sun.
+ */
+const CH_SHAPE_QUANTUM_MS = 2 * 3600000;
+
 const CH_HSS_LONGITUDE_VISUAL_OFFSET_DEG = -12;
 const CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD = CH_HSS_LONGITUDE_VISUAL_OFFSET_DEG * Math.PI / 180;
 
@@ -581,15 +589,24 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   useEffect(() => { timelineValueRef.current = timelineValue; }, [timelineValue]);
 
   /**
-   * The moment the CH shapes are drawn for, quantised to ten simulated minutes.
+   * The moment the CH shapes are drawn for, quantised to the detector's own
+   * cadence.
    *
-   * Triangulating a spherical patch is not a per-frame operation, and a hole
-   * does not change measurably in ten minutes - the detector only produces a
-   * new measurement every couple of hours. Quantising keeps the rebuild off
-   * the animation loop while still tracking the scrubber.
+   * Ten minutes was far too fine. Playing a week-long timeline through in a
+   * minute ticks a ten-minute bucket about fifteen times a SECOND, and each
+   * tick re-triangulated every patch and rebuilt every Parker spiral - which
+   * are shader meshes. The frame rate collapsed and the whole scene appeared
+   * to stop moving.
+   *
+   * Two hours is the interval the detector actually measures at, so nothing
+   * is lost: there is no new information between two frames. A signature
+   * check below then skips the rebuild entirely when the holes have not
+   * visibly changed, which is most ticks.
    */
   const [chShapeTimeMs, setChShapeTimeMs] = useState<number>(() => Date.now());
   const chShapeBucketRef = useRef<number>(0);
+  /** What was last built, so an unchanged Sun is not rebuilt. */
+  const chSignatureRef = useRef<string>('');
 
   const MIN_CME_SPEED_KMS = 300;
 
@@ -1304,11 +1321,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         ? timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000)
         : Date.now();
 
-      // The CH shapes follow the same epoch, at ten-minute resolution.
-      const chBucket = Math.floor(simulationTimeMs / 600000);
+      // The CH shapes follow the same epoch, at the detector's cadence.
+      const chBucket = Math.floor(simulationTimeMs / CH_SHAPE_QUANTUM_MS);
       if (chBucket !== chShapeBucketRef.current) {
         chShapeBucketRef.current = chBucket;
-        setChShapeTimeMs(chBucket * 600000);
+        setChShapeTimeMs(chBucket * CH_SHAPE_QUANTUM_MS);
       }
 
       // ── Real planet positions from simulationTimeMs ─────────────────────
@@ -1796,9 +1813,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
     };
 
-    clearGroup(chGroupRef.current);
-    clearGroup(hssGroupRef.current);
-
     const sunR     = PLANET_DATA_MAP.SUN.size;
     const hssReach = PLANET_DATA_MAP.EARTH.radius * 1.65;
     // ── The Sun as it was at the moment on the scrubber ──────────────────
@@ -1851,6 +1865,22 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     for (const ch of coronalHoles) {
       if (!haveHistory.has(ch.id)) drawn.push({ ch, scale: 1 });
     }
+
+    // Nothing visible changed? Then do not touch the scene.
+    //
+    // Rebuilding means re-triangulating every patch and rebuilding every
+    // Parker spiral, which are shader meshes - far too expensive to do on a
+    // tick that produces an identical Sun. Rounded, so floating-point noise
+    // in an interpolation does not count as a change.
+    const signature = drawn
+      .map(({ ch, scale }) => `${ch.id}:${ch.lat.toFixed(1)}:${ch.lon.toFixed(1)}:${scale.toFixed(2)}`)
+      .sort()
+      .join('|');
+    if (signature === chSignatureRef.current) return;
+    chSignatureRef.current = signature;
+
+    clearGroup(chGroupRef.current);
+    clearGroup(hssGroupRef.current);
 
     drawn.forEach(({ ch, scale }) => {
       chGroupRef.current.add(buildChSurfaceMesh(THREE, ch, sunR, scale));
