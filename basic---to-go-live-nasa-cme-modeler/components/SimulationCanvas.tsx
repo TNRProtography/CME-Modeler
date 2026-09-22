@@ -1393,9 +1393,18 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         chHssAnchorSunAngleRef.current;
       const chHssPhase =
         chHssPhaseFromDetection ?? chHssPhaseFromFallbackAnchor;
-      if (chGroupRef.current) {
-        chGroupRef.current.rotation.y = chHssPhase;
-      }
+      // The CH patches are NOT re-anchored here any more.
+      //
+      // This line recomputed their rotation every frame from Earth's LIVE
+      // orbital angle and the detection timestamp, so the group was being
+      // counter-rotated against the Sun it is parented to - the holes hung in
+      // space while the surface turned under them. The sunspot markers, which
+      // do move correctly, are children of the same sunMesh and simply never
+      // have their group rotation touched. The patches now work the same way:
+      // a constant anchor set once at rebuild, plus whatever the Sun does.
+      //
+      // The HSS spiral keeps the old anchoring, because its shader geometry
+      // is built around it.
 
       // ── HSS Parker spiral - visibility + per-frame uniform updates ────────
       if (hssGroupRef.current) {
@@ -1810,15 +1819,18 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   useEffect(() => {
     const THREE = (window as any).THREE;
     if (!THREE || !chGroupRef.current || !hssGroupRef.current) return;
-    chHssAnchorSunAngleRef.current = sunRotationRef.current;
-    {
-      const earth = celestialBodiesRef.current.EARTH?.mesh;
-      if (earth) {
-        const earthPos = new THREE.Vector3();
-        earth.getWorldPosition(earthPos);
-        chHssAnchorEarthAngleRef.current = Math.atan2(earthPos.x, earthPos.z);
-      }
-    }
+
+    // NOTE: the HSS fallback anchor used to be re-captured here.
+    //
+    // It belongs to fresh SUVI data, and this effect only ran on fresh SUVI
+    // data - until the shape clock was added to its dependencies, at which
+    // point a capture that happened a few times a day started happening every
+    // two simulated hours of scrubbing. Each capture re-read the CURRENT sun
+    // angle, so the fallback phase became "wherever the Sun is right now",
+    // which cancels the Sun's own rotation: the holes reset their progress on
+    // every tick and hung in space while the surface turned under them. It is
+    // captured in its own effect below, on detection changes only.
+
     const clearGroup = (group: any) => {
       while (group.children.length > 0) {
         const child = group.children[0];
@@ -1850,6 +1862,20 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     // the correction keeps growing - and that froze the holes in space while
     // the Sun rotated underneath them.
     const anchorMs = chDetectedAtMs ?? Date.now();
+
+    // The patch group's own rotation, set once here rather than every frame.
+    //
+    // It maps "Stonyhurst longitude at the anchor moment" into the Sun's own
+    // frame at that moment, so a hole measured facing Earth is drawn facing
+    // Earth. Being a constant, everything after it is the Sun's rotation and
+    // nothing else - which is exactly how the sunspot markers behave, and
+    // they turn correctly.
+    if (chGroupRef.current) {
+      chGroupRef.current.rotation.y =
+        CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD
+        + computeEclipticLongitude('EARTH', anchorMs)
+        - SUN_ANGULAR_VELOCITY * (anchorMs / 1000);
+    }
     const baseById = new Map(coronalHoles.map((ch) => [ch.id, ch]));
     const drawn: { ch: any; scale: number }[] = [];
 
@@ -1920,6 +1946,21 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     chLabelsRef.current = chLabels;
     publishSurfaceLabels();
   }, [coronalHoles, chEvolutions, chShapeTimeMs, chDetectedAtMs, threeReady, sceneReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The HSS fallback anchor, captured when a detection arrives and at no other
+  // time. Anchoring is a statement about WHEN a measurement was taken, so it
+  // must not be re-read on a clock that has nothing to do with measurements.
+  useEffect(() => {
+    const THREE = (window as any).THREE;
+    if (!THREE || !sceneReady) return;
+    chHssAnchorSunAngleRef.current = sunRotationRef.current;
+    const earth = celestialBodiesRef.current.EARTH?.mesh;
+    if (earth) {
+      const earthPos = new THREE.Vector3();
+      earth.getWorldPosition(earthPos);
+      chHssAnchorEarthAngleRef.current = Math.atan2(earthPos.x, earthPos.z);
+    }
+  }, [chDetectedAtMs, coronalHoles, threeReady, sceneReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Sunspot regions ───────────────────────────────────────────────────────
   // Separate from the CH effect so toggling them does not rebuild every

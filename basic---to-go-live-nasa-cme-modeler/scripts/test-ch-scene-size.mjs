@@ -440,6 +440,43 @@ try {
     check(insideDisk, 'every one of them is inside the disk, which is why the disk test cannot work');
   }
 
+
+  console.log('\nAn anchor must not re-read the rotation it anchors against');
+  {
+    // The patches are children of the Sun, so what you see is
+    //     sunRotation(t) + groupRotation
+    // and the group rotation is meant to be a CONSTANT that maps a
+    // measurement's longitude frame onto the Sun. Re-capturing it from the
+    // current sun angle makes it -sunRotation(t), and the two cancel exactly:
+    // the holes hang in space while the surface turns under them. That is
+    // what was happening, and it got worse when the rebuild started firing
+    // every two simulated hours instead of only on fresh imagery.
+    const SUN_AV = 2.61799e-6;            // rad/s, as in constants.ts
+    const sunRotation = (ms) => SUN_AV * (ms / 1000);
+    const anchorMs = now;
+
+    const frozen = (t) => sunRotation(t) + (0.1 - sunRotation(t));      // re-captured
+    const correct = (t) => sunRotation(t) + (0.1 - sunRotation(anchorMs));
+
+    const day = 24 * HOUR;
+    const frozenMove = Math.abs(frozen(now + day) - frozen(now)) * 180 / Math.PI;
+    const correctMove = Math.abs(correct(now + day) - correct(now)) * 180 / Math.PI;
+
+    check(frozenMove < 1e-9,
+          `re-capturing the anchor freezes the holes exactly (${frozenMove.toFixed(6)}°/day)`,
+          frozenMove.toFixed(6));
+    check(Math.abs(correctMove - 12.96) < 0.05,
+          `a constant anchor turns them with the Sun (${correctMove.toFixed(2)}°/day)`,
+          correctMove.toFixed(2));
+
+    // And the rate has to be the Sun's, which is why this is invisible in a
+    // live view and only obvious when the timeline is scrubbed: half a degree
+    // an hour.
+    check(Math.abs(correctMove / 24 - 0.54) < 0.01,
+          `which is ${(correctMove / 24).toFixed(2)}° an hour - why it reads as static in real time`,
+          (correctMove / 24).toFixed(3));
+  }
+
 } finally {
   rmSync(out, { recursive: true, force: true });
 }
