@@ -163,8 +163,18 @@ export interface FrameRef {
   atMs: number;
 }
 
-/** Pick frames roughly DETECT_SPACING_MS apart, always including the newest. */
-export function spacedFrames(frames: FrameRef[], spacingMs = DETECT_SPACING_MS): FrameRef[] {
+/**
+ * Pick frames roughly DETECT_SPACING_MS apart, always including the newest.
+ *
+ * `limit` caps how many come back, keeping the newest. Passing Infinity gets
+ * the whole spaced set, which is what a caller wants when it intends to drop
+ * the frames it has already measured before taking its slice.
+ */
+export function spacedFrames(
+  frames: FrameRef[],
+  spacingMs = DETECT_SPACING_MS,
+  limit = MAX_PER_PASS,
+): FrameRef[] {
   const ordered = [...frames]
     .filter((f) => f.url && Number.isFinite(f.atMs))
     .sort((a, b) => a.atMs - b.atMs);
@@ -177,8 +187,8 @@ export function spacedFrames(frames: FrameRef[], spacingMs = DETECT_SPACING_MS):
   }
   const newest = ordered[ordered.length - 1];
   if (picked[picked.length - 1]?.url !== newest.url) picked.push(newest);
-  // Keep the newest end when there are more than a pass can take.
-  return picked.slice(-MAX_PER_PASS);
+  // Keep the newest end when there are more than the caller can take.
+  return Number.isFinite(limit) ? picked.slice(-limit) : picked;
 }
 
 /**
@@ -192,8 +202,16 @@ export async function ensureChDetections(frames: FrameRef[]): Promise<void> {
   loadHistory();
   if (running) return;
 
-  const wanted = spacedFrames(frames)
+  // Space first, drop what is already measured, and only then take a pass's
+  // worth. Slicing before the filter - which is what spacedFrames does by
+  // default - meant every pass looked at the same newest sixteen frames, so
+  // once those were measured no pass ever had anything to do and tracking
+  // stopped dead at MAX_PER_PASS * DETECT_SPACING_MS, about thirty-two hours,
+  // however much imagery was on offer. The store remembers a week; this is
+  // what lets it fill one, a pass at a time, working backwards.
+  const wanted = spacedFrames(frames, DETECT_SPACING_MS, Infinity)
     .filter((f) => !detections.has(f.url) && !attempted.has(f.url))
+    .slice(-MAX_PER_PASS)
     .reverse();
   if (wanted.length === 0) return;
 

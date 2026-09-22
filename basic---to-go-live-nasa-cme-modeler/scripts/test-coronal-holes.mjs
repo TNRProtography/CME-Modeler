@@ -498,6 +498,39 @@ console.log('\nChoosing which frames to run the detector on');
   check(minGap >= St.DETECT_SPACING_MS,
         'the chosen frames are at least two hours apart', `${minGap / 3600000}h`);
 
+  // A week of imagery, measured a pass at a time, must eventually cover the
+  // week. The pass limit used to be applied before the already-measured
+  // frames were dropped, so every pass reconsidered the same newest sixteen:
+  // once those were done no pass had anything left to do, and tracking
+  // stopped at MAX_PER_PASS * DETECT_SPACING_MS - about thirty-two hours -
+  // no matter how much imagery the worker offered.
+  {
+    const week = [];
+    for (let i = 0; i < 7 * 24 * 15; i++) {          // a week at four minutes
+      week.push({ url: `w${i}`, atMs: T0 - (7 * 24 * 15 - i) * 4 * 60000 });
+    }
+
+    const measured = new Set();
+    let passes = 0;
+    for (; passes < 40; passes++) {
+      const wanted = St.spacedFrames(week, St.DETECT_SPACING_MS, Infinity)
+        .filter((f) => !measured.has(f.url))
+        .slice(-16);
+      if (wanted.length === 0) break;
+      check(wanted.length <= 16, 'no pass takes more than sixteen frames', String(wanted.length));
+      for (const f of wanted) measured.add(f.url);
+    }
+
+    const spanHours = (T0 - Math.min(...[...measured].map(
+      (u) => week.find((f) => f.url === u).atMs))) / 3600000;
+    check(spanHours > 160, `successive passes reach back ${spanHours.toFixed(0)}h, not 32`,
+          `${spanHours.toFixed(0)}h`);
+    check(passes < 40, `and get there in ${passes} passes rather than never`, String(passes));
+
+    // The default is unchanged: one pass on its own is still bounded.
+    check(St.spacedFrames(week).length <= 16, 'a single default pass is still capped at sixteen');
+  }
+
   check(St.spacedFrames([]).length === 0, 'no frames, nothing to measure');
   const one = St.spacedFrames([{ url: 'a', atMs: T0 }]);
   check(one.length === 1 && one[0].url === 'a', 'a single frame is measured');

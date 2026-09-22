@@ -59,7 +59,17 @@ const MAGNETOGRAM_SOURCES = [
 ] as const;
 
 const DAY_MS = 86400000;
-const WINDOW_OPTIONS = [6, 12, 24] as const;
+/**
+ * How far back the timeline can look.
+ *
+ * The imagery worker keeps a week, so these go to a week. What it will
+ * actually show is whatever has been ingested - the archive fills forward
+ * from when retention was widened, so asking for seven days a day later
+ * honestly returns one.
+ */
+const WINDOW_OPTIONS = [6, 12, 24, 72, 168] as const;
+
+const windowLabel = (hours: number): string => (hours < 48 ? `${hours}h` : `${hours / 24}d`);
 const SPEED_OPTIONS = [0.5, 1, 2, 5, 10] as const;
 
 interface WorkerFrame { key: string; ts: string; url: string }
@@ -158,10 +168,15 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
     let cancelled = false;
     const load = async () => {
       try {
-        const res = await fetch(`${SUVI_DIFF_WORKER_BASE}/api/state`);
+        // /api/frames rather than /api/state: state is a summary of all four
+        // sources over a fixed day, and this panel wants one source over
+        // whatever window is selected. That is smaller at every window up to
+        // a day and the only thing that can return more than one.
+        const res = await fetch(
+          `${SUVI_DIFF_WORKER_BASE}/api/frames?source=suvi_195_primary&hours=${windowHours}`);
         const json = await res.json();
         if (cancelled) return;
-        const all: WorkerFrame[] = json?.sources?.suvi_195_primary?.frames ?? [];
+        const all: WorkerFrame[] = json?.frames ?? [];
         setFrames(all.filter((f) => f?.ts && f?.url));
         setFramesError(null);
       } catch {
@@ -171,7 +186,8 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
     load();
     const id = setInterval(load, 10 * 60 * 1000);
     return () => { cancelled = true; clearInterval(id); };
-  }, []);
+    // Keyed on the window, because that is now part of the request.
+  }, [windowHours]);
 
   // A ticking clock for the countdown, once a minute. Anything faster would
   // re-render the panel for a number that only changes every sixty seconds.
@@ -550,7 +566,7 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
               onClick={() => setWindowHours(h)}
               className={`px-3 py-1 text-xs rounded transition-colors ${
                 windowHours === h ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}
-            >{h}h</button>
+            >{windowLabel(h)}</button>
           ))}
           <button
             type="button"
