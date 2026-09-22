@@ -204,6 +204,48 @@ console.log('\nMeasuring the disk, with the caption in the way');
   check(D.detectSolarDiskGeometry(blank, W, H) === null, 'an empty frame returns null so the caller can fall back');
 }
 
+console.log('\nOn a magnetogram, which is what coronal hole polarity reads');
+{
+  // A magnetogram is not a picture of brightness: mid-grey is zero field,
+  // white is toward us, black is away, and the disk is speckled with network
+  // elements of both signs. So the disk's median is mid-grey rather than
+  // bright, and the threshold has to come from the frame rather than a
+  // constant - which it does, but this is the case that proves it.
+  const mag = (w, h, { sky, disk, radius }) => {
+    const d = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const inDisk = Math.hypot(x - w / 2, y - h / 2) <= radius;
+      // Network elements, so the disk is not a flat fill.
+      const v = inDisk ? Math.max(0, Math.min(255, disk + Math.sin(x * 2.3) * Math.cos(y * 1.7) * 60)) : sky;
+      d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255;
+    }
+    return d;
+  };
+
+  for (const [label, size, radius] of [['1024', 1024, 420], ['512', 512, 210]]) {
+    const g = D.detectSolarDiskGeometry(mag(size, size, { sky: 0, disk: 128, radius }), size, size);
+    check(g !== null && Math.abs(g.radius - radius) / radius < 0.05,
+          `a ${label}px HMI magnetogram, mid-grey disk on black sky, is measured`,
+          g ? `r=${g.radius.toFixed(1)} wanted ${radius}` : 'null');
+  }
+
+  // The frames that are not usable must say null, not guess. A pale
+  // background passes the roundness check - a full frame is exactly as round
+  // as it is square - so without the edge-to-edge guard this returned a
+  // confident radius of half the image and put every hole in the wrong place.
+  // Polarity has three sources for this reason; null is what moves it on to
+  // the next one, and a wrong answer is what stops it.
+  const unusable = [
+    ['a grey disk on a white background', { sky: 255, disk: 128, radius: 420 }],
+    ['a disk on a background barely darker than itself', { sky: 120, disk: 128, radius: 420 }],
+  ];
+  for (const [label, opts] of unusable) {
+    check(D.detectSolarDiskGeometry(mag(1024, 1024, opts), 1024, 1024) === null,
+          `${label} returns null rather than the whole frame`);
+  }
+}
+
 console.log('\nAnd through the corona, on EUV imagery');
 {
   // SUVI is not HMI: the disk is bright but so is the corona outside the limb,

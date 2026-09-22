@@ -300,16 +300,34 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
       // anywhere in the chain, so there is no fallback path that works when
       // the proxy does not. The reasons are kept and shown: "could not be
       // read" on its own is not something anybody can act on.
+      //
+      // A source counts as working only if the disk can be found in it. That
+      // used to be two separate steps - take the first image that loads, then
+      // find the disk in it - which meant a source that downloaded fine but
+      // was unreadable ended the search, and the two that would have worked
+      // were never tried. Loading is not the thing being tested.
       let image = null;
+      let geom = null;
       const failures: string[] = [];
       for (const source of MAGNETOGRAM_SOURCES) {
-        try { image = await readImagePixels(source.url); break; }
-        catch (err) {
+        try {
+          const candidate = await readImagePixels(source.url);
+          if (cancelled) return;
+          const candidateGeom = detectSolarDiskGeometry(candidate.data, candidate.width, candidate.height);
+          if (!candidateGeom) {
+            failures.push(`${source.label}: loaded ${candidate.width}\u00d7${candidate.height} but no solar disk `
+              + 'could be found in it');
+            continue;
+          }
+          image = candidate;
+          geom = candidateGeom;
+          break;
+        } catch (err) {
           failures.push(`${source.label}: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
       if (cancelled) return;
-      if (!image) {
+      if (!image || !geom) {
         // Every source failing the same way is worth naming, because there is
         // exactly one cause and one fix. Displaying an image needs no CORS;
         // reading its pixels does, and no observatory sends those headers. So
@@ -318,19 +336,14 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
         const proxyDown = failures.every((f) => /not deployed at that address|text\/html/.test(f));
         setPolarityError(proxyDown
           ? 'Polarity needs to read the magnetogram\u2019s pixels, and every route to them answered with a web page '
-            + 'instead of an image \u2013 which means the image proxy is not deployed at this address. Showing an '
+            + 'instead of an image \u2013 which means the image proxy is not answering at this address. Showing an '
             + 'image needs no permission; reading it does, and no observatory sends the header that would allow it '
-            + 'directly. Deploying worker/index.ts (it already allows both HMI hosts) is the whole fix.'
+            + 'directly. The proxy is the Pages Function at functions/api/proxy, which ships with the site, so a '
+            + 'deployment that is missing it is the whole fault.'
           : `The HMI magnetogram could not be read, so polarity is unavailable. ${failures.join(' | ')}`);
         return;
       }
 
-      const geom = detectSolarDiskGeometry(image.data, image.width, image.height);
-      if (cancelled) return;
-      if (!geom) {
-        setPolarityError('The solar disk could not be found in the magnetogram.');
-        return;
-      }
       const { b0, p } = solarDiskOrientation(new Date());
 
       const next: Record<string, ChPolarityResult> = {};

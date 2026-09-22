@@ -179,6 +179,16 @@ export function detectSolarDiskGeometry(
   const ratio = radiusFromWidth / radiusFromHeight;
   if (!isFinite(ratio) || ratio < 0.9 || ratio > 1.1) return null;
 
+  // A frame lit edge to edge is a background, not a disk. Every solar image
+  // product leaves sky around the limb, so a region as wide as the frame means
+  // the cut landed on a pale background - a white-bordered GIF, a colour map
+  // whose zero is light - rather than on the Sun. The roundness check above
+  // cannot catch this, because a full frame is exactly as round as it is
+  // square, so it returned a confident radius of half the image and put every
+  // hole in the wrong place. Null instead, which sends the caller to its next
+  // source.
+  if (maxRun >= width * 0.99 && (bottom - top) >= height * 0.99) return null;
+
   return {
     width,
     height,

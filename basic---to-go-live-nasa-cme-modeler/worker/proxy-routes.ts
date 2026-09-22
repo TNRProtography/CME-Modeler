@@ -22,6 +22,14 @@ export const ALLOWED_HOSTS = new Set([
   'jsoc1.stanford.edu',
   'services.swpc.noaa.gov',
   'stereo-ssc.nascom.nasa.gov',
+  // Our own imagery workers. These do send CORS headers, so the direct fetch
+  // behind the proxy succeeds and nothing looked broken - but every SUVI frame
+  // was spending a 400 from the proxy first, on the way to the fallback. The
+  // console was full of them and the detector ran anyway, which is the worst
+  // combination: a real fault that costs a request per frame and reports
+  // itself only to somebody already reading the log.
+  'suvi-difference-imagery.thenamesrock.workers.dev',
+  'ch-history-worker.thenamesrock.workers.dev',
 ]);
 
 // Hosts permitted for the generic text/data proxy. NMDB provides ground
