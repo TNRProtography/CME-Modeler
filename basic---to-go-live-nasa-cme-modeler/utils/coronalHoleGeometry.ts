@@ -71,7 +71,8 @@ const SPIRAL_TURNS           = 0.38;   // tighter winding - more pronounced spir
 const CH_OVEREMPHASIS        = 0.72;
 
 // Physical constants (replicated to avoid circular dep on constants.ts)
-const SCENE_SCALE       = 3.0;           // 1 scene unit ≈ 1 AU
+const SCENE_SCALE       = 3.0;
+const DEG_TO_RAD        = Math.PI / 180;           // 1 scene unit ≈ 1 AU
 
 // ─── Coordinate helper ────────────────────────────────────────────────────────
 
@@ -814,6 +815,225 @@ export function buildParkerSpiralMesh(
   return mesh;
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  GROWING HSS STREAM - built from emitted wind parcels
+// ═══════════════════════════════════════════════════════════════
+//
+//  The stream is laid through the parcels of hssParcels.ts, nearest the Sun
+//  first, and re-laid as the simulation clock moves, so it grows out from a
+//  newly formed hole at the wind speed and drifts off when the hole closes.
+//  The tube itself keeps the arm's look: the same width at the Sun, the same
+//  flare outward, the same speed colours - but each parcel carries its own
+//  speed, and wind piled up against slower wind ahead glows brighter.
+
+const GROW_VERT = /* glsl */`
+  uniform float uChLon;
+  uniform float uSunAngle;
+  uniform float uTime;
+
+  attribute float aFlow;
+  attribute float aEdge;
+  attribute float aSpeed;
+  attribute float aGlow;
+  attribute float aEnds;
+
+  varying float vFlow;
+  varying float vEdge;
+  varying float vSpeed;
+  varying float vGlow;
+  varying float vEnds;
+
+  void main() {
+    vFlow = aFlow;
+    vEdge = aEdge;
+    vSpeed = aSpeed;
+    vGlow = aGlow;
+    vEnds = aEnds;
+    float angle = uChLon + uSunAngle;
+    float cosA = cos(angle);
+    float sinA = sin(angle);
+    vec3 p = position;
+    float x = p.x * cosA - p.z * sinA;
+    float z = p.x * sinA + p.z * cosA;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(x, p.y, z, 1.0);
+  }
+`;
+
+// The arm's own fragment shader, with each parcel's speed in place of the
+// hole's, soft ends wherever the stream actually ends, and the pile-up glow.
+const GROW_FRAG = FRAG
+  .replace('varying float vFlow;', 'varying float vFlow;\n  varying float vSpeed;\n  varying float vGlow;\n  varying float vEnds;')
+  .replace('deceleratedSpeed(uSourceSpeed, vFlow)', 'deceleratedSpeed(max(vSpeed, 300.0), vFlow)')
+  .replace('float alpha = uOpacity * fadeIn * edgeFade * tipFade * (0.32 + 0.68 * pulse);',
+    `col = mix(col, vec3(1.0, 0.97, 0.9), vGlow * 0.55);
+    float alpha = uOpacity * fadeIn * edgeFade * tipFade * (0.32 + 0.68 * pulse)
+      * smoothstep(0.0, 0.08, vEnds) * (1.0 + vGlow * 0.9);`);
+
+/** Parcels laid along a growing stream; the tube has this many rings. */
+export const GROWING_STREAM_RINGS = 160;
+
+/** An empty growing stream, laid out by updateGrowingStreamMesh. */
+export function createGrowingStreamMesh(THREE: any, id: string, opacity: number): any {
+  const rings = GROWING_STREAM_RINGS;
+  const sides = SPIRAL_TUBE_SIDES;
+  const n = rings * sides;
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(n * 3), 3));
+  for (const name of ['aFlow', 'aEdge', 'aSpeed', 'aGlow', 'aEnds']) {
+    geom.setAttribute(name, new THREE.Float32BufferAttribute(new Float32Array(n), 1));
+  }
+  const edge = geom.getAttribute('aEdge');
+  for (let i = 0; i < rings; i++) {
+    for (let s = 0; s < sides; s++) edge.setX(i * sides + s, Math.abs(Math.cos((s / sides) * Math.PI * 2)));
+  }
+  const idx: number[] = [];
+  for (let i = 0; i < rings - 1; i++) {
+    for (let s = 0; s < sides; s++) {
+      const sn = (s + 1) % sides;
+      const a = i * sides + s, b = i * sides + sn;
+      const c = (i + 1) * sides + s, d = (i + 1) * sides + sn;
+      idx.push(a, b, c, b, d, c);
+    }
+  }
+  geom.setIndex(idx);
+
+  const mat = new THREE.ShaderMaterial({
+    vertexShader: GROW_VERT,
+    fragmentShader: GROW_FRAG,
+    uniforms: {
+      uChLon: { value: 0 },
+      uSunAngle: { value: 0 },
+      uTime: { value: 0 },
+      uOpacity: { value: opacity },
+      uSourceSpeed: { value: 600 },
+    },
+    transparent: true,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.name = `hss-stream-${id}`;
+  mesh.frustumCulled = false;   // the bounds move every update
+  mesh.visible = false;
+  mesh.userData = { coronalHoleId: id, isHssMesh: true, growing: true, barrier: null };
+  return mesh;
+}
+
+/**
+ * Lays a growing stream through its parcels (nearest the Sun first).
+ *
+ * The parcels are resampled onto the tube's fixed rings, so a stream of any
+ * length uses the same mesh. Also refreshes the barrier's view of the stream,
+ * so a CME is only held where the wind has actually got to.
+ */
+export function updateGrowingStreamMesh(
+  THREE: any,
+  mesh: any,
+  parcels: { r: number; az: number; state: { lat: number; widthDeg: number; heightDeg: number; estimatedSpeedKms: number }; compression: number }[],
+  sunRadius: number,
+  maxReach: number,
+): void {
+  if (parcels.length < 2) {
+    mesh.visible = false;
+    mesh.userData.barrier = null;
+    return;
+  }
+  const rings = GROWING_STREAM_RINGS;
+  const sides = SPIRAL_TUBE_SIDES;
+  const r0 = sunRadius * 1.018;
+  const span = Math.max(1e-6, maxReach - r0);
+
+  // Resample by position along the parcel string.
+  const at = (f: number) => {
+    const x = f * (parcels.length - 1);
+    const i = Math.min(parcels.length - 2, Math.floor(x));
+    const t = x - i;
+    const a = parcels[i], b = parcels[i + 1];
+    const mix = (u: number, v: number) => u + (v - u) * t;
+    return {
+      r: mix(a.r, b.r),
+      az: mix(a.az, b.az),
+      lat: mix(a.state.lat, b.state.lat),
+      height: mix(a.state.heightDeg, b.state.heightDeg),
+      width: Math.max(mix(a.state.widthDeg, b.state.widthDeg), mix(a.state.heightDeg, b.state.heightDeg)),
+      speed: mix(a.state.estimatedSpeedKms, b.state.estimatedSpeedKms),
+      glow: mix(a.compression, b.compression),
+    };
+  };
+
+  const backbone: any[] = [];
+  const samples = [];
+  for (let i = 0; i < rings; i++) {
+    const s = at(i / (rings - 1));
+    samples.push(s);
+    // Latitude as the full arm does it: a hole across the equator feeds a
+    // stream near the ecliptic, relaxing further toward it with distance.
+    const half = Math.max(1, s.height / 2);
+    const coverage = THREE.MathUtils.clamp(1 - Math.abs(s.lat) / half, 0, 1);
+    const damping = coverage * 0.85 + 0.15;
+    const flow = THREE.MathUtils.clamp((s.r - r0) / span, 0, 1);
+    const lat = s.lat * (1 - damping) * DEG_TO_RAD * Math.max(0, 1 - flow * 0.3);
+    backbone.push(new THREE.Vector3(
+      s.r * Math.cos(lat) * Math.sin(s.az),
+      s.r * Math.sin(lat),
+      s.r * Math.cos(lat) * Math.cos(s.az),
+    ));
+  }
+
+  const geom = mesh.geometry;
+  const pos = geom.getAttribute('position');
+  const aFlow = geom.getAttribute('aFlow');
+  const aSpeed = geom.getAttribute('aSpeed');
+  const aGlow = geom.getAttribute('aGlow');
+  const aEnds = geom.getAttribute('aEnds');
+  const up = new THREE.Vector3(0, 1, 0);
+  const tang = new THREE.Vector3(), right = new THREE.Vector3(), up2 = new THREE.Vector3();
+  const flat: number[] = [];
+
+  for (let i = 0; i < rings; i++) {
+    const s = samples[i];
+    const curr = backbone[i];
+    tang.copy(backbone[Math.min(rings - 1, i + 1)]).sub(backbone[Math.max(0, i - 1)]);
+    if (tang.lengthSq() < 1e-14) tang.copy(curr);
+    tang.normalize();
+    right.crossVectors(tang, up);
+    if (right.lengthSq() < 1e-8) right.set(1, 0, 0);
+    right.normalize();
+    up2.crossVectors(right, tang).normalize();
+
+    // The arm's tube radius, by distance rather than by place along the arm,
+    // so a young stream is as narrow as the old arm was at the same distance.
+    const flow = THREE.MathUtils.clamp((s.r - r0) / span, 0, 1);
+    const halfAngle = (s.width / 2) * DEG_TO_RAD;
+    const tubeR0 = Math.max(sunRadius * Math.sin(halfAngle), sunRadius * 0.07);
+    const widthFactor = THREE.MathUtils.clamp(s.width / 30, 0.6, 1.8);
+    const tE = Math.pow(flow, 0.7);
+    const rTube = tubeR0 * (1 + tE * 4 * widthFactor) * (1 + tE);
+    // 0 at either end of the stream, 1 inside it.
+    const ends = Math.min(i, rings - 1 - i) / (rings - 1) * 2;
+
+    for (let k = 0; k < sides; k++) {
+      const ang = (k / sides) * Math.PI * 2;
+      const cr = Math.cos(ang), sr = Math.sin(ang);
+      const x = curr.x + rTube * (cr * right.x + sr * up2.x);
+      const y = curr.y + rTube * (cr * right.y + sr * up2.y);
+      const z = curr.z + rTube * (cr * right.z + sr * up2.z);
+      const v = i * sides + k;
+      pos.setXYZ(v, x, y, z);
+      flat.push(x, y, z);
+      aFlow.setX(v, flow);
+      aSpeed.setX(v, s.speed);
+      aGlow.setX(v, s.glow);
+      aEnds.setX(v, ends);
+    }
+  }
+  for (const a of [pos, aFlow, aSpeed, aGlow, aEnds]) a.needsUpdate = true;
+  geom.computeVertexNormals();
+  mesh.visible = true;
+  mesh.userData.barrier = hssCutProfile(mesh.userData.coronalHoleId, backbone, flat, 0);
+}
+
 /** Radius bins in a stream's cut profile. */
 const HSS_CUT_BINS = 120;
 
@@ -838,6 +1058,9 @@ export function hssCutProfile(id: string, backbone: any[], pos: number[], lonRad
   const rMin = backbone[0].length();
   const rMax = backbone[N - 1].length();
   const bins = HSS_CUT_BINS;
+  if (!(rMax - rMin > 1e-9)) {
+    return { id, r: [], az: [], offLo: [], offHi: [], yLo: [], yHi: [] };
+  }
   const binOf = (r: number) => Math.round(((r - rMin) / (rMax - rMin)) * (bins - 1));
 
   // The backbone's own azimuth at each bin's radius, unwrapped along the arm.

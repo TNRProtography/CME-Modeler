@@ -18,8 +18,10 @@ import { CoronalHole } from '../utils/coronalHoleData';
 import {
   buildChSurfaceMesh,
   buildChOutlineLine,
-  buildParkerSpiralMesh,
   buildSunspotMarker,
+  createGrowingStreamMesh,
+  updateGrowingStreamMesh,
+  GROWING_STREAM_RINGS,
   buildChLabelAnchor,
 } from '../utils/coronalHoleGeometry';
 import {
@@ -32,7 +34,12 @@ import {
   type CHEvolution,
   chStateAtInFrame,
   chWasPresentAt,
+  chMeasuredSpan,
+  anchorEvolution,
+  interpolateCHAtTimeMs,
+  CH_PRESENCE_GRACE_MS,
 } from '../utils/coronalHoleHistory';
+import { streamParcels, unitsPerKmFor, type HoleState, type StreamSource } from '../utils/hssParcels';
 import type { RegionInput } from '../utils/regionLabels';
 import {
   barrierLimitsFor, barrierNote, streamSectorAt,
@@ -519,6 +526,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   // hssGroupRef - world-space Parker spiral arms; vertex shader rotates per frame
   const chGroupRef     = useRef<any>(null);
   const hssGroupRef    = useRef<any>(null);
+  // The growing HSS streams, and the simulation time they were last laid at.
+  const hssStreamsRef = useRef<{ source: StreamSource; mesh: any }[]>([]);
+  const hssStreamClockRef = useRef<number>(NaN);
   // HSS barrier notes, per CME id, written each frame and read into state a
   // couple of times a second - React has no business re-rendering per frame.
   const barrierNotesRef = useRef<Map<string, string>>(new Map());
@@ -1122,11 +1132,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       hssAuRings.add(line);
     });
     const sunR     = PLANET_DATA_MAP.SUN.size;
-    const hssReach = PLANET_DATA_MAP.EARTH.radius * 1.65;
     props.coronalHoles.forEach(ch => {
       chGroup.add(buildChSurfaceMesh(THREE, ch, sunR));
       chGroup.add(buildChOutlineLine(THREE, ch, sunR));
-      hssGroup.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
+      // Streams are built from the holes' history in their own effect.
     });
 
     const planetLabelInfos: PlanetLabelInfo[] = [{ id: 'sun-label', name: 'Sun', mesh: sunMesh }];
@@ -1396,22 +1405,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       // CH longitudes from SUVI are Earth-facing at detection time.
       // Anchor CH/HSS using the CH detection timestamp to keep placement
       // stable when the timeline starts/plays from different epochs.
-      let earthAngle = 0;
-      const earth = celestialBodiesRef.current.EARTH?.mesh;
-      if (earth) {
-        const earthPos = new THREE.Vector3();
-        earth.getWorldPosition(earthPos);
-        earthAngle = Math.atan2(earthPos.x, earthPos.z);
-      }
-      const chHssPhaseFromDetection = chDetectedAtMs != null
-        ? CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD + earthAngle - (SUN_ANGULAR_VELOCITY * (chDetectedAtMs / 1000))
-        : null;
-      const chHssPhaseFromFallbackAnchor =
-        CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD +
-        chHssAnchorEarthAngleRef.current -
-        chHssAnchorSunAngleRef.current;
-      const chHssPhase =
-        chHssPhaseFromDetection ?? chHssPhaseFromFallbackAnchor;
       // The CH patches are NOT re-anchored here any more.
       //
       // This line recomputed their rotation every frame from Earth's LIVE
@@ -1422,13 +1415,33 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       // have their group rotation touched. The patches now work the same way:
       // a constant anchor set once at rebuild, plus whatever the Sun does.
       //
-      // The HSS spiral keeps the old anchoring, because its shader geometry
-      // is built around it.
+      // The HSS streams are anchored the same way now (see the streams
+      // effect). They used to follow Earth's live orbital angle, which moves
+      // with the timeline, so the whole spiral slid as the clock ran.
 
-      // ── HSS Parker spiral - visibility + per-frame uniform updates ────────
+      // ── HSS streams - re-laid from their wind as the clock moves ─────────
+      // A minute of simulation time moves the wind a few thousand km, which
+      // is nothing on screen; re-laying every frame would be wasted work.
+      if (showHss && hssStreamsRef.current.length > 0
+          && !(Math.abs(simulationTimeMs - hssStreamClockRef.current) < 60000)) {
+        hssStreamClockRef.current = simulationTimeMs;
+        const sunR = PLANET_DATA_MAP.SUN.size;
+        const reach = PLANET_DATA_MAP.EARTH.radius * 1.65;
+        for (const { source, mesh } of hssStreamsRef.current) {
+          updateGrowingStreamMesh(THREE, mesh, streamParcels(source, {
+            nowMs: simulationTimeMs,
+            count: GROWING_STREAM_RINGS,
+            r0: sunR * 1.018,
+            reach,
+            unitsPerKm: unitsPerKmFor(SCENE_SCALE),
+            omega: SUN_ANGULAR_VELOCITY,
+          }), sunR, reach);
+        }
+      }
+
+      // ── HSS - visibility + per-frame uniform updates ──────────────────────
       if (hssGroupRef.current) {
         hssGroupRef.current.visible = showHss;
-        hssGroupRef.current.rotation.y = chHssPhase;
         hssGroupRef.current.children.forEach((child: any) => {
           const u = child.material?.uniforms;
           if (!u) return;
@@ -1873,7 +1886,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     };
 
     const sunR     = PLANET_DATA_MAP.SUN.size;
-    const hssReach = PLANET_DATA_MAP.EARTH.radius * 1.65;
     // ── The Sun as it was at the moment on the scrubber ──────────────────
     //
     // Three separate things have to be true of a hole for the timeline to be
@@ -1952,7 +1964,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     chSignatureRef.current = signature;
 
     clearGroup(chGroupRef.current);
-    clearGroup(hssGroupRef.current);
 
     const chLabels: SurfaceLabelInfo[] = [];
     drawn.forEach(({ ch, scale }) => {
@@ -1969,12 +1980,83 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         mesh: anchor,
         color: chLabelColour(ch.id),
       });
-
-      hssGroupRef.current.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
     });
     chLabelsRef.current = chLabels;
     publishSurfaceLabels();
   }, [coronalHoles, chEvolutions, chShapeTimeMs, chDetectedAtMs, threeReady, sceneReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── HSS streams, grown from each hole's history ───────────────────────────
+  //
+  // One stream per hole the tracker has ever seen in its history, plus any
+  // live hole it has no history for yet. Each starts at the hole's first
+  // reading and is fed until its last (or for as long as it stays open), so
+  // the animation loop can lay out exactly the wind that has been emitted by
+  // the moment on the clock - see utils/hssParcels.ts.
+  //
+  // Anchored like the patches: positions in the fixed frame of anchorMs, and
+  // the group turned so that frame faces the right way. Rebuilt only when the
+  // holes or their history change; the clock just re-lays the same streams.
+  useEffect(() => {
+    const THREE = (window as any).THREE;
+    const group = hssGroupRef.current;
+    if (!THREE || !group) return;
+
+    const anchorMs = chDetectedAtMs ?? Date.now();
+    group.rotation.y =
+      CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD
+      + computeEclipticLongitude('EARTH', anchorMs)
+      - SUN_ANGULAR_VELOCITY * (anchorMs / 1000);
+
+    for (const child of [...group.children]) {
+      group.remove(child);
+      child.geometry?.dispose?.();
+      child.material?.dispose?.();
+    }
+
+    const toState = (s: ReturnType<typeof interpolateCHAtTimeMs>): HoleState | null => s && {
+      lat: s.lat,
+      lon: s.lon,
+      widthDeg: s.widthDeg,
+      heightDeg: s.heightDeg,
+      darkness: s.darkness,
+      // Every reading should carry one; a moderate stream if it does not.
+      estimatedSpeedKms: Number.isFinite(s.estimatedSpeedKms) && s.estimatedSpeedKms > 0 ? s.estimatedSpeedKms : 550,
+    };
+    const opacityFor = (ch: any) => Math.min(0.85, (ch?.opacity ?? 0.5) + (ch?.darkness ?? 0) * 0.22);
+
+    const liveIds = new Set(coronalHoles.map((ch) => ch.id));
+    const streams: { source: StreamSource; mesh: any }[] = [];
+    for (const evolution of chEvolutions) {
+      const span = chMeasuredSpan(evolution);
+      if (!span) continue;
+      const anchored = anchorEvolution(evolution, anchorMs);
+      streams.push({
+        source: {
+          firstMs: span.firstMs,
+          lastMs: liveIds.has(evolution.trackId) ? null : span.lastMs + CH_PRESENCE_GRACE_MS,
+          stateAt: (ms) => toState(interpolateCHAtTimeMs(anchored, ms)),
+        },
+        mesh: createGrowingStreamMesh(THREE, evolution.trackId, opacityFor(evolution.current)),
+      });
+    }
+    const tracked = new Set(chEvolutions.map((e) => e.trackId));
+    for (const ch of coronalHoles) {
+      if (tracked.has(ch.id)) continue;
+      // Measured once, at the anchor, so its longitude is already in frame.
+      const state = toState({
+        lat: ch.lat, lon: ch.lon, widthDeg: ch.widthDeg,
+        heightDeg: ch.heightDeg ?? ch.widthDeg, darkness: ch.darkness,
+        estimatedSpeedKms: ch.estimatedSpeedKms,
+      });
+      streams.push({
+        source: { firstMs: anchorMs, lastMs: null, stateAt: () => state },
+        mesh: createGrowingStreamMesh(THREE, ch.id, opacityFor(ch)),
+      });
+    }
+    streams.forEach(({ mesh }) => group.add(mesh));
+    hssStreamsRef.current = streams;
+    hssStreamClockRef.current = NaN;   // lay them out on the next frame
+  }, [coronalHoles, chEvolutions, chDetectedAtMs, threeReady, sceneReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The HSS fallback anchor, captured when a detection arrives and at no other
   // time. Anchoring is a statement about WHEN a measurement was taken, so it

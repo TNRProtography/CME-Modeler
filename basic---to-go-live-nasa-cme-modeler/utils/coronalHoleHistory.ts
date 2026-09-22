@@ -273,11 +273,63 @@ function snapshotDataToCH(data: CHSnapshotData): CoronalHole {
 export function buildEvolutionTracks(
   history: CHHistoryResult,
   currentCHs: CoronalHole[],
+  now: number = Date.now(),
 ): CHEvolution[] {
   if (history.snapshots.length === 0) return [];
+  const open = openTracks(history, currentCHs, now);
+  return [...open, ...closedTracks(history, currentCHs, now)];
+}
 
-  const now = Date.now();
+/** Sightings needed before a hole that has since closed gets a track. */
+const CLOSED_MIN_SIGHTINGS = 2;
 
+/**
+ * Holes the history saw that are not open now.
+ *
+ * Without these a hole that closed simply vanished, stream and all, the
+ * moment it stopped being detected - its wind was still out there and still
+ * on its way. Anything that lands near an open hole is left to that hole's
+ * track (the detector sometimes splits one hole in two), and a hole needs a
+ * couple of sightings so that one noisy frame does not become a stream.
+ */
+function closedTracks(history: CHHistoryResult, currentCHs: CoronalHole[], now: number): CHEvolution[] {
+  type Group = { lon: number; lat: number; sightings: { timestampMs: number; ch: CoronalHole }[] };
+  const groups: Group[] = [];
+  const snaps = [...history.snapshots].sort((a, b) => b.timestampMs - a.timestampMs);   // newest first
+  for (const snap of snaps) {
+    for (const chData of snap.coronalHoles) {
+      const lon = longitudeAt(chData.lon, snap.timestampMs, now);
+      const near = (a: { lon: number; lat: number }) =>
+        Math.hypot(lon - a.lon, chData.lat - a.lat) < CH_MATCH_THRESHOLD_DEG;
+      if (currentCHs.some(near)) continue;
+      let group = groups.find(near);
+      if (!group) {
+        group = { lon, lat: chData.lat, sightings: [] };
+        groups.push(group);
+      }
+      if (group.sightings.some((x) => x.timestampMs === snap.timestampMs)) continue;
+      group.sightings.push({ timestampMs: snap.timestampMs, ch: snapshotDataToCH(chData) });
+    }
+  }
+  return groups
+    .filter((g) => g.sightings.length >= CLOSED_MIN_SIGHTINGS)
+    .map((g, n) => {
+      const sightings = [...g.sightings].sort((a, b) => a.timestampMs - b.timestampMs);
+      const last = sightings[sightings.length - 1];
+      const id = `Closed CH ${n + 1}`;
+      return {
+        trackId: id,
+        snapshots: sightings.map(({ timestampMs, ch }) => ({
+          timestampMs,
+          hoursAgo: (now - timestampMs) / 3600000,
+          ch: { ...ch, id },
+        })),
+        current: { ...last.ch, id },
+      };
+    });
+}
+
+function openTracks(history: CHHistoryResult, currentCHs: CoronalHole[], now: number): CHEvolution[] {
   return currentCHs.map(currentCH => {
     const evolution: CHEvolution = {
       trackId: currentCH.id,
@@ -575,7 +627,15 @@ export function chStateAtInFrame(
   atMs: number,
   frameMs: number,
 ): ReturnType<typeof interpolateCHAtTimeMs> {
-  const anchored: CHEvolution = {
+  return interpolateCHAtTimeMs(anchorEvolution(evolution, frameMs), atMs);
+}
+
+/**
+ * The whole track carried into one fixed frame, for callers that ask it about
+ * many moments - chStateAtInFrame does this afresh on every call.
+ */
+export function anchorEvolution(evolution: CHEvolution, frameMs: number): CHEvolution {
+  return {
     ...evolution,
     snapshots: evolution.snapshots.map((snap) => ({
       ...snap,
@@ -584,5 +644,4 @@ export function chStateAtInFrame(
         : null,
     })),
   };
-  return interpolateCHAtTimeMs(anchored, atMs);
 }
