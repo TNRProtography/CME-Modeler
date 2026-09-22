@@ -58,6 +58,10 @@ interface ControlsPanelProps {
   onShowFluxRopeChange: (show: boolean) => void; // --- NEW: Handler for Flux Rope ---
   showHss: boolean;
   onShowHssChange: (show: boolean) => void;
+  showSunspots: boolean;
+  onShowSunspotsChange: (show: boolean) => void;
+  /** How many NOAA regions are currently on the Earth-facing disk. */
+  sunspotCount?: number;
   chDetectionStatus?: 'idle' | 'loading' | 'detected' | 'empty' | 'error';
   cmeFilter: CMEFilter;
   onCmeFilterChange: (filter: CMEFilter) => void;
@@ -106,6 +110,9 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
   onShowFluxRopeChange,
   showHss,
   onShowHssChange,
+  showSunspots,
+  onShowSunspotsChange,
+  sunspotCount = 0,
   chDetectionStatus,
   cmeFilter,
   onCmeFilterChange,
@@ -232,6 +239,25 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
                 </p>
               </div>
             )}
+            {/* ── Sunspot regions toggle ────────────────────────────────────── */}
+            <div className="flex items-center justify-between">
+              <ToggleSwitch
+                id="show-sunspots-toggle"
+                label="Show Sunspot Regions"
+                checked={showSunspots}
+                onChange={onShowSunspotsChange}
+              />
+              {showSunspots && (
+                <span className="ml-2 flex-shrink-0 text-[10px] font-mono text-neutral-500">
+                  {sunspotCount} on disk
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-neutral-500 -mt-1">
+              NOAA active regions, sized by area and placed where they are now rather than where they
+              were reported - the Sun turns about half a degree an hour.
+            </p>
+
             {/* ── High-Speed Stream toggle ──────────────────────────────────── */}
             <div className="flex items-center justify-between">
               <ToggleSwitch

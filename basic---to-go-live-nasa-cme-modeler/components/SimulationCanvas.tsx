@@ -19,6 +19,7 @@ import {
   buildChSurfaceMesh,
   buildChOutlineLine,
   buildParkerSpiralMesh,
+  buildSunspotMarker,
 } from '../utils/coronalHoleGeometry';
 import {
   processedCMEToCMEInput,
@@ -28,7 +29,9 @@ import {
 } from '../utils/heliosphericPropagation';
 import {
   type CHEvolution,
+  interpolateCHAtTimeMs,
 } from '../utils/coronalHoleHistory';
+import type { RegionInput } from '../utils/regionLabels';
 import {
   computeEclipticLongitude,
   computeGMST,
@@ -425,8 +428,15 @@ interface SimulationCanvasProps {
   coronalHoles: CoronalHole[];
   /** SUVI analysis time for the current CH detections (ms since epoch) */
   chDetectedAtMs?: number | null;
-  /** 72h CH evolution tracks from worker history */
-  chEvolutions?: CHEvolution[]; // kept for API compatibility - CH shape is now always current detection
+  /**
+   * CH evolution tracks, which now drive the shape rather than sitting unused.
+   *
+   * The holes used to be drawn at their latest measured size no matter where
+   * the timeline sat, so scrubbing back three days showed today's hole over
+   * Tuesday's Sun. They are sized from their own history now, which is the
+   * same history the coronal hole tracker draws its width chart from.
+   */
+  chEvolutions?: CHEvolution[];
   dataVersion: number;
   interactionMode: InteractionMode;
   onSunClick?: () => void;
@@ -436,6 +446,9 @@ interface SimulationCanvasProps {
   rerunToken?: number;
   /** Whether the re-run CME vs HSS interaction mode is active */
   rerunHssInteraction?: boolean;
+  /** NOAA active regions, drawn on the Sun when showSunspots is on. */
+  sunspotRegions?: RegionInput[];
+  showSunspots?: boolean;
 }
 
 const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, SimulationCanvasProps> = (props, ref) => {
@@ -445,7 +458,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     timelineMinDate, timelineMaxDate, setPlanetMeshesForLabels,
     setRendererDomElement, onCameraReady, getClockElapsedTime, resetClock,
     onScrubberChangeByAnim, onTimelineEnd, showExtraPlanets, showMoonL1,
-    showFluxRope, bzSouth = false, showHss, coronalHoles, chDetectedAtMs = null, chEvolutions: _chEvolutions, dataVersion, interactionMode, onSunClick,
+    showFluxRope, bzSouth = false, showHss, coronalHoles, chDetectedAtMs = null, chEvolutions = [], dataVersion, interactionMode, onSunClick,
+    sunspotRegions = [], showSunspots = false,
     measuredWindSpeedKms, rerunToken = 0, rerunHssInteraction = false,
   } = props;
 
@@ -470,6 +484,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   // hssGroupRef - world-space Parker spiral arms; vertex shader rotates per frame
   const chGroupRef     = useRef<any>(null);
   const hssGroupRef    = useRef<any>(null);
+  // Parented to sunMesh alongside chGroup, so the spots turn with the Sun for
+  // free rather than needing their longitude advanced every frame.
+  const spotGroupRef   = useRef<any>(null);
   const hssAuRingsRef  = useRef<any>(null);
   const sunMeshRef     = useRef<any>(null);
   const sunRotationRef = useRef<number>(0);
@@ -560,6 +577,17 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   }, []);
 
   useEffect(() => { timelineValueRef.current = timelineValue; }, [timelineValue]);
+
+  /**
+   * The moment the CH shapes are drawn for, quantised to ten simulated minutes.
+   *
+   * Triangulating a spherical patch is not a per-frame operation, and a hole
+   * does not change measurably in ten minutes - the detector only produces a
+   * new measurement every couple of hours. Quantising keeps the rebuild off
+   * the animation loop while still tracking the scrubber.
+   */
+  const [chShapeTimeMs, setChShapeTimeMs] = useState<number>(() => Date.now());
+  const chShapeBucketRef = useRef<number>(0);
 
   const MIN_CME_SPEED_KMS = 300;
 
@@ -1003,9 +1031,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     // hssGroup: child of sunMesh so HSS roots are locked to CH/source rotation.
     const chGroup  = new THREE.Group(); chGroup.name  = 'coronal-holes';  sunMesh.add(chGroup);
     const hssGroup = new THREE.Group(); hssGroup.name = 'hss-streams';    sunMesh.add(hssGroup);
+    const spotGroup = new THREE.Group(); spotGroup.name = 'sunspot-regions'; sunMesh.add(spotGroup);
     const hssAuRings = new THREE.Group(); hssAuRings.name = 'hss-au-rings'; scene.add(hssAuRings);
     chGroupRef.current  = chGroup;
     hssGroupRef.current = hssGroup;
+    spotGroupRef.current = spotGroup;
     hssAuRingsRef.current = hssAuRings;
     chHssAnchorSunAngleRef.current = sunRotationRef.current;
     {
@@ -1271,6 +1301,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const simulationTimeMs = (timelineActive && timelineMaxDate > timelineMinDate)
         ? timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000)
         : Date.now();
+
+      // The CH shapes follow the same epoch, at ten-minute resolution.
+      const chBucket = Math.floor(simulationTimeMs / 600000);
+      if (chBucket !== chShapeBucketRef.current) {
+        chShapeBucketRef.current = chBucket;
+        setChShapeTimeMs(chBucket * 600000);
+      }
 
       // ── Real planet positions from simulationTimeMs ─────────────────────
       // All planets except Earth move per simulationTimeMs (timeline-synced
@@ -1762,13 +1799,54 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     const sunR     = PLANET_DATA_MAP.SUN.size;
     const hssReach = PLANET_DATA_MAP.EARTH.radius * 1.65;
+    // How big each hole was at the moment being shown, from the same tracks the
+    // coronal hole tracker draws its width chart from. A hole with no history
+    // yet is drawn at its measured size, which is the old behaviour and the
+    // honest one - there is nothing to interpolate.
+    const evolutionById = new Map(chEvolutions.map((e) => [e.trackId, e]));
+
     coronalHoles.forEach(ch => {
-      chGroupRef.current.add(buildChSurfaceMesh(THREE, ch, sunR));
-      chGroupRef.current.add(buildChOutlineLine(THREE, ch, sunR));
+      const evolution = evolutionById.get(ch.id);
+      const at = evolution ? interpolateCHAtTimeMs(evolution, chShapeTimeMs) : null;
+      // Scaled by width rather than area: width is what the detector measures
+      // most reliably and what the speed model already keys off, so the two
+      // cannot drift apart.
+      const measured = ch.widthDeg || 1;
+      const scale = at && at.widthDeg > 0
+        // Bounded, because a single bad frame should not inflate a hole to
+        // cover the disk or shrink it out of existence.
+        ? Math.max(0.35, Math.min(2.5, at.widthDeg / measured))
+        : 1;
+
+      chGroupRef.current.add(buildChSurfaceMesh(THREE, ch, sunR, scale));
+      chGroupRef.current.add(buildChOutlineLine(THREE, ch, sunR, scale));
 
       hssGroupRef.current.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
     });
-  }, [coronalHoles, threeReady, sceneReady]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [coronalHoles, chEvolutions, chShapeTimeMs, threeReady, sceneReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Sunspot regions ───────────────────────────────────────────────────────
+  // Separate from the CH effect so toggling them does not rebuild every
+  // coronal hole patch, which is the expensive half.
+  useEffect(() => {
+    const THREE = (window as any).THREE;
+    if (!THREE || !spotGroupRef.current) return;
+
+    const group = spotGroupRef.current;
+    while (group.children.length > 0) {
+      const child = group.children[0];
+      group.remove(child);
+      child.geometry?.dispose?.();
+      child.material?.dispose?.();
+    }
+
+    if (!showSunspots) return;
+
+    const sunR = PLANET_DATA_MAP.SUN.size;
+    sunspotRegions.forEach((region) => {
+      group.add(buildSunspotMarker(THREE, region, sunR));
+    });
+  }, [sunspotRegions, showSunspots, threeReady, sceneReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
 

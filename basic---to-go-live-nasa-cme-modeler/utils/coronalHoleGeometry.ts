@@ -76,7 +76,7 @@ const SCENE_SCALE       = 3.0;           // 1 scene unit ≈ 1 AU
 /** Heliographic (lat, lon) degrees → unit Cartesian.
  *  Scene: +Y = north pole, +Z = lon 0 toward Earth.
  *  Positive lon = East on the solar disk = positive X in scene. */
-function hgToVec(THREE: any, lat: number, lon: number): any {
+export function hgToVec(THREE: any, lat: number, lon: number): any {
   const phi   = THREE.MathUtils.degToRad(90 - lat);
   const theta = THREE.MathUtils.degToRad(lon);  // positive lon → East → +X
   return new THREE.Vector3(
@@ -90,7 +90,7 @@ function hgToVec(THREE: any, lat: number, lon: number): any {
 
 /** Boundary polygon on the solar sphere in sunMesh local space. */
 export function buildChFootprintPoints(
-  THREE: any, ch: CoronalHole, sunRadius: number
+  THREE: any, ch: CoronalHole, sunRadius: number, sizeScale = 1
 ): any[] {
   const r = sunRadius * 1.003;
   const cenVec = hgToVec(THREE, ch.lat, ch.lon).normalize();
@@ -101,22 +101,76 @@ export function buildChFootprintPoints(
   const up = new THREE.Vector3().crossVectors(cenVec, right).normalize();
 
   if (ch.polygon && ch.polygon.length >= 3) {
-    const pts = ch.polygon.map((v: any) => {
-      const p = hgToVec(THREE, ch.lat + v.lat, ch.lon + v.lon).normalize();
+    const raw = ch.polygon.map((v: any) =>
+      hgToVec(THREE, ch.lat + v.lat, ch.lon + v.lon).normalize());
+
+    // Scaled on the sphere, about the outline's OWN centroid.
+    //
+    // Two things go wrong if this is done in lat/lon instead. The vertices are
+    // offsets from the reported centre and their mean is not zero - a lopsided
+    // hole leans one way - so multiplying them walks the hole across the Sun,
+    // away from the position the detector measured. And a degree of longitude
+    // is not a degree of arc except at the equator, so a hole at -20° would
+    // stretch sideways as it grew. Rotating each vertex away from the centroid
+    // along its own great circle has neither problem: the centroid is the
+    // fixed point of the rotation, and arc length is arc length everywhere.
+    const centroid = new THREE.Vector3();
+    raw.forEach((p: any) => centroid.add(p));
+    centroid.divideScalar(raw.length).normalize();
+
+    const rotate = (p: any, axis: any, phi: number) => {
+      const c = Math.cos(phi), sn = Math.sin(phi);
+      const cross = new THREE.Vector3().crossVectors(axis, p);
+      return p.clone().multiplyScalar(c)
+        .addScaledVector(cross, sn)
+        .addScaledVector(axis, axis.dot(p) * (1 - c))
+        .normalize();
+    };
+
+    let scaled = raw;
+    if (sizeScale !== 1) {
+      scaled = raw.map((p: any) => {
+        const theta = Math.acos(Math.max(-1, Math.min(1, centroid.dot(p))));
+        if (theta < 1e-9) return p.clone();
+        const axis = new THREE.Vector3().crossVectors(centroid, p).normalize();
+        // By the EXTRA angle only, so the vertex slides along the great circle
+        // that already joins it to the centroid.
+        return rotate(p, axis, theta * (sizeScale - 1));
+      });
+
+      // Then put the centroid back.
+      //
+      // Scaling angles about a point moves the mean of a LOPSIDED outline,
+      // because the far vertices travel further than the near ones and there
+      // are not equal numbers of each. Left alone, a growing hole creeps away
+      // from the position it was measured at - which is the position the HSS
+      // stream is anchored to, so the patch and its own stream would part
+      // company. One correcting rotation makes it exact.
+      const moved = new THREE.Vector3();
+      scaled.forEach((p: any) => moved.add(p));
+      moved.divideScalar(scaled.length).normalize();
+
+      const back = Math.acos(Math.max(-1, Math.min(1, moved.dot(centroid))));
+      if (back > 1e-9) {
+        const axis = new THREE.Vector3().crossVectors(moved, centroid).normalize();
+        if (Number.isFinite(axis.x)) scaled = scaled.map((p: any) => rotate(p, axis, back));
+      }
+    }
+
+    const pts = scaled.map((p: any) =>
       // Inflate each point slightly away from the CH centroid - do NOT re-sort.
       // buildPolygon already sorts by angle in pixel space; re-sorting here from
       // a different origin destroys all concavities and produces a convex hull
       // that looks like a perfect circle for large irregular CHs.
-      return cenVec.clone().lerp(p, CH_OVEREMPHASIS).normalize().multiplyScalar(r);
-    });
+      cenVec.clone().lerp(p, CH_OVEREMPHASIS).normalize().multiplyScalar(r));
     pts.push(pts[0].clone()); // close the loop
     return pts;
   }
 
   // Ellipse fallback
   const N    = 24;
-  const hw   = THREE.MathUtils.degToRad((ch.widthDeg ?? 20) / 2) * CH_OVEREMPHASIS;
-  const hh   = THREE.MathUtils.degToRad((ch.heightDeg ?? ch.widthDeg ?? 20) / 2) * CH_OVEREMPHASIS;
+  const hw   = THREE.MathUtils.degToRad((ch.widthDeg ?? 20) / 2) * CH_OVEREMPHASIS * sizeScale;
+  const hh   = THREE.MathUtils.degToRad((ch.heightDeg ?? ch.widthDeg ?? 20) / 2) * CH_OVEREMPHASIS * sizeScale;
   const cen  = hgToVec(THREE, ch.lat, ch.lon);
 
   const pts: any[] = [];
@@ -263,9 +317,9 @@ function smoothPolygon(
  *  CH shapes (X, lightning-bolt, irregular blobs) render correctly without
  *  filling their convex hull. Parented to sunMesh → rotates with the sun. */
 export function buildChSurfaceMesh(
-  THREE: any, ch: CoronalHole, sunRadius: number
+  THREE: any, ch: CoronalHole, sunRadius: number, sizeScale = 1
 ): any {
-  const fp = buildChFootprintPoints(THREE, ch, sunRadius);
+  const fp = buildChFootprintPoints(THREE, ch, sunRadius, sizeScale);
   // Drop the closing duplicate for triangulation
   const pts = fp[fp.length - 1] &&
     fp[0].distanceToSquared(fp[fp.length - 1]) < 1e-10
@@ -329,9 +383,9 @@ export function buildChSurfaceMesh(
 
 /** Bright border around the dark coronal hole patch. Also in sunMesh local space. */
 export function buildChOutlineLine(
-  THREE: any, ch: CoronalHole, sunRadius: number
+  THREE: any, ch: CoronalHole, sunRadius: number, sizeScale = 1
 ): any {
-  const fp   = buildChFootprintPoints(THREE, ch, sunRadius * 1.020);
+  const fp   = buildChFootprintPoints(THREE, ch, sunRadius * 1.020, sizeScale);
 
   // Smooth the outline in 2D tangent space then unproject back to sphere
   const cenVec = new THREE.Vector3();
@@ -1011,3 +1065,48 @@ export function buildTimeVaryingSpiralMesh(
 }
 
 // --- END OF FILE utils/coronalHoleGeometry.ts ---
+
+
+// ─── Sunspot regions ──────────────────────────────────────────────────────────
+
+/**
+ * A marker for one active region, on the solar surface.
+ *
+ * A disc rather than a sprite, laid flat against the sphere and facing out, so
+ * it foreshortens towards the limb exactly as the real spot group does. A
+ * sprite would stay circular all the way to the edge and put a region that is
+ * about to rotate off in the same visual weight as one facing us squarely -
+ * which is the opposite of what matters, since only the Earth-facing ones can
+ * throw anything at us.
+ *
+ * Sized by area, with a floor: NOAA reports plenty of regions with no area at
+ * all, and those still exist.
+ */
+export function buildSunspotMarker(
+  THREE: any,
+  region: { latitude: number; longitude: number; area?: number | null; color: string },
+  sunRadius: number,
+): any {
+  const area = Math.max(0, region.area ?? 0);
+  // Square root, because area is an area: doubling the radius quadruples it,
+  // and scaling the marker linearly by area makes big regions absurd.
+  const radius = sunRadius * (0.018 + Math.min(0.045, Math.sqrt(area) / 900));
+
+  const geometry = new THREE.CircleGeometry(radius, 24);
+  const material = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(region.color),
+    transparent: true,
+    opacity: 0.85,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+
+  const normal = hgToVec(THREE, region.latitude, region.longitude).normalize();
+  // Just clear of the photosphere, and under the CH patches at 1.018 so a
+  // region inside a hole does not z-fight with it.
+  mesh.position.copy(normal.clone().multiplyScalar(sunRadius * 1.012));
+  mesh.lookAt(normal.clone().multiplyScalar(sunRadius * 3));
+  mesh.name = `sunspot-${(region as any).id ?? ''}`;
+  return mesh;
+}
