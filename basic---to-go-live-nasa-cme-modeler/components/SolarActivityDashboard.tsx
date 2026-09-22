@@ -34,7 +34,7 @@ import DriftingMoon from './DriftingMoon';
 import { encodeGif, type GifFrame } from '../utils/gifEncoder';
 import { parseSrsValidTime, latestSrsEpoch } from '../utils/srsTime';
 import {
-  fetchSharpByRegion, withSharpPosition, fetchSharpHistory, positionAt, trackedBy,
+  fetchSharpByRegion, withSharpPosition, fetchSharpHistory, smoothedPositionAt, trackedBy,
   regionKey as sharpRegionKey, type SharpHistory,
 } from '../utils/sharpPositions';
 import { fetchHmiFrames, type HmiFrame } from '../utils/hmiArchive';
@@ -2364,24 +2364,36 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   /**
    * The regions as they were at the frame's moment.
    *
-   * HMI's position for that hour where there is one; otherwise today's
-   * position, which the label builder carries back for rotation. A region HMI
-   * only started tracking after the frame is left off - NOAA's list is
-   * today's, and it should not appear on the Sun before it emerged.
+   * HMI's positions, smoothed and interpolated between its hourly samples so
+   * the labels glide rather than step (see smoothedPositionAt); today's
+   * position carried back for rotation where HMI has nothing.
+   *
+   * A region HMI only started tracking after the frame is left off the disk -
+   * NOAA's list is today's, and it should not appear before it emerged -
+   * EXCEPT the selected one. That stays, grey, pinned to the patch of surface
+   * it would emerge from, so its close-up can watch it form.
    */
-  const { spotRegionInputs, spotPlacedFromHmi } = useMemo(() => {
-    if (spotIsLive) return { spotRegionInputs: regionInputs, spotPlacedFromHmi: 0 };
+  const { spotRegionInputs, spotPlacedFromHmi, selectedPreEmergence } = useMemo(() => {
+    if (spotIsLive) return { spotRegionInputs: regionInputs, spotPlacedFromHmi: 0, selectedPreEmergence: false };
     let placed = 0;
+    let preEmergence = false;
+    const selectedId = selectedSunspotRegion?.region ?? null;
     const inputs = regionInputs.flatMap((r) => {
       const points = sharpHistory.byRegion.get(sharpRegionKey(r.id));
-      if (!trackedBy(points, spotFrameMs, sharpHistory.fromMs)) return [];
-      const pos = points ? positionAt(points, spotFrameMs) : null;
+      const emerged = trackedBy(points, spotFrameMs, sharpHistory.fromMs);
+      if (!emerged && r.id !== selectedId) return [];
+
+      const pos = points ? smoothedPositionAt(points, spotFrameMs) : null;
       if (!pos) return [r];
+      if (!emerged) {
+        preEmergence = true;
+        return [{ ...r, latitude: pos.latitude, longitude: pos.longitude, observedAtMs: pos.atMs, color: '#a3a3a3' }];
+      }
       placed++;
       return [{ ...r, latitude: pos.latitude, longitude: pos.longitude, observedAtMs: pos.atMs }];
     });
-    return { spotRegionInputs: inputs, spotPlacedFromHmi: placed };
-  }, [spotIsLive, regionInputs, sharpHistory, spotFrameMs]);
+    return { spotRegionInputs: inputs, spotPlacedFromHmi: placed, selectedPreEmergence: preEmergence };
+  }, [spotIsLive, regionInputs, sharpHistory, spotFrameMs, selectedSunspotRegion]);
 
   // The sunspot tracker's own overview, for whichever frame is on screen.
   const laidOutSunspotLabels = useMemo(() => {
@@ -4349,10 +4361,16 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                           cycleSunspotImageryMode(delta < 0 ? 1 : -1);
                         }}
                       >
+                        {selectedPreEmergence && !closeupView?.absent && (
+                          <p className="text-[11px] text-neutral-400 mb-1.5 -mt-1">
+                            Before AR {selectedSunspotRegion.region} existed. This is the patch of surface it emerged
+                            from, followed as the Sun turned - scrub forward to watch it form.
+                          </p>
+                        )}
                         {closeupView?.absent ? (
                           <div className="w-full h-full flex items-center justify-center p-4 text-center text-xs text-neutral-500">
-                            AR {selectedSunspotRegion.region} is not on the visible disk at this moment - it had not
-                            emerged yet, or was still round the east limb.
+                            The site AR {selectedSunspotRegion.region} emerged from was still round the east limb
+                            at this moment, so there is nothing to see of it yet.
                           </div>
                         ) : closeupView?.url ? (
                           <div className="relative w-full h-full overflow-hidden bg-black">
@@ -4368,6 +4386,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                                   onLoad={() => setIsCloseupImageLoading(false)}
                                   onError={() => setIsCloseupImageLoading(false)}
                                   style={{
+                                    // Glide between frames during playback, over exactly one frame's
+                                    // interval, so each pan ends as the next frame arrives. Not while
+                                    // dragging: a finger wants the view to be where it is, now.
+                                    transition: spotPlaying
+                                      ? `left ${Math.max(40, Math.round(220 / spotSpeed))}ms linear, top ${Math.max(40, Math.round(220 / spotSpeed))}ms linear`
+                                      : undefined,
                                     width: '420%',
                                     height: '420%',
                                     left: `${50 - adjustedX * 4.2}%`,

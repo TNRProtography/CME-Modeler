@@ -18,6 +18,8 @@
 //                {"name":"LON_FWT","values":[...]}]}
 // Columns, not rows, and every value a string.
 
+import { longitudeAt } from './solarDisk';
+
 const JSOC_INFO = 'http://jsoc.stanford.edu/cgi-bin/ajax/jsoc_info';
 const SERIES = 'hmi.sharp_720s_nrt';
 const KEYS = 'T_REC,HARPNUM,NOAA_AR,LAT_FWT,LON_FWT';
@@ -468,4 +470,61 @@ export function trackedBy(
   // History that begins where the query began says nothing about before it.
   if (points[0].atMs <= coverageFromMs + 2 * 3600000) return true;
   return points[0].atMs - graceMs <= atMs;
+}
+
+/**
+ * Where a region was at any moment, smoothed, and pinned before it existed.
+ *
+ * Two things made the scrubber jumpy. Frames are a quarter-hour apart and
+ * positions are hourly, so snapping each frame to the nearest hour held the
+ * region still for four frames and then jumped it. And the flux-weighted
+ * centre wanders a little from hour to hour as field comes and goes inside
+ * the region, which reads as the region twitching.
+ *
+ * So each position is first taken into one co-rotating frame - rotation
+ * removed, leaving only the region's own motion, which is slow - then
+ * averaged over the neighbouring hours with a Gaussian weight. The result is
+ * returned in that frame, and the caller's rotation correction carries it to
+ * the moment on screen: continuous, whatever the frame spacing.
+ *
+ * Outside the history it is pinned to the nearest end. Before the region
+ * emerged that is its first position wound back for rotation, which is where
+ * the patch of surface that became the region actually was - so the close-up
+ * can sit on it and watch the region form.
+ */
+export function smoothedPositionAt(
+  points: SharpHistoryPoint[],
+  atMs: number,
+  sigmaMs = 2 * 3600000,
+): {
+  latitude: number; longitude: number; atMs: number;
+  /** Before the first measurement, so the region had not yet been seen. */
+  beforeFirst: boolean;
+} | null {
+  const valid = points.filter((p) => p.latitude != null && p.longitude != null);
+  if (valid.length === 0) return null;
+
+  const refMs = valid[valid.length - 1].atMs;
+  const first = valid[0].atMs, last = refMs;
+  // Pinned to the nearest end outside the history, averaged over the same
+  // width of neighbours as anywhere else so the pin does not twitch either.
+  const at = Math.max(first, Math.min(last, atMs));
+
+  let wSum = 0, latSum = 0, lonSum = 0;
+  for (const p of valid) {
+    const dt = p.atMs - at;
+    if (Math.abs(dt) > 3 * sigmaMs) continue;
+    const w = Math.exp(-0.5 * (dt / sigmaMs) ** 2);
+    wSum += w;
+    latSum += w * (p.latitude as number);
+    lonSum += w * longitudeAt(p.longitude as number, p.atMs, refMs);
+  }
+  if (wSum === 0) return null;
+
+  return {
+    latitude: latSum / wSum,
+    longitude: lonSum / wSum,
+    atMs: refMs,
+    beforeFirst: atMs < first - 90 * 60000,
+  };
 }

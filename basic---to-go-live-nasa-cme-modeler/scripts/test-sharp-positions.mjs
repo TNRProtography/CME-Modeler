@@ -208,6 +208,69 @@ try {
           'but history that begins well inside the window really is an emergence');
   }
 
+
+  console.log('\nPositions glide instead of stepping');
+  {
+    // A region fixed on the surface, sampled hourly the way HMI's history is,
+    // with the hour-to-hour wander of a flux-weighted centre on top.
+    const SYN = 360 / 27.2753;
+    const t0 = Date.UTC(2026, 8, 20, 0);
+    const wobble = [0.4, -0.5, 0.3, -0.2, 0.5, -0.4, 0.2, -0.3, 0.4, -0.5, 0.3, -0.2, 0.1];
+    const pts = wobble.map((w, h) => ({
+      atMs: t0 + h * 3600000, usfluxMx: 1e22, areaMh: 100,
+      latitude: 12 + w, longitude: -30 + SYN * (h / 24) + w,
+    }));
+
+    // Stonyhurst longitude at each quarter-hour frame, as the tracker draws it.
+    const drawn = [];
+    for (let m = 3 * 60; m <= 9 * 60; m += 15) {
+      const t = t0 + m * 60000;
+      const p = S.smoothedPositionAt(pts, t);
+      drawn.push(p.longitude + SYN * ((t - p.atMs) / 86400000));
+    }
+    const steps = drawn.slice(1).map((v, i) => v - drawn[i]);
+    const expected = SYN / 96;      // a quarter-hour of rotation
+    const held = steps.filter((d) => Math.abs(d) < expected * 0.25).length;
+    const worst = Math.max(...steps.map((d) => Math.abs(d - expected)));
+    check(held === 0, `no frame holds still waiting for the next hour (${held} held)`, String(held));
+    check(worst < 0.1, `each frame moves about a quarter-hour of rotation (worst off by ${worst.toFixed(3)}°)`, worst.toFixed(3));
+
+    // The old way for contrast: snapping to the nearest hourly sample.
+    const snapped = [];
+    for (let m = 3 * 60; m <= 9 * 60; m += 15) {
+      const t = t0 + m * 60000;
+      const p = S.positionAt(pts, t);
+      snapped.push(p.longitude + SYN * ((t - p.atMs) / 86400000));
+    }
+    const snapWorst = Math.max(...snapped.slice(1).map((v, i) => Math.abs(v - snapped[i] - expected)));
+    check(snapWorst > worst * 3, `snapping jumped ${snapWorst.toFixed(2)}° against ${worst.toFixed(2)}° smoothed`);
+
+    const lats = [];
+    for (let m = 3 * 60; m <= 9 * 60; m += 15) lats.push(S.smoothedPositionAt(pts, t0 + m * 60000).latitude);
+    const latRange = Math.max(...lats) - Math.min(...lats);
+    check(latRange < 0.4, `latitude wanders ${latRange.toFixed(2)}° smoothed, against 1° raw`, latRange.toFixed(3));
+  }
+
+  console.log('\nBefore it existed, it is pinned to where it would emerge');
+  {
+    const SYN = 360 / 27.2753;
+    const first = Date.UTC(2026, 8, 21, 12);
+    const pts = [0, 1, 2].map((h) => ({
+      atMs: first + h * 3600000, usfluxMx: 1e21, areaMh: 20,
+      latitude: -8, longitude: -20 + SYN * (h / 24),
+    }));
+    const dayBefore = first - 24 * 3600000;
+    const p = S.smoothedPositionAt(pts, dayBefore);
+    check(p.beforeFirst, 'a frame a day before HMI first saw it is flagged as before');
+    const lonThen = p.longitude + SYN * ((dayBefore - p.atMs) / 86400000);
+    check(Math.abs(lonThen - (-20 - SYN)) < 0.3,
+          `the site is wound back a day of rotation, to ${lonThen.toFixed(1)}° - where that patch of surface was`,
+          lonThen.toFixed(2));
+    check(Math.abs(p.latitude - -8) < 1e-9, 'at the latitude it emerged at');
+    check(!S.smoothedPositionAt(pts, first + 3600000).beforeFirst, 'and during its life it is not flagged');
+    check(S.smoothedPositionAt([], first) === null, 'no history at all is null, and NOAA takes over');
+  }
+
 } finally {
   rmSync(out, { recursive: true, force: true });
 }
