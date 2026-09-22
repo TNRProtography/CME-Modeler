@@ -32,6 +32,7 @@ import AuroraOverlay from './AuroraOverlay';
 import StarField from './StarField';
 import DriftingMoon from './DriftingMoon';
 import { encodeGif, type GifFrame } from '../utils/gifEncoder';
+import { parseSrsValidTime, latestSrsEpoch } from '../utils/srsTime';
 
 interface SolarActivityDashboardProps {
   setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | { type: 'image_with_labels'; url: string; regions: RegionInput[]; geometry: SolarDiskGeometry; imageNatural: { width: number; height: number }; atMs: number } | null) => void;
@@ -685,6 +686,9 @@ const extractActiveRegionEntries = (raw: any, source: string) => {
 };
 
 const parseNoaaSolarRegionsText = (raw: string): (Omit<ActiveSunspotRegion, 'trend'> & { _sourceIndex?: number })[] => {
+  // The positions below are valid at the time the header states, not at the
+  // moment the page loaded - see utils/srsTime.
+  const validAtMs = parseSrsValidTime(raw) ?? latestSrsEpoch();
   const lines = raw.split(/\r?\n/);
   return lines
     .map((line, idx) => {
@@ -711,7 +715,7 @@ const parseNoaaSolarRegionsText = (raw: string): (Omit<ActiveSunspotRegion, 'tre
         spotCount,
         latitude: coords.latitude,
         longitude: normalizeSolarLongitude(coords.longitude),
-        observedTime: null,
+        observedTime: validAtMs,
         cFlareProbability: null,
         mFlareProbability: null,
         xFlareProbability: null,
@@ -1780,7 +1784,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
           spotCount: txt.spotCount ?? json?.spotCount ?? null,
           magneticClass: txt.magneticClass ?? json?.magneticClass ?? null,
           classification: json?.classification ?? null,
-          observedTime: txt.observedTime ?? json?.observedTime ?? Date.now(),
+          // The text bulletin's own validity time first: those are ITS
+          // positions. The JSON's time belongs to the JSON's positions, and
+          // "now" was never right - it meant no rotation correction at all.
+          observedTime: txt.observedTime ?? json?.observedTime ?? latestSrsEpoch(),
           // JSON supplements probability data
           cFlareProbability: json?.cFlareProbability ?? null,
           mFlareProbability: json?.mFlareProbability ?? null,
