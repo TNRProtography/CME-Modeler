@@ -137,6 +137,16 @@ export interface PhaseOutlook {
   aurora: string;
   /** One extra sentence when a secondary structure changes the picture. */
   layerNote: string | null;
+  /**
+   * What the forecast says is coming, when anything is.
+   *
+   * Separate from `aurora` because they answer different questions and have
+   * different standing: `aurora` is read off structure that is measurably
+   * here, this is a model of something that has not arrived. Keeping them
+   * apart lets the panel show both without implying the second is as solid
+   * as the first.
+   */
+  incoming: string | null;
 }
 
 // ── Physical constants ───────────────────────────────────────────────────────
@@ -539,6 +549,17 @@ export const buildSolarWindSamples = (
   return [...byTime.values()].sort((a, b) => a.time - b.time);
 };
 
+/** The next expected arrival, from utils/forecastTimeline. */
+export interface ExpectedArrival {
+  atMs: number;
+  peakMs: number;
+  fromSpeedKms: number;
+  peakSpeedKms: number;
+  sourceId: string | null;
+  kind: string;
+  peakSouthwardNt: number;
+}
+
 export interface ClassifyOptions {
   /** Most recent detected shock, if any, from utils/shockDetection. Lets the
    *  classifier say "4h after a fast forward shock" and makes sheath/ejecta
@@ -546,6 +567,14 @@ export interface ClassifyOptions {
   lastShock?: { t: number; label: string } | null;
   /** Treated as "now". Defaults to the newest sample. */
   now?: number;
+  /**
+   * What the coronal hole and CME forecast expects next, if anything.
+   *
+   * The classifier itself stays observational - this never changes which
+   * structure is named, only what the outlook says about the hours ahead,
+   * which is the one thing L1 data alone genuinely cannot answer.
+   */
+  expected?: ExpectedArrival | null;
 }
 
 export const classifySolarWindPhase = (
@@ -565,7 +594,7 @@ export const classifySolarWindPhase = (
     alternative: null,
     layers: [],
     summaryLabel: PHASE_LABELS.unclassified,
-    outlook: buildOutlook('unclassified', [], derived),
+    outlook: buildOutlook('unclassified', [], derived, options.expected, now),
     derived,
   });
 
@@ -786,7 +815,7 @@ export const classifySolarWindPhase = (
       : null,
     layers: layerOut,
     summaryLabel,
-    outlook: buildOutlook(best.id, layers.map((l) => l.id), derived),
+    outlook: buildOutlook(best.id, layers.map((l) => l.id), derived, options.expected, now),
     derived,
   };
 };
@@ -876,7 +905,10 @@ const PHASE_OUTLOOK: Record<SolarWindPhaseId, OutlookSpec> = {
   'slow-ambient': {
     imf: 'Field should stay weak, with only small Bz wobbles.',
     plasma: 'Speed and density both steady and low.',
-    aurora: 'Unlikely tonight unless a new CME or coronal hole stream arrives. Nothing in the current data suggests a change in the next few hours.',
+    // Deliberately says nothing about what is coming. The forecast knows
+    // that and this does not, so asserting "nothing suggests a change"
+    // here contradicted the coronal hole tracker two panels away.
+    aurora: 'Unlikely while this lasts - it needs a CME or a coronal hole stream to arrive before anything changes.',
   },
   'fast-ambient': {
     imf: 'Field moderate, with Bz drifting both ways.',
@@ -918,10 +950,57 @@ const layerNoteFor = (primary: SolarWindPhaseId, layerIds: SolarWindPhaseId[]): 
   return null;
 };
 
+/** Hours, rounded the way somebody planning an evening would say them. */
+const relativeWhen = (ms: number, nowMs: number): string => {
+  const hours = (ms - nowMs) / 3600000;
+  if (hours <= 0) return 'now';
+  if (hours < 1) return `in about ${Math.max(10, Math.round(hours * 60 / 10) * 10)} minutes`;
+  if (hours < 36) return `in about ${Math.round(hours)} hours`;
+  return `in about ${(hours / 24).toFixed(1)} days`;
+};
+
+/**
+ * What the forecast expects, in the same voice as the rest of the panel.
+ *
+ * Says the sector geometry separately from the speed, because they carry
+ * different weight: the speed is a model of something that has not arrived,
+ * while the southward field is arithmetic on the hole's measured polarity and
+ * the date. A zero there is a real answer - a positive-polarity hole in
+ * September projects nothing southward - and saying so is more useful than
+ * leaving it out and letting the speed imply a good night.
+ */
+const incomingNote = (
+  expected: ExpectedArrival | null | undefined,
+  nowMs: number,
+): string | null => {
+  if (!expected) return null;
+
+  const what = expected.kind === 'cme'
+    ? 'A CME'
+    : expected.sourceId
+      ? `The stream from ${expected.sourceId}`
+      : 'A coronal hole stream';
+
+  const rise = `${what} is forecast to arrive ${relativeWhen(expected.atMs, nowMs)}, `
+    + `taking speed from about ${expected.fromSpeedKms} to ${expected.peakSpeedKms} km/s.`;
+
+  // A stream that is merely fast is not a good night. The sector part is what
+  // decides it, and it is the part that can be computed rather than hoped for.
+  const field = expected.peakSouthwardNt <= -1
+    ? ` Its polarity should drag about ${Math.abs(expected.peakSouthwardNt).toFixed(1)} nT of southward field past us at the best moment, so this one is worth planning around.`
+    : expected.peakSouthwardNt < 0
+      ? ' Its polarity contributes only a fraction of a nT southward, so it will need luck with the field on top of the speed.'
+      : ' Its polarity guarantees no southward field at this time of year, so the speed alone is unlikely to be enough - it would need the field to swing south of its own accord.';
+
+  return rise + field;
+};
+
 const buildOutlook = (
   id: SolarWindPhaseId,
   layerIds: SolarWindPhaseId[],
   derived: PhaseDerived,
+  expected: ExpectedArrival | null | undefined,
+  nowMs: number,
 ): PhaseOutlook => {
   const spec = PHASE_OUTLOOK[id] ?? PHASE_OUTLOOK.unclassified;
   return {
@@ -929,6 +1008,7 @@ const buildOutlook = (
     plasma: spec.plasma,
     aurora: typeof spec.aurora === 'function' ? spec.aurora(derived.bz) : spec.aurora,
     layerNote: layerNoteFor(id, layerIds),
+    incoming: incomingNote(expected, nowMs),
   };
 };
 

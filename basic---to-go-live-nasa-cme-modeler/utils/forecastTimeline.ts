@@ -318,3 +318,92 @@ export function disturbanceSpans(timeline: L1State[]): DisturbanceSpan[] {
   if (open) spans.push(open);
   return spans;
 }
+
+// ── What the forecast says is coming ────────────────────────────────────────
+
+/**
+ * The next material change the forecast expects at L1.
+ *
+ * The structure classifier reads L1 and names what is passing us now. That is
+ * a different question from what is about to pass us, and the panel was
+ * answering the second with the first: "nothing in the current data suggests
+ * a change in the next few hours" is true of the current data and false of
+ * the app, which knew a 675 km/s stream was due in two days and said so three
+ * panels away.
+ *
+ * Derived from the timeline rather than from the streams directly, so the
+ * arrival maths - drag, the ensemble, the Earth-connection factor - is not
+ * done twice and cannot disagree with the chart it is drawn beside.
+ */
+export interface ExpectedChange {
+  /** When the rise begins, which is what somebody planning a night needs. */
+  atMs: number;
+  /** When it peaks. */
+  peakMs: number;
+  /** Speed now, for the comparison. */
+  fromSpeedKms: number;
+  peakSpeedKms: number;
+  /** What is arriving, when the timeline names it - a hole number, usually. */
+  sourceId: string | null;
+  kind: DisturbanceKind;
+  /**
+   * Strongest southward field the sector geometry guarantees over the rise.
+   *
+   * Zero is a real answer, not a missing one: a positive-polarity hole at this
+   * time of year projects no guaranteed southward component at all.
+   */
+  peakSouthwardNt: number;
+}
+
+/** A rise smaller than this is noise in the model, not an arrival. */
+const MATERIAL_RISE_KMS = 60;
+
+export function expectedChange(
+  timeline: L1State[],
+  nowMs: number,
+  horizonMs = 3 * 86400000,
+): ExpectedChange | null {
+  const future = timeline.filter((p) => p.atMs >= nowMs && p.atMs <= nowMs + horizonMs);
+  if (future.length < 2) return null;
+
+  // "Now" from the timeline rather than from the newest observation, so the
+  // comparison is like for like: both ends come from the same model.
+  const fromSpeedKms = future[0].speedKms;
+  const threshold = fromSpeedKms + MATERIAL_RISE_KMS;
+
+  // The NEXT arrival, not the biggest one. A 450 km/s stream tomorrow and a
+  // 675 in three days are both real, and somebody deciding about tonight
+  // needs the first. Reporting the larger would also put the wrong time on
+  // it - the front edge of the nearer event is when things actually change.
+  const firstIdx = future.findIndex((p) => p.speedKms >= threshold);
+  if (firstIdx === -1) return null;
+
+  // Back to the last quiet point before it, so the time given is when
+  // conditions begin to change rather than when they are already elevated.
+  let startIdx = firstIdx;
+  while (startIdx > 0 && future[startIdx - 1].speedKms - fromSpeedKms >= MATERIAL_RISE_KMS * 0.25) {
+    startIdx--;
+  }
+
+  // Forward to the end of this episode, so the peak belongs to the arrival
+  // being described and not to a separate one behind it.
+  let endIdx = firstIdx;
+  while (endIdx + 1 < future.length
+         && future[endIdx + 1].speedKms - fromSpeedKms >= MATERIAL_RISE_KMS * 0.25) {
+    endIdx++;
+  }
+
+  const episode = future.slice(startIdx, endIdx + 1);
+  const peak = episode.reduce((a, b) => (b.speedKms > a.speedKms ? b : a));
+  const peakSouthwardNt = episode.reduce((worst, p) => Math.min(worst, p.bzFromSectorNt), 0);
+
+  return {
+    atMs: future[startIdx].atMs,
+    peakMs: peak.atMs,
+    fromSpeedKms: Math.round(fromSpeedKms),
+    peakSpeedKms: Math.round(peak.speedKms),
+    sourceId: peak.disturbanceId ?? null,
+    kind: peak.disturbance,
+    peakSouthwardNt: Math.round(peakSouthwardNt * 10) / 10,
+  };
+}

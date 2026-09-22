@@ -15,6 +15,8 @@ import {
     type SolarWindPhaseId,
 } from '../utils/solarWindPhase';
 import SolarWindStructureDiagram from './SolarWindStructureDiagram';
+import { useForecast } from '../hooks/useForecast';
+import { expectedChange } from '../utils/forecastTimeline';
 
 // Per-structure colour + short tag for the phase card. Warm for CME-driven
 // structures, cool for coronal-hole flow, neutral for quiet and boundary states.
@@ -386,6 +388,15 @@ export const IMFClockChart: React.FC<{
      *  Lets the phase card say "4h after a fast forward shock". */
     lastShock?: { t: number; label: string } | null;
 }> = ({ magneticData, clockData, speedData, densityData, tempData, lastShock = null }) => {
+    // What the coronal hole and CME forecast expects next. The classifier below
+    // reads L1 and names what is passing us NOW, which is a different question
+    // from what is about to, and this panel was answering the second with the
+    // first - while the tracker two panels away had an arrival time and a speed.
+    const forecast = useForecast();
+    const expected = useMemo(
+        () => (forecast.timeline.length ? expectedChange(forecast.timeline, Date.now()) : null),
+        [forecast.timeline],
+    );
     const latestPoint = magneticData.length ? magneticData[magneticData.length - 1] : null;
     const latestClock = useMemo(() => {
         if (clockData.length) return clockData[clockData.length - 1]?.y ?? null;
@@ -463,9 +474,9 @@ export const IMFClockChart: React.FC<{
     const stormPhase = useMemo(
         () => classifySolarWindPhase(
             buildSolarWindSamples(magneticData, speedData, densityData, tempData),
-            { lastShock },
+            { lastShock, expected },
         ),
-        [magneticData, speedData, densityData, tempData, lastShock],
+        [magneticData, speedData, densityData, tempData, lastShock, expected],
     );
 
     const phaseVisual = useMemo(() => PHASE_VISUALS[stormPhase.id] ?? PHASE_VISUALS.unclassified, [stormPhase.id]);
@@ -608,6 +619,18 @@ export const IMFClockChart: React.FC<{
                                 <dt className="text-[10px] uppercase tracking-wide font-semibold text-emerald-400/80">Aurora</dt>
                                 <dd className="text-xs text-neutral-300 mt-0.5">{stormPhase.outlook.aurora}</dd>
                             </div>
+                            {/* Kept as its own row rather than folded into the
+                                line above, because it is a model of something
+                                that has not arrived and the rest of this panel
+                                is measurement. */}
+                            {stormPhase.outlook.incoming && (
+                                <div>
+                                    <dt className="text-[10px] uppercase tracking-wide font-semibold text-neutral-500">
+                                        What is coming
+                                    </dt>
+                                    <dd className="text-xs text-neutral-300 mt-0.5">{stormPhase.outlook.incoming}</dd>
+                                </div>
+                            )}
                         </dl>
                         {stormPhase.outlook.layerNote && (
                             <div className="mt-2 pt-2 border-t border-neutral-700/50 text-[11px] text-neutral-400">
