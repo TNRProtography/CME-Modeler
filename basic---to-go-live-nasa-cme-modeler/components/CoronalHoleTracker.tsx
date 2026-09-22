@@ -27,7 +27,7 @@ import {
 import { buildChTracks, chDisappearance, type ChTrack, type TrackedHole } from '../utils/chTracking';
 import {
   detectionNear, drawableHoles, framesForTracking, numberTracks,
-  type ChDetection, type FrameRef,
+  type ChDetection, type DrawableHole, type FrameRef,
 } from '../utils/chDetectionStore';
 import { useCoronalHoleDetections } from '../hooks/useCoronalHoleDetections';
 import CoronalHoleOverlay, { holeColour } from './CoronalHoleOverlay';
@@ -64,6 +64,13 @@ const SPEED_OPTIONS = [0.5, 1, 2, 5, 10] as const;
 
 interface WorkerFrame { key: string; ts: string; url: string }
 
+/** A frame from the timeline, with one hole's outline ready to draw on it. */
+interface SparkPreview {
+  url: string;
+  frameMs: number;
+  holes: DrawableHole[];
+}
+
 const fmtNz = (ms: number | null | undefined): string => {
   if (ms == null || !Number.isFinite(ms)) return 'Unknown';
   return new Date(ms).toLocaleString('en-NZ', {
@@ -95,11 +102,11 @@ const fmtCountdown = (targetMs: number, nowMs: number): string => {
  * bands. A CME at 500 km/s is slow; a stream at 500 km/s is a decent one.
  * They are different populations and sharing a scale would flatter every hole.
  */
-const speedBand = (kms: number): { label: string; colour: string; note: string } => {
-  if (kms < 400) return { label: 'Slow', colour: 'text-neutral-300', note: 'Ordinary background wind. Enough to unsettle the field, rarely enough on its own.' };
-  if (kms < 500) return { label: 'Moderate', colour: 'text-yellow-300', note: 'A moderate stream. Worth watching if the field turns south when it arrives.' };
-  if (kms < 600) return { label: 'Fast', colour: 'text-orange-300', note: 'A fast stream. These are the ones that produce most coronal hole aurora.' };
-  return { label: 'Very fast', colour: 'text-red-400', note: 'A strong stream, capable of a good night by itself if the field cooperates.' };
+const speedBand = (kms: number): { label: string; note: string } => {
+  if (kms < 400) return { label: 'Slow', note: 'Ordinary background wind. Enough to unsettle the field, rarely enough on its own.' };
+  if (kms < 500) return { label: 'Moderate', note: 'A moderate stream. Worth watching if the field turns south when it arrives.' };
+  if (kms < 600) return { label: 'Fast', note: 'A fast stream. These are the ones that produce most coronal hole aurora.' };
+  return { label: 'Very fast', note: 'A strong stream, capable of a good night by itself if the field cooperates.' };
 };
 
 export interface CoronalHoleTrackerProps {
@@ -247,6 +254,51 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
     () => drawableHoles(store, tracks, activeFrameMs),
     [store, tracks, activeFrameMs],
   );
+
+  /**
+   * The frame behind a moment on the width chart, with this hole outlined.
+   *
+   * A width chart answers "it narrowed on Sunday" and immediately raises "did
+   * it, though, or did the detector lose half of it behind a flare?" - which
+   * the number cannot settle and the picture can. So each point on the line
+   * can show the frame it was measured from.
+   *
+   * The imagery and the measurements are two different series on two different
+   * cadences, so both are matched by nearest time rather than by index. The
+   * outline comes from the measurement and the disk from the detection that
+   * produced it, which is what lets the overlay rotate it onto whichever frame
+   * is shown underneath.
+   */
+  const previewAt = useCallback((atMs: number): SparkPreview | null => {
+    if (!selectedTrack || windowFrames.length === 0) return null;
+
+    const frame = windowFrames.reduce((a, b) =>
+      Math.abs(new Date(a.ts).getTime() - atMs) <= Math.abs(new Date(b.ts).getTime() - atMs) ? a : b);
+    const url = resolveUrl(frame.url);
+    if (!url) return null;
+
+    const point = selectedTrack.points.reduce((a, b) =>
+      Math.abs(a.atMs - atMs) <= Math.abs(b.atMs - atMs) ? a : b, selectedTrack.points[0]);
+    const detection = point ? store.detections.find((d) => d.atMs === point.atMs) : null;
+    const hole = detection?.holes.find((h) => h.id === point.hole.id) ?? null;
+
+    const frameMs = new Date(frame.ts).getTime();
+    return {
+      url,
+      frameMs,
+      // No outline rather than a wrong one: the measurement can come from this
+      // session's detections only, and a week-old remembered record has no
+      // polygon to draw.
+      holes: hole && detection ? [{
+        trackKey: selectedTrack.key,
+        hole,
+        observedAtMs: detection.atMs,
+        disk: detection.disk,
+        b0Deg: detection.b0Deg,
+        carriedForward: detection.atMs !== frameMs,
+      }] : [],
+    };
+  }, [selectedTrack, windowFrames, resolveUrl, store.detections]);
 
   // ── the displayed image ───────────────────────────────────────────────────
   const handleImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
@@ -668,7 +720,7 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
                     still sending wind, so this cannot just be an absence. */}
                 {gone.gone && !selectedTrack.live && (
                   <div className="rounded bg-neutral-800/70 border border-neutral-700 p-2">
-                    <div className="text-xs font-semibold text-amber-300">
+                    <div className="text-xs font-semibold text-neutral-200">
                       {labelFor(selectedTrack)} · {gone.label} · last seen {fmtRelative(selectedTrack.lastSeenMs)}
                     </div>
                     <p className="text-xs text-neutral-400 mt-1">{gone.note}</p>
@@ -683,12 +735,12 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
                       <div className="flex items-baseline gap-2">
                         <span className="font-mono text-2xl text-white">{choice.speedKms}</span>
                         <span className="text-neutral-400 text-xs">km/s</span>
-                        {band && <span className={`text-xs font-semibold ${band.colour}`}>{band.label}</span>}
+                        {band && <span className="text-xs font-semibold text-neutral-300">{band.label}</span>}
                       </div>
                       {band && <p className="text-xs text-neutral-400 mt-1">{band.note}</p>}
                       <p className="text-xs text-neutral-500 mt-1">{choice.note}</p>
                       {connection.factor < 1 && (
-                        <p className={`text-xs mt-1 ${connection.reachesEarth ? 'text-yellow-300' : 'text-neutral-400'}`}>
+                        <p className="text-xs mt-1 text-neutral-400">
                           {connection.note}
                         </p>
                       )}
@@ -704,12 +756,12 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
                   {arrival != null ? (
                     <>
                       <div className="flex items-baseline gap-3 flex-wrap">
-                        <span className="font-mono text-base text-sky-300">{fmtNz(arrival)}</span>
+                        <span className="font-mono text-base text-neutral-100">{fmtNz(arrival)}</span>
                         {ensemble && (
                           <span className="text-xs text-neutral-400">{describeSpread(ensemble)}</span>
                         )}
                         {arrival > nowMs && (
-                          <span className="font-mono text-sm text-emerald-300">{fmtCountdown(arrival, nowMs)}</span>
+                          <span className="font-mono text-sm text-neutral-400">{fmtCountdown(arrival, nowMs)}</span>
                         )}
                       </div>
                       {ensemble && (
@@ -734,7 +786,16 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
                       </p>
 
                       {/* What the sky will be doing, which decides whether any
-                          of the above is worth going outside for. */}
+                          of the above is worth going outside for.
+
+                          This is the one thing on the panel that is coloured,
+                          and the hole chips are the other. Colour here means
+                          exactly two things: which hole, and how good the
+                          night is. Everything else - speed band, polarity
+                          sign, trend, countdown - used to have a colour of its
+                          own, which left nothing to draw the eye because
+                          everything was drawing it. Size and weight do that
+                          work now. */}
                       {arrivalSky && outlook && (
                         <div className="mt-2 rounded bg-neutral-800/60 border border-neutral-700 p-2">
                           <div className={`text-sm font-semibold ${
@@ -755,7 +816,7 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
                             // The honest caveat. Without polarity there is no
                             // sector, so the chain runs with no guaranteed
                             // southward field and what comes out is a floor.
-                            <p className="text-xs text-yellow-300/90 mt-1">
+                            <p className="text-xs text-neutral-400 mt-1">
                               This assumes the field stays neutral, because the hole's polarity could not be
                               measured. Polarity is what decides whether the stream drags southward field past
                               Earth, so this is a floor rather than a forecast - the real night could be
@@ -825,10 +886,7 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
                   <div className="text-neutral-400 text-xs uppercase tracking-wide mb-1">Magnetic polarity</div>
                   {pol ? (
                     <>
-                      <div className={`text-sm font-semibold ${
-                        pol.polarity === 'positive' ? 'text-amber-300'
-                          : pol.polarity === 'negative' ? 'text-indigo-300'
-                          : 'text-neutral-400'}`}>
+                      <div className="text-sm font-semibold text-neutral-100">
                         {pol.summary}
                         {pol.confidence !== 'none' && pol.polarity !== 'unknown' && (
                           <span className="ml-2 text-[11px] font-normal text-neutral-500">{pol.confidence} confidence</span>
@@ -836,7 +894,7 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
                       </div>
                       <p className="text-xs text-neutral-400 mt-1">{pol.detail}</p>
                       {season?.note && (
-                        <p className={`text-xs mt-1 ${season.favourable === true ? 'text-emerald-300' : 'text-neutral-500'}`}>
+                        <p className="text-xs mt-1 text-neutral-500">
                           {season.note}
                         </p>
                       )}
@@ -862,7 +920,7 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
                 {/* How it has changed */}
                 <div>
                   <div className="text-neutral-400 text-xs uppercase tracking-wide mb-1">Width over time</div>
-                  <WidthSparkline samples={samples} />
+                  <WidthSparkline samples={samples} preview={previewAt} numberOf={numberOf} />
                 </div>
 
                 {/* Where it is, and what it is doing */}
@@ -890,11 +948,7 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
                   </div>
                   <div>
                     <div className="text-neutral-500">Trend</div>
-                    <div className={
-                      growth.phase === 'opening fast' ? 'text-orange-300'
-                        : growth.phase === 'opening' ? 'text-yellow-300'
-                        : growth.phase === 'closing' ? 'text-sky-300'
-                        : 'text-neutral-200'}>
+                    <div className="text-neutral-200">
                       {growth.label}
                       {growth.widthPerDay != null && Math.abs(growth.widthPerDay) >= 0.5 && (
                         <span className="text-neutral-500 font-mono ml-1">
@@ -947,8 +1001,75 @@ const ArrivalBar: React.FC<{ arrivalMs: number; nowMs: number; centralMeridianMs
  * has been steady for a day or is bouncing around, which is the difference
  * between a trend worth believing and one measured through patchy frames.
  */
-const WidthSparkline: React.FC<{ samples: ChSample[] }> = ({ samples }) => {
+/**
+ * One frame from the timeline, with a single hole outlined on it.
+ *
+ * Deliberately not interactive: it is a read-out of a moment on the chart,
+ * and giving it its own controls would make it a second timeline competing
+ * with the real one above.
+ */
+const SparkPreviewCard: React.FC<{
+  preview: SparkPreview;
+  widthDeg: number;
+  atMs: number;
+  numberOf?: (trackKey: string) => number | undefined;
+}> = ({ preview, widthDeg, atMs, numberOf }) => {
+  const [natural, setNatural] = useState<{ width: number; height: number } | null>(null);
+  const SIDE = 168;
+
+  return (
+    <div className="flex gap-3 items-start">
+      <div className="relative shrink-0 rounded overflow-hidden bg-black border border-neutral-700"
+           style={{ width: SIDE, height: SIDE }}>
+        <img
+          src={preview.url}
+          alt=""
+          className="w-full h-full object-contain"
+          onLoad={(e) => {
+            const img = e.currentTarget;
+            if (img.naturalWidth && img.naturalHeight) {
+              setNatural({ width: img.naturalWidth, height: img.naturalHeight });
+            }
+          }}
+        />
+        {/* The overlay needs the image's own dimensions to place anything, so
+            it waits for the load rather than guessing and drawing it wrong. */}
+        {natural && preview.holes.length > 0 && (
+          <CoronalHoleOverlay
+            holes={preview.holes}
+            atMs={preview.frameMs}
+            natural={natural}
+            box={{ width: SIDE, height: SIDE }}
+            numberOf={numberOf}
+            labels={false}
+          />
+        )}
+      </div>
+      <div className="text-xs min-w-0">
+        <div className="font-mono text-neutral-200">{widthDeg.toFixed(0)}°</div>
+        <div className="text-neutral-500 mt-0.5">{fmtNz(atMs)}</div>
+        {preview.holes.length === 0 ? (
+          <p className="text-neutral-600 mt-1.5 leading-snug">
+            The outline for this moment is not in this session's measurements, so only the frame is shown.
+          </p>
+        ) : preview.holes[0].carriedForward ? (
+          <p className="text-neutral-600 mt-1.5 leading-snug">
+            The nearest measurement is from {fmtNz(preview.holes[0].observedAtMs)}, rotated onto this frame.
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+};
+
+const WidthSparkline: React.FC<{
+  samples: ChSample[];
+  preview?: (atMs: number) => SparkPreview | null;
+  numberOf?: (trackKey: string) => number | undefined;
+}> = ({ samples, preview, numberOf }) => {
   const points = [...samples].sort((a, b) => a.atMs - b.atMs);
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+
   if (points.length < 2) {
     return <p className="text-xs text-neutral-500">Only one measurement so far, so there is no trend to draw yet.</p>;
   }
@@ -965,19 +1086,57 @@ const WidthSparkline: React.FC<{ samples: ChSample[] }> = ({ samples }) => {
   const area = `${path} L${x(t1).toFixed(1)},${H} L${x(t0).toFixed(1)},${H} Z`;
   const hours = (t1 - t0) / 3600000;
 
+  // Nearest point to the pointer, in time rather than in pixels: the samples
+  // are not evenly spaced, and picking by index would put the marker on a
+  // different measurement from the one under the cursor.
+  const pick = (clientX: number, target: SVGSVGElement) => {
+    const rect = target.getBoundingClientRect();
+    if (rect.width === 0) return;
+    const fraction = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const wanted = t0 + fraction * (t1 - t0);
+    let best = 0;
+    for (let i = 1; i < points.length; i++) {
+      if (Math.abs(points[i].atMs - wanted) < Math.abs(points[best].atMs - wanted)) best = i;
+    }
+    setHoverIndex(best);
+  };
+
+  const hovered = hoverIndex != null ? points[hoverIndex] : null;
+  const card = hovered && preview ? preview(hovered.atMs) : null;
+
   return (
     <div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-11" preserveAspectRatio="none" role="img"
-           aria-label={`Width from ${lo.toFixed(0)} to ${hi.toFixed(0)} degrees`}>
-        <path d={area} fill="rgba(56,189,248,0.15)" />
-        <path d={path} fill="none" stroke="#38bdf8" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-        <circle cx={x(t1)} cy={y(points[points.length - 1].widthDeg)} r="2.5" fill="#38bdf8" />
+      <svg viewBox={`0 0 ${W} ${H}`} className={`w-full h-11 ${preview ? 'cursor-crosshair' : ''}`}
+           preserveAspectRatio="none" role="img"
+           aria-label={`Width from ${lo.toFixed(0)} to ${hi.toFixed(0)} degrees`}
+           onPointerMove={(e) => preview && pick(e.clientX, e.currentTarget)}
+           onPointerLeave={() => setHoverIndex(null)}>
+        <path d={area} fill="rgba(163,163,163,0.12)" />
+        <path d={path} fill="none" stroke="#a3a3a3" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+        {hovered && (
+          <line x1={x(hovered.atMs)} y1={0} x2={x(hovered.atMs)} y2={H}
+                stroke="#e5e5e5" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+        )}
+        <circle cx={x(hovered ? hovered.atMs : t1)}
+                cy={y(hovered ? hovered.widthDeg : points[points.length - 1].widthDeg)}
+                r="2.5" fill="#e5e5e5" />
       </svg>
       <div className="flex justify-between text-[10px] text-neutral-600">
         <span>{lo.toFixed(0)}° min</span>
         <span>{hours < 48 ? `${hours.toFixed(0)} hours` : `${(hours / 24).toFixed(1)} days`}</span>
         <span>{hi.toFixed(0)}° max</span>
       </div>
+      {preview && (
+        <div className="mt-2">
+          {card && hovered ? (
+            <SparkPreviewCard preview={card} widthDeg={hovered.widthDeg} atMs={hovered.atMs} numberOf={numberOf} />
+          ) : (
+            <p className="text-[11px] text-neutral-600">
+              Hover the line to see the frame each measurement was taken from.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 };
