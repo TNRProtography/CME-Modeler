@@ -42,14 +42,9 @@ import {
 import { streamParcels, unitsPerKmFor, type HoleState, type StreamSource } from '../utils/hssParcels';
 import type { RegionInput } from '../utils/regionLabels';
 import {
-  barrierLimitsFor, barrierNote, streamSectorAt,
-  type HssStreamSamples, type StreamSector,
-} from '../utils/hssBarrier';
-import { attachHssBarrierShader, bindHssBarrierView } from '../utils/hssBarrierShader';
-import {
-  resolveCmeInteractions, interactionNotes, shortCmeLabel,
-  type CmeAdjustment, type CmeBody,
-} from '../utils/cmeInteractions';
+  CmeParticleSim, shortCmeLabel, touchingNotes,
+  type Affine, type SimCmeInput, type WallSet,
+} from '../utils/cmeParticleSim';
 import type { SurfaceLabelInfo } from './SolarSurfaceLabels';
 import {
   computeEclipticLongitude,
@@ -532,10 +527,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   // HSS barrier notes, per CME id, written each frame and read into state a
   // couple of times a second - React has no business re-rendering per frame.
   const barrierNotesRef = useRef<Map<string, string>>(new Map());
-  // CME–CME meetings for the current frame, resolved for all CMEs at once.
-  const cmeInteractionsRef = useRef<Map<string, CmeAdjustment>>(new Map());
+  // The CME particle physics, rebuilt when the CMEs, the streams or the
+  // toggle change; and the stream walls it has asked for, by the hour.
+  const particleSimRef = useRef<CmeParticleSim | null>(null);
+  const particleSimDirtyRef = useRef(true);
+  const wallCacheRef = useRef<Map<number, WallSet | null>>(new Map());
+  const wallScratchRef = useRef<Map<string, any>>(new Map());
   const [barrierNotes, setBarrierNotes] = useState<string[]>([]);
   useEffect(() => {
+    particleSimDirtyRef.current = true;
     if (!experimentalInteractions) {
       barrierNotesRef.current.clear();
       setBarrierNotes([]);
@@ -543,8 +543,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     }
     const id = window.setInterval(() => {
       const next = Array.from(barrierNotesRef.current.entries())
-        .map(([cmeId, note]) => `${shortCmeLabel(cmeId)}: ${note}`)
-        .sort();
+        // Status lines (the "working out" progress) first, then by CME.
+        .sort(([a], [b]) => Number(b.startsWith('__')) - Number(a.startsWith('__')) || a.localeCompare(b))
+        .map(([cmeId, note]) => (cmeId.startsWith('__') ? note : `${shortCmeLabel(cmeId)}: ${note}`));
       setBarrierNotes((prev) => (prev.join('\n') === next.join('\n') ? prev : next));
     }, 500);
     return () => window.clearInterval(id);
@@ -749,104 +750,18 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     let heldDist = dist;
 
     // The old CME↔CME holdback lived here and, like the old stream squash,
-    // only ever reached the colour. CME–CME meetings are now resolved for all
-    // CMEs together before any is drawn (layoutCmes) and applied below.
-    const interaction = experimentalInteractions && cme.id
-      ? cmeInteractionsRef.current.get(cme.id)
-      : undefined;
+    // only ever reached the colour. Meetings between CMEs, and with streams,
+    // are now particle physics (layoutCmes); this lays out the CME's shape.
 
     // Keep position physics simple and stable:
     // - location follows radial propagation distance
     // - no lateral deflection / non-penetration offsets
-    const radialDist = Math.max(0, dist) + (interaction?.shift ?? 0);
+    const radialDist = Math.max(0, dist);
     cmeObject.position.copy(dir.clone().multiplyScalar(sunRadius + radialDist));
     const lateral = Math.max(radialDist * Math.tan(THREE.MathUtils.degToRad(cme.halfAngle ?? 30)), sunRadius * 0.3);
     const sXZ = lateral / GCS_ARC_RADIUS_FRAC;
     const totalAxialStretch = GCS_AXIAL_DEPTH_FRAC;
     cmeObject.scale.set(sXZ, sXZ * totalAxialStretch, sXZ);
-
-    // ── Experimental interactions: stream walls + CME–CME squeeze ─────────
-    // Streams are walls to the CME's spread. The centre and speed are left as
-    // measured; a flank that would cross a stream is stopped at the stream's
-    // edge and its particles pile up there, which the shader brightens. The
-    // walls are read off the arms as drawn, at the CME's back and front
-    // distances, so across the CME's depth they follow the spiral.
-    //
-    // Other CMEs are not walls: the caps worked out for this CME in
-    // layoutCmes, where both sides of each meeting gave ground, are folded in
-    // here - whichever of a stream or a CME holds a flank tighter wins.
-    const hb = cmeObject.material?.userData?.hssBarrier;
-    if (hb) {
-      hb.uHbOn.value = 0;
-      hb.uHbRadial.value.set(0, 1e9);
-      const notes: string[] = [];
-      if (experimentalInteractions) {
-        const cmeAz = Math.atan2(dir.x, dir.z);
-        const rFront = sunRadius + radialDist + lateral;
-        const rBack = Math.max(sunRadius * 1.05, sunRadius + radialDist * 0.5);
-
-        // Per flank, the cap at the front and at the back (null = free).
-        let westF: number | null = null, westB: number | null = null;
-        let eastF: number | null = null, eastB: number | null = null;
-
-        const sun = sunMeshRef.current;
-        const group = hssGroupRef.current;
-        if (sun && group && group.visible && group.children.length > 0) {
-          const groupAngle = sun.rotation.y + group.rotation.y;
-          const streams: HssStreamSamples[] = group.children
-            .map((m: any) => m.userData?.barrier)
-            .filter(Boolean);
-          const barrierCme = {
-            az: cmeAz,
-            lat: Math.asin(Math.max(-1, Math.min(1, dir.y))),
-            halfAngle: THREE.MathUtils.degToRad(cme.halfAngle ?? 30),
-          };
-          const limitsAt = (R: number) => barrierLimitsFor(
-            barrierCme,
-            streams.map((st) => streamSectorAt(st, R, groupAngle)).filter((x): x is StreamSector => x != null),
-          );
-          const front = limitsAt(rFront);
-          const back = limitsAt(rBack);
-          if (front.westBy) westF = front.west;
-          if (back.westBy) westB = back.west;
-          if (front.eastBy) eastF = front.east;
-          if (back.eastBy) eastB = back.east;
-          const streamNote = barrierNote(front) ?? barrierNote(back);
-          if (streamNote) notes.push(streamNote);
-        }
-
-        if (interaction) {
-          const min = (x: number | null, y: number | null) => (x == null ? y : y == null ? x : Math.min(x, y));
-          westF = min(westF, interaction.westCap); westB = min(westB, interaction.westCap);
-          eastF = min(eastF, interaction.eastCap); eastB = min(eastB, interaction.eastCap);
-          notes.push(...interactionNotes(interaction));
-        }
-
-        // A flank nothing holds is left unbounded - the shader must not trim
-        // a CME that is merely wider than its nominal cone.
-        const FREE = 10;
-        const wallLine = (capF: number | null, capB: number | null) => {
-          if (capF == null && capB == null) return [FREE, 0];
-          if (capF == null || capB == null || rFront - rBack < 1e-6) return [(capF ?? capB) as number, 0];
-          const slope = (capF - capB) / (rFront - rBack);
-          return [capF - slope * rFront, slope];
-        };
-        const [wA, wB] = wallLine(westF, westB);
-        const [eA, eB] = wallLine(eastF, eastB);
-        const radialHeld = interaction && (interaction.frontCap != null || interaction.backCap != null);
-        if (wA !== FREE || eA !== FREE || radialHeld) {
-          hb.uHbOn.value = 1;
-          hb.uHbAz.value = cmeAz;
-          hb.uHbWest.value.set(wA, wB);
-          hb.uHbEast.value.set(eA, eB);
-          hb.uHbRadial.value.set(interaction?.backCap ?? 0, interaction?.frontCap ?? 1e9);
-        }
-      }
-      if (cme.id) {
-        if (notes.length) barrierNotesRef.current.set(cme.id, notes.join(' · '));
-        else barrierNotesRef.current.delete(cme.id);
-      }
-    }
 
     // ── Store this CME's frame state for CME–CME checks next frame ───────
     if (rerunHssInteraction && cme.id) {
@@ -914,40 +829,200 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         tailMesh.material.color.copy(tailColor);
       }
     }
-  }, [rerunHssInteraction, experimentalInteractions]);
+  }, [rerunHssInteraction]);
 
-  // ── layoutCmes - every CME's natural place first, then their meetings ────
+  // ── Experimental interactions: CME particle physics ──────────────────────
+  //
+  // Every particle of every CME is simulated (utils/cmeParticleSim.ts): its
+  // own path, stream edges as walls, other CMEs met at a shared boundary, and
+  // always drawn back into its CME. The simulation is fed each CME's shape
+  // exactly as updateCMEShape lays it out, so left alone it reproduces the
+  // CMEs as they have always looked.
+
+  /** Where a CME's shape puts its body and tail at a moment. */
+  const nominalFor = useCallback((THREE: any, c: any) => {
+    const cme = c.userData;
+    const sunR = PLANET_DATA_MAP.SUN.size;
+    const e = new THREE.Matrix4().makeRotationFromQuaternion(c.quaternion).elements;
+    // Column-major 4×4 → row-major 3×3.
+    const R = [e[0], e[4], e[8], e[1], e[5], e[9], e[2], e[6], e[10]];
+    const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(c.quaternion);
+    const tanH = Math.tan(THREE.MathUtils.degToRad(cme.halfAngle ?? 30));
+    const startMs = cme.startTime.getTime();
+    const affine = (sx: number, sy: number, sz: number, along: number): Affine => ({
+      m: [R[0] * sx, R[1] * sy, R[2] * sz, R[3] * sx, R[4] * sy, R[5] * sz, R[6] * sx, R[7] * sy, R[8] * sz],
+      c: [dir.x * along, dir.y * along, dir.z * along],
+    });
+    return {
+      dir: [dir.x, dir.y, dir.z] as [number, number, number],
+      startMs,
+      nominalAt: (ms: number) => {
+        const sec = (ms - startMs) / 1000;
+        if (sec < 0) return null;
+        const radialDist = Math.max(0, cmeDistanceAU(cme.speed, sec) * SCENE_SCALE - sunR);
+        const lateral = Math.max(radialDist * tanH, sunR * 0.3);
+        const sXZ = lateral / GCS_ARC_RADIUS_FRAC;
+        const body = affine(sXZ, sXZ * GCS_AXIAL_DEPTH_FRAC, sXZ, sunR + radialDist);
+        const tailLength = radialDist * 0.5;
+        const tail = tailLength < sunR * 0.15 || radialDist < sunR * 0.3
+          ? null
+          : affine(sXZ * 1.2, tailLength, sXZ * 1.2, sunR + radialDist * 0.5);
+        return { body, tail };
+      },
+    };
+  }, []);
+
+  /** The stream walls at a moment, worked out once per hour of it. */
+  const wallsAt = useCallback((ms: number): WallSet | null => {
+    const THREE = (window as any).THREE;
+    const group = hssGroupRef.current;
+    if (!THREE || !group || !animPropsRef.current.showHss || hssStreamsRef.current.length === 0) return null;
+    const hour = Math.floor(ms / 3600000);
+    const cache = wallCacheRef.current;
+    if (cache.has(hour)) return cache.get(hour)!;
+    const atMs = hour * 3600000;
+    const sunR = PLANET_DATA_MAP.SUN.size;
+    const reach = PLANET_DATA_MAP.EARTH.radius * 1.65;
+    const streams = [];
+    for (const { source, mesh } of hssStreamsRef.current) {
+      const id = mesh.userData.coronalHoleId;
+      let scratch = wallScratchRef.current.get(id);
+      if (!scratch) { scratch = createGrowingStreamMesh(THREE, id, 0.5); wallScratchRef.current.set(id, scratch); }
+      updateGrowingStreamMesh(THREE, scratch, streamParcels(source, {
+        nowMs: atMs, count: GROWING_STREAM_RINGS, r0: sunR * 1.018, reach,
+        unitsPerKm: unitsPerKmFor(SCENE_SCALE), omega: SUN_ANGULAR_VELOCITY,
+      }), sunR, reach);
+      if (scratch.userData.barrier?.r?.length) streams.push(scratch.userData.barrier);
+    }
+    const walls = streams.length
+      ? { streams, groupAngle: SUN_ANGULAR_VELOCITY * (atMs / 1000) + group.rotation.y }
+      : null;
+    cache.set(hour, walls);
+    return walls;
+  }, []);
+
+  /** A fresh simulation of the CMEs in the scene. */
+  const buildParticleSim = useCallback((THREE: any): CmeParticleSim | null => {
+    const group = cmeGroupRef.current;
+    if (!group) return null;
+    const inputs: SimCmeInput[] = [];
+    for (const c of group.children) {
+      if (c.userData?._isTail || !c.userData?._local || !c.userData.id) continue;
+      const body: Float32Array = c.userData._local;
+      const tailLocal: Float32Array = c.userData._tailMesh?.userData?._local ?? new Float32Array(0);
+      const local = new Float32Array(body.length + tailLocal.length);
+      local.set(body);
+      local.set(tailLocal, body.length);
+      const nominal = nominalFor(THREE, c);
+      inputs.push({
+        id: c.userData.id,
+        startMs: nominal.startMs,
+        speed: c.userData.speed ?? 400,
+        halfAngle: THREE.MathUtils.degToRad(c.userData.halfAngle ?? 30),
+        dir: nominal.dir,
+        local,
+        bodyCount: body.length / 3,
+        nominalAt: nominal.nominalAt,
+      });
+    }
+    if (!inputs.length) return null;
+    wallCacheRef.current = new Map();
+    return new CmeParticleSim(inputs, {
+      stepMs: 30 * 60000,
+      contactSize: 0.015 * SCENE_SCALE,
+      sunRadius: PLANET_DATA_MAP.SUN.size,
+      wallsAt,
+    });
+  }, [nominalFor, wallsAt]);
+
+  /** Puts a particle system back exactly as it was built. */
+  const restoreParticles = useCallback((obj: any) => {
+    if (!obj?.userData?._altered || !obj.userData._local) return;
+    obj.geometry.getAttribute('position').array.set(obj.userData._local);
+    obj.geometry.getAttribute('position').needsUpdate = true;
+    const col = obj.geometry.getAttribute('color');
+    if (col) { col.array.fill(1); col.needsUpdate = true; }
+    obj.geometry.computeBoundingSphere();
+    obj.userData._altered = false;
+  }, []);
+
+  /** Writes simulated world positions, and glow, into a particle system. */
+  const writeParticles = useCallback((THREE: any, obj: any, world: Float32Array, glow: Float32Array | null, from: number, count: number) => {
+    obj.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(obj.matrixWorld).invert().elements;
+    const posAttr = obj.geometry.getAttribute('position');
+    const out = posAttr.array as Float32Array;
+    const col = obj.geometry.getAttribute('color');
+    for (let i = 0; i < count; i++) {
+      const o = (from + i) * 3;
+      const x = world[o], y = world[o + 1], z = world[o + 2];
+      out[i * 3] = inv[0] * x + inv[4] * y + inv[8] * z + inv[12];
+      out[i * 3 + 1] = inv[1] * x + inv[5] * y + inv[9] * z + inv[13];
+      out[i * 3 + 2] = inv[2] * x + inv[6] * y + inv[10] * z + inv[14];
+      if (col && glow) {
+        const g = 1 + 1.6 * glow[from + i];
+        col.array[i * 3] = g; col.array[i * 3 + 1] = g; col.array[i * 3 + 2] = g;
+      }
+    }
+    posAttr.needsUpdate = true;
+    if (col) col.needsUpdate = true;
+    obj.geometry.computeBoundingSphere();
+    obj.userData._altered = true;
+  }, []);
+
+  // ── layoutCmes - every CME laid out, then the physics on top ────────────
   // A meeting has two sides, so it cannot be settled one CME at a time: each
-  // CME's unhindered body is worked out, all the meetings are resolved
-  // together, and only then is each CME drawn with its share of the squeeze.
+  // CME's shape is laid out first, the simulation runs to the clock for all
+  // of them together, and only then are the particles drawn.
   const layoutCmes = useCallback((placed: [any, number, number][]) => {
     const THREE = (window as any).THREE;
     if (!THREE) return;
-    if (experimentalInteractions) {
-      const sunRadius = PLANET_DATA_MAP.SUN.size;
-      const bodies: CmeBody[] = [];
-      for (const [c, d] of placed) {
-        if (d < 0 || !c.visible || !c.userData?.id) continue;
-        const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(c.quaternion);
-        const radialDist = Math.max(0, d - sunRadius);
-        const halfAngle = THREE.MathUtils.degToRad(c.userData.halfAngle ?? 30);
-        const lateral = Math.max(radialDist * Math.tan(halfAngle), sunRadius * 0.3);
-        bodies.push({
-          id: c.userData.id,
-          az: Math.atan2(dir.x, dir.z),
-          lat: Math.asin(Math.max(-1, Math.min(1, dir.y))),
-          halfAngle,
-          speed: c.userData.speed ?? 400,
-          rBack: sunRadius + radialDist,
-          rFront: sunRadius + radialDist + lateral,
-        });
-      }
-      cmeInteractionsRef.current = resolveCmeInteractions(bodies);
-    } else if (cmeInteractionsRef.current.size) {
-      cmeInteractionsRef.current = new Map();
-    }
     for (const [c, d, tSec] of placed) updateCMEShape(c, d, tSec);
-  }, [experimentalInteractions, updateCMEShape]);
+
+    const physics = experimentalInteractions && !animPropsRef.current.currentlyModeledCMEId;
+    if (!physics) {
+      for (const [c] of placed) { restoreParticles(c); restoreParticles(c.userData?._tailMesh); }
+      return;
+    }
+    if (particleSimDirtyRef.current || !particleSimRef.current) {
+      particleSimRef.current = buildParticleSim(THREE);
+      particleSimDirtyRef.current = false;
+    }
+    const sim = particleSimRef.current;
+    if (!sim) return;
+
+    // The moment on the clock, from any CME that has launched by it.
+    let nowMs = NaN;
+    for (const [c, d, tSec] of placed) {
+      if (d >= 0 && tSec > 0) { nowMs = c.userData.startTime.getTime() + tSec * 1000; break; }
+    }
+    if (!Number.isFinite(nowMs)) return;
+    const caughtUp = sim.advanceTo(nowMs, 8);
+
+    const ids = new Set<string>(placed.map(([c]) => c.userData?.id).filter(Boolean));
+    for (const [c, d] of placed) {
+      const id = c.userData?.id;
+      const body: Float32Array | undefined = c.userData?._local;
+      const tail = c.userData?._tailMesh;
+      if (!id || !body || d < 0) continue;
+      const nBody = body.length / 3;
+      const nTail = (tail?.userData?._local?.length ?? 0) / 3;
+      const world = new Float32Array((nBody + nTail) * 3);
+      if (!sim.positionsAt(id, nowMs, world)) { restoreParticles(c); restoreParticles(tail); continue; }
+      const glow = sim.glowOf(id);
+      writeParticles(THREE, c, world, glow, 0, nBody);
+      if (tail && nTail && tail.visible) writeParticles(THREE, tail, world, glow, nBody, nTail);
+      const notes = touchingNotes(sim.touchingOf(id), ids);
+      if (notes.length) barrierNotesRef.current.set(id, notes.join(' · '));
+      else barrierNotesRef.current.delete(id);
+    }
+    if (caughtUp) barrierNotesRef.current.delete('__sim');
+    else {
+      const span = Math.max(1, nowMs - sim.startMs);
+      const done = Math.max(0, Math.min(99, Math.round(((sim.timeMs - sim.startMs) / span) * 100)));
+      barrierNotesRef.current.set('__sim', `Working out interactions… ${done}%`);
+    }
+  }, [experimentalInteractions, updateCMEShape, buildParticleSim, restoreParticles, writeParticles]);
   // The animation loop is set up once, when the scene is built, so it would
   // keep calling the layout from that first render - and never see the toggle
   // change. It calls through this ref instead, which always holds the latest.
@@ -1748,9 +1823,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       }
       const geom = new THREE.BufferGeometry(); geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       const mat = new THREE.PointsMaterial({ size: getCmeParticleSize(cme.speed, SCENE_SCALE), sizeAttenuation: true, map: pt, transparent: true, opacity: getCmeOpacity(cme.speed), blending: THREE.AdditiveBlending, depthWrite: false, color: getCmeCoreColor(cme.speed) });
-      const barrierUniforms = attachHssBarrierShader(THREE, mat);
-      const system = new THREE.Points(geom, mat); system.userData = { ...cme };
-      bindHssBarrierView(system, barrierUniforms);
+      // A colour per particle, all white until the physics makes some glow;
+      // and the particles as built, so the physics can always be undone.
+      geom.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(pos.length).fill(1), 3));
+      mat.vertexColors = true;
+      const system = new THREE.Points(geom, mat); system.userData = { ...cme, _local: Float32Array.from(pos) };
 
       // ── TAIL PARTICLE SYSTEM ─────────────────────────────────────────────
       // Particles distributed from Y=0 (back, near sun) to Y=1 (front, near CME head).
@@ -1781,12 +1858,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         blending: THREE.AdditiveBlending, depthWrite: false,
         color: getCmeCoreColor(cme.speed)
       });
-      // The tail shares the front's walls, so the two cannot disagree.
-      const tailUniforms = { ...barrierUniforms, uHbRadial: { value: new THREE.Vector2(0, 1e9) } };
-      attachHssBarrierShader(THREE, tailMat, tailUniforms);
+      tailGeom.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(tailPos.length).fill(1), 3));
+      tailMat.vertexColors = true;
       const tailSystem = new THREE.Points(tailGeom, tailMat);
-      bindHssBarrierView(tailSystem, tailUniforms);
-      tailSystem.userData = { _isTail: true, _parentCmeId: cme.id };
+      tailSystem.userData = { _isTail: true, _parentCmeId: cme.id, _local: Float32Array.from(tailPos) };
       tailSystem.visible = false; // hidden until CME propagates far enough
 
       // Link the tail to the front so updateCMEShape can find it
@@ -1807,6 +1882,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       cmeGroupRef.current.add(system);
       cmeGroupRef.current.add(tailSystem);
     });
+    particleSimDirtyRef.current = true;   // new CMEs, new simulation
   }, [cmeData, getClockElapsedTime, threeReady, sceneReady]);
 
   useEffect(() => {
@@ -2056,6 +2132,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     streams.forEach(({ mesh }) => group.add(mesh));
     hssStreamsRef.current = streams;
     hssStreamClockRef.current = NaN;   // lay them out on the next frame
+    particleSimDirtyRef.current = true; // the walls have changed
   }, [coronalHoles, chEvolutions, chDetectedAtMs, threeReady, sceneReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The HSS fallback anchor, captured when a detection arrives and at no other
@@ -2390,12 +2467,19 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={mountRef} className="w-full h-full" />
       {experimentalInteractions && barrierNotes.length > 0 && (
-        <div className="pointer-events-none absolute left-3 bottom-24 z-10 max-w-[70vw] space-y-1">
-          {barrierNotes.map((line) => (
-            <div key={line} className="rounded-md border border-amber-400/30 bg-black/60 px-2 py-1 text-[11px] text-amber-200">
+        // A few lines at most: with several CMEs meeting, the full list would
+        // cover the very thing it describes.
+        <div className="pointer-events-none absolute left-3 top-20 z-10 max-w-[min(70vw,34rem)] space-y-1">
+          {barrierNotes.slice(0, 3).map((line) => (
+            <div key={line} className="truncate rounded-md border border-amber-400/30 bg-black/60 px-2 py-0.5 text-[10px] text-amber-200" title={line}>
               {line}
             </div>
           ))}
+          {barrierNotes.length > 3 && (
+            <div className="rounded-md bg-black/50 px-2 py-0.5 text-[10px] text-amber-200/70">
+              +{barrierNotes.length - 3} more interactions
+            </div>
+          )}
         </div>
       )}
     </div>
