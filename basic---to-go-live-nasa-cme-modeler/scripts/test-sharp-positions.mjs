@@ -154,8 +154,11 @@ try {
   {
     const url = S.sharpHistoryUrl(Date.UTC(2026, 8, 22, 18, 25), 72, '1h');
     const ds = decodeURIComponent(new URL(url).searchParams.get('ds'));
-    check(ds === 'hmi.sharp_720s_nrt[][2026.09.19_18:00_TAI/72h@1h]',
+    check(ds === 'hmi.sharp_720s_nrt[][2026.09.19_18:00_TAI/3d@1h]',
           `three days, one record an hour, rounded to the hour (${ds})`, ds);
+    const week = decodeURIComponent(new URL(S.sharpHistoryUrl(Date.UTC(2026, 8, 22, 18, 25), 168, '1h')).searchParams.get('ds'));
+    check(week === 'hmi.sharp_720s_nrt[][2026.09.15_18:00_TAI/7d@1h]',
+          `and a week, which the scrubber's longest window needs (${week})`, week);
     check(new URL(url).searchParams.get('key') === 'T_REC,HARPNUM,NOAA_AR,USFLUX,AREA_ACR,LAT_FWT,LON_FWT',
           'asking for flux, area and position - the scrubber needs where it was, not just how big');
     const plain = decodeURIComponent(new URL(S.sharpHistoryUrl(Date.UTC(2026, 8, 22, 18, 25), 24, null)).searchParams.get('ds'));
@@ -194,6 +197,15 @@ try {
     check(!S.trackedBy(series, at(7)), 'a region is not shown three hours before HMI first tracked it');
     check(S.trackedBy(series, at(9)), 'but is inside the grace period just before');
     check(S.trackedBy(undefined, at(1)), 'and a region with no history at all is not hidden - nothing says it was absent');
+
+    // The trap: if JSOC falls back to one day, EVERY region's history starts at
+    // the window edge. Read naively, all of them "emerged" a day ago and would
+    // vanish from every older frame.
+    const windowStart = at(10);
+    check(S.trackedBy(series, at(1), windowStart),
+          'history that begins where the query began says nothing about before it - the region stays');
+    check(!S.trackedBy(series, at(1), at(1) - 3 * 3600000),
+          'but history that begins well inside the window really is an emergence');
   }
 
 } finally {

@@ -249,7 +249,10 @@ export function sharpHistoryUrl(nowMs: number = Date.now(), hours = 72, step: st
   const start = new Date(rounded - hours * 3600000 + TAI_MINUS_UTC_MS);
   const stamp = `${start.getUTCFullYear()}.${pad(start.getUTCMonth() + 1)}.${pad(start.getUTCDate())}`
     + `_${pad(start.getUTCHours())}:${pad(start.getUTCMinutes())}_TAI`;
-  const ds = `${SERIES}[][${stamp}/${hours}h${step ? `@${step}` : ''}]`;
+  // Days rather than hours past a day, the form JSOC's own examples use for
+  // long windows.
+  const span = hours % 24 === 0 && hours > 24 ? `${hours / 24}d` : `${hours}h`;
+  const ds = `${SERIES}[][${stamp}/${span}${step ? `@${step}` : ''}]`;
   return `${JSOC_INFO}?ds=${encodeURIComponent(ds)}&op=rs_list&key=${HISTORY_KEYS}`;
 }
 
@@ -367,8 +370,22 @@ export function fluxTrend(points: SharpHistoryPoint[]): FluxTrend {
     note: `Flux within a few percent of where it was ${over === 'the last day' ? 'a day ago' : spanHours.toFixed(0) + ' hours ago'}.` };
 }
 
-let historyCache: { atMs: number; value: Map<string, SharpHistoryPoint[]> } | null = null;
-let historyInFlight: Promise<Map<string, SharpHistoryPoint[]>> | null = null;
+/** Per-region history, and how far back it reaches. */
+export interface SharpHistory {
+  byRegion: Map<string, SharpHistoryPoint[]>;
+  /**
+   * The start of the window the query covered.
+   *
+   * A region whose history begins here was already on the disk when the
+   * window opened - it did not emerge then. Without this, a query that fell
+   * back to one day would make every region look a day old, and the scrubber
+   * would hide all of them from older frames.
+   */
+  fromMs: number;
+}
+
+let historyCache: { atMs: number; value: SharpHistory } | null = null;
+let historyInFlight: Promise<SharpHistory> | null = null;
 
 async function fetchJsonThroughProxy(target: string): Promise<any | null> {
   for (const base of ['/api/proxy/data', 'https://spottheaurora.co.nz/api/proxy/data']) {
@@ -385,19 +402,24 @@ async function fetchJsonThroughProxy(target: string): Promise<any | null> {
   return null;
 }
 
-/** Hourly flux and area per region, cached for half an hour. Never throws. */
-export async function fetchSharpHistory(): Promise<Map<string, SharpHistoryPoint[]>> {
+/** Hourly flux, area and position per region, cached for half an hour. Never throws. */
+export async function fetchSharpHistory(): Promise<SharpHistory> {
   if (historyCache && Date.now() - historyCache.atMs < 30 * 60000) return historyCache.value;
   if (historyInFlight) return historyInFlight;
 
   historyInFlight = (async () => {
-    // Three days stepped hourly; if JSOC will not step, one day unstepped.
-    let value = parseSharpHistory(await fetchJsonThroughProxy(sharpHistoryUrl(Date.now(), 72, '1h')));
-    if (value.size === 0) {
-      value = parseSharpHistory(await fetchJsonThroughProxy(sharpHistoryUrl(Date.now(), 24, null)));
+    const now = Date.now();
+    // A week stepped hourly, to match the scrubber's longest window; if JSOC
+    // will not step, one day unstepped - the form already verified live.
+    let hours = 168;
+    let byRegion = parseSharpHistory(await fetchJsonThroughProxy(sharpHistoryUrl(now, hours, '1h')));
+    if (byRegion.size === 0) {
+      hours = 24;
+      byRegion = parseSharpHistory(await fetchJsonThroughProxy(sharpHistoryUrl(now, hours, null)));
     }
-    if (value.size > 0) historyCache = { atMs: Date.now(), value };
-    return value.size > 0 ? value : (historyCache?.value ?? value);
+    const value: SharpHistory = { byRegion, fromMs: Math.floor(now / 3600000) * 3600000 - hours * 3600000 };
+    if (byRegion.size > 0) historyCache = { atMs: Date.now(), value };
+    return byRegion.size > 0 ? value : (historyCache?.value ?? value);
   })();
 
   try {
@@ -436,7 +458,14 @@ export function positionAt(
  * best available answer to when that was. Regions with no history at all are
  * given the benefit of the doubt - there is nothing to say they were absent.
  */
-export function trackedBy(points: SharpHistoryPoint[] | undefined, atMs: number, graceMs = 90 * 60000): boolean {
+export function trackedBy(
+  points: SharpHistoryPoint[] | undefined,
+  atMs: number,
+  coverageFromMs: number = -Infinity,
+  graceMs = 90 * 60000,
+): boolean {
   if (!points || points.length === 0) return true;
+  // History that begins where the query began says nothing about before it.
+  if (points[0].atMs <= coverageFromMs + 2 * 3600000) return true;
   return points[0].atMs - graceMs <= atMs;
 }

@@ -35,7 +35,7 @@ import { encodeGif, type GifFrame } from '../utils/gifEncoder';
 import { parseSrsValidTime, latestSrsEpoch } from '../utils/srsTime';
 import {
   fetchSharpByRegion, withSharpPosition, fetchSharpHistory, positionAt, trackedBy,
-  regionKey as sharpRegionKey, type SharpHistoryPoint,
+  regionKey as sharpRegionKey, type SharpHistory,
 } from '../utils/sharpPositions';
 import { fetchHmiFrames, type HmiFrame } from '../utils/hmiArchive';
 import { proxyImageUrl } from '../utils/imagePixels';
@@ -197,10 +197,10 @@ const NOAA_PROTON_FLUX_URLS = [
   'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-1-day.json',
 ];
 /**
- * How far back the sunspot scrubber can look. Three days, because that is the
- * depth of the HMI position history that places the regions on old frames.
+ * How far back the sunspot scrubber can look. A week, which is also the depth
+ * of the HMI position history that places the regions on old frames.
  */
-const SPOT_WINDOW_OPTIONS = [6, 12, 24, 72] as const;
+const SPOT_WINDOW_OPTIONS = [6, 12, 24, 72, 168] as const;
 
 const NOAA_ACTIVE_REGIONS_TEXT_URL = 'https://services.swpc.noaa.gov/text/solar-regions.txt';
 const NOAA_SOLAR_PROBABILITIES_URL = 'https://services.swpc.noaa.gov/json/solar_probabilities.json';
@@ -2236,7 +2236,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [spotFrameIndex, setSpotFrameIndex] = useState(0);
   const [spotPlaying, setSpotPlaying] = useState(false);
   const [spotSpeed, setSpotSpeed] = useState(1);
-  const [sharpHistory, setSharpHistory] = useState<Map<string, SharpHistoryPoint[]>>(new Map());
+  const [sharpHistory, setSharpHistory] = useState<SharpHistory>({ byRegion: new Map(), fromMs: Infinity });
   const [archiveGeometry, setArchiveGeometry] =
     useState<{ width: number; height: number; cx: number; cy: number; radius: number } | null>(null);
 
@@ -2265,9 +2265,30 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   useEffect(() => { setArchiveGeometry(null); }, [sunspotImageryMode]);
 
   const spotFrames = useMemo(() => [
-    ...spotArchive.map((f) => ({ atMs: f.atMs, url: f.url as string | null, live: false })),
-    { atMs: Date.now(), url: null as string | null, live: true },
+    ...spotArchive.map((f) => ({
+      atMs: f.atMs, url: f.url as string | null, preview: f.preview, detail: f.detail, live: false,
+    })),
+    { atMs: Date.now(), url: null as string | null, preview: undefined as string | undefined,
+      detail: undefined as string | undefined, live: true },
   ], [spotArchive]);
+
+  // Every frame's 512px copy, in the background, four at a time. About 60 KB
+  // each, so even the week is a few megabytes - and it is what makes dragging
+  // across the whole window immediate rather than a wait at every stop.
+  useEffect(() => {
+    const queue = spotArchive.map((f) => f.preview).filter((u): u is string => !!u).reverse();
+    let cancelled = false;
+    const next = () => {
+      if (cancelled) return;
+      const url = queue.shift();
+      if (!url) return;
+      const img = new Image();
+      img.onload = img.onerror = next;
+      img.src = proxyImageUrl(url, 300);
+    };
+    for (let k = 0; k < 4; k++) next();
+    return () => { cancelled = true; };
+  }, [spotArchive]);
 
   // Land on now whenever the set of frames changes - the rule every imagery
   // panel in the app follows.
@@ -2283,9 +2304,28 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const spotFrame = spotFrames[spotIndex];
   const spotIsLive = spotFrame.live;
   const spotFrameMs = spotIsLive ? Date.now() : spotFrame.atMs;
+
+  // True while the slider is moving and for a moment after. Dragging used to
+  // fetch a full 1024px frame for every position the finger crossed, which is
+  // why scrubbing felt slow when playback did not: playback reads ahead,
+  // dragging cannot know where it is going. While dragging, the 512px copy is
+  // shown instead - a fifth of the size, and preloaded - and the sharp frame
+  // replaces it once the slider rests.
+  const [spotDragging, setSpotDragging] = useState(false);
+  const spotSettleRef = useRef<number | null>(null);
+  const scrubSpotTo = useCallback((i: number) => {
+    setSpotFrameIndex(i);
+    setSpotDragging(true);
+    if (spotSettleRef.current) window.clearTimeout(spotSettleRef.current);
+    spotSettleRef.current = window.setTimeout(() => setSpotDragging(false), 250);
+  }, []);
+  useEffect(() => () => { if (spotSettleRef.current) window.clearTimeout(spotSettleRef.current); }, []);
+
   // Through the proxy: cached at the edge, and same-origin so the one
   // measurement below can read its pixels.
-  const spotDisplayUrl = spotIsLive ? sunspotOverviewImage.url : proxyImageUrl(spotFrame.url as string, 300);
+  const spotDisplayUrl = spotIsLive
+    ? sunspotOverviewImage.url
+    : proxyImageUrl((spotDragging && spotFrame.preview) || (spotFrame.url as string), 300);
 
   const advanceSpotFrame = useCallback(
     () => setSpotFrameIndex((i) => (i + 1) % Math.max(1, spotFrames.length)),
@@ -2333,8 +2373,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     if (spotIsLive) return { spotRegionInputs: regionInputs, spotPlacedFromHmi: 0 };
     let placed = 0;
     const inputs = regionInputs.flatMap((r) => {
-      const points = sharpHistory.get(sharpRegionKey(r.id));
-      if (!trackedBy(points, spotFrameMs)) return [];
+      const points = sharpHistory.byRegion.get(sharpRegionKey(r.id));
+      if (!trackedBy(points, spotFrameMs, sharpHistory.fromMs)) return [];
       const pos = points ? positionAt(points, spotFrameMs) : null;
       if (!pos) return [r];
       placed++;
@@ -2354,6 +2394,37 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       detailMinWidth: 380,
     });
   }, [spotRegionInputs, spotGeometry, overviewBoxSize, spotFrameMs]);
+
+  /**
+   * What the region close-up shows, following the scrubber.
+   *
+   * On the live frame this is exactly the close-up it always was. On a past
+   * frame it is that frame, centred on the same anchor the disk draws the
+   * region's label at - so the close-up and the disk cannot disagree about
+   * where the region was - using the archive's 2048px copy so the zoom holds
+   * up, or the small copy while the slider is moving.
+   */
+  const closeupView = useMemo((): { url: string | null; xPercent: number; yPercent: number; absent: boolean } | null => {
+    if (!selectedSunspotRegion) return null;
+    if (spotIsLive) {
+      return selectedSunspotCloseupUrl && selectedSunspotPreview
+        ? { url: selectedSunspotCloseupUrl, xPercent: selectedSunspotPreview.xPercent,
+            yPercent: selectedSunspotPreview.yPercent, absent: false }
+        : null;
+    }
+    const label = laidOutSunspotLabels.find((l) => l.id === selectedSunspotRegion.region);
+    if (!label || !overviewBoxSize.width || !overviewBoxSize.height) {
+      return { url: null, xPercent: 50, yPercent: 50, absent: true };
+    }
+    const src = (spotDragging && spotFrame.preview) || spotFrame.detail || spotFrame.url;
+    return {
+      url: src ? proxyImageUrl(src, 300) : null,
+      xPercent: (label.label.anchorX / overviewBoxSize.width) * 100,
+      yPercent: (label.label.anchorY / overviewBoxSize.height) * 100,
+      absent: false,
+    };
+  }, [selectedSunspotRegion, spotIsLive, selectedSunspotCloseupUrl, selectedSunspotPreview,
+      laidOutSunspotLabels, overviewBoxSize, spotDragging, spotFrame]);
 
   // ── Region history, for the growth read ──────────────────────────────────
   // NOAA only ever publishes the current state, so the worker keeps a snapshot
@@ -4196,7 +4267,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                     <FrameScrubber
                       count={spotFrames.length}
                       index={spotIndex}
-                      onIndex={setSpotFrameIndex}
+                      onIndex={scrubSpotTo}
                       onAdvance={advanceSpotFrame}
                       playing={spotPlaying}
                       onPlaying={setSpotPlaying}
@@ -4231,18 +4302,18 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                         <span className="text-[11px] text-neutral-400 self-center">Swipe close-up to switch imagery</span>
                       </div>
 
-                      {closeupLightbox && selectedSunspotCloseupUrl && selectedSunspotPreview && (
+                      {closeupLightbox && closeupView?.url && (
                         <div
                           className="fixed inset-0 z-[3000] bg-black/95 flex items-center justify-center cursor-zoom-out"
                           onClick={() => setCloseupLightbox(false)}
                         >
                           <div className="relative w-[90vw] h-[90vw] max-w-[90vh] max-h-[90vh] overflow-hidden rounded-lg">
                             {(() => {
-                              const adjustedX = Math.max(0, Math.min(100, selectedSunspotPreview.xPercent));
-                              const adjustedY = Math.max(0, Math.min(100, selectedSunspotPreview.yPercent));
+                              const adjustedX = Math.max(0, Math.min(100, closeupView.xPercent));
+                              const adjustedY = Math.max(0, Math.min(100, closeupView.yPercent));
                               return (
                                 <img
-                                  src={selectedSunspotCloseupUrl}
+                                  src={closeupView.url}
                                   alt={`AR ${selectedSunspotRegion?.region} fullscreen closeup`}
                                   className="absolute"
                                   style={{
@@ -4278,15 +4349,20 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                           cycleSunspotImageryMode(delta < 0 ? 1 : -1);
                         }}
                       >
-                        {selectedSunspotCloseupUrl && selectedSunspotPreview ? (
+                        {closeupView?.absent ? (
+                          <div className="w-full h-full flex items-center justify-center p-4 text-center text-xs text-neutral-500">
+                            AR {selectedSunspotRegion.region} is not on the visible disk at this moment - it had not
+                            emerged yet, or was still round the east limb.
+                          </div>
+                        ) : closeupView?.url ? (
                           <div className="relative w-full h-full overflow-hidden bg-black">
                             {(() => {
-                              const adjustedX = Math.max(0, Math.min(100, selectedSunspotPreview.xPercent));
-                              const adjustedY = Math.max(0, Math.min(100, selectedSunspotPreview.yPercent));
+                              const adjustedX = Math.max(0, Math.min(100, closeupView.xPercent));
+                              const adjustedY = Math.max(0, Math.min(100, closeupView.yPercent));
                               return (
                                 <img
                                   ref={closeupImgRef}
-                                  src={selectedSunspotCloseupUrl}
+                                  src={closeupView.url}
                                   alt={`AR ${selectedSunspotRegion.region} closeup`}
                                   className="absolute"
                                   onLoad={() => setIsCloseupImageLoading(false)}
@@ -4316,6 +4392,29 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                           <div className="w-full h-full flex items-center justify-center text-xs text-neutral-500">Close-up unavailable</div>
                         )}
                       </div>
+
+                      {spotFrames.length > 1 && (
+                        <div className="mb-3 -mt-1">
+                          <input
+                            type="range"
+                            min={0}
+                            max={spotFrames.length - 1}
+                            value={spotIndex}
+                            onChange={(e) => { setSpotPlaying(false); scrubSpotTo(Number(e.target.value)); }}
+                            className="w-full accent-sky-500"
+                            aria-label="Scrub this region through time"
+                          />
+                          <div className="flex justify-between text-[10px] text-neutral-500">
+                            <span>{spotWindowHours < 48 ? `${spotWindowHours}h ago` : `${spotWindowHours / 24}d ago`}</span>
+                            <span className="text-neutral-400">
+                              {spotIsLive ? 'Latest' : new Date(spotFrameMs).toLocaleString('en-NZ', {
+                                timeZone: 'Pacific/Auckland', weekday: 'short', hour: 'numeric', minute: '2-digit', hour12: true,
+                              })}
+                            </span>
+                            <span>now</span>
+                          </div>
+                        </div>
+                      )}
 
                       <div className="space-y-1.5 text-xs">
                         <div className="flex justify-between"><span className="text-neutral-500">Magnetic Class</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.magneticClass || ' - '}</span></div>
@@ -4478,7 +4577,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                             </div>
 
                             {/* Hourly, from the same instrument as the image. */}
-                            <RegionMagneticHistory region={selectedSunspotRegion.region} />
+                            <RegionMagneticHistory
+                              region={selectedSunspotRegion.region}
+                              markerMs={spotIsLive ? null : spotFrameMs}
+                            />
 
                             {/* What it has actually launched. */}
                             <div className="mt-3 pt-2.5 border-t border-neutral-800">

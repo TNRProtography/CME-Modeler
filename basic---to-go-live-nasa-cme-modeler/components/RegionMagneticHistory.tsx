@@ -18,10 +18,12 @@ const Spark: React.FC<{
   value: (p: SharpHistoryPoint) => number;
   hoverIndex: number | null;
   onHover: (i: number | null) => void;
+  /** A moment to mark on the curve - the frame the scrubber is on. */
+  markerMs?: number | null;
   label: string;
   format: (v: number) => string;
   strong?: boolean;
-}> = ({ points, value, hoverIndex, onHover, label, format, strong }) => {
+}> = ({ points, value, hoverIndex, onHover, markerMs, label, format, strong }) => {
   const W = 220, H = strong ? 40 : 26, PAD = 2;
   const values = points.map(value);
   const lo = Math.min(...values), hi = Math.max(...values);
@@ -57,6 +59,10 @@ const Spark: React.FC<{
       >
         <path d={`${d} L${x(t1)},${H} L${x(t0)},${H} Z`} fill={strong ? 'rgba(56,189,248,0.12)' : 'rgba(163,163,163,0.10)'} />
         <path d={d} fill="none" stroke={stroke} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+        {markerMs != null && markerMs >= t0 && markerMs <= t1 && (
+          <line x1={x(markerMs)} y1={0} x2={x(markerMs)} y2={H}
+                stroke="#fbbf24" strokeWidth="1" strokeDasharray="2 2" vectorEffect="non-scaling-stroke" />
+        )}
         {hoverIndex != null && (
           <line x1={x(points[hoverIndex].atMs)} y1={0} x2={x(points[hoverIndex].atMs)} y2={H}
                 stroke="#e5e5e5" strokeWidth="1" vectorEffect="non-scaling-stroke" />
@@ -66,13 +72,17 @@ const Spark: React.FC<{
   );
 };
 
-const RegionMagneticHistory: React.FC<{ region: string }> = ({ region }) => {
+const RegionMagneticHistory: React.FC<{
+  region: string;
+  /** The scrubber's moment, marked on both curves; null on the live frame. */
+  markerMs?: number | null;
+}> = ({ region, markerMs = null }) => {
   const [history, setHistory] = useState<Map<string, SharpHistoryPoint[]> | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    fetchSharpHistory().then((h) => { if (!cancelled) setHistory(h); });
+    fetchSharpHistory().then((h) => { if (!cancelled) setHistory(h.byRegion); });
     return () => { cancelled = true; };
   }, []);
 
@@ -91,10 +101,10 @@ const RegionMagneticHistory: React.FC<{ region: string }> = ({ region }) => {
         <>
           <div className="space-y-1.5">
             <Spark points={points} value={(p) => p.usfluxMx} hoverIndex={hoverIndex} onHover={setHoverIndex}
-                   label="Magnetic flux" strong
+                   markerMs={markerMs} label="Magnetic flux" strong
                    format={(v) => `${(v / 1e21).toFixed(1)} ×10²¹ Mx`} />
             <Spark points={points} value={(p) => p.areaMh} hoverIndex={hoverIndex} onHover={setHoverIndex}
-                   label="Magnetised area" format={(v) => `${Math.round(v)} μH`} />
+                   markerMs={markerMs} label="Magnetised area" format={(v) => `${Math.round(v)} μH`} />
           </div>
           <div className="flex justify-between text-[10px] text-neutral-500 mt-0.5">
             <span>{fmtNzShort(points[0].atMs)}</span>

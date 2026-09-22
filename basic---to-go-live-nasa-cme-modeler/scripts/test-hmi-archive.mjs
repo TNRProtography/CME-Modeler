@@ -87,6 +87,31 @@ try {
     check(kept[kept.length - 1].url === '12', 'always keeping the newest');
     check(kept.every((f, i) => i === 0 || f.atMs - kept[i - 1].atMs >= 15 * 60000), 'and never closer than the interval');
   }
+
+  console.log('\nThe smaller and larger copies');
+  {
+    const names = [
+      '20260922_001038_512_HMII.jpg', '20260922_001038_1024_HMII.jpg', '20260922_001038_2048_HMII.jpg',
+      '20260922_002538_1024_HMII.jpg',
+    ].map((n) => `<a href="${n}">${n}</a>`).join('\n');
+    const [a, b] = A.parseBrowseListing(names, 'HMII', dir);
+    check(a.preview === `${dir}20260922_001038_512_HMII.jpg`, 'the 512px copy is used for dragging');
+    check(a.detail === `${dir}20260922_001038_2048_HMII.jpg`, 'the 2048px copy for the close-up');
+    check(b.preview === undefined && b.detail === undefined,
+          'and a frame the listing has no copies of gets none - not a guessed URL that 404s');
+  }
+
+  console.log('\nLonger windows space their frames out');
+  {
+    const H = 3600000;
+    check(A.intervalForWindow(12 * H) === 15 * 60000, 'twelve hours: a frame every quarter-hour');
+    check(A.intervalForWindow(24 * H) === 15 * 60000, 'a day: still a quarter-hour, 96 frames');
+    check(A.intervalForWindow(72 * H) === 45 * 60000, 'three days: 45 minutes');
+    const week = A.intervalForWindow(168 * H);
+    check(week === 105 * 60000 && 168 * H / week <= 96,
+          `a week: ${week / 60000} minutes, so about a hundred frames rather than seven hundred`);
+  }
+
 } finally {
   rmSync(out, { recursive: true, force: true });
 }
