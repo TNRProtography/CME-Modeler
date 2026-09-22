@@ -1,3 +1,12 @@
+// SUPERSEDED - do not deploy this expecting it to fix anything.
+//
+// This Worker was never created on the Cloudflare account, so the route in
+// wrangler.toml pointed at nothing and every /api/proxy request fell through
+// to the SPA, which answers with index.html and a 200. The live copy is now a
+// Pages Function at functions/api/proxy/[[route]].ts, which deploys with the
+// site and needs no route. Kept here only so the history of the allow-lists
+// is not lost; edit the Pages Function instead.
+
 export interface Env {}
 
 const ALLOWED_HOSTS = new Set([
