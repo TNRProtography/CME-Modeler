@@ -2875,10 +2875,19 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   // poll lands so nobody noticed; twenty-four hours takes over a minute and
   // was being killed two or three times on the way through.
   const suviTimelineKeyRef = useRef<string>('');
+  const suviHadFramesRef = useRef(false);
   useEffect(() => {
     const key = `${activeSuviSourceKey}|${suviFrameWindowHours}`;
-    const switched = suviTimelineKeyRef.current !== key;
+    // Going from no frames to some frames is a first load, not a poll. The key
+    // is recorded on the first render, while the list is still empty, so the
+    // frames landing afterwards does not look like a switch - and the ref
+    // holding "what was on screen" is updated earlier in the same commit, so
+    // by the time this runs it already points at whatever sits at index zero.
+    // That made the position effect faithfully hold the oldest frame.
+    const arrived = !suviHadFramesRef.current && suviFrames.length > 0;
+    const switched = suviTimelineKeyRef.current !== key || arrived;
     suviTimelineKeyRef.current = key;
+    suviHadFramesRef.current = suviFrames.length > 0;
 
     const { index, stopPlayback } = nextFramePosition({
       frames: suviFrames,
