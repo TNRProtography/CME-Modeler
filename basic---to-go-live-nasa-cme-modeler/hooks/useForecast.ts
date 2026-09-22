@@ -19,9 +19,10 @@ import { buildTrackRecord, type ForecastScore, type TrackRecord } from '../utils
 import { solarDiskOrientation } from '../utils/solarEphemeris';
 import { buildChTracks } from '../utils/chTracking';
 import {
-  ensureChDetections, framesForTracking, numberTracks, subscribeToChDetections,
+  ensureChDetections, framesForTracking, getChState, numberTracks, subscribeToChDetections,
   type ChStoreState,
 } from '../utils/chDetectionStore';
+import { postSnapshotToWorker } from '../utils/coronalHoleHistory';
 
 const FORECAST_WORKER = 'https://spot-the-aurora-forecast-worker.thenamesrock.workers.dev';
 const RTSW_URL = 'https://imap-solar-data-test.thenamesrock.workers.dev/rtsw/merged-24h';
@@ -67,6 +68,8 @@ export interface ForecastState {
   /** True when the coronal holes behind it are too old to trust. */
   stale: boolean;
   loading: boolean;
+  /** True while a server re-run kicked off by this view is still going. */
+  refreshing: boolean;
 }
 
 interface ObservedSample {
@@ -94,12 +97,67 @@ async function fetchObserved(): Promise<ObservedSample[]> {
   }
 }
 
+/** Holes older than this cannot un-stale the server forecast, so do not try. */
+const SNAPSHOT_USEFUL_MS = 6 * 3600000;
+
+/**
+ * Give the server the holes this device just measured.
+ *
+ * The forecast is called stale when the coronal holes behind it are more than
+ * six hours old, and they go stale because nothing publishes newer ones: the
+ * snapshot POST lived only on the Solar Activity page, so the hourly cron kept
+ * recomputing the same ageing holes. Detection already runs when this hook
+ * mounts - it just had nowhere to send the result.
+ *
+ * Returns whether anything worth recomputing actually reached the server.
+ */
+async function publishNewestSnapshot(): Promise<boolean> {
+  const { detections } = getChState();
+  if (detections.length === 0) return false;
+
+  const newest = detections.reduce((a, b) => (b.atMs > a.atMs ? b : a));
+  if (newest.holes.length === 0) return false;
+  if (Date.now() - newest.atMs > SNAPSHOT_USEFUL_MS) return false;
+
+  return postSnapshotToWorker(newest.holes, newest.frameUrl, newest.atMs);
+}
+
+/**
+ * Publish, recompute, read back.
+ *
+ * Opening the outlook is exactly the moment somebody wants current numbers,
+ * so this asks for them rather than explaining why they are old. It runs only
+ * when the stored forecast is missing or stale, because a run takes the best
+ * part of a minute and there is nothing to gain from repeating a fresh one.
+ *
+ * It deliberately does not block the first paint: whatever is stored goes up
+ * immediately and this swaps in behind it. The worker throttles manual runs to
+ * one a minute and answers 429 inside that window - the right answer to two
+ * tabs opening at once, since another client is already doing this work, so
+ * read the result back rather than treating it as a failure.
+ */
+async function refreshWorkerForecast(): Promise<any | null> {
+  try {
+    await publishNewestSnapshot();
+    const run = await fetch(`${FORECAST_WORKER}/run`);
+    if (!run.ok && run.status !== 429) return null;
+    const res = await fetch(`${FORECAST_WORKER}/forecast`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.ok ? data : null;
+  } catch {
+    // The panel keeps whatever it already had, and still says how old it is.
+    return null;
+  }
+}
+
 export function useForecast(enabled = true): ForecastState {
   const [chState, setChState] = useState<ChStoreState | null>(null);
   const [observed, setObserved] = useState<ObservedSample[]>([]);
   const [worker, setWorker] = useState<any | null>(null);
   const [scores, setScores] = useState<ForecastScore[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => subscribeToChDetections(setChState), []);
 
@@ -122,9 +180,27 @@ export function useForecast(enabled = true): ForecastState {
 
       // Only stop showing a spinner once there is either a server forecast or
       // some holes of our own to build one from.
-      const haveWorker = workerResult.status === 'fulfilled' && workerResult.value?.ok;
+      const stored = workerResult.status === 'fulfilled' ? workerResult.value : null;
+      const haveWorker = !!stored?.ok;
       if (haveWorker) setLoading(false);
       else { await priming; if (!cancelled) setLoading(false); }
+
+      // Nothing stored, or stored holes too old to stand behind: detect, hand
+      // the result to the server and have it recompute. Not awaited by the
+      // paint above, so the panel is already on screen while this happens.
+      if (!haveWorker || stored.stale) {
+        setRefreshing(true);
+        (async () => {
+          try {
+            await priming;
+            if (cancelled) return;
+            const fresh = await refreshWorkerForecast();
+            if (!cancelled && fresh) setWorker(fresh);
+          } finally {
+            if (!cancelled) setRefreshing(false);
+          }
+        })();
+      }
 
       // The track record is only ever the server's: it needs a history no
       // single device has, and inventing a local one from this browser's few
@@ -155,12 +231,13 @@ export function useForecast(enabled = true): ForecastState {
         generatedAtMs: worker.generatedAtMs ?? null,
         stale: !!worker.stale,
         loading: false,
+        refreshing,
       };
     }
 
     if (!chState || chState.detections.length === 0) {
       return { timeline: [], outlook: [], streams: [], trackRecord,
-               source: 'none', generatedAtMs: null, stale: true, loading };
+               source: 'none', generatedAtMs: null, stale: true, loading, refreshing };
     }
 
     // Compute it here instead, from the holes this device has detected.
@@ -204,8 +281,9 @@ export function useForecast(enabled = true): ForecastState {
       generatedAtMs: now,
       stale: false,
       loading,
+      refreshing,
     };
-  }, [worker, chState, observed, scores, loading]);
+  }, [worker, chState, observed, scores, loading, refreshing]);
 }
 
 /** Mirrors the width-and-darkness model the tracker uses. */

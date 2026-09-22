@@ -83,11 +83,16 @@ const CH_MATCH_THRESHOLD_DEG = 25;
 export async function postSnapshotToWorker(
   coronalHoles: CoronalHole[],
   imageUrl: string,
+  atMs?: number,
 ): Promise<boolean> {
   try {
+    // The frame's own time, when the caller knows it. Stamping an archived
+    // frame with the wall clock would tell the server the holes are newer
+    // than they are, which is the one lie the staleness check cannot survive.
+    const stampMs = Number.isFinite(atMs) ? (atMs as number) : Date.now();
     const record: CHSnapshotRecord = {
-      timestamp: new Date().toISOString(),
-      timestampMs: Date.now(),
+      timestamp: new Date(stampMs).toISOString(),
+      timestampMs: stampMs,
       coronalHoles: coronalHoles.map(ch => ({
         id: ch.id,
         lat: ch.lat,

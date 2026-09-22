@@ -134,10 +134,17 @@ const ImpactGraphModal: React.FC<ImpactGraphModalProps> = ({ isOpen, onClose }) 
             </p>
           )}
 
-          {forecast.stale && forecast.timeline.length > 0 && (
+          {forecast.refreshing && (
+            <div className="mb-3 text-xs text-sky-300 bg-sky-900/20 border border-sky-800/50 rounded p-2">
+              Measuring the latest coronal holes and recomputing - this takes about a minute. What is below is the
+              last forecast, and it will update in place when the new one lands.
+            </div>
+          )}
+
+          {forecast.stale && !forecast.refreshing && forecast.timeline.length > 0 && (
             <div className="mb-3 text-xs text-yellow-300 bg-yellow-900/20 border border-yellow-800/50 rounded p-2">
-              The coronal holes behind this forecast are more than six hours old, so treat it as indicative. It
-              refreshes when somebody opens the Solar Activity page and the detector runs again.
+              The coronal holes behind this forecast are more than six hours old, so treat it as indicative. The
+              refresh this panel asked for did not get through, so this is the last good one.
             </div>
           )}
 
