@@ -30,7 +30,9 @@ import {
 import {
   type CHEvolution,
   interpolateCHAtTimeMs,
+  chWasPresentAt,
 } from '../utils/coronalHoleHistory';
+import { longitudeAt } from '../utils/solarDisk';
 import type { RegionInput } from '../utils/regionLabels';
 import {
   computeEclipticLongitude,
@@ -1799,31 +1801,64 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     const sunR     = PLANET_DATA_MAP.SUN.size;
     const hssReach = PLANET_DATA_MAP.EARTH.radius * 1.65;
-    // How big each hole was at the moment being shown, from the same tracks the
-    // coronal hole tracker draws its width chart from. A hole with no history
-    // yet is drawn at its measured size, which is the old behaviour and the
-    // honest one - there is nothing to interpolate.
-    const evolutionById = new Map(chEvolutions.map((e) => [e.trackId, e]));
+    // ── The Sun as it was at the moment on the scrubber ──────────────────
+    //
+    // Three separate things have to be true of a hole for the timeline to be
+    // showing history rather than today's holes on an older Sun: it has to
+    // have EXISTED then, be the SIZE it was then, and be WHERE it was then.
+    // Only the second of those was true before this.
+    //
+    // Longitude needs care. The group is a child of sunMesh and its rotation
+    // is anchored to chDetectedAtMs, so solar rotation is already applied -
+    // dropping a historical Stonyhurst longitude straight in would count the
+    // Sun's turn twice. What goes in is the historical measurement carried
+    // into the anchor's frame, which leaves only the hole's own drift across
+    // the disk, which is the part worth seeing.
+    const anchorMs = chDetectedAtMs ?? Date.now();
+    const baseById = new Map(coronalHoles.map((ch) => [ch.id, ch]));
+    const drawn: { ch: any; scale: number }[] = [];
 
-    coronalHoles.forEach(ch => {
-      const evolution = evolutionById.get(ch.id);
-      const at = evolution ? interpolateCHAtTimeMs(evolution, chShapeTimeMs) : null;
-      // Scaled by width rather than area: width is what the detector measures
-      // most reliably and what the speed model already keys off, so the two
-      // cannot drift apart.
-      const measured = ch.widthDeg || 1;
-      const scale = at && at.widthDeg > 0
-        // Bounded, because a single bad frame should not inflate a hole to
-        // cover the disk or shrink it out of existence.
-        ? Math.max(0.35, Math.min(2.5, at.widthDeg / measured))
-        : 1;
+    for (const evolution of chEvolutions) {
+      if (!chWasPresentAt(evolution, chShapeTimeMs)) continue;
+      const at = interpolateCHAtTimeMs(evolution, chShapeTimeMs);
+      if (!at) continue;
 
+      // The outline comes from a live detection where there is one, because
+      // only those carry a polygon; a hole that has since closed falls back
+      // to the last shape the track kept.
+      const base = baseById.get(evolution.trackId) ?? evolution.current;
+      if (!base) continue;
+
+      const measured = base.widthDeg || 1;
+      drawn.push({
+        ch: {
+          ...base,
+          lat: at.lat,
+          lon: longitudeAt(at.lon, chShapeTimeMs, anchorMs),
+        },
+        // Scaled by width rather than area: width is what the detector
+        // measures most reliably and what the speed model already keys off,
+        // so the two cannot drift apart. Bounded, because one frame where the
+        // detector merged two holes should not swallow the disk.
+        scale: at.widthDeg > 0 ? Math.max(0.35, Math.min(2.5, at.widthDeg / measured)) : 1,
+      });
+    }
+
+    // Holes the tracker has no history for yet - a first detection this
+    // session - are drawn as measured. That is the old behaviour and the
+    // honest one: there is nothing to interpolate.
+    const haveHistory = new Set(chEvolutions.map((e) => e.trackId));
+    for (const ch of coronalHoles) {
+      if (!haveHistory.has(ch.id)) drawn.push({ ch, scale: 1 });
+    }
+
+    drawn.forEach(({ ch, scale }) => {
       chGroupRef.current.add(buildChSurfaceMesh(THREE, ch, sunR, scale));
       chGroupRef.current.add(buildChOutlineLine(THREE, ch, sunR, scale));
 
       hssGroupRef.current.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
     });
-  }, [coronalHoles, chEvolutions, chShapeTimeMs, threeReady, sceneReady]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [coronalHoles, chEvolutions, chShapeTimeMs, chDetectedAtMs, threeReady, sceneReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Sunspot regions ───────────────────────────────────────────────────────
   // Separate from the CH effect so toggling them does not rebuild every

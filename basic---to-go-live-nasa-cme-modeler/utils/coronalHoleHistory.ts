@@ -505,3 +505,49 @@ export function getCHAtTimelineTime(
 }
 
 // --- END OF FILE utils/coronalHoleHistory.ts ---
+// ─── Was it there at all? ─────────────────────────────────────────────────
+
+/**
+ * How long a hole is still drawn after its last measurement.
+ *
+ * The detector misses a hole in maybe one frame in ten - a faint frame, a bit
+ * of disk washed out by a flare, a shape momentarily under the area threshold
+ * - and frames come every couple of hours. Without a grace period, scrubbing
+ * the timeline makes holes blink in and out, which reads as the app being
+ * broken rather than as the detector being imperfect. Two cadences is enough
+ * to bridge a miss without keeping a closed hole on screen for a day.
+ */
+export const CH_PRESENCE_GRACE_MS = 4 * 3600000;
+
+/** The span a track was actually measured over, ignoring frames it was missed in. */
+export function chMeasuredSpan(
+  evolution: CHEvolution,
+): { firstMs: number; lastMs: number } | null {
+  let firstMs = Infinity;
+  let lastMs = -Infinity;
+  for (const snap of evolution.snapshots) {
+    if (!snap.ch) continue;
+    if (snap.timestampMs < firstMs) firstMs = snap.timestampMs;
+    if (snap.timestampMs > lastMs) lastMs = snap.timestampMs;
+  }
+  return Number.isFinite(firstMs) ? { firstMs, lastMs } : null;
+}
+
+/**
+ * Whether this hole existed at a given moment.
+ *
+ * interpolateCHAtTimeMs cannot answer this: asked for a time outside the
+ * track it pins to the nearest measurement and returns a position, which is
+ * the right behaviour for smoothing across a gap and the wrong one for
+ * history. Scrubbing back a week would otherwise show today's holes on last
+ * Tuesday's Sun, including ones that had not opened yet.
+ */
+export function chWasPresentAt(
+  evolution: CHEvolution,
+  atMs: number,
+  graceMs = CH_PRESENCE_GRACE_MS,
+): boolean {
+  const span = chMeasuredSpan(evolution);
+  if (!span) return false;
+  return atMs >= span.firstMs - graceMs && atMs <= span.lastMs + graceMs;
+}

@@ -84,7 +84,12 @@ try {
     { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
 
   const { buildChFootprintPoints } = await import(pathToFileURL(join(out, 'g.mjs')).href);
-  const { interpolateCHAtTimeMs } = await import(pathToFileURL(join(out, 'h.mjs')).href);
+  const { interpolateCHAtTimeMs, chWasPresentAt, chMeasuredSpan, CH_PRESENCE_GRACE_MS } =
+    await import(pathToFileURL(join(out, 'h.mjs')).href);
+  execFileSync('npx', ['esbuild', join(root, 'utils/solarDisk.ts'),
+    '--bundle', '--format=esm', `--outfile=${join(out, 'd.mjs')}`, '--log-level=error'],
+    { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
+  const { longitudeAt, SOLAR_SYNODIC_DEG_PER_DAY } = await import(pathToFileURL(join(out, 'd.mjs')).href);
 
   // A deliberately lopsided outline, so a change of shape is detectable.
   const polygon = [
@@ -195,6 +200,103 @@ try {
           'and a track of misses gives either null or a real number, never NaN',
           JSON.stringify(got));
   }
+
+  console.log('\nA hole is only drawn for the days it existed');
+  {
+    // Measured from five days ago until two days ago, then gone.
+    const snaps = [5, 4, 3, 2].map((d) => ({
+      timestampMs: now - d * 24 * HOUR,
+      hoursAgo: d * 24,
+      ch: { ...hole, widthDeg: 30, lat: -20, lon: 0 },
+    }));
+    const evolution = { trackId: 'CH90', snapshots: snaps, current: hole };
+
+    const span = chMeasuredSpan(evolution);
+    check(span.firstMs === now - 5 * 24 * HOUR && span.lastMs === now - 2 * 24 * HOUR,
+          'the measured span is the first and last frame it was seen in');
+
+    check(chWasPresentAt(evolution, now - 3 * 24 * HOUR),
+          'it is drawn in the middle of its life');
+    check(!chWasPresentAt(evolution, now - 6 * 24 * HOUR),
+          'not before it was ever measured - scrubbing back a week must not show it');
+    check(!chWasPresentAt(evolution, now),
+          'and not today, when it has been gone for two days');
+
+    // interpolateCHAtTimeMs alone cannot answer this: outside the track it
+    // pins to the nearest measurement and hands back a position, which is
+    // right for bridging a gap and wrong for history.
+    check(interpolateCHAtTimeMs(evolution, now - 6 * 24 * HOUR) !== null,
+          'which is why presence is a separate question from position');
+  }
+
+  console.log('\nA missed frame does not make it blink');
+  {
+    // Seen, missed, seen: the detector drops a hole in about one frame in ten.
+    const snaps = [
+      { timestampMs: now - 6 * HOUR, hoursAgo: 6, ch: { ...hole, widthDeg: 30 } },
+      { timestampMs: now - 4 * HOUR, hoursAgo: 4, ch: null },
+      { timestampMs: now - 2 * HOUR, hoursAgo: 2, ch: { ...hole, widthDeg: 32 } },
+    ];
+    const evolution = { trackId: 'CH91', snapshots: snaps, current: hole };
+    check(chWasPresentAt(evolution, now - 4 * HOUR),
+          'a frame the detector missed inside the span is still a frame it was there');
+    check(chWasPresentAt(evolution, now - 1 * HOUR),
+          'and the grace period covers the hours just after the last measurement');
+    check(!chWasPresentAt(evolution, now - 2 * HOUR + CH_PRESENCE_GRACE_MS + HOUR),
+          'but not indefinitely - a closed hole does leave the screen');
+  }
+
+  console.log('\nAn empty track is never present');
+  {
+    check(chMeasuredSpan({ trackId: 'X', snapshots: [], current: hole }) === null,
+          'no measurements, no span');
+    check(!chWasPresentAt({ trackId: 'X', snapshots: [], current: hole }, now),
+          'and nothing to draw');
+    const allMissed = {
+      trackId: 'Y',
+      snapshots: [{ timestampMs: now - HOUR, hoursAgo: 1, ch: null }],
+      current: hole,
+    };
+    check(!chWasPresentAt(allMissed, now),
+          'a track of nothing but misses is not a hole that existed');
+  }
+
+
+  console.log('\nSolar rotation is applied once, not twice');
+  {
+    // The CH group is a child of sunMesh and its rotation is anchored to the
+    // detection time, so the Sun's turn is ALREADY in the scene. What goes
+    // into the geometry is the historical measurement carried into that
+    // anchor's frame. Get this wrong and a hole scrubbed three days back sits
+    // 40 degrees from where it belongs - the rotation counted twice.
+    const anchorMs = now;
+
+    // A hole that has not moved relative to the Sun: measured at Stonyhurst
+    // -40 three days ago is the same feature as +0 today.
+    const threeDaysAgo = now - 3 * 24 * HOUR;
+    const lonThen = -SOLAR_SYNODIC_DEG_PER_DAY * 3;
+    const carried = longitudeAt(lonThen, threeDaysAgo, anchorMs);
+    check(Math.abs(carried - 0) < 0.01,
+          `a hole that has not drifted lands at the anchor longitude (${carried.toFixed(2)}°)`,
+          carried.toFixed(3));
+
+    // Using the raw historical longitude instead would place it 40 degrees
+    // east of where it should be, which is the bug this guards.
+    check(Math.abs(lonThen - carried) > 39,
+          `while the raw measurement would be ${Math.abs(lonThen - carried).toFixed(0)}° out`,
+          Math.abs(lonThen - carried).toFixed(1));
+
+    // A hole that HAS drifted keeps its drift after the conversion, because
+    // that is the part worth seeing on the scrubber.
+    const drifted = longitudeAt(lonThen + 7, threeDaysAgo, anchorMs);
+    check(Math.abs(drifted - 7) < 0.01,
+          `and real proper motion survives the conversion (${drifted.toFixed(2)}°)`,
+          drifted.toFixed(3));
+
+    check(Math.abs(longitudeAt(12, anchorMs, anchorMs) - 12) < 1e-9,
+          'converting a measurement already in the anchor frame changes nothing');
+  }
+
 } finally {
   rmSync(out, { recursive: true, force: true });
 }
