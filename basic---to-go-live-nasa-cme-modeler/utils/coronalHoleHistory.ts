@@ -551,3 +551,38 @@ export function chWasPresentAt(
   if (!span) return false;
   return atMs >= span.firstMs - graceMs && atMs <= span.lastMs + graceMs;
 }
+
+/**
+ * A hole's state at a moment, with its longitude expressed in one fixed frame.
+ *
+ * Every stored longitude is Stonyhurst AT ITS OWN SNAPSHOT TIME, so the same
+ * unmoving hole has a different number in every snapshot - it climbs about
+ * 13.2 degrees a day as the Sun turns. Interpolating those raw values and
+ * then carrying the result forward from the QUERY time works only while the
+ * query lands inside the track. Outside it, interpolateCHAtTimeMs pins to the
+ * nearest measurement, so the longitude stops advancing while the correction
+ * keeps growing - which subtracts the Sun's rotation from a hole that was
+ * already rotating with it, and freezes it in space while the Sun turns
+ * underneath.
+ *
+ * Carrying each snapshot into the target frame BEFORE interpolating has no
+ * such seam: a hole that has not drifted has the same number in every
+ * snapshot, so interpolating and pinning give the same answer, and the only
+ * thing left in the result is the hole's own motion across the disk.
+ */
+export function chStateAtInFrame(
+  evolution: CHEvolution,
+  atMs: number,
+  frameMs: number,
+): ReturnType<typeof interpolateCHAtTimeMs> {
+  const anchored: CHEvolution = {
+    ...evolution,
+    snapshots: evolution.snapshots.map((snap) => ({
+      ...snap,
+      ch: snap.ch
+        ? { ...snap.ch, lon: longitudeAt(snap.ch.lon, snap.timestampMs, frameMs) }
+        : null,
+    })),
+  };
+  return interpolateCHAtTimeMs(anchored, atMs);
+}

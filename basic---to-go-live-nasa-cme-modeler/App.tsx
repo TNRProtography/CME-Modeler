@@ -131,6 +131,7 @@ import {
 } from './utils/navigation';
 import { useCoronalHoles } from './hooks/useCoronalHoles';
 import { useSunspotRegions } from './hooks/useSunspotRegions';
+import SolarSurfaceLabels, { type SurfaceLabelInfo } from './components/SolarSurfaceLabels';
 
 const RefreshIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className={className}>
@@ -342,6 +343,10 @@ const App: React.FC = () => {
   const [timelineMinDate, setTimelineMinDate] = useState<number>(0);
   const [timelineMaxDate, setTimelineMaxDate] = useState<number>(0);
   const [planetLabelInfos, setPlanetLabelInfos] = useState<PlanetLabelInfo[]>([]);
+  // Labels for things ON the Sun - coronal holes and active regions. Separate
+  // from the planet labels because the visibility test is different: a surface
+  // feature is hidden by facing away, not by being behind the disk.
+  const [surfaceLabels, setSurfaceLabels] = useState<SurfaceLabelInfo[]>([]);
   const [rendererDomElement, setRendererDomElement] = useState<HTMLCanvasElement | null>(null);
   const [threeCamera, setThreeCamera] = useState<any>(null);
   const clockStartRef = useRef<number>(performance.now());
@@ -1629,6 +1634,7 @@ const App: React.FC = () => {
                         chEvolutions={chEvolutions}
                         sunspotRegions={sunspotRegions}
                         showSunspots={showSunspots}
+                        setSurfaceLabels={setSurfaceLabels}
                         dataVersion={dataVersion}
                         interactionMode={InteractionMode.MOVE}
                         onSunClick={handleOpenGame}
@@ -1637,6 +1643,14 @@ const App: React.FC = () => {
                         rerunHssInteraction={rerunHssInteraction}
                     />
                     {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
+                    {showLabels && rendererDomElement && threeCamera && sunInfo && surfaceLabels.length > 0 && (
+                      <SolarSurfaceLabels
+                        labels={surfaceLabels}
+                        camera={threeCamera}
+                        rendererDomElement={rendererDomElement}
+                        sunMesh={sunInfo.mesh}
+                      />
+                    )}
                     <div className="absolute top-0 left-0 right-0 z-40 flex items-start justify-between p-4 pointer-events-none">
                         <div className="flex items-start text-center space-x-3 pointer-events-auto">
                             <div className="flex flex-col items-center w-16 lg:hidden">

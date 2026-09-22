@@ -84,8 +84,8 @@ try {
     { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
 
   const { buildChFootprintPoints } = await import(pathToFileURL(join(out, 'g.mjs')).href);
-  const { interpolateCHAtTimeMs, chWasPresentAt, chMeasuredSpan, CH_PRESENCE_GRACE_MS } =
-    await import(pathToFileURL(join(out, 'h.mjs')).href);
+  const { interpolateCHAtTimeMs, chWasPresentAt, chMeasuredSpan, CH_PRESENCE_GRACE_MS,
+          chStateAtInFrame } = await import(pathToFileURL(join(out, 'h.mjs')).href);
   execFileSync('npx', ['esbuild', join(root, 'utils/solarDisk.ts'),
     '--bundle', '--format=esm', `--outfile=${join(out, 'd.mjs')}`, '--log-level=error'],
     { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
@@ -334,6 +334,110 @@ try {
     // Order must not matter, or a reshuffle would rebuild the whole Sun.
     check(sign(bExtra) === sign([...bExtra].reverse()),
           'the order the holes come in is not a change');
+  }
+
+
+  console.log('\nA hole that has not drifted rotates with the Sun');
+  {
+    // Every stored longitude is Stonyhurst AT ITS OWN SNAPSHOT TIME, so an
+    // unmoving hole has a different number in every snapshot - it climbs
+    // 13.2 degrees a day as the Sun turns. A hole that is fixed to the Sun
+    // must come back as a CONSTANT longitude in one fixed frame; anything
+    // else is the scene being told to move it relative to the Sun it is
+    // already parented to.
+    const anchorMs = now;
+    const snaps = [8, 6, 4, 2, 0].map((h) => ({
+      timestampMs: now - h * HOUR,
+      hoursAgo: h,
+      ch: { ...hole, lon: -SOLAR_SYNODIC_DEG_PER_DAY * (h / 24), lat: -20, widthDeg: 40 },
+    }));
+    const evolution = { trackId: 'CH96', snapshots: snaps, current: hole };
+
+    const lons = [8, 6, 4, 2, 0].map((h) => chStateAtInFrame(evolution, now - h * HOUR, anchorMs).lon);
+    const spread = Math.max(...lons) - Math.min(...lons);
+    check(spread < 0.01,
+          `inside the track it is the same longitude at every moment (spread ${spread.toFixed(4)}°)`,
+          spread.toFixed(4));
+
+    // And outside it. This is the case that froze the Sun: past the last
+    // snapshot interpolateCHAtTimeMs pins, so a longitude carried from the
+    // QUERY time stops advancing while its correction keeps growing, which
+    // subtracts the Sun's rotation from a hole already rotating with it.
+    const after = [1, 6, 24].map((h) => chStateAtInFrame(evolution, now + h * HOUR, anchorMs).lon);
+    const afterSpread = Math.max(...after) - Math.min(...after);
+    check(afterSpread < 0.01,
+          `and past the last measurement, where it used to freeze (spread ${afterSpread.toFixed(4)}°)`,
+          afterSpread.toFixed(4));
+
+    // The old way, for contrast: carrying the interpolated result forward
+    // from the query time. A day past the track it is 13 degrees adrift, and
+    // it drifts at exactly the rate that cancels the Sun's rotation.
+    const pinned = interpolateCHAtTimeMs(evolution, now + 24 * HOUR).lon;
+    const oldWay = pinned + SOLAR_SYNODIC_DEG_PER_DAY * ((anchorMs - (now + 24 * HOUR)) / 86400000);
+    check(Math.abs(oldWay - after[0]) > 12,
+          `the old arithmetic is ${Math.abs(oldWay - after[0]).toFixed(1)}° out after a day`,
+          Math.abs(oldWay - after[0]).toFixed(1));
+  }
+
+  console.log('\nBut a hole that HAS drifted still shows its drift');
+  {
+    const anchorMs = now;
+    // Rotation, plus five degrees a day of its own motion across the disk.
+    const snaps = [48, 24, 0].map((h) => ({
+      timestampMs: now - h * HOUR,
+      hoursAgo: h,
+      ch: { ...hole, lon: -SOLAR_SYNODIC_DEG_PER_DAY * (h / 24) - 5 * (h / 24), lat: -20 },
+    }));
+    const evolution = { trackId: 'CH97', snapshots: snaps, current: hole };
+
+    const nowLon = chStateAtInFrame(evolution, now, anchorMs).lon;
+    const dayAgo = chStateAtInFrame(evolution, now - 24 * HOUR, anchorMs).lon;
+    check(Math.abs((nowLon - dayAgo) - 5) < 0.01,
+          `five degrees of real drift survives the frame change (${(nowLon - dayAgo).toFixed(2)}°)`,
+          (nowLon - dayAgo).toFixed(3));
+  }
+
+
+  console.log('\nSurface labels hide by facing, not by being in front of the Sun');
+  {
+    // PlanetLabel hides a label when the thing it names is behind the Sun's
+    // disk from the camera. That is right for Mercury and fatal here: every
+    // feature ON the Sun is inside its angular radius by definition, so the
+    // whole set would be hidden always. The right test is which way the
+    // surface faces.
+    const FACING_MARGIN = 0.22;
+    const sun = { x: 0, y: 0, z: 0 };
+    const camera = { x: 0, y: 0, z: 100 };
+
+    // A point on the sphere at a given angle from the camera-facing side.
+    const pointAt = (deg) => ({
+      x: Math.sin(deg * Math.PI / 180) * 10,
+      y: 0,
+      z: Math.cos(deg * Math.PI / 180) * 10,
+    });
+
+    const visible = (p) => {
+      const outward = { x: p.x - sun.x, y: p.y - sun.y, z: p.z - sun.z };
+      const ol = Math.hypot(outward.x, outward.y, outward.z);
+      const toCam = { x: camera.x - p.x, y: camera.y - p.y, z: camera.z - p.z };
+      const tl = Math.hypot(toCam.x, toCam.y, toCam.z);
+      const dot = (outward.x * toCam.x + outward.y * toCam.y + outward.z * toCam.z) / (ol * tl);
+      return dot >= FACING_MARGIN;
+    };
+
+    check(visible(pointAt(0)), 'a feature facing us is labelled');
+    check(visible(pointAt(45)), 'and one at 45 degrees still is');
+    check(!visible(pointAt(90)), 'one exactly on the limb is not - the margin stops it flickering');
+    check(!visible(pointAt(135)), 'and one round the back certainly is not');
+    check(!visible(pointAt(180)), 'nor one on the far side');
+
+    // The failure this replaces: an angular-radius test would call every one
+    // of these occluded, because they are all inside the Sun's disk.
+    const insideDisk = [0, 45, 90, 135, 180].every((d) => {
+      const p = pointAt(d);
+      return Math.hypot(p.x, p.y) <= 10;
+    });
+    check(insideDisk, 'every one of them is inside the disk, which is why the disk test cannot work');
   }
 
 } finally {

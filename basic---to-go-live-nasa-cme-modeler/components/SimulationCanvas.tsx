@@ -20,6 +20,7 @@ import {
   buildChOutlineLine,
   buildParkerSpiralMesh,
   buildSunspotMarker,
+  buildChLabelAnchor,
 } from '../utils/coronalHoleGeometry';
 import {
   processedCMEToCMEInput,
@@ -29,11 +30,11 @@ import {
 } from '../utils/heliosphericPropagation';
 import {
   type CHEvolution,
-  interpolateCHAtTimeMs,
+  chStateAtInFrame,
   chWasPresentAt,
 } from '../utils/coronalHoleHistory';
-import { longitudeAt } from '../utils/solarDisk';
 import type { RegionInput } from '../utils/regionLabels';
+import type { SurfaceLabelInfo } from './SolarSurfaceLabels';
 import {
   computeEclipticLongitude,
   computeGMST,
@@ -63,6 +64,13 @@ const TEX = {
  * between two frames to show. Anything finer just rebuilds the same Sun.
  */
 const CH_SHAPE_QUANTUM_MS = 2 * 3600000;
+
+/** Matches the palette the tracker numbers the holes in. */
+const chLabelColour = (id: string): string => {
+  const n = Number(String(id).replace(/\D/g, '')) || 0;
+  return CH_LABEL_COLOURS[n % CH_LABEL_COLOURS.length];
+};
+const CH_LABEL_COLOURS = ['#38bdf8', '#a78bfa', '#fbbf24', '#34d399', '#fb7185', '#facc15', '#22d3ee', '#f472b6'];
 
 const CH_HSS_LONGITUDE_VISUAL_OFFSET_DEG = -12;
 const CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD = CH_HSS_LONGITUDE_VISUAL_OFFSET_DEG * Math.PI / 180;
@@ -459,6 +467,8 @@ interface SimulationCanvasProps {
   /** NOAA active regions, drawn on the Sun when showSunspots is on. */
   sunspotRegions?: RegionInput[];
   showSunspots?: boolean;
+  /** Anchors for the labels of things ON the Sun, reported as they change. */
+  setSurfaceLabels?: (labels: SurfaceLabelInfo[]) => void;
 }
 
 const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, SimulationCanvasProps> = (props, ref) => {
@@ -469,7 +479,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     setRendererDomElement, onCameraReady, getClockElapsedTime, resetClock,
     onScrubberChangeByAnim, onTimelineEnd, showExtraPlanets, showMoonL1,
     showFluxRope, bzSouth = false, showHss, coronalHoles, chDetectedAtMs = null, chEvolutions = [], dataVersion, interactionMode, onSunClick,
-    sunspotRegions = [], showSunspots = false,
+    sunspotRegions = [], showSunspots = false, setSurfaceLabels,
     measuredWindSpeedKms, rerunToken = 0, rerunHssInteraction = false,
   } = props;
 
@@ -607,6 +617,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const chShapeBucketRef = useRef<number>(0);
   /** What was last built, so an unchanged Sun is not rebuilt. */
   const chSignatureRef = useRef<string>('');
+  // The two surface-label sets are produced by different effects on different
+  // triggers, so they are kept apart and merged on publish - otherwise
+  // toggling the sunspots would silently drop the hole labels.
+  const chLabelsRef = useRef<SurfaceLabelInfo[]>([]);
+  const spotLabelsRef = useRef<SurfaceLabelInfo[]>([]);
+  const publishSurfaceLabels = useCallback(() => {
+    setSurfaceLabels?.([...chLabelsRef.current, ...spotLabelsRef.current]);
+  }, [setSurfaceLabels]);
 
   const MIN_CME_SPEED_KMS = 300;
 
@@ -1824,17 +1842,20 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     //
     // Longitude needs care. The group is a child of sunMesh and its rotation
     // is anchored to chDetectedAtMs, so solar rotation is already applied -
-    // dropping a historical Stonyhurst longitude straight in would count the
-    // Sun's turn twice. What goes in is the historical measurement carried
-    // into the anchor's frame, which leaves only the hole's own drift across
-    // the disk, which is the part worth seeing.
+    // what goes into the geometry has to be in that same anchor frame, or the
+    // Sun's turn is counted twice. chStateAtInFrame carries every snapshot
+    // into the anchor frame BEFORE interpolating, which is the part that has
+    // to happen first: carrying the interpolated result instead has a seam
+    // outside the track, where the longitude pins and stops advancing while
+    // the correction keeps growing - and that froze the holes in space while
+    // the Sun rotated underneath them.
     const anchorMs = chDetectedAtMs ?? Date.now();
     const baseById = new Map(coronalHoles.map((ch) => [ch.id, ch]));
     const drawn: { ch: any; scale: number }[] = [];
 
     for (const evolution of chEvolutions) {
       if (!chWasPresentAt(evolution, chShapeTimeMs)) continue;
-      const at = interpolateCHAtTimeMs(evolution, chShapeTimeMs);
+      const at = chStateAtInFrame(evolution, chShapeTimeMs, anchorMs);
       if (!at) continue;
 
       // The outline comes from a live detection where there is one, because
@@ -1845,11 +1866,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
       const measured = base.widthDeg || 1;
       drawn.push({
-        ch: {
-          ...base,
-          lat: at.lat,
-          lon: longitudeAt(at.lon, chShapeTimeMs, anchorMs),
-        },
+        ch: { ...base, lat: at.lat, lon: at.lon },
         // Scaled by width rather than area: width is what the detector
         // measures most reliably and what the speed model already keys off,
         // so the two cannot drift apart. Bounded, because one frame where the
@@ -1882,12 +1899,26 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     clearGroup(chGroupRef.current);
     clearGroup(hssGroupRef.current);
 
+    const chLabels: SurfaceLabelInfo[] = [];
     drawn.forEach(({ ch, scale }) => {
       chGroupRef.current.add(buildChSurfaceMesh(THREE, ch, sunR, scale));
       chGroupRef.current.add(buildChOutlineLine(THREE, ch, sunR, scale));
 
+      // The anchor is parented to the CH group, so it inherits the Sun's
+      // rotation exactly as the patch does and the label cannot drift off it.
+      const anchor = buildChLabelAnchor(THREE, ch, sunR);
+      chGroupRef.current.add(anchor);
+      chLabels.push({
+        id: `ch-${ch.id}`,
+        text: ch.id,
+        mesh: anchor,
+        color: chLabelColour(ch.id),
+      });
+
       hssGroupRef.current.add(buildParkerSpiralMesh(THREE, ch, sunR, hssReach, 0));
     });
+    chLabelsRef.current = chLabels;
+    publishSurfaceLabels();
   }, [coronalHoles, chEvolutions, chShapeTimeMs, chDetectedAtMs, threeReady, sceneReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Sunspot regions ───────────────────────────────────────────────────────
@@ -1905,12 +1936,28 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       child.material?.dispose?.();
     }
 
-    if (!showSunspots) return;
+    if (!showSunspots) {
+      spotLabelsRef.current = [];
+      publishSurfaceLabels();
+      return;
+    }
 
     const sunR = PLANET_DATA_MAP.SUN.size;
+    const spotLabels: SurfaceLabelInfo[] = [];
     sunspotRegions.forEach((region) => {
-      group.add(buildSunspotMarker(THREE, region, sunR));
+      const marker = buildSunspotMarker(THREE, region, sunR);
+      group.add(marker);
+      spotLabels.push({
+        id: `spot-${region.id}`,
+        // NOAA numbers run 13000-odd but everyone says the last four.
+        text: String(region.id).slice(-4),
+        mesh: marker,
+        color: region.color,
+        minor: true,
+      });
     });
+    spotLabelsRef.current = spotLabels;
+    publishSurfaceLabels();
   }, [sunspotRegions, showSunspots, threeReady, sceneReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
