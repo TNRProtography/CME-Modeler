@@ -476,8 +476,8 @@ interface SimulationCanvasProps {
   /** Whether the re-run CME vs HSS interaction mode is active */
   rerunHssInteraction?: boolean;
   /**
-   * The start of the timeline. A coronal hole that was already there when
-   * its records begin streams from here at the latest.
+   * Where a coronal hole already there when its records begin starts
+   * streaming (seven days back). A hole formed since streams from then.
    */
   timelineStartMs?: number;
   /**

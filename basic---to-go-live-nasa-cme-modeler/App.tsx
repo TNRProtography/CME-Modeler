@@ -1079,14 +1079,11 @@ const App: React.FC = () => {
     if (next) handleShowHssChange(true);
   }, [handleShowHssChange]);
 
-  // Where a long-standing coronal hole's stream starts growing from: the
-  // scrubber's start once the timeline has one, otherwise the start of the
-  // chosen date range. Rounded to the hour so the streams are not rebuilt
-  // every time this is recomputed.
-  const hssTimelineStartMs = useMemo(() => {
-    const raw = timelineMinDate > 0 ? timelineMinDate : getDefaultTimelineRange(activeTimeRange).minDate;
-    return Math.floor(raw / 3600000) * 3600000;
-  }, [timelineMinDate, activeTimeRange, getDefaultTimelineRange]);
+  // Where a long-standing coronal hole's stream starts growing from: always
+  // seven days back, whatever date range is chosen - a hole formed since
+  // then streams from when it formed instead. Fixed for the session, on the
+  // hour, so the streams are not rebuilt as the clock ticks.
+  const hssTimelineStartMs = useMemo(() => Math.floor(Date.now() / 3600000) * 3600000 - 7 * 86400000, []);
 
   const filteredCmes = useMemo(() => { if (cmeFilter === CMEFilter.ALL) return cmeData; return cmeData.filter((cme: ProcessedCME) => cmeFilter === CMEFilter.EARTH_DIRECTED ? cme.isEarthDirected : !cme.isEarthDirected); }, [cmeData, cmeFilter]);
   
