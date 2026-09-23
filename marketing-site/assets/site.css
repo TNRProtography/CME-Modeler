@@ -528,6 +528,21 @@ body > *:not(.sky) { position: relative; z-index: 1; }
   text-transform: uppercase; color: var(--gray); margin-top: 8px; text-align: center;
 }
 
+/* ================= Photo gallery ================= */
+/* Masonry by columns, so landscape, panorama and portrait frames all keep
+   their own shape. */
+.gallery { columns: 3 300px; column-gap: 16px; margin-top: 8px; }
+.gallery figure { break-inside: avoid; margin: 0 0 16px; }
+.gallery a { display: block; overflow: hidden; border: 1px solid var(--border); background: var(--card); }
+.gallery img { display: block; width: 100%; height: auto; transition: transform .5s ease; }
+.gallery a:hover img { transform: scale(1.03); }
+.gallery figcaption {
+  font-family: var(--label); font-size: .56rem; font-weight: 700; letter-spacing: .2em;
+  text-transform: uppercase; color: var(--gray); margin-top: 8px;
+}
+.shot > a { display: block; }
+@media (prefers-reduced-motion: reduce) { .gallery img { transition: none; } }
+
 /* ================= Change log ================= */
 /* Each release is its own full width band, alternating background, so they read
    as separate entries instead of running together. */
