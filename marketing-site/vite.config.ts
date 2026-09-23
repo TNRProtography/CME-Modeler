@@ -13,7 +13,18 @@ export default defineConfig({
   // sitemap.xml, _headers and the screenshots.
   publicDir: resolve(__dirname, 'public'),
   plugins: [react()],
-  resolve: { alias: { '@app': APP_SRC } },
+  resolve: {
+    alias: { '@app': APP_SRC },
+    // Packages imported by app files are resolved from THIS site's
+    // node_modules. The deploy installs only the marketing site's packages,
+    // so a bare import from a file in the app folder would otherwise look for
+    // the app's node_modules, which is not there. Every package the embedded
+    // app code imports has to be listed here and in package.json.
+    dedupe: [
+      'react', 'react-dom',
+      'chart.js', 'chartjs-adapter-date-fns', 'chartjs-plugin-annotation', 'date-fns', 'react-chartjs-2',
+    ],
+  },
   server: { fs: { allow: [__dirname, APP_SRC] } },
   build: {
     outDir: 'dist',
