@@ -170,6 +170,27 @@ section.tight { padding: clamp(44px, 5vw, 70px) 0; }
     radial-gradient(ellipse 60% 45% at 62% 4%, rgba(124,92,214,0.09), transparent 65%),
     radial-gradient(ellipse 70% 40% at 88% 22%, rgba(224,68,122,0.05), transparent 68%);
 }
+/* A hero with one of the photos behind it. The photo sits under a scrim that
+   darkens the side the headline is on and fades into the page at the foot,
+   so the type stays readable whatever the sky is doing. */
+.hero-photo .hero-bg {
+  background:
+    linear-gradient(90deg, rgba(8,6,15,0.88) 0%, rgba(8,6,15,0.55) 45%, rgba(8,6,15,0.15) 100%),
+    linear-gradient(180deg, rgba(8,6,15,0.1) 0%, rgba(8,6,15,0) 45%, var(--black) 100%),
+    var(--hero-img) var(--hero-pos, center) / cover no-repeat;
+}
+.hero-photo .hero-credit {
+  position: absolute; right: 20px; bottom: 16px; z-index: 1;
+  font-family: var(--label); font-size: .52rem; font-weight: 700; letter-spacing: .2em;
+  text-transform: uppercase; color: rgba(255,255,255,0.55);
+}
+@media (max-width: 720px) {
+  .hero-photo .hero-bg {
+    background:
+      linear-gradient(180deg, rgba(8,6,15,0.55) 0%, rgba(8,6,15,0.7) 55%, var(--black) 100%),
+      var(--hero-img) var(--hero-pos, center) / cover no-repeat;
+  }
+}
 .hero-grid { display: none; }
 .hero .wrap { position: relative; z-index: 1; }
 .hero h1 { max-width: 14ch; margin-bottom: 1.4rem; }
@@ -528,20 +549,24 @@ body > *:not(.sky) { position: relative; z-index: 1; }
   text-transform: uppercase; color: var(--gray); margin-top: 8px; text-align: center;
 }
 
-/* ================= Photo gallery ================= */
-/* Masonry by columns, so landscape, panorama and portrait frames all keep
-   their own shape. */
-.gallery { columns: 3 300px; column-gap: 16px; margin-top: 8px; }
-.gallery figure { break-inside: avoid; margin: 0 0 16px; }
-.gallery a { display: block; overflow: hidden; border: 1px solid var(--border); background: var(--card); }
-.gallery img { display: block; width: 100%; height: auto; transition: transform .5s ease; }
-.gallery a:hover img { transform: scale(1.03); }
-.gallery figcaption {
+/* ================= Photos in the text ================= */
+/* TNR Protography photos placed beside what they illustrate. Each keeps its
+   own shape and opens full size. */
+.photo { margin: 0 0 22px; }
+.photo a { display: block; overflow: hidden; border: 1px solid var(--border); background: var(--card); }
+.photo img { display: block; width: 100%; height: auto; transition: transform .5s ease; }
+.photo a:hover img { transform: scale(1.02); }
+.photo figcaption { font-size: .8rem; line-height: 1.55; color: var(--gray); margin-top: 10px; }
+.photo figcaption b {
   font-family: var(--label); font-size: .56rem; font-weight: 700; letter-spacing: .2em;
-  text-transform: uppercase; color: var(--gray); margin-top: 8px;
+  text-transform: uppercase; color: var(--light-gray); margin-right: 4px;
 }
+.photo-inset { margin: 22px 0 0; }
+.photo-wide { margin: clamp(34px, 5vw, 56px) 0 0; }
+.photo-tall { max-width: 360px; }
+.wrap.narrow > .photo, details.faq .body .photo { margin-top: 26px; }
 .shot > a { display: block; }
-@media (prefers-reduced-motion: reduce) { .gallery img { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .photo img { transition: none; } }
 
 /* ================= Change log ================= */
 /* Each release is its own full width band, alternating background, so they read

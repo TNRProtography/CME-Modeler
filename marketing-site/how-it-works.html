@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>How It Works, Spot The Aurora</title>
+<link rel="preload" as="image" href="https://photos.spottheaurora.co.nz/Aurora/Broad%20Stream-1.jpg" fetchpriority="high">
 <meta name="description" content="Exactly how the aurora score is calculated: IMF Bz, the Newell coupling function, GOES hemispheric power, the Eyrewell magnetometer in Canterbury, location adjustment, moon gating and the substorm model. Including what it can't do.">
 <link rel="canonical" href="https://about.spottheaurora.co.nz/how-it-works.html">
 <meta name="robots" content="index,follow,max-image-preview:large">
@@ -48,13 +49,14 @@
     </nav>
   </div>
 </header>
-<section class="hero" style="padding-bottom:40px">
-  <div class="hero-bg"></div>
+<section class="hero hero-photo" style="padding-bottom:40px">
+  <div class="hero-bg" style="--hero-img:url('https://photos.spottheaurora.co.nz/Aurora/Broad%20Stream-1.jpg');--hero-pos:center 30%"></div>
   <div class="wrap">
     <span class="eyebrow"><span class="dot"></span> Nothing hidden</span>
     <h1>How the forecast<br>actually works.</h1>
     <p class="lead">Most aurora apps ask you to trust a number. This page explains exactly where ours comes from, what it's measuring, and just as importantly, what it can't tell you. If you'd rather skip the physics, the <a href="/features.html">features page</a> covers what you'll see on screen.</p>
   </div>
+  <span class="hero-credit">Broad Stream · TNR Protography</span>
 </section>
 
 <section class="alt">
@@ -110,6 +112,7 @@
             <div class="scale-row"><span class="r">20&ndash;34%</span><span class="bar" style="width:38px;background:#22c55e"></span><span class="t">Very faint. Long exposure on a tripod only.</span></div>
             <div class="scale-row"><span class="r">0&ndash;19%</span><span class="bar" style="width:22px;background:#16a34a"></span><span class="t">Too quiet. Nothing to see tonight.</span></div>
           </div>
+          <figure class="photo photo-inset"><a href="https://photos.spottheaurora.co.nz/Aurora/Coal%20Creek-1.jpg" target="_blank" rel="noopener"><img src="https://photos.spottheaurora.co.nz/Aurora/Coal%20Creek-1.jpg" alt="Aurora over Coal Creek., photographed by TNR Protography" loading="lazy" decoding="async"></a><figcaption><b>Coal Creek.</b> A low pink glow like this is the lower end of the scale: a long exposure brings out the colour, your eyes mostly won&rsquo;t.</figcaption></figure>
           <p class="muted" style="margin-top:18px;margin-bottom:0">Referenced to the South Island. Dark skies and a clear southern horizon still matter enormously. A 45 percent night from a black sky site beats a 60 percent night from a suburban backyard.</p>
         </div>
       </div>
@@ -143,6 +146,7 @@
         <p class="shot-cap">The substorm index from the app, right now</p>
       </div>
     </div>
+    <figure class="photo photo-wide"><a href="https://photos.spottheaurora.co.nz/Aurora/Kapitea%20Res-1.jpg" target="_blank" rel="noopener"><img src="https://photos.spottheaurora.co.nz/Aurora/Kapitea%20Res-1.jpg" alt="Aurora over Kapitea Reservoir., photographed by TNR Protography" loading="lazy" decoding="async"></a><figcaption><b>Kapitea Reservoir.</b> Pillars rising out of the glow. When a substorm goes off, this is what it looks like from the ground.</figcaption></figure>
   </div>
 </section>
 
@@ -181,6 +185,7 @@
       <li><strong>Your sky matters as much as the physics.</strong> Light pollution, a hill in the way to the south, or ten minutes without proper dark adaptation will cost you more than a few points of score.</li>
       <li><strong>It is not an official warning service.</strong> For critical infrastructure or official space weather warnings, use NOAA SWPC and MetService. This is a chaser's tool and a citizen science project. A rigorous one, but that's what it is.</li>
     </ul>
+    <figure class="photo"><a href="https://photos.spottheaurora.co.nz/Aurora/Rapahoe-1.jpg" target="_blank" rel="noopener"><img src="https://photos.spottheaurora.co.nz/Aurora/Rapahoe-1.jpg" alt="Aurora over Rapahoe., photographed by TNR Protography" loading="lazy" decoding="async"></a><figcaption><b>Rapahoe.</b> A strong display with cloud across it. The score can&rsquo;t see cloud, which is why the cloud map and cameras sit right next to it.</figcaption></figure>
     <div class="callout">
       <p class="mb0">Every formula summarised here is documented in full inside the app, in its own technical documentation section. Exact coefficients, thresholds, refresh rates and sources. Nothing is a black box.</p>
     </div>
