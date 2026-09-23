@@ -33,18 +33,16 @@ import {
 import {
     SimpleTrendChart,
     ForecastTrendChart,
-    SolarWindSpeedChart,
-    SolarWindDensityChart,
     SolarWindTemperatureChart,
     IMFClockChart,
-    MagneticFieldChart,
-    HemisphericPowerChart,
-    MoonArcChart,
-    SubstormIndexChart,
     NewellCouplingChart,
     DynamicPressureChart,
 } from './ForecastCharts';
 import ExpectedArrivals from './ExpectedArrivals';
+import {
+    getGaugeStyle, getSatelliteSource, formatTimeHHMM, getLatestPointTime,
+    ImfPanel, HemisphericPowerPanel, SolarWindSpeedPanel, SolarWindDensityPanel, MoonArcPanel, SubstormIndexPanel,
+} from './AdvancedForecastPanels';
 import { SubstormActivity, SubstormForecast, ActivitySummary, InterplanetaryShock } from '../types';
 
 // --- ORIGINAL CONSTANTS (Moved to top to fix ReferenceError) ---
@@ -59,24 +57,6 @@ const CAMERAS: Camera[] = [
   { name: 'Rangitikei', url: 'https://www.horizons.govt.nz/HRC/media/Data/WebCam/Rangitikeicarpark_latest_photo.jpg', type: 'image', sourceUrl: 'horizons.govt.nz' },
   { name: 'New Plymouth', url: 'https://www.primo.nz/webcameras/snapshot_twlbuilding_sth.jpg', type: 'image', sourceUrl: 'primo.nz' },
 ];
-
-const GAUGE_THRESHOLDS = {
-  speed:   { gray: 250, yellow: 350, orange: 500, red: 650, purple: 800, pink: Infinity, maxExpected: 1000 },
-  density: { gray: 5,   yellow: 10,  orange: 15,  red: 20,  purple: 50,  pink: Infinity, maxExpected: 70 },
-  power:   { gray: 20,  yellow: 40,  orange: 70,  red: 150, purple: 200, pink: Infinity, maxExpected: 250 },
-  bt:      { gray: 5,   yellow: 10,  orange: 15,  red: 20,  purple: 50,  pink: Infinity, maxExpected: 60 },
-  bz:      { gray: -5,  yellow: -10, orange: -15, red: -20, purple: -50, pink: -50, maxNegativeExpected: -60 }
-};
-
-const GAUGE_COLORS = {
-    gray:   { solid: '#808080' }, yellow: { solid: '#FFD700' }, orange: { solid: '#FFA500' },
-    red:    { solid: '#FF4500' }, purple: { solid: '#800080' }, pink:   { solid: '#FF1493' }
-};
-
-const GAUGE_EMOJIS = {
-    gray:   '\u{1F610}', yellow: '\u{1F642}', orange: '\u{1F642}', red:    '\u{1F604}',
-    purple: '\u{1F60D}', pink:   '\u{1F929}', error:  '\u{2753}'
-};
 
 // --- TYPES ---
 interface ForecastDashboardProps {
@@ -106,40 +86,6 @@ interface Camera {
 }
 
 // --- HELPER FUNCTIONS ---
-const getGaugeStyle = (
-    value: number | null,
-    type: 'power' | 'speed' | 'density' | 'bt' | 'bz'
-) => {
-    if (value === null || !Number.isFinite(value)) {
-        return { color: GAUGE_COLORS.gray.solid, emoji: GAUGE_EMOJIS.gray, percentage: 0 };
-    }
-
-    const thresholds = GAUGE_THRESHOLDS[type];
-    let key: keyof typeof GAUGE_COLORS = 'gray';
-
-    if (type === 'bz') {
-        if (value <= thresholds.pink) key = 'pink';
-        else if (value <= thresholds.purple) key = 'purple';
-        else if (value <= thresholds.red) key = 'red';
-        else if (value <= thresholds.orange) key = 'orange';
-        else if (value <= thresholds.yellow) key = 'yellow';
-    } else {
-        if (value >= thresholds.pink) key = 'pink';
-        else if (value >= thresholds.purple) key = 'purple';
-        else if (value >= thresholds.red) key = 'red';
-        else if (value >= thresholds.orange) key = 'orange';
-        else if (value >= thresholds.yellow) key = 'yellow';
-    }
-
-    const maxExpected =
-        type === 'bz'
-            ? Math.abs(thresholds.maxNegativeExpected ?? thresholds.pink)
-            : thresholds.maxExpected ?? Math.abs(thresholds.pink);
-    const percentage = Math.max(0, Math.min(100, (Math.abs(value) / maxExpected) * 100));
-
-    return { color: GAUGE_COLORS[key].solid, emoji: GAUGE_EMOJIS[key], percentage };
-};
-
 const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) => {
     if (isDaylight) {
         return {
@@ -189,23 +135,6 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
 };
 
 
-const getSatelliteSource = (source?: string) => source && source !== ' - ' ? source : undefined;
-
-const formatTimeHHMM = (timestamp: number | null | undefined): string => {
-    if (!timestamp || !Number.isFinite(timestamp)) return ' - ';
-    return new Date(timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', hour12: false });
-};
-
-const getLatestPointTime = (series: Array<{ x?: number; time?: number; timestamp?: number }>): number | null => {
-    let latest: number | null = null;
-    for (const point of series) {
-        const t = point?.x ?? point?.time ?? point?.timestamp;
-        if (typeof t === 'number' && Number.isFinite(t) && (latest === null || t > latest)) {
-            latest = t;
-        }
-    }
-    return latest;
-};
 
 
 
@@ -220,12 +149,13 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
   }, [onBetaShocksDetected]);
 
     // ... [Original Hooks & State] ...
+    const forecast = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus, onInitialLoadProgress);
     const {
         isLoading, auroraScore, lastUpdated, gaugeData, isDaylight, celestialTimes, auroraScoreHistory, dailyCelestialHistory,
-        owmDailyForecast, fetchAllData, allSpeedData, allDensityData, allTempData, allImfClockData, allMagneticData, allNewellData, allPressureData, hemisphericPowerHistory,
+        owmDailyForecast, fetchAllData, allSpeedData, allDensityData, allTempData, allImfClockData, allMagneticData, allNewellData, allPressureData,
         substormForecast, substormRiskData, activitySummary, interplanetaryShockData,
         userLatitude, userLongitude, locationFailed, isOutsideNZ
-    } = useForecastData(setCurrentAuroraScore, setSubstormActivityStatus, onInitialLoadProgress);
+    } = forecast;
     
     // ... [Original State: modalState, isFaqOpen, etc] ...
     const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string | React.ReactNode } | null>(null);
@@ -472,10 +402,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const cameraSettings = useMemo(() => getSuggestedCameraSettings(auroraScore, isDaylight), [auroraScore, isDaylight]);
 
 
-    const imfLastReceived = useMemo(() => formatTimeHHMM(getLatestPointTime(allMagneticData.map((p: any) => ({ time: p.time })))), [allMagneticData]);
-    const powerLastReceived = useMemo(() => formatTimeHHMM(getLatestPointTime(hemisphericPowerHistory.map((p) => ({ timestamp: p.timestamp })))), [hemisphericPowerHistory]);
-    const speedLastReceived = useMemo(() => formatTimeHHMM(getLatestPointTime(allSpeedData)), [allSpeedData]);
-    const densityLastReceived = useMemo(() => formatTimeHHMM(getLatestPointTime(allDensityData)), [allDensityData]);
     const tempLastReceived = useMemo(() => formatTimeHHMM(getLatestPointTime(allTempData)), [allTempData]);
 
     // ── Simple view timeline slots ────────────────────────────────────────────
@@ -778,23 +704,14 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             })()}
                             <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} allNewellData={allNewellData} allMagneticData={allMagneticData} auroraScore={auroraScore} rawScore15={ovalProjectedScores.score15} rawScore30={ovalProjectedScores.score30} rawScore60={ovalProjectedScores.score60} rawScore120={ovalProjectedScores.score120} />
                             
-                            <div id="imf-chart-section" className="col-span-12"><ForecastChartPanel
-                                title="Interplanetary Magnetic Field"
-                                currentValue={`Bt: ${gaugeData.bt.value} / Bz: ${gaugeData.bz.value} <span class='text-base'>nT</span><span class='text-xs block text-neutral-400'>Toggle Bx/By inside chart · Bt source: ${gaugeData.bt.source} · Bz source: ${gaugeData.bz.source}</span>`}
-                                emoji={gaugeData.bz.emoji}
-                                onOpenModal={() => openModal('bz')}
-                                satellite={getSatelliteSource(gaugeData.bt.source) || getSatelliteSource(gaugeData.bz.source)}
-                                lastDataReceived={imfLastReceived}
-                            >
-                                <MagneticFieldChart data={allMagneticData} />
-                            </ForecastChartPanel></div>
+                            <div id="imf-chart-section" className="col-span-12"><ImfPanel fc={forecast} openModal={openModal} /></div>
                             <ForecastChartPanel
                                 title="IMF Clock & Status"
                                 currentValue={`${allImfClockData.length ? `${allImfClockData[allImfClockData.length - 1].y.toFixed(0)}°` : 'N/A'} <span class='text-base'>clock</span><span class='text-xs block text-neutral-400'>Advanced IMF orientation aid</span>`}
                                 emoji="🧭"
                                 onOpenModal={() => openModal('imf-clock')}
                                 satellite={getSatelliteSource(gaugeData.bt.source) || getSatelliteSource(gaugeData.bz.source)}
-                                lastDataReceived={imfLastReceived}
+                                lastDataReceived={formatTimeHHMM(getLatestPointTime(allMagneticData.map((p: any) => ({ time: p.time }))))}
                             >
                                 <IMFClockChart
                                     magneticData={allMagneticData}
@@ -805,27 +722,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     lastShock={betaShocks.length ? { t: betaShocks[betaShocks.length - 1].t, label: betaShocks[betaShocks.length - 1].label } : null}
                                 />
                             </ForecastChartPanel>
-                            <ForecastChartPanel title="Hemispheric Power" currentValue={`${gaugeData.power.value} <span class='text-base'>GW</span>`} emoji={gaugeData.power.emoji} onOpenModal={() => openModal('power')} lastDataReceived={powerLastReceived}><HemisphericPowerChart data={hemisphericPowerHistory.map(d => ({ x: d.timestamp, y: d.hemisphericPower }))} /></ForecastChartPanel>
-                            <ForecastChartPanel
-                                title="Solar Wind Speed"
-                                currentValue={`${gaugeData.speed.value} <span class='text-base'>km/s</span><span class='text-xs block text-neutral-400'>Source: ${gaugeData.speed.source}</span>`}
-                                emoji={gaugeData.speed.emoji}
-                                onOpenModal={() => openModal('speed')}
-                                satellite={getSatelliteSource(gaugeData.speed.source)}
-                                lastDataReceived={speedLastReceived}
-                            >
-                                <SolarWindSpeedChart data={allSpeedData} />
-                            </ForecastChartPanel>
-                            <ForecastChartPanel
-                                title="Solar Wind Density"
-                                currentValue={`${gaugeData.density.value} <span class='text-base'>p/cm³</span><span class='text-xs block text-neutral-400'>Source: ${gaugeData.density.source}</span>`}
-                                emoji={gaugeData.density.emoji}
-                                onOpenModal={() => openModal('density')}
-                                satellite={getSatelliteSource(gaugeData.density.source)}
-                                lastDataReceived={densityLastReceived}
-                            >
-                                <SolarWindDensityChart data={allDensityData} />
-                            </ForecastChartPanel>
+                            <HemisphericPowerPanel fc={forecast} openModal={openModal} />
+                            <SolarWindSpeedPanel fc={forecast} openModal={openModal} />
+                            <SolarWindDensityPanel fc={forecast} openModal={openModal} />
                             <ForecastChartPanel
                                 title="Solar Wind Temperature"
                                 currentValue={`${gaugeData.temp?.value ?? 'N/A'} <span class='text-base'>K</span><span class='text-xs block text-neutral-400'>Source: ${gaugeData.temp?.source ?? ' - '}</span>`}
@@ -836,16 +735,9 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             >
                                 <SolarWindTemperatureChart data={allTempData} />
                             </ForecastChartPanel>
-                            <ForecastChartPanel title="Moon Illumination & Arc" currentValue={gaugeData.moon.value} emoji={gaugeData.moon.emoji} onOpenModal={() => openModal('moon')}><MoonArcChart dailyCelestialHistory={dailyCelestialHistory} owmDailyForecast={owmDailyForecast} /></ForecastChartPanel>
+                            <MoonArcPanel fc={forecast} openModal={openModal} />
 
-                            <ForecastChartPanel
-                                title="Substorm Index"
-                                currentValue={substormRiskData ? `${substormRiskData.current.score} <span class='text-base'>${substormRiskData.current.level}</span><span class='text-xs block text-neutral-400'>${substormRiskData.current.risk_trend}${substormRiskData.current.confidence != null ? ` · ${substormRiskData.current.confidence}% confidence` : ''}</span>` : ' - '}
-                                emoji={substormRiskData?.current?.bay_onset_flag ? '⚡' : substormRiskData?.current && substormRiskData.current.score >= 50 ? '🌌' : '📊'}
-                                onOpenModal={() => openModal('substorm-index')}
-                            >
-                                <SubstormIndexChart history={substormRiskData?.history_24h ?? []} />
-                            </ForecastChartPanel>
+                            <SubstormIndexPanel fc={forecast} openModal={openModal} />
 
                             <MagnetotailStatus
                                 substormRiskData={substormRiskData}

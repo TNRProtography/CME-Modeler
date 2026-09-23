@@ -8,6 +8,8 @@
      Magnetotail               -> @app/components/MagnetotailStatus
      Forecast data             -> @app/hooks/useForecastData
      Sunspot + CH trackers     -> @app/components/SolarActivityDashboard (embed mode)
+     Advanced View panels      -> @app/components/AdvancedForecastPanels
+     The whole app, per device -> the live app in a frame, with ?embed
 
    Mount points are plain divs in the static HTML:
      <div data-app-embed="cme"></div>
@@ -15,6 +17,10 @@
      <div data-app-embed="magnetotail"></div>
      <div data-app-embed="forecast"></div>
      <div data-app-embed="solartrackers"></div>
+     <div data-app-embed="advanced"></div>
+     <div data-app-embed="moonarc"></div>
+     <div data-app-embed="substorm"></div>
+     <div data-app-embed="devices"></div>
 */
 import './embed.css';
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
@@ -25,9 +31,15 @@ import MagnetotailStatus from '@app/components/MagnetotailStatus';
 import MediaViewerModal from '@app/components/MediaViewerModal';
 import { useCoronalHoles } from '@app/hooks/useCoronalHoles';
 import { useForecastData } from '@app/hooks/useForecastData';
+import {
+  getGaugeStyle, ImfPanel, HemisphericPowerPanel, SolarWindSpeedPanel, SolarWindDensityPanel,
+  MoonArcPanel, SubstormIndexPanel,
+} from '@app/components/AdvancedForecastPanels';
 import { fetchCMEData } from '@app/services/nasaService';
 import { ViewMode, FocusTarget, InteractionMode } from '@app/types';
 import type { ProcessedCME, PlanetLabelInfo } from '@app/types';
+
+const APP_URL = 'https://www.spottheaurora.co.nz';
 
 // No controls on these embeds. They loop: 3 days of history, 4 days ahead, 5x speed.
 const DAYS_OF_CMES = 3;
@@ -111,13 +123,6 @@ function useSharedForecast(): Forecast | null {
   return latest;
 }
 
-/* Presentational only: colour, emoji and bar percentage for the gauges.
-   The app's version lives inside ForecastDashboard and is not exported. */
-function gaugeStyle(value: number | null) {
-  if (value === null || !Number.isFinite(value)) return { color: '#808080', emoji: '', percentage: 0 };
-  return { color: '#3ddc97', emoji: '', percentage: Math.max(0, Math.min(100, Math.abs(value))) };
-}
-
 function ForecastProvider() {
   const [, setScore] = useState<number | null>(null);
   const [, setActivity] = useState<any>(null);
@@ -125,7 +130,7 @@ function ForecastProvider() {
 
   useEffect(() => {
     let alive = true;
-    const run = (first: boolean) => { if (alive) d.fetchAllData(first, gaugeStyle); };
+    const run = (first: boolean) => { if (alive) d.fetchAllData(first, getGaugeStyle); };
     run(true);
     const id = setInterval(() => run(false), 60000);
     return () => { alive = false; clearInterval(id); };
@@ -411,7 +416,6 @@ function ForecastEmbed() {
  * scrolled to - it is the largest thing on the page.
  * ------------------------------------------------------------------ */
 const SolarActivityDashboard = React.lazy(() => import('@app/components/SolarActivityDashboard'));
-const APP_URL = 'https://www.spottheaurora.co.nz';
 
 function SolarTrackersEmbed() {
   const [hostRef, inView] = useInView<HTMLDivElement>();
@@ -444,6 +448,100 @@ function SolarTrackersEmbed() {
 }
 
 /* ------------------------------------------------------------------ *
+ * Advanced View panels: the app's own chart panels, fed by the shared
+ * forecast data. Their "?" opens the full explanation in the app.
+ * ------------------------------------------------------------------ */
+const openAppForecast = () => { window.open(`${APP_URL}/spot-the-aurora-forecast`, '_blank', 'noopener'); };
+
+function PanelEmbed({ children, note }: { children: (fc: Forecast) => React.ReactNode; note: string }) {
+  const [hostRef, inView] = useInView<HTMLDivElement>();
+  const fc = useSharedForecast();
+  const ready = fc && fc.gaugeData && !(fc.isLoading && fc.auroraScore == null);
+  return (
+    <div className="embed-loose app-page app-panels" ref={hostRef}>
+      {inView && ready
+        ? children(fc!)
+        : <div className="embed-note" style={{ position: 'relative', minHeight: 240 }}>{note}</div>}
+    </div>
+  );
+}
+
+const ADVANCED_TABS = [
+  { key: 'imf', label: 'Bz / Bt', Panel: ImfPanel },
+  { key: 'speed', label: 'Speed', Panel: SolarWindSpeedPanel },
+  { key: 'density', label: 'Density', Panel: SolarWindDensityPanel },
+  { key: 'power', label: 'Power', Panel: HemisphericPowerPanel },
+] as const;
+
+function AdvancedEmbed() {
+  const [tab, setTab] = useState<(typeof ADVANCED_TABS)[number]['key']>('imf');
+  const { Panel } = ADVANCED_TABS.find(t => t.key === tab)!;
+  return (
+    <>
+      <div className="adv-tabs" role="tablist">
+        {ADVANCED_TABS.map(t => (
+          <button key={t.key} role="tab" aria-selected={t.key === tab}
+            className={'adv-tab' + (t.key === tab ? ' is-on' : '')} onClick={() => setTab(t.key)}>{t.label}</button>
+        ))}
+      </div>
+      <PanelEmbed note="Loading the live charts">
+        {fc => <Panel fc={fc} openModal={openAppForecast} />}
+      </PanelEmbed>
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * The app on a phone, a tablet and a desktop: the live app itself in
+ * three frames, each laid out at that device's real width and scaled
+ * down to fit. Frames load only when scrolled to.
+ * ------------------------------------------------------------------ */
+const DEVICES = [
+  { key: 'phone', label: 'Phone', w: 390, h: 844 },
+  { key: 'tablet', label: 'Tablet', w: 820, h: 1180 },
+  { key: 'desktop', label: 'Desktop', w: 1440, h: 900 },
+] as const;
+
+function DeviceFrame({ w, h, label, load }: { w: number; h: number; label: string; load: boolean }) {
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(0);
+  useEffect(() => {
+    const node = boxRef.current;
+    if (!node) return;
+    const fit = () => setScale(node.clientWidth / w);
+    fit();
+    if (!('ResizeObserver' in window)) return;
+    const ro = new ResizeObserver(fit);
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, [w]);
+  return (
+    <figure className={'device device-' + label.toLowerCase()}>
+      <div className="device-screen" ref={boxRef} style={{ aspectRatio: `${w} / ${h}` }}>
+        {load && scale > 0 && (
+          <iframe
+            title={`Spot The Aurora on a ${label.toLowerCase()}`}
+            src={`${APP_URL}/spot-the-aurora-forecast?embed`}
+            loading="lazy"
+            style={{ width: w, height: h, transform: `scale(${scale})` }}
+          />
+        )}
+      </div>
+      <figcaption>{label}</figcaption>
+    </figure>
+  );
+}
+
+function DevicesEmbed() {
+  const [hostRef, inView] = useInView<HTMLDivElement>();
+  return (
+    <div className="devices" ref={hostRef}>
+      {DEVICES.map(d => <DeviceFrame key={d.key} w={d.w} h={d.h} label={d.label} load={inView} />)}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
  * Mounting
  * ------------------------------------------------------------------ */
 const EMBEDS: Record<string, () => JSX.Element> = {
@@ -453,7 +551,11 @@ const EMBEDS: Record<string, () => JSX.Element> = {
     caption="Coronal holes detected in your browser from the live SUVI image, with their high speed streams on the Parker spiral" />,
   magnetotail: () => <MagnetotailEmbed />,
   forecast: () => <ForecastEmbed />,
-  solartrackers: () => <SolarTrackersEmbed />
+  solartrackers: () => <SolarTrackersEmbed />,
+  advanced: () => <AdvancedEmbed />,
+  moonarc: () => <PanelEmbed note="Loading tonight's moon">{fc => <MoonArcPanel fc={fc} openModal={openAppForecast} />}</PanelEmbed>,
+  substorm: () => <PanelEmbed note="Loading the live substorm index">{fc => <SubstormIndexPanel fc={fc} openModal={openAppForecast} />}</PanelEmbed>,
+  devices: () => <DevicesEmbed />
 };
 
 function mountAll() {

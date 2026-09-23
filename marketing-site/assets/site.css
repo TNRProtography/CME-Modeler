@@ -498,6 +498,36 @@ body > *:not(.sky) { position: relative; z-index: 1; }
 }
 .embed-fallback span { font-size: .84rem; color: var(--gray); max-width: 42ch; line-height: 1.55; }
 
+/* Advanced View embed: a row of tabs choosing which of the app's panels shows. */
+.adv-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.adv-tab {
+  font-family: var(--label); font-size: .6rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--gray); background: transparent; border: 1px solid var(--border); padding: 8px 12px; cursor: pointer;
+}
+.adv-tab:hover { color: var(--white); }
+.adv-tab.is-on { color: var(--gold); border-color: var(--gold-dark); }
+.app-panels .card { background-color: rgba(10, 10, 10, 0.8); }
+
+/* The live app on three devices: each frame lays the app out at the device's
+   real width and scales it down to the box. */
+.app-embed:has(.devices) { aspect-ratio: auto; background: none; border: 0; overflow: visible; }
+.devices { display: grid; grid-template-columns: 0.9fr 1.5fr; grid-template-areas: "phone tablet" "desktop desktop"; gap: 16px; align-items: end; }
+.device { margin: 0; }
+.device-phone { grid-area: phone; }
+.device-tablet { grid-area: tablet; }
+.device-desktop { grid-area: desktop; }
+.device-screen {
+  position: relative; width: 100%; overflow: hidden; background: #050508;
+  border: 6px solid #1b1a22; border-radius: 18px; box-shadow: 0 16px 50px rgba(0,0,0,0.5);
+}
+.device-phone .device-screen { border-radius: 26px; }
+.device-desktop .device-screen { border-radius: 8px; }
+.device-screen iframe { position: absolute; top: 0; left: 0; border: 0; transform-origin: 0 0; background: #000; }
+.device figcaption {
+  font-family: var(--label); font-size: .56rem; font-weight: 700; letter-spacing: .2em;
+  text-transform: uppercase; color: var(--gray); margin-top: 8px; text-align: center;
+}
+
 /* ================= Change log ================= */
 /* Each release is its own full width band, alternating background, so they read
    as separate entries instead of running together. */

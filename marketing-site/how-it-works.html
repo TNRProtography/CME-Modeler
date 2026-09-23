@@ -139,10 +139,8 @@
         <p class="mb0">That last one is the payoff. When the Canterbury magnetometer registers a bay, the app isn't predicting anything. It's telling you a substorm is underway over New Zealand at this moment.</p>
       </div>
       <div>
-        <div class="shot"><div class="shot-ph">
-          <span class="k">substorm-panel.png</span>
-          <span class="d">The substorm panel showing a status, ideally something above Quiet, with the probabilities and metrics underneath.</span>
-        </div></div>
+        <div class="app-embed" data-app-embed="substorm"><div class="embed-fallback"><strong>The substorm index</strong><span>Live from the app's substorm engine. If it has not appeared, open it in the app itself.</span><a class="btn btn-ghost btn-sm" href="https://www.spottheaurora.co.nz" target="_blank" rel="noopener">Open the app</a></div></div>
+        <p class="shot-cap">The substorm index from the app, right now</p>
       </div>
     </div>
   </div>
@@ -152,10 +150,8 @@
   <div class="wrap">
     <div class="split rev">
       <div>
-        <div class="shot"><div class="shot-ph">
-          <span class="k">moon-arc-chart.png</span>
-          <span class="d">The moon arc chart from Advanced View, showing illumination plus rise and set times through the night.</span>
-        </div></div>
+        <div class="app-embed" data-app-embed="moonarc"><div class="embed-fallback"><strong>The moon arc</strong><span>Tonight's moon from the app. If it has not appeared, open it in the app itself.</span><a class="btn btn-ghost btn-sm" href="https://www.spottheaurora.co.nz" target="_blank" rel="noopener">Open the app</a></div></div>
+        <p class="shot-cap">Tonight's moon, from the app</p>
       </div>
       <div>
         <span class="eyebrow">Step four</span>
@@ -245,5 +241,6 @@
   <script>document.getElementById('yr').textContent=new Date().getFullYear();</script>
 </footer>
 <script src="/assets/sky.js" defer></script>
+<script type="module" src="/src/embeds.tsx"></script>
 </body>
 </html>

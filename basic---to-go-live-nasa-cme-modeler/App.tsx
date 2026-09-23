@@ -220,6 +220,9 @@ const logDev = (...args: unknown[]) => {
 
 
 const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
+// ?embed: the app is running inside a frame on the marketing site, as a live
+// preview. No first-visit tutorial, what's-new note or install banner there.
+const IS_EMBED = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('embed');
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
 const APP_VERSION = 'V1.6';
 const DASHBOARD_MODE_KEY = 'dashboard_mode_enabled_v1';
@@ -701,7 +704,7 @@ const App: React.FC = () => {
     }, 300);
 
     const hasSeenTutorial = localStorage.getItem(NAVIGATION_TUTORIAL_KEY);
-    if (!hasSeenTutorial) {
+    if (!hasSeenTutorial && !IS_EMBED) {
       // Show the new app tutorial after a short delay to let the app load
       const tutorialTimer = setTimeout(() => setIsAppTutorialOpen(true), 3000);
       return () => { clearTimeout(minTimer); clearTimeout(preloadTimer); clearTimeout(tutorialTimer); };
@@ -715,7 +718,7 @@ const App: React.FC = () => {
   // and in practice never sees this one at all, because it is only shown to
   // devices that already have a push subscription.
   useEffect(() => {
-    if (isLoading || isAppTutorialOpen || isFirstVisitTutorialOpen || isTutorialOpen) return;
+    if (IS_EMBED || isLoading || isAppTutorialOpen || isFirstVisitTutorialOpen || isTutorialOpen) return;
     let cancelled = false;
     const t = setTimeout(() => {
       void shouldShowWhatsNew().then((show) => {
@@ -1473,11 +1476,11 @@ const App: React.FC = () => {
             isOpen={isWhatsNewOpen}
             onClose={() => setIsWhatsNewOpen(false)}
           />
-          <OnboardingBanner
+          {!IS_EMBED && <OnboardingBanner
               deferredInstallPrompt={deferredInstallPrompt}
               onInstallClick={handleInstallClick}
               hideForTutorial={isAppTutorialOpen || (!showBannerAfterTutorial && !localStorage.getItem(NAVIGATION_TUTORIAL_KEY))}
-          />
+          />}
 
           <header className="flex-shrink-0 p-1.5 md:p-3 bg-gradient-to-r from-black/80 via-neutral-900/80 to-black/70 backdrop-blur-xl border-b border-white/10 flex items-center gap-2 sm:gap-3 relative z-[2001] shadow-2xl soft-appear">
               <div className={`flex-1 min-w-0 ${isDashboardMode ? 'hidden' : ''}`}>
