@@ -57,12 +57,59 @@
   </div>
 </section>
 
+<section class="release-band alt" id="v2-0">
+  <div class="wrap narrow">
+    <article class="release">
+    <div class="release-head">
+      <span class="release-ver">v2.0</span>
+      <span class="release-tag">Latest</span>
+      <span class="release-date">September 2026</span>
+    </div>
+    <h2>Coronal holes properly, a look three days ahead, and a lot more of the Sun</h2>
+    <p>The biggest release the app has had. Coronal holes went from one visualisation to something the whole app understands, the sunspot tracker got real magnetic data behind it, the forecast now looks days ahead as well as minutes, and a lot of the physics was rebuilt so it shows what is actually happening rather than a picture of it.</p>
+    <h3>New</h3>
+    <ul class="list">
+      <li><strong>Coronal Hole Tracker.</strong> Every coronal hole on the disk, found live from the SUVI imagery, with its size, estimated wind speed, magnetic polarity from the HMI magnetogram, and when its high speed stream should reach Earth. Holes keep the same name from one day to the next, and you can scrub back through a week of their history.</li>
+      <li><strong>Coronal holes and sunspots on the 3D Sun.</strong> The holes and active regions now sit on the Sun in the CME visualisation, labelled and turning with it.</li>
+      <li><strong>High speed streams that grow over time.</strong> Each stream is built from the wind its hole has actually blown over the last seven days, or since the hole formed, at the speed measured at each reading. Faster wind piles up behind slower wind the way it does in space, and when a hole closes its last wind drifts off on its own.</li>
+      <li><strong>Experimental Interactions - CMEs and HSS.</strong> A toggle in the menu. Every particle in a CME is simulated: high speed streams act as walls a CME cannot spread through, and a CME that catches another one squeezes it rather than passing through it.</li>
+      <li><strong>What's coming in the next three days.</strong> Everything due at Earth, CMEs and coronal hole streams, with an arrival window worked out from the uncertainty in each one rather than a single guessed time. The impact graph was rebuilt on the same forecast, so the two always agree.</li>
+      <li><strong>Magnetotail.</strong> A live scene of how aurora is born, driven by the solar wind being measured right now. You watch the tail load up, stretch and snap.</li>
+      <li><strong>Russell-McPherron effect.</strong> A plain answer to whether the time of year and time of day are helping or working against the aurora, and which hours a stream is most likely to do something.</li>
+      <li><strong>Oval forecast timeline.</strong> A slider under the sightings map that runs the auroral oval and view line forward in five minute steps, up to two hours ahead.</li>
+      <li><strong>Solar wind structure.</strong> Works out what kind of solar wind we are sitting in, shock, sheath, CME or fast stream, draws it as an animated cross section, and says what that means for tonight.</li>
+      <li><strong>Sunspot magnetic history.</strong> Each region's magnetic flux and area over the last three days, hourly, from SDO/HMI. New field coming up shows in the flux hours before it shows in the spot count.</li>
+      <li><strong>Sunspot scrubber.</strong> Step the sunspot tracker back through a week, with the close up following the region you are looking at.</li>
+      <li><strong>Region labels everywhere.</strong> Sunspot regions and coronal holes are labelled on every solar image, the raw SUVI frames, the difference imagery and the fullscreen views, and they sit on the spots rather than beside them.</li>
+      <li><strong>Night mode.</strong> A red filter to protect your dark adaptation at the site, which can turn itself on two hours after sunset.</li>
+      <li><strong>Storm Builder.</strong> Replaces Solar Surfer. You get a job, aurora of a certain quality over a certain town at a certain time, and only the Sun end to work with: aim the eruption, pick its speed and set the twist of its flux rope. Real storms like May 2024 are in there too, to watch play out.</li>
+      <li><strong>New alerts.</strong> Earth directed CME launched, with a minimum speed you set yourself, and solar flare peaked, confirmed by watching the flux actually fall.</li>
+    </ul>
+    <h3>Improved</h3>
+    <ul class="list">
+      <li><strong>Sunspot positions</strong> now come from HMI and update every twelve minutes, instead of a once a day bulletin carried forward.</li>
+      <li><strong>The flux rope</strong> is drawn to scale with a cross section, and its core shows which way Bz is about to turn.</li>
+      <li><strong>SUVI imagery</strong> is kept for a week and played back smoothly, without the 24 hour playback being cut off by the next data refresh.</li>
+      <li><strong>Weak connections.</strong> Live data now updates gracefully on a patchy signal, using less data.</li>
+      <li><strong>Forecasts are checked.</strong> Every arrival forecast is now scored against what actually turned up, so it can be held to account.</li>
+      <li><strong>A new look behind the dashboards,</strong> with a star field, a drifting moon in its real phase, and a subtle aurora.</li>
+      <li><strong>Notifications</strong> are plainer, with no emojis, and each one carries its own icon.</li>
+    </ul>
+    <h3>Fixed</h3>
+    <ul class="list">
+      <li>Notifications were only reaching the first two thousand subscribers. They now reach everyone.</li>
+      <li>An old version of the app could keep running after an update.</li>
+      <li>Data on a page left open for a long time could quietly stop updating.</li>
+    </ul>
+    </article>
+  </div>
+</section>
+
 <section class="release-band" id="v1-6">
   <div class="wrap narrow">
     <article class="release">
     <div class="release-head">
       <span class="release-ver">v1.6</span>
-      <span class="release-tag">Latest</span>
       <span class="release-date">23 April 2026</span>
     </div>
     <h2>Coronal holes, the what to expect panel, and a long list of fixes</h2>

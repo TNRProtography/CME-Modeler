@@ -111,7 +111,7 @@ const AppDocumentation: React.FC<AppDocumentationProps> = ({ onClose }) => {
           <div className="hidden md:flex items-center gap-4 text-xs text-neutral-500 flex-shrink-0">
             <span>600+ hours</span>
             <span>11 sections</span>
-            <span>V1.6</span>
+            <span>V2.0 · September 2026</span>
           </div>
         </div>
 

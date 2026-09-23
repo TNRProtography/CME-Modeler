@@ -224,7 +224,7 @@ const NAVIGATION_TUTORIAL_KEY = 'hasSeenNavigationTutorial_v1';
 // preview. No first-visit tutorial, what's-new note or install banner there.
 const IS_EMBED = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('embed');
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
-const APP_VERSION = 'V1.6';
+const APP_VERSION = 'V2.0 (September 2026)';
 const DASHBOARD_MODE_KEY = 'dashboard_mode_enabled_v1';
 
 const BANNER_XRAY_URLS = [
