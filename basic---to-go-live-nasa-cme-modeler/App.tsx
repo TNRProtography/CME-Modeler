@@ -1079,6 +1079,15 @@ const App: React.FC = () => {
     if (next) handleShowHssChange(true);
   }, [handleShowHssChange]);
 
+  // Where a long-standing coronal hole's stream starts growing from: the
+  // scrubber's start once the timeline has one, otherwise the start of the
+  // chosen date range. Rounded to the hour so the streams are not rebuilt
+  // every time this is recomputed.
+  const hssTimelineStartMs = useMemo(() => {
+    const raw = timelineMinDate > 0 ? timelineMinDate : getDefaultTimelineRange(activeTimeRange).minDate;
+    return Math.floor(raw / 3600000) * 3600000;
+  }, [timelineMinDate, activeTimeRange, getDefaultTimelineRange]);
+
   const filteredCmes = useMemo(() => { if (cmeFilter === CMEFilter.ALL) return cmeData; return cmeData.filter((cme: ProcessedCME) => cmeFilter === CMEFilter.EARTH_DIRECTED ? cme.isEarthDirected : !cme.isEarthDirected); }, [cmeData, cmeFilter]);
   
   const cmesToRender = useMemo(() => {
@@ -1652,6 +1661,7 @@ const App: React.FC = () => {
                         rerunToken={rerunToken}
                         rerunHssInteraction={rerunHssInteraction}
                         experimentalInteractions={experimentalInteractions}
+                        timelineStartMs={hssTimelineStartMs}
                     />
                     {showLabels && rendererDomElement && threeCamera && planetLabelInfos.filter((info: PlanetLabelInfo) => { const name = info.name.toUpperCase(); if (['MERCURY', 'VENUS', 'MARS'].includes(name)) return showExtraPlanets; if (['MOON', 'L1'].includes(name)) return showMoonL1; return true; }).map((info: PlanetLabelInfo) => (<PlanetLabel key={info.id} planetMesh={info.mesh} camera={threeCamera} rendererDomElement={rendererDomElement} label={info.name} sunMesh={sunInfo ? sunInfo.mesh : null} /> ))}
                     {showLabels && rendererDomElement && threeCamera && sunInfo && surfaceLabels.length > 0 && (

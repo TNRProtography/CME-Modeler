@@ -39,7 +39,7 @@ import {
   interpolateCHAtTimeMs,
   CH_PRESENCE_GRACE_MS,
 } from '../utils/coronalHoleHistory';
-import { streamParcels, unitsPerKmFor, type HoleState, type StreamSource } from '../utils/hssParcels';
+import { streamParcels, unitsPerKmFor, emissionStartMs, type HoleState, type StreamSource } from '../utils/hssParcels';
 import type { RegionInput } from '../utils/regionLabels';
 import {
   CmeParticleSim, shortCmeLabel, touchingNotes,
@@ -476,6 +476,11 @@ interface SimulationCanvasProps {
   /** Whether the re-run CME vs HSS interaction mode is active */
   rerunHssInteraction?: boolean;
   /**
+   * The start of the timeline. A coronal hole that was already there when
+   * its records begin streams from here at the latest.
+   */
+  timelineStartMs?: number;
+  /**
    * Experimental interactions, 3D view only: HSS streams are walls to CME
    * spread, and CMEs that meet squeeze each other.
    */
@@ -498,6 +503,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     sunspotRegions = [], showSunspots = false, setSurfaceLabels,
     measuredWindSpeedKms, rerunToken = 0, rerunHssInteraction = false,
     experimentalInteractions = false,
+    timelineStartMs,
   } = props;
 
   const mountRef           = useRef<HTMLDivElement>(null);
@@ -2101,6 +2107,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     const opacityFor = (ch: any) => Math.min(0.85, (ch?.opacity ?? 0.5) + (ch?.darkness ?? 0) * 0.22);
 
     const liveIds = new Set(coronalHoles.map((ch) => ch.id));
+    // When the records begin, and the start of the timeline: a hole already
+    // there at the first is taken to have been blowing since the second.
+    let recordsStartMs: number | null = null;
+    for (const e of chEvolutions) {
+      const t = e.snapshots[0]?.timestampMs;
+      if (Number.isFinite(t) && (recordsStartMs == null || t < recordsStartMs)) recordsStartMs = t;
+    }
+    const timelineStart = timelineStartMs ?? Date.now() - 7 * 86400000;
     const streams: { source: StreamSource; mesh: any }[] = [];
     for (const evolution of chEvolutions) {
       const span = chMeasuredSpan(evolution);
@@ -2108,7 +2122,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const anchored = anchorEvolution(evolution, anchorMs);
       streams.push({
         source: {
-          firstMs: span.firstMs,
+          firstMs: emissionStartMs({ firstMs: span.firstMs, recordsStartMs, timelineStartMs: timelineStart }),
           lastMs: liveIds.has(evolution.trackId) ? null : span.lastMs + CH_PRESENCE_GRACE_MS,
           stateAt: (ms) => toState(interpolateCHAtTimeMs(anchored, ms)),
         },
@@ -2125,7 +2139,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         estimatedSpeedKms: ch.estimatedSpeedKms,
       });
       streams.push({
-        source: { firstMs: anchorMs, lastMs: null, stateAt: () => state },
+        // No history: older than anything we can see.
+        source: { firstMs: emissionStartMs({ firstMs: null, recordsStartMs, timelineStartMs: timelineStart }), lastMs: null, stateAt: () => state },
         mesh: createGrowingStreamMesh(THREE, ch.id, opacityFor(ch)),
       });
     }
@@ -2133,7 +2148,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     hssStreamsRef.current = streams;
     hssStreamClockRef.current = NaN;   // lay them out on the next frame
     particleSimDirtyRef.current = true; // the walls have changed
-  }, [coronalHoles, chEvolutions, chDetectedAtMs, threeReady, sceneReady]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [coronalHoles, chEvolutions, chDetectedAtMs, timelineStartMs, threeReady, sceneReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The HSS fallback anchor, captured when a detection arrives and at no other
   // time. Anchoring is a statement about WHEN a measurement was taken, so it

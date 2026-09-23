@@ -182,3 +182,34 @@ export function streamParcels(source: StreamSource, o: StreamOptions): Parcel[] 
   // Past the reach is off the edge of the scene.
   return raw.filter((p) => p.r <= o.reach && p.r >= o.r0 * 0.999).reverse();
 }
+
+/**
+ * How long after the first record a hole must first appear to count as
+ * having formed then. Readings come every couple of hours and the detector
+ * misses a hole now and then; a hole seen first a frame or two late was
+ * there all along.
+ */
+export const FORMED_GRACE_MS = 6 * 3600000;
+
+/**
+ * When a hole's stream starts.
+ *
+ * A hole first seen well after the records begin formed then, and its
+ * stream starts there. A hole that was already there when the records begin
+ * - or that there are no records for at all - is older than anything we can
+ * see, so it is taken to have been blowing since at least the start of the
+ * timeline, and its stream grows from there. Without this, such a hole's
+ * stream started at the first record, or at "now" for a hole with no history.
+ */
+export function emissionStartMs(o: {
+  /** The hole's first reading, or null if it has none. */
+  firstMs: number | null;
+  /** The earliest reading on record for any hole, or null if none. */
+  recordsStartMs: number | null;
+  timelineStartMs: number;
+}): number {
+  const { firstMs, recordsStartMs, timelineStartMs } = o;
+  if (firstMs == null) return timelineStartMs;
+  const formedOnRecord = recordsStartMs != null && firstMs > recordsStartMs + FORMED_GRACE_MS;
+  return formedOnRecord ? firstMs : Math.min(firstMs, timelineStartMs);
+}

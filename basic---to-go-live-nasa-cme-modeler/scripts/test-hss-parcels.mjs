@@ -26,7 +26,7 @@ try {
   execFileSync('npx', ['esbuild', join(root, 'utils/hssParcels.ts'),
     '--bundle', '--format=esm', `--outfile=${join(out, 'p.mjs')}`, '--log-level=error'],
     { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
-  const { streamParcels, unitsPerKmFor } = await import(pathToFileURL(join(out, 'p.mjs')).href);
+  const { streamParcels, unitsPerKmFor, emissionStartMs } = await import(pathToFileURL(join(out, 'p.mjs')).href);
   execFileSync('npx', ['esbuild', join(root, 'utils/coronalHoleHistory.ts'),
     '--bundle', '--format=esm', `--outfile=${join(out, 'h.mjs')}`, '--log-level=error'],
     { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
@@ -116,6 +116,26 @@ try {
   const expectGap = 0.1 + 600 * upk * 16 * 3600;
   check(Math.abs(gapStart - expectGap) < 1e-2, `its near end has left the Sun: ${gapStart.toFixed(3)} (expected ${expectGap.toFixed(3)})`);
   check(streamParcels(steady(600, T0, T0 + 24 * H), opts(T0 + 30 * 24 * H)).length === 0, 'and in the end it leaves the scene entirely');
+
+  console.log('\nWhen a stream starts');
+  {
+    const timelineStartMs = T0 - 72 * H, recordsStartMs = T0 - 48 * H;
+    check(emissionStartMs({ firstMs: T0 - 10 * H, recordsStartMs, timelineStartMs }) === T0 - 10 * H,
+      'a hole that formed on record streams from when it formed');
+    check(emissionStartMs({ firstMs: recordsStartMs, recordsStartMs, timelineStartMs }) === timelineStartMs,
+      'a hole already there when the records begin streams from the start of the timeline');
+    check(emissionStartMs({ firstMs: recordsStartMs + 2 * H, recordsStartMs, timelineStartMs }) === timelineStartMs,
+      'one first seen a frame or two late was there all along');
+    check(emissionStartMs({ firstMs: null, recordsStartMs: null, timelineStartMs }) === timelineStartMs,
+      'a hole with no history at all streams from the start of the timeline, not from now');
+    check(emissionStartMs({ firstMs: T0 - 100 * H, recordsStartMs: T0 - 100 * H, timelineStartMs }) === T0 - 100 * H,
+      'records older than the timeline are used as they are');
+    // And the stream it gives at "now" for a hole with no history.
+    const noHistory = { firstMs: emissionStartMs({ firstMs: null, recordsStartMs: null, timelineStartMs }), lastMs: null, stateAt: () => hole(600) };
+    const psNow = streamParcels(noHistory, opts(T0));
+    check(psNow.length > 0 && psNow[psNow.length - 1].r > 3, `so at "now" its stream is 3 days long, not a stub (reaches ${psNow[psNow.length - 1]?.r.toFixed(2)})`);
+    check(streamParcels(noHistory, opts(timelineStartMs - H)).length === 0, 'and before the timeline starts there is none');
+  }
 
   console.log('\nHoles that have closed still have their wind tracked');
   {
