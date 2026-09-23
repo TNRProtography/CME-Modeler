@@ -41,6 +41,7 @@ import { fetchHmiFrames, type HmiFrame } from '../utils/hmiArchive';
 import { proxyImageUrl } from '../utils/imagePixels';
 import FrameScrubber from './FrameScrubber';
 import RegionMagneticHistory from './RegionMagneticHistory';
+import { spotCountChanges, type SpotCountChange } from '../hooks/useSunspotRegions';
 
 interface SolarActivityDashboardProps {
   setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | { type: 'image_with_labels'; url: string; regions: RegionInput[]; geometry: SolarDiskGeometry; imageNatural: { width: number; height: number }; atMs: number } | null) => void;
@@ -55,6 +56,12 @@ interface SolarActivityDashboardProps {
   onInitialLoadProgress?: (task: 'solarXray' | 'solarProton' | 'solarFlares' | 'solarRegions') => void;
   modalSlug?: string | null;
   onModalSlugChange?: (slug: string | null) => void;
+  /**
+   * Show only the Active Sunspot Tracker and the Coronal Hole Tracker, and
+   * load only what those two need. For putting exactly these panels, as the
+   * app has them, somewhere else - the marketing site embeds them this way.
+   */
+  embed?: boolean;
 }
 
 interface SolarActivitySummary {
@@ -858,7 +865,9 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
   if (!isOpen) return null;
   if (typeof document === 'undefined') return null;
   return createPortal(
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[9999] flex justify-center items-center p-4" onClick={onClose}>
+    // app-portal: portalled to <body>, so a page embedding these panels (the
+    // marketing site) can find it to give it the app's styling.
+    <div className="app-portal fixed inset-0 bg-black/80 backdrop-blur-md z-[9999] flex justify-center items-center p-4" onClick={onClose}>
       <div className="relative bg-neutral-950/95 border border-neutral-800/90 rounded-lg shadow-2xl w-full max-w-lg max-h-[85vh] text-neutral-300 flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center p-4 border-b border-neutral-700/80">
           <h3 className="text-xl font-bold text-neutral-200">{title}</h3>
@@ -939,7 +948,7 @@ const SolarActivitySummaryDisplay: React.FC<{ summary: SolarActivitySummary | nu
 };
 
 // --- COMPONENT ---
-const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setViewerMedia, setLatestXrayFlux, onViewCMEInVisualization, onViewCoronalHolesInVisualization, refreshSignal, onSuvi195ImageUrlChange, onInitialLoad, onInitialLoadProgress, modalSlug, onModalSlugChange }) => {
+const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setViewerMedia, setLatestXrayFlux, onViewCMEInVisualization, onViewCoronalHolesInVisualization, refreshSignal, onSuvi195ImageUrlChange, onInitialLoad, onInitialLoadProgress, modalSlug, onModalSlugChange, embed = false }) => {
   const isInitialLoad = useRef(true);
   const reportedInitialTasks = useRef<Set<'solarXray' | 'solarProton' | 'solarFlares' | 'solarRegions'>>(new Set());
 
@@ -952,6 +961,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [suvi131, setSuvi131] = useState({ url: null as string | null, loading: 'Loading image...' });
   const [suvi304, setSuvi304] = useState({ url: null as string | null, loading: 'Loading image...' });
   const [sdoHmiBc1024, setSdoHmiBc1024] = useState({ url: null as string | null, loading: 'Loading image...' });
+  // Each region's spot count against NOAA's report a day earlier, keyed by
+  // the last four digits of the region number (the TXT and JSON disagree on
+  // whether to carry the leading 1).
+  const [spotChanges, setSpotChanges] = useState<Record<string, SpotCountChange>>({});
   const [sdoHmiB1024, setSdoHmiB1024] = useState({ url: null as string | null, loading: 'Loading image...' });
   const [sdoHmiIf1024, setSdoHmiIf1024] = useState({ url: null as string | null, loading: 'Loading image...' });
   const [sdoHmiBc4096, setSdoHmiBc4096] = useState({ url: null as string | null, loading: 'Loading image...' });
@@ -1762,6 +1775,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         fetchSharpByRegion(),
       ]);
 
+      // solar_regions.json keeps a row per region per day, so the day-on-day
+      // change in each region's spot count is already in this download.
+      if (Array.isArray(solarRegionsRaw)) {
+        const byKey: Record<string, SpotCountChange> = {};
+        for (const [id, change] of Object.entries(spotCountChanges(solarRegionsRaw))) byKey[id.slice(-4)] = change;
+        setSpotChanges(byKey);
+      }
+
       // Extract JSON entries, keyed by region - keep only the LATEST entry per region
       const jsonByRegion = new Map<string, any>();
       const processJsonSource = (raw: any, source: string) => {
@@ -1840,19 +1861,23 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, [fetchFirstAvailableJson, fetchFirstAvailableText, reportInitialTask, stampIfChanged]);
 
   const runAllUpdates = useCallback(() => {
-    fetchImage(SUVI_131_URL, setSuvi131);
-    fetchImage(SUVI_304_URL, setSuvi304);
+    // The trackers need the HMI imagery, the regions and their probabilities,
+    // and the flares (a region's card lists what it has launched). Embedded,
+    // that is all that is loaded.
     fetchImage(resolveSdoImageUrl(SDO_HMI_BC_1024_URL, forceDirectSdoRef.current), setSdoHmiBc1024, false, false, SDO_HMI_BC_1024_FALLBACK);
     fetchImage(resolveSdoImageUrl(SDO_HMI_B_1024_URL, forceDirectSdoRef.current), setSdoHmiB1024, false, false, SDO_HMI_B_1024_FALLBACK);
     fetchImage(resolveSdoImageUrl(SDO_HMI_IF_1024_URL, forceDirectSdoRef.current), setSdoHmiIf1024, false, false, SDO_HMI_IF_1024_FALLBACK);
+    fetchFlares();
+    fetchSunspotRegions();
+    fetchNoaaSolarProbabilities();
+    if (embed) return;
+    fetchImage(SUVI_131_URL, setSuvi131);
+    fetchImage(SUVI_304_URL, setSuvi304);
     fetchImage(SUVI_195_URL, setSuvi195);
     fetchImage(SUVI_284_URL, setSuvi284);
     fetchXrayFlux();
     fetchProtonFlux();
-    fetchFlares();
-    fetchSunspotRegions();
-    fetchNoaaSolarProbabilities();
-  }, [fetchFlares, fetchImage, fetchNoaaSolarProbabilities, fetchProtonFlux, fetchSunspotRegions, fetchXrayFlux, stampIfChanged]);
+  }, [embed, fetchFlares, fetchImage, fetchNoaaSolarProbabilities, fetchProtonFlux, fetchSunspotRegions, fetchXrayFlux, stampIfChanged]);
 
   const fetchCoronagraphState = useCallback(async () => {
     try {
@@ -1901,18 +1926,23 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     }
   }, []);
 
-  useEffect(() => {
-    runAllUpdates();
+  // Coronagraphs, the SUVI timeline and STEREO's position feed panels an
+  // embed does not show.
+  const fetchPanelsOnly = useCallback(() => {
+    if (embed) return;
     fetchCoronagraphState();
     fetchSuviWorkerState();
     fetchStereoEarthSeparation();
+  }, [embed, fetchCoronagraphState, fetchSuviWorkerState, fetchStereoEarthSeparation]);
+
+  useEffect(() => {
+    runAllUpdates();
+    fetchPanelsOnly();
     return registerDatasetTicker('solar-activity-data', () => {
       runAllUpdates();
-      fetchCoronagraphState();
-      fetchSuviWorkerState();
-      fetchStereoEarthSeparation();
+      fetchPanelsOnly();
     }, REFRESH_INTERVAL_MS);
-  }, [runAllUpdates, fetchCoronagraphState, fetchSuviWorkerState, fetchStereoEarthSeparation]);
+  }, [runAllUpdates, fetchPanelsOnly]);
 
 
   useEffect(() => {
@@ -1927,10 +1957,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   useEffect(() => {
     runAllUpdates();
-    fetchCoronagraphState();
-    fetchSuviWorkerState();
-    fetchStereoEarthSeparation();
-  }, [refreshSignal, runAllUpdates, fetchCoronagraphState, fetchSuviWorkerState, fetchStereoEarthSeparation]);
+    fetchPanelsOnly();
+  }, [refreshSignal, runAllUpdates, fetchPanelsOnly]);
 
 
   useEffect(() => {
@@ -3739,21 +3767,26 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   // --- RENDER ---
   return (
     <div
-      className="w-full h-full bg-neutral-900 text-neutral-300 relative"
-      style={{ backgroundImage: `url('https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/Rapahoe%20Blue%20Aurora%20-%20Full%20Pano.jpg')`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}
+      className={embed ? "w-full text-neutral-300 relative" : "w-full h-full bg-neutral-900 text-neutral-300 relative"}
+      style={embed ? undefined : { backgroundImage: `url('https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/Rapahoe%20Blue%20Aurora%20-%20Full%20Pano.jpg')`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}
     >
+      {!embed && <>
       <div className="absolute inset-0 bg-black/50 z-0"></div>
       <StarField />
       <DriftingMoon size={72} />
       <AuroraOverlay />
-      <div className="w-full h-full overflow-y-auto p-5 relative z-10 styled-scrollbar">
-        <style>{`body { overflow-y: auto !important; } .styled-scrollbar::-webkit-scrollbar { width: 8px; } .styled-scrollbar::-webkit-scrollbar-track { background: #262626; } .styled-scrollbar::-webkit-scrollbar-thumb { background: #525252; } @keyframes sunspotPulse { 0%{transform:scale(1);opacity:.95} 100%{transform:scale(2.25);opacity:0} }`}</style>
+      </>}
+      <div className={embed ? "w-full relative z-10" : "w-full h-full overflow-y-auto p-5 relative z-10 styled-scrollbar"}>
+        {!embed && <style>{`body { overflow-y: auto !important; } .styled-scrollbar::-webkit-scrollbar { width: 8px; } .styled-scrollbar::-webkit-scrollbar-track { background: #262626; } .styled-scrollbar::-webkit-scrollbar-thumb { background: #525252; } @keyframes sunspotPulse { 0%{transform:scale(1);opacity:.95} 100%{transform:scale(2.25);opacity:0} }`}</style>}
         <div className="container mx-auto">
+          {!embed && (
           <header className="text-center mb-8">
             <h1 className="text-3xl font-bold text-neutral-100">Solar Activity Dashboard</h1>
           </header>
+          )}
 
           <main className="grid grid-cols-12 gap-5">
+            {!embed && (<>
             <div className="col-span-12 card bg-neutral-950/80 p-4 mb-4 flex flex-col sm:flex-row justify-between items-center text-sm">
               <div className="flex-1 text-center sm:text-left mb-2 sm:mb-0">
                 <div className="flex items-center gap-2 justify-center sm:justify-start mb-1">
@@ -4068,6 +4101,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
               <div className="text-right text-xs text-neutral-500 mt-2">Last updated: {lastImagesUpdate || 'N/A'}</div>
             </div>
+
+            </>)}
 
             <div id="active-sunspots-section" className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col min-h-0 lg:min-h-[680px]">
               <div className="flex justify-between items-center gap-2 mb-3">
@@ -4443,7 +4478,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                       <div className="space-y-1.5 text-xs">
                         <div className="flex justify-between"><span className="text-neutral-500">Magnetic Class</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.magneticClass || ' - '}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">Area</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.area ? `${selectedSunspotRegion.area} MSH` : ' - '}</span></div>
-                        <div className="flex justify-between"><span className="text-neutral-500">Spot Count</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.spotCount ?? ' - '}</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">Spot Count</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.spotCount ?? ' - '}{(() => {
+                          // NOAA's day-on-day change for this region: more
+                          // spots in a day is a region building, not decaying.
+                          const change = spotChanges[String(selectedSunspotRegion.region).slice(-4)];
+                          if (!change) return null;
+                          return (
+                            <span className={`ml-1.5 font-normal ${change.delta > 0 ? 'text-amber-300' : change.delta < 0 ? 'text-sky-300' : 'text-neutral-400'}`}>
+                              ({change.delta > 0 ? '+' : ''}{change.delta} in 24h)
+                            </span>
+                          );
+                        })()}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">Trend</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.trend}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">M-flare probability</span><span className="text-orange-300 font-semibold">{selectedSunspotRegion.mFlareProbability != null ? `${selectedSunspotRegion.mFlareProbability}%` : ' - '}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">X-flare probability</span><span className="text-red-300 font-semibold">{selectedSunspotRegion.xFlareProbability != null ? `${selectedSunspotRegion.xFlareProbability}%` : ' - '}</span></div>
@@ -4695,6 +4740,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                               <span className="text-[10px] px-1.5 py-0.5 rounded border" style={{ color: riskBand.color, borderColor: `${riskBand.color}80`, backgroundColor: `${riskBand.color}20` }}>{riskBand.label}</span>
                             </div>
                             <div className="text-[11px] text-neutral-400 mt-1">{region.location || 'Unknown'} · {region.magneticClass || 'Unclassified'}</div>
+                            {(() => {
+                              const change = spotChanges[String(region.region).slice(-4)];
+                              if (!change) return null;
+                              return (
+                                <div className="text-[11px] text-neutral-400 mt-0.5">
+                                  {change.now} spots · <span className={change.delta > 0 ? 'text-amber-300' : change.delta < 0 ? 'text-sky-300' : 'text-neutral-400'}>
+                                    {change.delta > 0 ? '+' : ''}{change.delta} in 24h
+                                  </span>
+                                </div>
+                              );
+                            })()}
                           </button>
                         );
                       })}
@@ -4715,6 +4771,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               onViewInVisualisation={onViewCoronalHolesInVisualization}
             />
 
+            {!embed && (<>
             {/* IPS section removed entirely */}
 
 
@@ -4965,8 +5022,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               <div className="text-right text-xs text-neutral-500 mt-2">Last updated: {lastProtonUpdate || 'N/A'}</div>
             </div>
 
+            </>)}
           </main>
 
+          {!embed && (
           <footer className="page-footer mt-10 pt-8 border-t border-neutral-700 text-center text-neutral-400 text-sm">
             <h3 className="text-lg font-semibold text-neutral-200 mb-4">About This Dashboard</h3>
             <p className="max-w-3xl mx-auto leading-relaxed">This dashboard provides real-time information on solar X-ray flux, proton flux, solar flares, and related space weather phenomena. Data is sourced directly from official NASA and NOAA APIs.</p>
@@ -4978,6 +5037,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               <p className="mt-2">Visualization and Development by <a href="https://www.tnrprotography.co.nz" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">TNR Protography</a></p>
             </div>
           </footer>
+          )}
           <FaqModal isOpen={isFaqOpen} onClose={() => setIsFaqOpen(false)} />
         </div>
       </div>

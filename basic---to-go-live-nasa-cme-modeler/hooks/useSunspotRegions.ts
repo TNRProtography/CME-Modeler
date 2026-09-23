@@ -134,13 +134,63 @@ export function normaliseRegions(rows: any[], nowMs = Date.now()): SunspotRegion
   return out.sort((a, b) => (b.areaMsh ?? -1) - (a.areaMsh ?? -1));
 }
 
+/** How a region's spot count moved over the last day of NOAA reports. */
+export interface SpotCountChange {
+  now: number;
+  before: number;
+  delta: number;
+  /** When each of the two counts was reported. */
+  nowAtMs: number;
+  beforeAtMs: number;
+}
+
+/**
+ * Each region's spot count against its report a day earlier.
+ *
+ * solar_regions.json keeps a row per region per day, so the history is
+ * already in the same download: the newest report, and the newest one at
+ * least 20 hours older (the reports are daily, give or take). A region first
+ * reported today has nothing to compare against and is left out rather than
+ * shown as having grown from zero.
+ */
+export function spotCountChanges(rows: any[]): Record<string, SpotCountChange> {
+  const byRegion = new Map<string, { at: number; spots: number }[]>();
+  for (const row of rows) {
+    const id = String(row?.region ?? '').trim();
+    const at = parseObserved(row);
+    const spots = num(row?.number_spots);
+    if (!id || at == null || spots == null) continue;
+    if (!byRegion.has(id)) byRegion.set(id, []);
+    byRegion.get(id)!.push({ at, spots });
+  }
+  const out: Record<string, SpotCountChange> = {};
+  for (const [id, list] of byRegion) {
+    list.sort((a, b) => a.at - b.at);
+    const latest = list[list.length - 1];
+    const earlier = list.filter((x) => x.at <= latest.at - 20 * 3600000);
+    const before = earlier[earlier.length - 1];
+    if (!before) continue;
+    out[id] = {
+      now: latest.spots,
+      before: before.spots,
+      delta: latest.spots - before.spots,
+      nowAtMs: latest.at,
+      beforeAtMs: before.at,
+    };
+  }
+  return out;
+}
+
 export function useSunspotRegions(enabled = true): {
   regions: SunspotRegion[];
   /** When NOAA measured the newest region in the set. */
   observedAtMs: number | null;
+  /** Spot count against the day before, by region. */
+  spotChanges: Record<string, SpotCountChange>;
   error: string | null;
 } {
   const [regions, setRegions] = useState<SunspotRegion[]>([]);
+  const [spotChanges, setSpotChanges] = useState<Record<string, SpotCountChange>>({});
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -163,6 +213,7 @@ export function useSunspotRegions(enabled = true): {
           const sharp = await fetchSharpByRegion();
           if (cancelled) return;
           setRegions(normaliseRegions(rows).map((r) => withSharpPosition(r, sharp, 'observedAtMs')));
+          setSpotChanges(spotCountChanges(rows));
           setError(null);
           return;
         } catch {
@@ -185,5 +236,5 @@ export function useSunspotRegions(enabled = true): {
     return times.length ? Math.max(...times) : null;
   }, [regions]);
 
-  return { regions, observedAtMs, error };
+  return { regions, observedAtMs, spotChanges, error };
 }

@@ -7,12 +7,14 @@
      Coronal hole detection    -> @app/hooks/useCoronalHoles
      Magnetotail               -> @app/components/MagnetotailStatus
      Forecast data             -> @app/hooks/useForecastData
+     Sunspot + CH trackers     -> @app/components/SolarActivityDashboard (embed mode)
 
    Mount points are plain divs in the static HTML:
      <div data-app-embed="cme"></div>
      <div data-app-embed="coronalhole"></div>
      <div data-app-embed="magnetotail"></div>
      <div data-app-embed="forecast"></div>
+     <div data-app-embed="solartrackers"></div>
 */
 import './embed.css';
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
@@ -20,6 +22,7 @@ import { createRoot } from 'react-dom/client';
 
 import SimulationCanvas from '@app/components/SimulationCanvas';
 import MagnetotailStatus from '@app/components/MagnetotailStatus';
+import MediaViewerModal from '@app/components/MediaViewerModal';
 import { useCoronalHoles } from '@app/hooks/useCoronalHoles';
 import { useForecastData } from '@app/hooks/useForecastData';
 import { fetchCMEData } from '@app/services/nasaService';
@@ -402,6 +405,45 @@ function ForecastEmbed() {
 }
 
 /* ------------------------------------------------------------------ *
+ * The Active Sunspot Tracker and the Coronal Hole Tracker, exactly as the
+ * app has them: the app's Solar Activity dashboard in embed mode, which
+ * renders only those two panels and loads only what they need. Loaded when
+ * scrolled to - it is the largest thing on the page.
+ * ------------------------------------------------------------------ */
+const SolarActivityDashboard = React.lazy(() => import('@app/components/SolarActivityDashboard'));
+const APP_URL = 'https://www.spottheaurora.co.nz';
+
+function SolarTrackersEmbed() {
+  const [hostRef, inView] = useInView<HTMLDivElement>();
+  // The app's fullscreen viewer, for the imagery the trackers open.
+  const [media, setMedia] = useState<any>(null);
+  const noop = useCallback(() => {}, []);
+  const openVisualisation = useCallback(() => {
+    window.open(`${APP_URL}/cme-visualization`, '_blank', 'noopener');
+  }, []);
+  const loading = <div className="embed-note" style={{ position: 'relative', minHeight: 240 }}>Loading the live trackers</div>;
+
+  return (
+    <div className="embed-loose app-page" ref={hostRef}>
+      {inView ? (
+        <React.Suspense fallback={loading}>
+          <SolarActivityDashboard
+            embed
+            setViewerMedia={setMedia}
+            setLatestXrayFlux={noop}
+            onViewCMEInVisualization={openVisualisation}
+            onViewCoronalHolesInVisualization={openVisualisation}
+            refreshSignal={0}
+            navigationTarget={null}
+          />
+        </React.Suspense>
+      ) : loading}
+      {media && <MediaViewerModal media={media} onClose={() => setMedia(null)} />}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
  * Mounting
  * ------------------------------------------------------------------ */
 const EMBEDS: Record<string, () => JSX.Element> = {
@@ -410,7 +452,8 @@ const EMBEDS: Record<string, () => JSX.Element> = {
   coronalhole: () => <SceneEmbed showHss={true} showExtraPlanets={false}
     caption="Coronal holes detected in your browser from the live SUVI image, with their high speed streams on the Parker spiral" />,
   magnetotail: () => <MagnetotailEmbed />,
-  forecast: () => <ForecastEmbed />
+  forecast: () => <ForecastEmbed />,
+  solartrackers: () => <SolarTrackersEmbed />
 };
 
 function mountAll() {

@@ -1,5 +1,63 @@
 /* Utilities only. Preflight is disabled in tailwind.config.cjs so this cannot
    reset or override the marketing site's own stylesheet. */
+
+/* What Tailwind's preflight gives the app, scoped to the embedded app pages
+   (.app-page) and the app's own modals (.app-portal). Without it the site's
+   heading fonts, paragraph margins and link colours, and the browser's own
+   button borders, would all land on the app's panels. Each rule is written
+   ":where()" inside one class, so it outranks the site's bare-element rules
+   and loses to any utility (which are "body .x"). */
+.app-page, .app-portal {
+  font-family: 'Inter', 'SF Pro Display', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  line-height: 1.5; color: #d4d4d4; -webkit-font-smoothing: antialiased; text-align: left;
+}
+.app-page :where(*, ::before, ::after), .app-portal :where(*, ::before, ::after) {
+  box-sizing: border-box; border-width: 0; border-style: solid; border-color: #e5e7eb;
+}
+.app-page :where(h1, h2, h3, h4, h5, h6), .app-portal :where(h1, h2, h3, h4, h5, h6) {
+  font-size: inherit; font-weight: inherit; font-family: inherit; text-transform: none;
+  letter-spacing: normal; line-height: inherit; margin: 0; color: inherit;
+}
+.app-page :where(p, blockquote, dl, dd, figure, pre, ul, ol), .app-portal :where(p, blockquote, dl, dd, figure, pre, ul, ol) { margin: 0; }
+.app-page :where(ul, ol), .app-portal :where(ul, ol) { list-style: none; padding: 0; }
+.app-page :where(a), .app-portal :where(a) { color: inherit; text-decoration: inherit; }
+.app-page :where(button, input, select, textarea), .app-portal :where(button, input, select, textarea) {
+  font-family: inherit; font-size: 100%; font-weight: inherit; line-height: inherit; color: inherit; margin: 0; padding: 0;
+}
+.app-page :where(button, [type='button']), .app-portal :where(button, [type='button']) {
+  background-color: transparent; background-image: none; cursor: pointer; -webkit-appearance: button;
+}
+.app-page :where(img, svg, video, canvas), .app-portal :where(img, svg, video, canvas) { display: block; vertical-align: middle; }
+.app-page :where(img, video), .app-portal :where(img, video) { max-width: 100%; height: auto; }
+.app-page :where(table), .app-portal :where(table) { min-width: 0; font-size: inherit; }
+
+/* The app's panel card (its index.html), in place of the site's own .card. */
+.app-page .card {
+  position: relative; overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.25);
+  transform-origin: center; transition: transform 160ms ease, box-shadow 160ms ease;
+}
+.app-page .card::before {
+  content: ""; position: absolute; inset: -45% -20%;
+  background: radial-gradient(circle at 30% 50%, rgba(255,255,255,0.08), transparent 55%),
+              radial-gradient(circle at 80% 40%, rgba(56,189,248,0.12), transparent 55%);
+  animation: auroraFlow 20s ease-in-out infinite; pointer-events: none; z-index: 0;
+}
+.app-page .card > * { position: relative; z-index: 1; }
+.app-page .card:hover { transform: translateY(-1px); box-shadow: 0 18px 36px rgba(0,0,0,0.28); border-color: rgba(255, 255, 255, 0.06); }
+@keyframes auroraFlow {
+  0% { transform: translateX(-30%) translateY(0); opacity: 0.18; }
+  50% { transform: translateX(10%) translateY(-8%); opacity: 0.32; }
+  100% { transform: translateX(40%) translateY(6%); opacity: 0.18; }
+}
+@media (prefers-reduced-motion: reduce) { .app-page .card::before { animation: none; } .app-page .card { transition: none; } }
+
+/* The site lifts every direct child of <body> into its own stacking layer
+   ("body > *:not(.sky) { position: relative }"), which would pin a portalled
+   modal to the foot of the page instead of over it. */
+body > .app-portal.fixed { position: fixed; z-index: 9999; }
+
 @tailwind utilities;
 
 /* The app's scene wrapper is <div class="w-full h-full">, which needs a parent

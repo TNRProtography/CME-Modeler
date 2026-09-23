@@ -35,7 +35,7 @@ try {
     // module with the hook. Cheaper than splitting the file for a test.
     '--log-level=error'],
     { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
-  const { normaliseRegions } = await import(pathToFileURL(join(out, 's.mjs')).href);
+  const { normaliseRegions, spotCountChanges } = await import(pathToFileURL(join(out, 's.mjs')).href);
 
   console.log('\nOne marker per region, not one per report');
   {
@@ -197,6 +197,25 @@ try {
     const newest = Math.max(...got.map((r) => r.observedAtMs));
     check(newest === Date.parse(`${dateStr(now)}T00:00:00Z`),
           'the newest measurement is what the panel reports the age from');
+  }
+
+  console.log('\nSpot count against the day before');
+  {
+    const rows = [
+      { region: 4123, number_spots: 8, observed_date: dateStr(now - 2 * DAY) },
+      { region: 4123, number_spots: 11, observed_date: dateStr(now - DAY) },
+      { region: 4123, number_spots: 17, observed_date: dateStr(now) },
+      { region: 4124, number_spots: 9, observed_date: dateStr(now - DAY) },
+      { region: 4124, number_spots: 4, observed_date: dateStr(now) },
+      { region: 4125, number_spots: 3, observed_date: dateStr(now) },
+      { region: 4126, number_spots: null, observed_date: dateStr(now) },
+    ];
+    const c = spotCountChanges(rows);
+    check(c['4123']?.delta === 6 && c['4123'].before === 11 && c['4123'].now === 17,
+      `against yesterday's report, not the oldest (+${c['4123']?.delta})`);
+    check(c['4124']?.delta === -5, `a shrinking region reads negative (${c['4124']?.delta})`);
+    check(!('4125' in c), 'a region first reported today has nothing to compare against');
+    check(!('4126' in c), 'nor does one with no count');
   }
 
 } finally {
