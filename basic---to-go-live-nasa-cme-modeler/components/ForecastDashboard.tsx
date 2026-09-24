@@ -619,6 +619,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             </div>
                             <div id="aurora-sightings-section" className="col-span-12"><AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} allNewellData={allNewellData} allMagneticData={allMagneticData} auroraScore={auroraScore} rawScore15={ovalProjectedScores.score15} rawScore30={ovalProjectedScores.score30} rawScore60={ovalProjectedScores.score60} rawScore120={ovalProjectedScores.score120} /></div>
                             <div id="kp-forecast-section" className="col-span-12"><KpForecastTimeline
+                                userLongitude={userLongitude}
                                 moonIllumination={celestialTimes?.moon?.illumination ?? null}
                                 userLatitude={userLatitude}
                                 sunriseMs={celestialTimes?.sun?.rise ?? null}
@@ -675,6 +676,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 <ExpectedArrivals detailed />
                             </div>
                             <KpForecastTimeline
+                                userLongitude={userLongitude}
                                 moonIllumination={celestialTimes?.moon?.illumination ?? null}
                                 userLatitude={userLatitude}
                                 sunriseMs={celestialTimes?.sun?.rise ?? null}

@@ -3,6 +3,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
 import { kpIndex, gScale, gColor } from '../utils/kpScale';
+import { moonAt } from '../utils/skyConditions';
+import { resolveViewerLocation } from '../utils/viewerLocation';
 
 const NOAA_KP_URL   = 'https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json';
 // NOAA republishes this forecast roughly 3-hourly. Re-fetching every 5 minutes
@@ -42,6 +44,7 @@ interface PopupState { slotIdx: number; anchorX: number; }
 interface KpForecastTimelineProps {
   moonIllumination?: number | null; // 0-100
   userLatitude?:     number | null;
+  userLongitude?:    number | null;
   sunriseMs?:        number | null; // Unix ms UTC from celestialTimes.sun.rise
   sunsetMs?:         number | null; // Unix ms UTC from celestialTimes.sun.set
   moonRiseMs?:       number | null; // Unix ms UTC from celestialTimes.moon.rise
@@ -230,20 +233,33 @@ function moonLabel(p: number) {
   return `Near new moon (${Math.round(p)}%) - ideal dark skies`;
 }
 
+/**
+ * The Moon during one forecast hour, for this viewer: its real phase on that
+ * day and its real height at that hour. "moon" is what the visibility rules
+ * below weigh - the lit percentage, scaled down while the Moon is low (it
+ * counts in full from 30 degrees up) and zero while it is below the horizon.
+ */
+interface SlotMoon { moon: number; illumPct: number; up: boolean; altitude: number; label: string; }
+function slotMoon(slotUtcMs: number, lat: number, lon: number): SlotMoon {
+  const m = moonAt(slotUtcMs + 30 * 60000, lat, lon);
+  const illumPct = m.illumination * 100;
+  const height = Math.min(1, Math.max(0, Math.sin(m.altitude * Math.PI / 180)) / 0.5);
+  const label = m.up
+    ? `${moonLabel(illumPct)}${m.altitude < 20 ? ', low in the sky' : ''}`
+    : `Moon is below the horizon (${Math.round(illumPct)}% lit) - no interference`;
+  return { moon: m.up ? illumPct * height : 0, illumPct, up: m.up, altitude: m.altitude, label };
+}
+
 interface VisInfo {
   headline: string; detail: string;
   regions:  string[]; moonNote: string; tip: string;
   summary:  string; // single overarching sentence shown in compact panel
 }
 
-function getVis(kp: number, moon: number, lat: number | null | undefined, sky: SkyT = 'night', isMoonUp = true, dayIndex = 0, waxing: boolean | null = null): VisInfo {
-  // Adjust illumination by ±4% per forecast day (moon gains/loses ~4%/day)
-  // waxing=true → growing (+4%/day), waxing=false → shrinking (-4%/day)
-  const moonAdj = dayIndex > 0 && waxing != null
-    ? Math.max(0, Math.min(100, moon + dayIndex * (waxing ? 4 : -4)))
-    : moon;
-  // Only report moon interference when the moon is actually above the horizon
-  const ml = isMoonUp ? moonLabel(moonAdj) : 'Moon is below the horizon - no interference';
+function getVis(kp: number, slot: SlotMoon, lat: number | null | undefined, sky: SkyT = 'night'): VisInfo {
+  // The Moon as it is at this hour: zero while it is down, whatever its phase.
+  const moon = slot.moon;
+  const ml = slot.label;
 
   // Sky brightness note - added to tip for daytime/twilight slots
   const skyNote =
@@ -369,8 +385,8 @@ function drawCanvas(
   W:          number,
   sunriseMs:  number | null | undefined,
   sunsetMs:   number | null | undefined,
-  moonRiseMs: number | null | undefined,
-  moonSetMs:   number | null | undefined,
+  lat:        number,
+  lon:        number,
   minKp:       number,
   selectedCol: number,
 ) {
@@ -476,44 +492,17 @@ function drawCanvas(
       ctx.fillRect(x, HOR_Y - ah, COL_W, ah);
     }
 
-    // Keep ARR_DAY/ARR_NZT/arSlotMid - used by moon arc below
-    const ARR_DAY   = 86400000;
-    const ARR_NZT   = getNzOffsetMs(slot.utcMs);
-    const arSlotNzt = slot.utcMs + ARR_NZT;
-    const arSlotMid = arSlotNzt - (arSlotNzt % ARR_DAY);
 
-    // Moon arc - disc follows a sine arc from moonrise to moonset, like the sun.
-    // Uses per-day +55min offset. Checks a ±1 day window to catch the overnight
-    // case where the moon rose yesterday evening and sets this morning.
-    // "Not when rise/set is next day": if adding 55min pushes the time past midnight
-    // the % DAY wrapping places it naturally in the correct early-morning slot.
-    const mnStartNzt = slots[0].utcMs + ARR_NZT;
-    const mnStartMid = mnStartNzt - (mnStartNzt % ARR_DAY);
-    const mnSlotMid  = arSlotMid; // same NZT midnight as sun arrows
-    const mnDayIdx   = Math.round((mnSlotMid - mnStartMid) / ARR_DAY);
-
-    if (moonRiseMs != null && moonSetMs != null) {
-      const mRiseTod = (moonRiseMs + ARR_NZT) % ARR_DAY;
-      const mSetTod  = (moonSetMs  + ARR_NZT) % ARR_DAY;
-      let moonArcFrac = -1;
-      for (let dOff = -1; dOff <= 0; dOff++) {
-        const chkMid  = mnSlotMid + dOff * ARR_DAY;
-        const chkIdx  = mnDayIdx + dOff;
-        const chkOff  = chkIdx * 55 * 60000;
-        const chkRise = chkMid + ((mRiseTod + chkOff) % ARR_DAY + ARR_DAY) % ARR_DAY - ARR_NZT;
-        const chkSet  = chkMid + ((mSetTod  + chkOff) % ARR_DAY + ARR_DAY) % ARR_DAY - ARR_NZT;
-        const chkSetAdj = chkSet < chkRise ? chkSet + ARR_DAY : chkSet;
-        if (chkSetAdj > chkRise + 1800000 && slot.utcMs >= chkRise && slot.utcMs <= chkSetAdj) {
-          moonArcFrac = Math.max(0, Math.sin(Math.PI * (slot.utcMs - chkRise) / (chkSetAdj - chkRise)));
-          break;
-        }
-      }
-      if (moonArcFrac >= 0) {
-        const moonY = HOR_Y - moonArcFrac * SKY_H * 0.80;
+    // The Moon where it actually is at this hour: its real altitude for this
+    // viewer, so each night's moonrise and moonset land where they really do.
+    {
+      const m = moonAt(slot.utcMs + 30 * 60000, lat, lon);
+      if (m.altitude > 0) {
+        const moonY = HOR_Y - Math.sin(m.altitude * Math.PI / 180) * SKY_H * 0.80;
         const moonX = x + COL_W / 2;
         ctx.fillStyle = 'rgba(210,218,245,0.12)';
         ctx.beginPath(); ctx.arc(moonX, moonY, 11, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = 'rgba(208,216,238,0.88)';
+        ctx.fillStyle = `rgba(208,216,238,${(0.35 + 0.53 * m.illumination).toFixed(2)})`;
         ctx.beginPath(); ctx.arc(moonX, moonY, 4.5, 0, Math.PI * 2); ctx.fill();
       }
     }
@@ -612,13 +601,10 @@ function drawCanvas(
 // ── Main component ────────────────────────────────────────────────────────────
 
 const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
-  moonIllumination,
   userLatitude,
+  userLongitude,
   sunriseMs,
   sunsetMs,
-  moonRiseMs,
-  moonSetMs,
-  moonWaxing,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef   = useRef<HTMLDivElement>(null);
@@ -628,7 +614,12 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   const [popup,   setPopup]   = useState<PopupState | null>(null);
   const [canvasW, setCanvasW] = useState(700);
 
-  const moon = moonIllumination ?? 50;
+  // The viewer, for the Moon's height at each hour.
+  const where = React.useMemo(() => {
+    if (userLatitude != null && userLongitude != null) return { lat: userLatitude, lon: userLongitude };
+    const l = resolveViewerLocation();
+    return { lat: l.latitude, lon: l.longitude };
+  }, [userLatitude, userLongitude]);
 
   // Fetch KP data
   const fetchKpData = useCallback(() => {
@@ -745,8 +736,8 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   useEffect(() => {
     if (!canvasRef.current || slots.length === 0) return;
     const drawW = Math.max(canvasW, slots.length * 22);
-    drawCanvas(canvasRef.current, slots, drawW, sunriseMs, sunsetMs, moonRiseMs, moonSetMs, minKpForLocation(userLatitude), popup?.slotIdx ?? -1);
-  }, [slots, canvasW, sunriseMs, sunsetMs, moonRiseMs, moonSetMs, popup]);
+    drawCanvas(canvasRef.current, slots, drawW, sunriseMs, sunsetMs, where.lat, where.lon, minKpForLocation(userLatitude), popup?.slotIdx ?? -1);
+  }, [slots, canvasW, sunriseMs, sunsetMs, where, userLatitude, popup]);
 
   // Click
   const handleClick = useCallback((e: React.MouseEvent) => {
@@ -763,43 +754,8 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   const sel  = popup ? slots[popup.slotIdx] : null;
   const selSky = sel ? skyTypeFromMs(sel.utcMs, sunriseMs, sunsetMs) : 'night';
 
-  // Compute whether the moon is above the horizon for the selected slot
-  const selIsMoonUp = (() => {
-    if (!sel || !moonRiseMs || !moonSetMs) return true; // assume up if no data
-    const DAY_MS_M = 86400000;
-    const NZT_M    = getNzOffsetMs(sel.utcMs);
-    const slotNztM = sel.utcMs + NZT_M;
-    const slotMidM = slotNztM - (slotNztM % DAY_MS_M);
-    const startNztM = (slots[0]?.utcMs ?? sel.utcMs) + NZT_M;
-    const startMidM = startNztM - (startNztM % DAY_MS_M);
-    const dayIdxM   = Math.round((slotMidM - startMidM) / DAY_MS_M);
-    const offM      = dayIdxM * 55 * 60000;
-    const riseTodM  = (moonRiseMs + NZT_M) % DAY_MS_M;
-    const setTodM   = (moonSetMs  + NZT_M) % DAY_MS_M;
-    // ±1 day window - same logic as canvas arc to handle overnight moon
-    for (let d = -1; d <= 0; d++) {
-      const chkMidM  = slotMidM + d * DAY_MS_M;
-      const chkIdxM  = dayIdxM + d;
-      const chkOffM  = chkIdxM * 55 * 60000;
-      const chkRiseM = chkMidM + ((riseTodM + chkOffM) % DAY_MS_M + DAY_MS_M) % DAY_MS_M - NZT_M;
-      const chkSetM  = chkMidM + ((setTodM  + chkOffM) % DAY_MS_M + DAY_MS_M) % DAY_MS_M - NZT_M;
-      const chkSetAdjM = chkSetM < chkRiseM ? chkSetM + DAY_MS_M : chkSetM;
-      if (chkSetAdjM > chkRiseM + 1800000 && sel.utcMs >= chkRiseM && sel.utcMs <= chkSetAdjM) {
-        return true;
-      }
-    }
-    return false;
-  })();
-
-  // Day index: how many NZT calendar days from now to the selected slot
-  const selDayIndex = (() => {
-    if (!sel) return 0;
-    const NZT_D = getNzOffsetMs(sel.utcMs);
-    const nowMid  = Date.now() + NZT_D; const nowDay = nowMid - (nowMid % 86400000);
-    const selMid  = sel.utcMs + NZT_D;  const selDay = selMid - (selMid % 86400000);
-    return Math.max(0, Math.round((selDay - nowDay) / 86400000));
-  })();
-  const visRaw = sel ? getVis(sel.kp, moon, userLatitude, selSky, selIsMoonUp, selDayIndex, moonWaxing ?? null) : null;
+  const selMoon = sel ? slotMoon(sel.utcMs, where.lat, where.lon) : null;
+  const visRaw = sel && selMoon ? getVis(sel.kp, selMoon, userLatitude, selSky) : null;
   // For daytime/twilight slots with elevated KP, append the sun note to the tip
   const daySkyNote =
     selSky === 'day'      ? 'The sun is currently up - aurora is not visible in daylight even during a storm.'
@@ -901,7 +857,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
               )}
               {/* Moon */}
               <span style={{ fontSize:12, color:'var(--color-text-tertiary)', borderLeft:'0.5px solid var(--color-border-tertiary)', paddingLeft:8 }}>
-                Moon {Math.round(moon)}%
+                Moon {selMoon ? `${Math.round(selMoon.illumPct)}%${selMoon.up ? ' up' : ' down'}` : ''}
               </span>
               {/* Regions pill */}
               {vis.regions.length > 0 && (

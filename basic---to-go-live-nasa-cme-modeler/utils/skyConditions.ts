@@ -281,3 +281,60 @@ export function bestSkyWithin(
   }
   return best;
 }
+
+export interface MoonAt {
+  altitude: number;
+  up: boolean;
+  /** 0-1, how much of the disc is lit at that moment. */
+  illumination: number;
+  /**
+   * How much the Moon costs an aurora at that moment, 0-1: its brightness
+   * times how high it sits, the same moonlight term skyConditionsAt uses.
+   * Zero whenever it is below the horizon, whatever its phase.
+   */
+  moonlight: number;
+}
+
+/** Where the Moon is and how much it matters, for one place and moment. */
+export function moonAt(atMs: number, latitude: number, longitude: number): MoonAt {
+  const date = new Date(atMs);
+  const altitude = altitudeDegrees(moonPosition(date), latitude, longitude, date);
+  const { illumination } = moonPhase(date);
+  return {
+    altitude,
+    up: altitude > 0,
+    illumination,
+    moonlight: illumination * Math.max(0, Math.sin(altitude * D2R)) * 0.55,
+  };
+}
+
+/**
+ * The next moonrise or moonset after fromMs, whichever comes first, to
+ * within a few minutes. Null if the Moon neither rises nor sets in the
+ * window, which happens at high latitudes and never in New Zealand.
+ */
+export function nextMoonCrossing(
+  fromMs: number,
+  latitude: number,
+  longitude: number,
+  withinMs = 30 * 3600000,
+): { atMs: number; rises: boolean } | null {
+  const STEP = 10 * 60000;
+  let prevMs = fromMs;
+  let prevUp = moonAt(fromMs, latitude, longitude).up;
+  for (let t = fromMs + STEP; t <= fromMs + withinMs; t += STEP) {
+    const up = moonAt(t, latitude, longitude).up;
+    if (up !== prevUp) {
+      // Bisect the step down to about a minute.
+      let lo = prevMs, hi = t;
+      while (hi - lo > 60000) {
+        const mid = (lo + hi) / 2;
+        if (moonAt(mid, latitude, longitude).up === prevUp) lo = mid; else hi = mid;
+      }
+      return { atMs: hi, rises: up };
+    }
+    prevMs = t;
+    prevUp = up;
+  }
+  return null;
+}

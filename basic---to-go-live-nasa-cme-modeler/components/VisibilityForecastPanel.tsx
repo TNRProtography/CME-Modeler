@@ -26,6 +26,8 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
 import { SubstormForecast, SightingReport } from '../types';
 import type { SubstormRiskData } from '../hooks/useForecastData';
 import { computeOvalBoundary as computeOvalBoundaryPhysics, avgBy30m } from '../utils/ovalPhysics';
+import { moonAt, nextMoonCrossing } from '../utils/skyConditions';
+import { resolveViewerLocation } from '../utils/viewerLocation';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -353,15 +355,39 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   substormRiskData,
   recentSightings,
   isDaylight,
-  moonIllumination,
-  moonRiseMs,
-  moonSetMs,
   userLatitude,
   userLongitude,
   allNewellData,
   allMagneticData,
 }) => {
   const [modalState, setModalState] = useState<{ title: string; content: string } | null>(null);
+
+  // Where the Moon actually is at each slot's time, for this viewer, rather
+  // than one illumination figure for the whole night. A bright Moon below the
+  // horizon costs nothing; the same Moon high in the sky costs a lot.
+  const where = useMemo(() => {
+    if (userLatitude != null && userLongitude != null) return { lat: userLatitude, lon: userLongitude };
+    const l = resolveViewerLocation();
+    return { lat: l.latitude, lon: l.longitude };
+  }, [userLatitude, userLongitude]);
+  const slotBaseMs = useMemo(() => Date.now(), [auroraScore, substormRiskData]);
+  const moonFactor = useCallback(
+    (offsetMin: number) => 1 - moonAt(slotBaseMs + offsetMin * 60000, where.lat, where.lon).moonlight,
+    [slotBaseMs, where],
+  );
+  const moonLine = useMemo(() => {
+    const now = moonAt(slotBaseMs, where.lat, where.lon);
+    const lit = `${Math.round(now.illumination * 100)}% lit`;
+    const next = nextMoonCrossing(slotBaseMs, where.lat, where.lon);
+    const at = next
+      ? new Date(next.atMs).toLocaleTimeString('en-NZ', { timeZone: 'Pacific/Auckland', hour: 'numeric', minute: '2-digit', hour12: true })
+      : null;
+    if (now.up) {
+      return `The Moon is up (${lit})${at ? ` and sets at ${at}` : ''}.`
+        + (now.illumination > 0.3 ? ' It is washing out fainter aurora while it is up, and that is allowed for below.' : '');
+    }
+    return `The Moon is down${at ? ` until ${at}` : ''} (${lit}), so it is not affecting the sky${at ? ' until then' : ''}.`;
+  }, [slotBaseMs, where]);
 
   const buildStatTooltip = (title: string, whatItIs: string, auroraEffect: string, advanced: string) => `
     <div class='space-y-3 text-left'>
@@ -505,7 +531,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   const conf60 = getSlotConfidence(substormForecast.status, '1h');
 
   const nowVisibility = useMemo(() => {
-    const base = getVisibilityPhrase(nowScore, 'high', sightingContext);
+    const base = getVisibilityPhrase(nowScore * moonFactor(0), 'high', sightingContext);
     const extraNotes: string[] = [];
     if (bayOnset)  extraNotes.push('Activity just picked up - aurora may be starting right now');
     if (cmeSheath) extraNotes.push('A solar storm is passing Earth right now - conditions could change fast');
@@ -516,7 +542,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
       ...base,
       subtext: [base.subtext, ...extraNotes].filter(Boolean).join(' · ') || null,
     };
-  }, [nowScore, sightingContext, bayOnset, cmeSheath, workerConf]);
+  }, [nowScore, sightingContext, bayOnset, cmeSheath, workerConf, moonFactor]);
 
   const score15 = useMemo(() => locationAdjustedScore(rawScore15, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset, latestBy), [rawScore15, userLatitude, userLongitude, substormRiskData, bayOnset, latestBy]);
   const score30 = useMemo(() => locationAdjustedScore(rawScore30, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset, latestBy), [rawScore30, userLatitude, userLongitude, substormRiskData, bayOnset, latestBy]);
@@ -525,10 +551,10 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   // solar wind coupling models. Apply location penalty the same way.
   const rawScore120 = auroraScore ?? 0;
   const score120 = useMemo(() => locationAdjustedScore(rawScore120, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset, latestBy), [rawScore120, userLatitude, userLongitude, substormRiskData, bayOnset, latestBy]);
-  const vis15 = useMemo(() => getVisibilityPhrase(score15, conf15), [score15, conf15]);
-  const vis30 = useMemo(() => getVisibilityPhrase(score30, conf30), [score30, conf30]);
-  const vis60 = useMemo(() => getVisibilityPhrase(score60, conf60), [score60, conf60]);
-  const vis120 = useMemo(() => getVisibilityPhrase(score120, 'low'), [score120]);
+  const vis15 = useMemo(() => getVisibilityPhrase(score15 * moonFactor(15), conf15), [score15, conf15, moonFactor]);
+  const vis30 = useMemo(() => getVisibilityPhrase(score30 * moonFactor(30), conf30), [score30, conf30, moonFactor]);
+  const vis60 = useMemo(() => getVisibilityPhrase(score60 * moonFactor(60), conf60), [score60, conf60, moonFactor]);
+  const vis120 = useMemo(() => getVisibilityPhrase(score120 * moonFactor(120), 'low'), [score120, moonFactor]);
 
   const daylightNowLine = useMemo(() => {
     const score = Math.round(nowScore);
@@ -537,18 +563,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
     return `Current activity: score ${score}/100 · ${level} · IMF Bz ${bzTxt}.`;
   }, [nowScore, workerLevel, bz]);
 
-  const daylightMoonLine = useMemo(() => {
-    const now = Date.now();
-    const illum = moonIllumination != null ? `${Math.round(moonIllumination)}% illuminated` : 'illumination unavailable';
-    if (moonRiseMs == null || moonSetMs == null) return `Moon data: ${illum}.`;
-
-    const moonUp = moonRiseMs <= moonSetMs
-      ? now >= moonRiseMs && now <= moonSetMs
-      : now >= moonRiseMs || now <= moonSetMs;
-    return moonUp
-      ? `Moon is currently up (${illum}) - this may wash out faint aurora later.`
-      : `Moon is currently down (${illum}) - darker sky expected when night begins.`;
-  }, [moonIllumination, moonRiseMs, moonSetMs]);
+  const daylightMoonLine = moonLine;
 
   // Always show forecast slots when it's dark - phrases reflect location.
   const showForecast = true;
@@ -606,6 +621,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
         This forecast uses your GPS location and the aurora oval position - more accurate than the % score alone.
         {(!userLatitude) && <span className="text-amber-500/80"> Enable location for full accuracy.</span>}
       </p>
+      <p className="text-xs text-neutral-500 mb-3 leading-snug">{moonLine}</p>
 
       {/* Substorm context bar - just below the header */}
       {workerScore != null && (
