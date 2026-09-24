@@ -45,6 +45,9 @@ import { spotCountChanges, type SpotCountChange } from '../hooks/useSunspotRegio
 import { fetchGoesProtons, fetchGoesXrays } from '../utils/goesSeries';
 import { hasDecodedImage, loadDecodedImage, prefetchImage } from '../utils/decodedImages';
 import SunspotCloseupCanvas from './SunspotCloseupCanvas';
+// Cache lifetime asked of the proxy for SDO archive frames, which never change;
+// shared with the background preload so both ask for the same address.
+import { ARCHIVE_IMAGE_TTL_S, preloadedImageUrls } from '../utils/imageryPreload';
 
 interface SolarActivityDashboardProps {
   setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | { type: 'image_with_labels'; url: string; regions: RegionInput[]; geometry: SolarDiskGeometry; imageNatural: { width: number; height: number }; atMs: number } | null) => void;
@@ -211,8 +214,6 @@ const NOAA_PROTON_FLUX_URLS = [
  * of the HMI position history that places the regions on old frames.
  */
 const SPOT_WINDOW_OPTIONS = [6, 12, 24, 72, 168] as const;
-/** Cache lifetime asked of the proxy for SDO archive frames, which never change. */
-const ARCHIVE_IMAGE_TTL_S = 7 * 24 * 3600;
 
 const NOAA_ACTIVE_REGIONS_TEXT_URL = 'https://services.swpc.noaa.gov/text/solar-regions.txt';
 const NOAA_SOLAR_PROBABILITIES_URL = 'https://services.swpc.noaa.gov/json/solar_probabilities.json';
@@ -1000,7 +1001,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [coronagraphFrameLoading, setCoronagraphFrameLoading] = useState<boolean>(false);
   const [stereoEarthSeparationDeg, setStereoEarthSeparationDeg] = useState<number | null>(null);
   const coronagraphCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const loadedFrameUrlsRef = useRef<Set<string>>(new Set());
+  // Shared with the background imagery preload, so a frame it has already
+  // loaded shows without a spinner.
+  const loadedFrameUrlsRef = useRef<Set<string>>(preloadedImageUrls);
   // Refs so playback interval closures always see the latest loading state
   const suviFrameLoadingRef = useRef<boolean>(false);
   const coronagraphFrameLoadingRef = useRef<boolean>(false);

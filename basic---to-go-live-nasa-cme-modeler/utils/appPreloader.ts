@@ -1,4 +1,5 @@
 import { fetchGoesProtons, fetchGoesXrays } from './goesSeries';
+import { startImageryPreload } from './imageryPreload';
 
 // Worker base URLs - must match SolarActivityDashboard constants exactly
 const CORONAGRAPHY_WORKER_BASE = 'https://coronagraphy-processing.thenamesrock.workers.dev';
@@ -53,6 +54,11 @@ export const startAppPreload = () => {
   workerStatePreload.suvi = fetch(`${SUVI_DIFF_WORKER_BASE}/api/state`, { cache: 'no-store' })
     .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
     .catch(() => null);
+
+  // Then the solar imagery - sunspot week, SUVI, coronagraphs - in the
+  // background, once the first screen has had its turn at the network.
+  const imageryState = { coronagraph: workerStatePreload.coronagraph, suvi: workerStatePreload.suvi };
+  window.setTimeout(() => startImageryPreload(imageryState), 2000);
 
   if (import.meta.env.DEV) console.info('[preload] app preload queued');
 };
