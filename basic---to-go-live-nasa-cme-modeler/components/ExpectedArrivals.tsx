@@ -38,11 +38,14 @@ const relative = (ms: number, nowMs: number): string => {
   return `in ${(hours / 24).toFixed(1)} days`;
 };
 
-/** What it is, in the words the rest of the app uses. */
+/**
+ * What it is, in the words the rest of the app uses. No hole or CME names:
+ * "CH_SUVI_0" means nothing to somebody deciding whether to go out.
+ */
 const describe = (a: ExpectedChange): { what: string; detail: string } => {
   if (a.kind.startsWith('CME')) {
     return {
-      what: a.sourceId ? `CME ${a.sourceId}` : 'CME',
+      what: 'A CME',
       // The sheath is the compressed wind ahead of the cloud and is usually
       // where the activity is; the ejecta is the cloud itself.
       detail: a.kind === 'CME sheath'
@@ -52,15 +55,35 @@ const describe = (a: ExpectedChange): { what: string; detail: string } => {
   }
   if (a.kind === 'SIR') {
     return {
-      what: a.sourceId ?? 'Stream interaction',
-      detail: 'Fast wind piling into slower wind ahead of it, which compresses the field.',
+      what: 'A coronal hole',
+      detail: 'The leading edge of its stream: fast wind piling into slower wind ahead of it, which compresses the field.',
     };
   }
   return {
-    what: a.sourceId ?? 'Coronal hole stream',
+    what: 'A coronal hole',
     detail: 'High-speed wind from an open-field region on the Sun.',
   };
 };
+
+const isCme = (a: ExpectedChange) => a.kind.startsWith('CME');
+
+/**
+ * How many separate coronal holes and CMEs are due. One source can make more
+ * than one entry - a CME's sheath and then its cloud - so sources are counted
+ * by id, and an entry the timeline could not name counts on its own.
+ */
+const countSources = (arrivals: ExpectedChange[], pick: (a: ExpectedChange) => boolean): number => {
+  const ids = new Set<string>();
+  let unnamed = 0;
+  for (const a of arrivals) {
+    if (!pick(a)) continue;
+    if (a.sourceId) ids.add(a.sourceId); else unnamed++;
+  }
+  return ids.size + unnamed;
+};
+
+const plural = (n: number, one: string, many: string): string =>
+  n === 0 ? `no ${many}` : n === 1 ? `1 ${one}` : `${n} ${many}`;
 
 /**
  * The best night inside an arrival's window.
@@ -127,8 +150,15 @@ export const ExpectedArrivals: React.FC<{
     );
   }
 
+  const holes = countSources(arrivals, (a) => !isCme(a));
+  const cmes = countSources(arrivals, isCme);
+
   return (
     <ul className="space-y-2">
+      <li className="text-xs text-neutral-200">
+        In the next {horizonDays} days: {plural(holes, 'coronal hole', 'coronal holes')} and{' '}
+        {plural(cmes, 'CME', 'CMEs')} expected to affect Earth.
+      </li>
       {arrivals.map((a) => {
         const { what, detail } = describe(a);
         const night = nightFor(nights, a);
