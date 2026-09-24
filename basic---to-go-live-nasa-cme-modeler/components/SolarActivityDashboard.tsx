@@ -208,6 +208,8 @@ const NOAA_PROTON_FLUX_URLS = [
  * of the HMI position history that places the regions on old frames.
  */
 const SPOT_WINDOW_OPTIONS = [6, 12, 24, 72, 168] as const;
+/** Cache lifetime asked of the proxy for SDO archive frames, which never change. */
+const ARCHIVE_IMAGE_TTL_S = 7 * 24 * 3600;
 
 const NOAA_ACTIVE_REGIONS_TEXT_URL = 'https://services.swpc.noaa.gov/text/solar-regions.txt';
 const NOAA_SOLAR_PROBABILITIES_URL = 'https://services.swpc.noaa.gov/json/solar_probabilities.json';
@@ -1703,7 +1705,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     } catch (error) {
       console.error('Error fetching flares:', error);
       setLoadingFlares(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      stampIfChanged('solar-flares', processedData, setLastFlaresUpdate);
+      // keep previous last-changed timestamp on failed fetch
     } finally {
       reportInitialTask('solarFlares');
     }
@@ -2300,6 +2302,44 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       detail: undefined as string | undefined, live: true },
   ], [spotArchive]);
 
+  // Archive frames never change, so they are asked for with a week's cache
+  // rather than five minutes: a replay, or the same window tomorrow, is then
+  // served from the browser instead of downloaded again.
+  const archiveImageUrl = useCallback((url: string) => proxyImageUrl(url, ARCHIVE_IMAGE_TTL_S), []);
+
+  // Which frame images are downloaded and decoded. Playback steps only onto a
+  // frame that is ready, so a first run through the window waits a moment on
+  // a slow frame instead of flashing a blank or half-drawn one - which is what
+  // made the first couple of plays glitch and later ones not.
+  const spotImageState = useRef(new Map<string, Promise<void>>());
+  const spotImageReady = useRef(new Set<string>());
+  // The last few decoded frames, held on to so the browser keeps their
+  // bitmaps: the displayed <img> then reuses them rather than decoding (or,
+  // on a browser with a less willing cache, downloading) again. A handful,
+  // not the window - a decoded 1024px frame is about 4 MB of memory.
+  const spotImageKeep = useRef<HTMLImageElement[]>([]);
+  const [detailTick, setDetailTick] = useState(0);
+  const warmSpotImage = useCallback((url: string): Promise<void> => {
+    const known = spotImageState.current.get(url);
+    if (known) return known;
+    const done = new Promise<void>((resolve) => {
+      const img = new Image();
+      const finish = () => {
+        spotImageReady.current.add(url);
+        spotImageKeep.current.push(img);
+        if (spotImageKeep.current.length > 16) spotImageKeep.current.shift();
+        resolve();
+      };
+      // A frame that fails still counts as ready: playback moves past it
+      // rather than stalling on it forever.
+      img.onload = () => { (img.decode ? img.decode() : Promise.resolve()).catch(() => {}).then(finish); };
+      img.onerror = finish;
+      img.src = url;
+    });
+    spotImageState.current.set(url, done);
+    return done;
+  }, []);
+
   // Every frame's 512px copy, in the background, four at a time. About 60 KB
   // each, so even the week is a few megabytes - and it is what makes dragging
   // across the whole window immediate rather than a wait at every stop.
@@ -2310,13 +2350,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       if (cancelled) return;
       const url = queue.shift();
       if (!url) return;
-      const img = new Image();
-      img.onload = img.onerror = next;
-      img.src = proxyImageUrl(url, 300);
+      warmSpotImage(archiveImageUrl(url)).then(next);
     };
     for (let k = 0; k < 4; k++) next();
     return () => { cancelled = true; };
-  }, [spotArchive]);
+  }, [spotArchive, warmSpotImage]);
 
   // Land on now whenever the set of frames changes - the rule every imagery
   // panel in the app follows.
@@ -2353,21 +2391,36 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   // measurement below can read its pixels.
   const spotDisplayUrl = spotIsLive
     ? sunspotOverviewImage.url
-    : proxyImageUrl((spotDragging && spotFrame.preview) || (spotFrame.url as string), 300);
+    : archiveImageUrl((spotDragging && spotFrame.preview) || (spotFrame.url as string));
 
-  const advanceSpotFrame = useCallback(
-    () => setSpotFrameIndex((i) => (i + 1) % Math.max(1, spotFrames.length)),
-    [spotFrames.length],
-  );
+  // Playback shows the 1024px frame on the disk and in the close-up alike -
+  // one download per frame - so readiness is that one image.
+  const playbackUrlOf = useCallback((f: { live: boolean; url: string | null }) =>
+    (f.live || !f.url ? null : archiveImageUrl(f.url)), [archiveImageUrl]);
 
-  // The next few frames, fetched ahead so playback does not wait on each one.
-  // Not the whole window: three days of 1024px frames is tens of megabytes.
+  const advanceSpotFrame = useCallback(() => {
+    setSpotFrameIndex((i) => {
+      const n = (i + 1) % Math.max(1, spotFrames.length);
+      const url = spotFrames[n] ? playbackUrlOf(spotFrames[n]) : null;
+      if (!url) return n;
+      void warmSpotImage(url);
+      // Not loaded yet: hold this frame and try again on the next tick.
+      return spotImageReady.current.has(url) ? n : i;
+    });
+  }, [spotFrames, playbackUrlOf, warmSpotImage]);
+
+  // Frames ahead, fetched in order so playback rarely has to wait. Further
+  // ahead while playing than while paused; never the whole window, which at
+  // three days of 1024px frames is tens of megabytes nobody asked for.
   useEffect(() => {
-    for (let k = 1; k <= 3; k++) {
-      const next = spotFrames[spotIndex + k];
-      if (next && !next.live && next.url) new Image().src = proxyImageUrl(next.url, 300);
+    const ahead = spotPlaying ? 8 : 2;
+    let chain = Promise.resolve();
+    for (let k = 1; k <= ahead; k++) {
+      const next = spotFrames[(spotIndex + k) % spotFrames.length];
+      const url = next ? playbackUrlOf(next) : null;
+      if (url) chain = chain.then(() => warmSpotImage(url));
     }
-  }, [spotIndex, spotFrames]);
+  }, [spotIndex, spotFrames, spotPlaying, playbackUrlOf, warmSpotImage]);
 
   useEffect(() => {
     if (spotIsLive || archiveGeometry || !spotDisplayUrl) return;
@@ -2456,15 +2509,36 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     if (!label || !overviewBoxSize.width || !overviewBoxSize.height) {
       return { url: null, xPercent: 50, yPercent: 50, absent: true };
     }
-    const src = (spotDragging && spotFrame.preview) || spotFrame.detail || spotFrame.url;
+    // While dragging, the small preview; while playing, the same 1024px
+    // frame the disk is showing, already downloaded; only when the frame
+    // settles, the 2048px copy that holds up to the zoom. Playing through
+    // 2048px frames was a second, several-times-larger download per frame
+    // that nothing had fetched ahead.
+    // The 2048px copy takes over only once it has loaded, so settling on a
+    // frame sharpens the close-up rather than blanking it for a moment.
+    const detailUrl = spotFrame.detail ? archiveImageUrl(spotFrame.detail) : null;
+    const detailReady = !!detailUrl && spotImageReady.current.has(detailUrl) && detailTick >= 0;
+    const src = (spotDragging && spotFrame.preview)
+      || (!spotPlaying && detailReady ? spotFrame.detail : spotFrame.url);
     return {
-      url: src ? proxyImageUrl(src, 300) : null,
+      url: src ? archiveImageUrl(src) : null,
       xPercent: (label.label.anchorX / overviewBoxSize.width) * 100,
       yPercent: (label.label.anchorY / overviewBoxSize.height) * 100,
       absent: false,
     };
   }, [selectedSunspotRegion, spotIsLive, selectedSunspotCloseupUrl, selectedSunspotPreview,
-      laidOutSunspotLabels, overviewBoxSize, spotDragging, spotFrame]);
+      laidOutSunspotLabels, overviewBoxSize, spotDragging, spotPlaying, spotFrame, archiveImageUrl, detailTick]);
+
+  // Fetch the sharp copy for a region close-up once playback and dragging
+  // stop on a frame, and redraw when it is in.
+  useEffect(() => {
+    if (!selectedSunspotRegion || spotIsLive || spotPlaying || spotDragging || !spotFrame.detail) return;
+    let cancelled = false;
+    const url = archiveImageUrl(spotFrame.detail);
+    if (spotImageReady.current.has(url)) return;
+    warmSpotImage(url).then(() => { if (!cancelled) setDetailTick((t) => t + 1); });
+    return () => { cancelled = true; };
+  }, [selectedSunspotRegion, spotIsLive, spotPlaying, spotDragging, spotFrame, archiveImageUrl, warmSpotImage]);
 
   // ── Region history, for the growth read ──────────────────────────────────
   // NOAA only ever publishes the current state, so the worker keeps a snapshot

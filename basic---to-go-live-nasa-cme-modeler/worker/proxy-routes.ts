@@ -72,11 +72,27 @@ const clampTtl = (raw: string | null, fallback: number, min: number, max: number
   return Number.isFinite(ttl) ? Math.max(min, Math.min(max, ttl)) : fallback;
 };
 
+/**
+ * SDO's browse archive: one directory per UTC day, each file named for the
+ * moment it was taken (…/browse/2026/09/22/20260922_001038_1024_HMII.jpg).
+ * Such a file never changes once it exists, so it can be cached for a week
+ * rather than five minutes - which is what stops a replay of the sunspot
+ * tracker from downloading every frame again.
+ */
+const IMMUTABLE_ARCHIVE_RE = /^\/assets\/img\/browse\/\d{4}\/\d{2}\/\d{2}\/\d{8}_\d{6}_[^/]+\.(jpg|png)$/i;
+const ARCHIVE_MAX_TTL = 7 * 24 * 3600;
+
+export const isImmutableArchive = (target: URL): boolean =>
+  target.hostname === 'sdo.gsfc.nasa.gov' && IMMUTABLE_ARCHIVE_RE.test(target.pathname);
+
 const proxyImage = async (request: Request): Promise<Response> => {
   const url = new URL(request.url);
   const target = validateTarget(url.searchParams.get('url'), ALLOWED_HOSTS);
   const isHead = request.method === 'HEAD';
-  const ttl = clampTtl(url.searchParams.get('ttl'), 60, 30, 300);
+  const immutable = isImmutableArchive(target);
+  const ttl = immutable
+    ? clampTtl(url.searchParams.get('ttl'), ARCHIVE_MAX_TTL, 30, ARCHIVE_MAX_TTL)
+    : clampTtl(url.searchParams.get('ttl'), 60, 30, 300);
   const cacheKey = new Request(request.url, request);
 
   if (!isHead) {
@@ -95,7 +111,7 @@ const proxyImage = async (request: Request): Promise<Response> => {
   }
 
   const headers = new Headers(upstream.headers);
-  headers.set('Cache-Control', `public, max-age=${ttl}, s-maxage=${ttl}`);
+  headers.set('Cache-Control', `public, max-age=${ttl}, s-maxage=${ttl}${immutable ? ', immutable' : ''}`);
   headers.set('Vary', 'Accept');
 
   const response = new Response(isHead ? null : upstream.body, {

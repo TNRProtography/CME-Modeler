@@ -75,6 +75,18 @@ try {
     ['pages function', viaFn, '/api/proxy'],
   ];
 
+  // Archive frames never change, so they may be cached for a week; the live
+  // "latest" images must stay capped at five minutes.
+  const ARCHIVE = 'https://sdo.gsfc.nasa.gov/assets/img/browse/2026/09/22/20260922_001038_1024_HMIIF.jpg';
+  for (const [label, call, prefix] of entryPoints) {
+    const a = await call(`${prefix}/image?${q(ARCHIVE)}&ttl=604800`);
+    const cc = a.headers.get('cache-control') || '';
+    check(`${label}: an archive frame is cached for a week`, /max-age=604800/.test(cc) && /immutable/.test(cc), cc);
+    const l = await call(`${prefix}/image?${q(IMG)}&ttl=604800`);
+    const lc = l.headers.get('cache-control') || '';
+    check(`${label}: a live image is still capped at five minutes`, /max-age=300\b/.test(lc) && !/immutable/.test(lc), lc);
+  }
+
   for (const [label, call, prefix] of entryPoints) {
     let r = await call(`${prefix}/image?${q(IMG)}`);
     check(`${label}: image is an image`, r.status === 200 && (r.headers.get('content-type') || '').startsWith('image/'),
