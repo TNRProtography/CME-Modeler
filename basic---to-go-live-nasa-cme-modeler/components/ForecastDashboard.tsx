@@ -9,7 +9,7 @@ import FluxRopeAnalyzer from './FluxRopeAnalyzer';
 import KpForecastTimeline from './KpForecastTimeline';
 import LoadingSpinner from './icons/LoadingSpinner';
 import AuroraSightings from './AuroraSightings';
-import { VisibilityForecastPanel, projectSubstormScores } from './VisibilityForecastPanel';
+import { VisibilityForecastPanel } from './VisibilityForecastPanel';
 import GuideIcon from './icons/GuideIcon';
 import { useForecastData } from '../hooks/useForecastData';
 import ForecastChartPanel from './ForecastChartPanel';
@@ -170,21 +170,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     // ── Projected scores for oval forecast timeline ──────────────────────────
     // Compute the same raw projected scores that VisibilityForecastPanel uses,
     // so we can pass them to AuroraSightings for the oval timeline slider.
-    const ovalProjectedScores = useMemo(() => {
-        const rawWorkerScore = substormRiskData?.current?.score ?? null;
-        const base = rawWorkerScore ?? auroraScore ?? 0;
-        const workerTrend = substormRiskData?.current?.risk_trend;
-        const _pNewellNow = allNewellData.length > 0 ? allNewellData[allNewellData.length - 1].y : undefined;
-        const _pNewellAvg30 = (() => { const c = Date.now() - 30 * 60000; const pts = allNewellData.filter(p => p.x >= c); return pts.length > 0 ? pts.reduce((s, p) => s + p.y, 0) / pts.length : undefined; })();
-        const newellNow = _pNewellNow ?? substormRiskData?.metrics?.solar_wind?.newell_coupling_now;
-        const newellAvg30 = _pNewellAvg30 ?? substormRiskData?.metrics?.solar_wind?.newell_avg_30m;
-        const workerConf = substormRiskData?.current?.confidence;
-        const { score15, score30, score60 } = projectSubstormScores(
-            base, substormForecast, workerTrend, newellNow, newellAvg30, workerConf
-        );
-        const score120 = auroraScore ?? 0;
-        return { score15, score30, score60, score120 };
-    }, [substormRiskData, auroraScore, substormForecast, allNewellData]);
 
     // ... [Original UseEffects & Handlers] ...
     useEffect(() => {
@@ -602,6 +587,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     userLongitude={userLongitude}
                                     allNewellData={allNewellData}
                                     allMagneticData={allMagneticData}
+                                    allSpeedData={allSpeedData}
+                                    allPressureData={allPressureData}
                                 />
                             </div>
                             </div>
@@ -617,7 +604,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 </p>
                                 <ExpectedArrivals />
                             </div>
-                            <div id="aurora-sightings-section" className="col-span-12"><AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} allNewellData={allNewellData} allMagneticData={allMagneticData} auroraScore={auroraScore} rawScore15={ovalProjectedScores.score15} rawScore30={ovalProjectedScores.score30} rawScore60={ovalProjectedScores.score60} rawScore120={ovalProjectedScores.score120} /></div>
+                            <div id="aurora-sightings-section" className="col-span-12"><AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} allNewellData={allNewellData} allMagneticData={allMagneticData} allSpeedData={allSpeedData} allPressureData={allPressureData} /></div>
                             <div id="kp-forecast-section" className="col-span-12"><KpForecastTimeline
                                 userLongitude={userLongitude}
                                 moonIllumination={celestialTimes?.moon?.illumination ?? null}
@@ -662,6 +649,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     userLongitude={userLongitude}
                                     allNewellData={allNewellData}
                                     allMagneticData={allMagneticData}
+                                    allSpeedData={allSpeedData}
+                                    allPressureData={allPressureData}
                                 />
                             </div>
                             </div>
@@ -714,7 +703,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     />
                                 );
                             })()}
-                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} allNewellData={allNewellData} allMagneticData={allMagneticData} auroraScore={auroraScore} rawScore15={ovalProjectedScores.score15} rawScore30={ovalProjectedScores.score30} rawScore60={ovalProjectedScores.score60} rawScore120={ovalProjectedScores.score120} />
+                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} allNewellData={allNewellData} allMagneticData={allMagneticData} allSpeedData={allSpeedData} allPressureData={allPressureData} />
                             
                             <div id="imf-chart-section" className="col-span-12"><ImfPanel fc={forecast} openModal={openModal} /></div>
                             <ForecastChartPanel

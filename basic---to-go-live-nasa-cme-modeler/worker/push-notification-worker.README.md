@@ -15,6 +15,11 @@ It is still a dashboard-managed worker. To deploy, paste the contents of
 `push-notification-worker.js` into the dashboard editor and save. Nothing else
 needs to change: the bindings, secrets and cron trigger already exist there.
 
+The file carries two generated blocks, the notification topics and the
+aurora visibility model. They are kept in step with the app by
+`npm run sync:topics` and `npm run sync:visibility`, and `npm run test:all`
+fails if either is out of date - so run those before pasting.
+
 Check afterwards with:
 
     curl "https://push-notification-worker.thenamesrock.workers.dev/health"

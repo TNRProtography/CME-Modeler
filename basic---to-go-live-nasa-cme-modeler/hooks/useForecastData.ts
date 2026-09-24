@@ -1,5 +1,6 @@
 //--- START OF FILE src/hooks/useForecastData.ts ---
 
+import { magneticLatitude } from '../utils/auroraVisibility';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   SubstormActivity,
@@ -184,28 +185,15 @@ function probabilityModel(dPhiNow: number, dPhiMean15: number, bzMean15: number)
   return { P30, P60 };
 }
 
-// IGRF-13 north magnetic dipole pole (geographic coordinates)
-const POLE_LAT_RAD = 80.65 * Math.PI / 180;
-const POLE_LON_RAD = -72.68 * Math.PI / 180;
-
-// Convert geographic lat/lon to geomagnetic latitude using IGRF-13 dipole
-function geoToGmagLat(latDeg: number, lonDeg: number): number {
-  const phi = latDeg * Math.PI / 180;
-  const lam = lonDeg * Math.PI / 180;
-  const sinGmag = Math.sin(phi) * Math.sin(POLE_LAT_RAD) +
-                  Math.cos(phi) * Math.cos(POLE_LAT_RAD) * Math.cos(lam - POLE_LON_RAD);
-  return Math.asin(Math.max(-1, Math.min(1, sinGmag))) * 180 / Math.PI;
-}
-
-// Greymouth geomagnetic latitude (geographic: -42.45°, 171.21°E)
-const GREYMOUTH_GMAG_LAT = geoToGmagLat(GREYMOUTH_LATITUDE, 171.21);
+// Greymouth's magnetic latitude, in the corrected geomagnetic coordinates the
+// rest of the visibility model uses (utils/auroraVisibility).
+const GREYMOUTH_GMAG_LAT = magneticLatitude(GREYMOUTH_LATITUDE, 171.21);
 
 const calculateLocationAdjustment = (userLat: number, userLon: number = 171.21): number => {
-  // Use geomagnetic latitude (IGRF-13) rather than geographic latitude.
-  // Aurora visibility is governed by proximity to the auroral oval, which
-  // is organised by geomagnetic (not geographic) latitude. In NZ the difference
-  // is ~18–22°, so this is a meaningful correction for users far from Greymouth.
-  const userGmagLat = geoToGmagLat(userLat, userLon);
+  // Magnetic rather than geographic latitude: the oval is organised by it.
+  // Corrected geomagnetic (AACGM), the same as every other surface, so the
+  // score and the visibility cards measure distance from the oval alike.
+  const userGmagLat = magneticLatitude(userLat, userLon);
   const isNorthOfGreymouth = userGmagLat > GREYMOUTH_GMAG_LAT;
   const R = 6371;
   const dLat = (userGmagLat - GREYMOUTH_GMAG_LAT) * (Math.PI / 180);

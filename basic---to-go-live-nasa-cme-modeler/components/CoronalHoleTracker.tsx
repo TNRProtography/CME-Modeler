@@ -37,7 +37,8 @@ import { detectSolarDiskGeometry, diskFromFraction, longitudeAt } from '../utils
 import { solarDiskOrientation } from '../utils/solarEphemeris';
 import { frameSpanHours } from '../utils/framePlayback';
 import { bestSkyWithin, skyConditionsAt, visibilityOutlook } from '../utils/skyConditions';
-import { buildOutlook, geomagneticLatitude, strengthAtLatitude } from '../utils/auroraOutlook';
+import { buildOutlook } from '../utils/auroraOutlook';
+import { auroraGeometryAt } from '../utils/auroraVisibility';
 import { buildForecastTimeline } from '../utils/forecastTimeline';
 import { describeSpread, hssArrivalEnsemble, measurementConfidence } from '../utils/arrivalEnsemble';
 import { bySignForPolarity, rmWindows, windowsDuring } from '../utils/rmWindows';
@@ -521,13 +522,14 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
         earthConnection: connection.factor,
       }], { fromMs: from - 6 * 3600000, toMs: to + 3 * DAY_MS, stepMs: 3600000 });
 
-      const viewerGeomag = geomagneticLatitude(location.latitude, location.longitude);
       const chainOutlook = buildOutlook(streamTimeline);
       const atArrival = chainOutlook.reduce((a, b) =>
         (Math.abs(a.atMs - sky.atMs) <= Math.abs(b.atMs - sky.atMs) ? a : b));
 
-      outlook = visibilityOutlook(strengthAtLatitude(atArrival.boundaryLikely, viewerGeomag), sky);
-      bestCaseOutlook = visibilityOutlook(strengthAtLatitude(atArrival.boundaryBest, viewerGeomag), sky);
+      const strengthOf = (boundary: number) =>
+        auroraGeometryAt(boundary, sky.atMs, location.latitude, location.longitude).strength;
+      outlook = visibilityOutlook(strengthOf(atArrival.boundaryLikely), sky);
+      bestCaseOutlook = visibilityOutlook(strengthOf(atArrival.boundaryBest), sky);
     }
 
     return { timing, choice, growth, centralMeridianMs, arrival, samples, pol, season, gone, latest,

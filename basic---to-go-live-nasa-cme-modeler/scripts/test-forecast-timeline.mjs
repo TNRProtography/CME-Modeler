@@ -32,6 +32,8 @@ await load('utils/rmEffect.ts');
 await load('utils/rmWindows.ts');
 await load('utils/skyConditions.ts');
 await load('utils/ovalPhysics.ts');
+await load('utils/aacgmGrid.ts');
+const V = await load('utils/auroraVisibility.ts');
 await load('utils/solarEphemeris.ts');
 await load('utils/solarDisk.ts');
 await load('utils/solarWindModel.ts');
@@ -202,28 +204,33 @@ console.log('\nThe nowcast chain, fed forecast numbers');
         'a stream pushes the oval further equatorward than quiet conditions',
         `${Math.max(...active.map(p => p.boundaryLikely)).toFixed(2)} vs ${Math.max(...quiet.map(p => p.boundaryLikely)).toFixed(2)}`);
 
-  // How far equatorward of the oval each instrument still sees something. A
-  // long exposure reaches a great deal further than an eye does, and
-  // collapsing that into one distance either calls those nights nothing or
-  // calls them naked-eye. Both are wrong; the second is worse.
-  const tierAt = (reach) => S.visibilityOutlook(A.strengthAtLatitude(-45 - reach, -45), dark).tier;
-  check(A.strengthAtLatitude(-45, -45) === 100, 'the oval at your latitude is as good as it gets');
+  // How far equatorward of the oval each instrument still sees something, on
+  // a moderate night (the shared model in utils/auroraVisibility). A long
+  // exposure reaches a great deal further than an eye does, and collapsing
+  // that into one distance either calls those nights nothing or calls them
+  // naked-eye. Both are wrong; the second is worse.
+  const REACH = 13, ACTIVITY = 0.25;
+  const strengthAt = (distance) => V.strengthFromGeometry(-45 - distance, -45, REACH, ACTIVITY);
+  const tierAt = (distance) => S.visibilityOutlook(strengthAt(distance), dark).tier;
+  check(strengthAt(0) >= 75 && strengthAt(0) < 90,
+        'the oval edge overhead is a distinct naked-eye display, not the best there is');
+  check(strengthAt(-4) === 100, 'the edge well past you toward the equator is');
   check(tierAt(0) === 'eye', 'overhead is naked eye');
   check(tierAt(3) === 'eye', 'and three degrees away still is');
   check(tierAt(7) === 'phone', 'seven degrees away is a phone shot');
-  check(tierAt(12) === 'camera', 'twelve degrees away needs a long exposure');
-  check(tierAt(17) === 'none', 'and seventeen degrees away is nothing at all');
-  check(A.strengthAtLatitude(-50, -45) > A.strengthAtLatitude(-55, -45),
-        'it falls off steadily with distance');
+  check(tierAt(11) === 'camera', 'eleven degrees away needs a long exposure');
+  check(tierAt(16) === 'none', 'and sixteen degrees away is nothing at all');
+  check(strengthAt(5) > strengthAt(10), 'it falls off steadily with distance');
 
-  // Geomagnetic latitude is not geographic, and for New Zealand the
-  // difference is about four degrees in the direction that matters.
-  const geomag = A.geomagneticLatitude(-43.53, 172.63);
-  check(geomag < -45 && geomag > -50,
-        `Christchurch sits at ${geomag.toFixed(1)} geomagnetic, not -43.5`, String(geomag));
-  check(Math.abs(geomag) > 43.53,
-        'which is further from the equator magnetically than geographically - using the geographic '
-        + 'figure quietly under-forecasts the whole country');
+  // Magnetic latitude is not geographic, and it is not the dipole either:
+  // the oval relations are fitted in corrected geomagnetic coordinates, and
+  // over New Zealand those sit another three and a half degrees poleward.
+  const mlat = V.magneticLatitude(-43.53, 172.63);
+  check(mlat < -49 && mlat > -52,
+        `Christchurch sits at ${mlat.toFixed(1)} magnetic, not -43.5`, String(mlat));
+  check(Math.abs(mlat) > Math.abs(V.dipoleLatitude(-43.53, 172.63)) + 3,
+        'further from the equator than the dipole says - using the dipole quietly '
+        + 'under-forecasts the whole country');
 }
 
 // ── night by night ─────────────────────────────────────────────────────────
@@ -321,12 +328,13 @@ console.log('\nNot flattering the forecast');
   // which is the way to lose people's trust fastest.
   // The calibration that matters: a fast stream with no southward field is a
   // camera target, not a naked-eye display. Speed alone does not do it.
-  check(A.strengthAtLatitude(-59, -43) === 0, 'sixteen degrees poleward scores nothing at all');
-  check(S.visibilityOutlook(A.strengthAtLatitude(-55, -43), dark).tier === 'camera',
-        'twelve degrees poleward is a long exposure, not a night out');
-  check(S.visibilityOutlook(A.strengthAtLatitude(-50, -43), dark).tier !== 'eye',
-        'and seven degrees poleward is still not naked eye');
-  check(A.strengthAtLatitude(-43, -43) === 100, 'while overhead is still full marks');
+  const quietReach = V.viewlineReachDeg(V.QUIET_BOUNDARY);
+  const quiet = (distance) => V.strengthFromGeometry(-43 - distance, -43, quietReach, 0);
+  check(quiet(12) === 0, 'twelve degrees poleward on a quiet night scores nothing at all');
+  check(S.visibilityOutlook(quiet(8.5), dark).tier === 'camera',
+        'eight and a half is a long exposure, not a night out');
+  check(S.visibilityOutlook(quiet(6), dark).tier !== 'eye',
+        'and six degrees poleward is still not naked eye');
 
   // Quiet conditions must not produce a viewable night by themselves.
   const quietNights = A.nightlyOutlook(
@@ -335,7 +343,7 @@ console.log('\nNot flattering the forecast');
   check(quietNights.every(n => n.tier === 'none'),
         'a week of nothing happening forecasts nothing to see',
         JSON.stringify(quietNights.map(n => n.tier)));
-  check(quietNights.every(n => n.strengthBest < 11),
+  check(quietNights.every(n => n.strengthBest < 20),
         'not even on the optimistic reading', JSON.stringify(quietNights.map(n => n.strengthBest.toFixed(1))));
 }
 

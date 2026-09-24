@@ -168,6 +168,10 @@ export interface SkyConditions {
    * allowed to reach 1 on moonlight alone.
    */
   washout: number;
+  /** The twilight part of that, 0-1. */
+  twilight?: number;
+  /** The moonlight part, 0 to about 0.55 for a full Moon overhead. */
+  moonlight?: number;
 }
 
 export function skyConditionsAt(atMs: number, latitude: number, longitude: number): SkyConditions {
@@ -197,10 +201,29 @@ export function skyConditionsAt(atMs: number, latitude: number, longitude: numbe
     phase,
     darkness,
     washout: Math.min(1, twilight + moonlight * (1 - twilight)),
+    twilight,
+    moonlight,
   };
 }
 
 export type VisibilityTier = 'none' | 'camera' | 'phone' | 'eye';
+
+/**
+ * Where each tier starts, on the app's published 0-100 scale - the same scale
+ * the Spot The Aurora score and the how-it-works page use: 20 long exposure,
+ * 35 phone night mode, 50 a faint glow to the eye, 65 a distinct one, 80
+ * go outside now. Every surface reads its tier from here.
+ */
+export const TIER_CAMERA = 20;
+export const TIER_PHONE = 35;
+export const TIER_EYE = 50;
+
+export function tierForStrength(strength: number): VisibilityTier {
+  if (strength >= TIER_EYE) return 'eye';
+  if (strength >= TIER_PHONE) return 'phone';
+  if (strength >= TIER_CAMERA) return 'camera';
+  return 'none';
+}
 
 export interface VisibilityOutlook {
   tier: VisibilityTier;
@@ -214,14 +237,26 @@ export interface VisibilityOutlook {
  * What you could expect to see, given how strong the display should be and
  * what the sky is doing.
  *
- * The thresholds are the app's existing three tiers - camera, phone, naked eye
- * - and they are judgement calls rather than measured quantities. The ordering
- * is not: a long exposure always beats a phone, which always beats an eye, and
- * that is what the bands encode.
+ * The strength is on the app's published scale (see tierForStrength), from
+ * utils/auroraVisibility; the sky takes its share off before the tier is read.
  */
+/**
+ * How many points a full Moon straight overhead takes off, on the 0-100 scale.
+ *
+ * Moonlight brightens the sky behind the aurora, so it drowns what is faint
+ * and leaves what is bright: it comes off as an amount, not a fraction. A
+ * full Moon high up turns a phone shot into nothing and a faint glow into a
+ * long exposure, while a display with the oval overhead is still a naked-eye
+ * one. Twilight is different - the whole sky is bright - and still scales.
+ */
+export const FULL_MOON_OVERHEAD_COST = 30;
+
 export function visibilityOutlook(strength0to100: number, sky: SkyConditions): VisibilityOutlook {
   const strength = Math.max(0, Math.min(100, strength0to100));
-  const effective = strength * (1 - sky.washout);
+  const twilight = sky.twilight ?? 0;
+  const moonlight = sky.moonlight ?? Math.max(0, sky.washout - twilight);
+  const moonCost = FULL_MOON_OVERHEAD_COST * (moonlight / 0.55);
+  const effective = Math.max(0, (strength - moonCost) * (1 - twilight));
 
   if (sky.darkness === 'daylight') {
     return {
@@ -231,15 +266,7 @@ export function visibilityOutlook(strength0to100: number, sky: SkyConditions): V
     };
   }
 
-  // Thresholds matched to the instrument reaches in auroraOutlook: with a
-  // sixteen degree camera limit, the eye limit of four degrees lands at 75 and
-  // the phone limit of nine at 44. A clear sky therefore has to put the oval
-  // genuinely close before anything is called naked-eye, which is what stops a
-  // merely fast stream being announced as a guaranteed display.
-  let tier: VisibilityTier = 'none';
-  if (effective >= 72) tier = 'eye';
-  else if (effective >= 42) tier = 'phone';
-  else if (effective >= 10) tier = 'camera';
+  const tier = tierForStrength(effective);
 
   const moonNote = sky.moonAltitude > 0 && sky.phase.illumination > 0.3
     ? ` The Moon is up and ${Math.round(sky.phase.illumination * 100)}% lit, which is washing out some of it.`
@@ -248,7 +275,7 @@ export function visibilityOutlook(strength0to100: number, sky: SkyConditions): V
       : '';
   const twilightNote = sky.darkness !== 'dark' ? ` Still ${sky.darkness} at this point.` : '';
 
-  const label = tier === 'eye' ? 'Visible to the naked eye'
+  const label = tier === 'eye' ? (effective >= 65 ? 'Visible to the naked eye' : 'A faint glow to the naked eye')
     : tier === 'phone' ? 'Phone camera should catch it'
     : tier === 'camera' ? 'Long exposure only'
     : 'Unlikely to be visible';

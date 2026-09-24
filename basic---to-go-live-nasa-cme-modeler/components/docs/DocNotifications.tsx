@@ -13,9 +13,9 @@ const DocNotifications: React.FC = () => (
     <DataTable
       headers={['Category', 'Trigger condition', 'Location-aware', 'Default']}
       rows={[
-        ['visibility-dslr',  'Aurora oval equatorward boundary reaches subscriber\'s DSLR visibility horizon. Threshold adjusted for moon illumination: <20% → base offsets; 40-60% → shifted conservatively; >80% → DSLR suppressed entirely.', 'Yes - per GPS', 'On'],
-        ['visibility-phone', 'Oval within phone-camera visibility range. Suppressed at moon >80%; takes DSLR\'s role at 60-80%.', 'Yes - per GPS', 'On'],
-        ['visibility-naked', 'Oval equatorward boundary within ~5° geomagnetic lat of subscriber. Threshold tightens with moon: base 5°; >40% → 8°; >60% → 10°; >80% → 12°.', 'Yes - per GPS', 'On'],
+        ['visibility-dslr',  'Aurora strength for the subscriber reaches the long exposure tier (20+ on the 0-100 scale) after their own sky - the Moon where it actually is for them, and twilight - is taken off.', 'Yes - per GPS', 'On'],
+        ['visibility-phone', 'Strength reaches the phone tier (35+) after the subscriber\'s sky.', 'Yes - per GPS', 'On'],
+        ['visibility-naked', 'Strength reaches the naked-eye tier (50+) after the subscriber\'s sky.', 'Yes - per GPS', 'On'],
         ['overnight-watch',  'Nightly summary between 18:00-21:00 NZST. Send condition based on user mode: every-night (score ≥0), camera (≥25), phone (≥40), eye (≥55). Once per NZ calendar day per subscriber.', 'NZ timezone', 'On'],
         ['flare-event',      'Solar flare confirmed at peak ≥M1.0. "Confirmed" = flux still ≥M1 after 5 min of declining trend (avoids false peaks).', 'No', 'On'],
         ['shock-ff',         'Fast Forward Shock - speed↑, density↑, temp↑, Bt↑ across median pre/post windows (18/12 min). Classic CME arrival signature. 4-hour cooldown.', 'No', 'On'],
@@ -26,35 +26,34 @@ const DocNotifications: React.FC = () => (
       ]}
     />
 
-    <SubHeading color="text-purple-400">Location-Aware Visibility Geometry - IGRF-13</SubHeading>
+    <SubHeading color="text-purple-400">Location-Aware Visibility Geometry - One Shared Model</SubHeading>
     <Card>
-      <p>For the three visibility tier notifications, the auroral oval boundary is estimated from Substorm Risk Worker Newell coupling averages, then compared to each subscriber's geomagnetic latitude:</p>
-      <Formula note="The IGRF-13 dipole pole position (80.65°N, 72.68°W geographic) correctly accounts for the fact that the geomagnetic and geographic poles do not coincide - which matters significantly for New Zealand's longitude.">
-{`// Oval boundary in geomagnetic latitude degrees
-newell = max(newell_avg_60m, newell_avg_30m × 0.85)
+      <p>The visibility notifications use the same model as the app's forecast cards and sightings map (utils/auroraVisibility.ts, generated into the worker by <code>npm run sync:visibility</code>). The oval comes from the real solar wind: every L1 reading moved forward by its own travel time to Earth, and the hour that has arrived.</p>
+      <Formula note="Magnetic latitude is corrected geomagnetic (AACGM-v2 at 110 km), from a one degree table over Australia and New Zealand. Over NZ it sits about 3.5° poleward of the tilted dipole - the coordinates the oval relations are fitted in.">
+{`// Oval edge near magnetic midnight, from the wind at Earth
+arrival      = t_L1 + 1.5e6 km / speed
+newell       = max(newell_avg_60m, newell_avg_30m × 0.85)   // arrived by now
+boundary_mid = −(65.5 − newell / 1800)  + pressure term, RM weighting
+  clamped to [−76°, −44°]; bay onset → at least −47.2°
 
-boundary_gmag = −(65.5 − newell / 1800)
-  clamped to [−76°, −44°] geomagnetic lat
-  bay_onset flag → further clamp to −47.2°
+// At the subscriber's magnetic local time (0 = magnetic midnight)
+boundary = boundary_mid − 4° × (1 − cos(2π (MLT − 23.5) / 24)) / 2
 
-// Geographic → geomagnetic lat conversion (IGRF-13)
-POLE_LAT_RAD = 80.65° × π/180
-POLE_LON_RAD = −72.68° × π/180
+// Viewline grows with activity
+activity = (65.5 − |boundary_mid|) / 21.5        → 0..1
+reach    = 9° + 16° × activity                    → 9°..25°
 
-sin(gmag_lat) = sin(geo_lat) × sin(POLE_LAT_RAD)
-              + cos(geo_lat) × cos(POLE_LAT_RAD)
-                × cos(geo_lon − POLE_LON_RAD)
+// Strength, 0-100, from how far the edge is from the subscriber
+d = |boundary| − |subscriber_mlat|
+peak = 75 + 15 × activity
+d ≤ 0:        peak + (100 − peak) × min(1, −d / 4)
+0 < d < reach: 20 + (peak − 20) × (1 − d / reach)^1.5
+d ≥ reach:    20 × (1 − (d − reach) / 2), floored at 0
 
-// Visibility horizon extends equatorward of boundary
-visDeg = 9.0 + (score/100) × 16.0   → range [9°, 25°]
+// The subscriber's own sky comes off it (moon height and phase, twilight)
+effective = strength × (1 − washout)
 
-visHorizon_gmag = boundary_gmag + visDeg
-distToVis       = subscriber_gmag − visHorizon_gmag
-
-// DSLR fires when:  distToVis ≤ −3°
-// Phone fires when: distToVis ≤ −1°
-// Naked fires when: distToBoundary ≤ 5°
-// All thresholds moon-adjusted`}
+// Tiers: DSLR ≥ 20, phone ≥ 35, naked eye ≥ 50`}
       </Formula>
     </Card>
 

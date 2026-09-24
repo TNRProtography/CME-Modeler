@@ -21,6 +21,7 @@
 
 import { computeOvalBoundary } from './ovalPhysics';
 import { skyConditionsAt, visibilityOutlook, type VisibilityTier } from './skyConditions';
+import { auroraGeometryAt, magneticLatitude } from './auroraVisibility';
 import type { L1State } from './forecastTimeline';
 
 /**
@@ -96,72 +97,6 @@ export function buildOutlook(timeline: L1State[]): OutlookPoint[] {
   });
 }
 
-/**
- * Turn an oval boundary into a strength for somebody at a given latitude.
- *
- * The oval reaching your latitude is not the same as it being overhead. Aurora
- * is visible well equatorward of the boundary as a glow on the horizon, so
- * this falls off with distance rather than switching off at the line.
- */
-/**
- * Geomagnetic latitude, from the tilted dipole.
- *
- * Aurora cares about the magnetic pole, not the geographic one, and for New
- * Zealand the difference is worth about four degrees in the wrong direction -
- * which is four degrees of oval you would otherwise be told you cannot see.
- * Using geographic latitude here silently under-forecasts the whole country.
- *
- * The north dipole pole is currently near 80.7N, 72.7W. This is the simple
- * dipole approximation rather than full IGRF: good to a degree or so, which
- * is far inside the uncertainty of everything upstream of it.
- */
-export function geomagneticLatitude(latitude: number, longitude: number): number {
-  const D2R = Math.PI / 180;
-  const poleLat = 80.7 * D2R;
-  const poleLon = -72.7 * D2R;
-  const lat = latitude * D2R;
-  const lon = longitude * D2R;
-  const sinMag = Math.sin(lat) * Math.sin(poleLat)
-    + Math.cos(lat) * Math.cos(poleLat) * Math.cos(lon - poleLon);
-  return Math.asin(Math.max(-1, Math.min(1, sinMag))) / D2R;
-}
-
-/**
- * How far equatorward of the oval you can still see something, by instrument.
- *
- * This is the part a single falloff curve gets wrong. A long exposure picks up
- * a glow on the horizon from a great deal further away than an eye does -
- * people photograph aurora from Canterbury on nights when nobody standing
- * outside would know it was happening. Collapsing that into one distance means
- * either calling those nights nothing, or calling them naked-eye. Both are
- * wrong, and the second is worse.
- *
- * The numbers are calibrated against what actually gets seen and photographed
- * from the South Island rather than derived, and they are the part of this
- * chain most worth revising as the track record fills in.
- */
-export const REACH_EYE_DEG = 4;
-export const REACH_PHONE_DEG = 9;
-export const REACH_CAMERA_DEG = 16;
-
-/**
- * Turn an oval boundary into a strength for somebody at a given latitude.
- *
- * Scaled so the tier thresholds in visibilityOutlook land on the reaches
- * above: overhead is full marks, the camera limit is zero, and the eye and
- * phone limits fall where they should in between.
- */
-export function strengthAtLatitude(boundaryGeomagLat: number, viewerGeomagLat: number): number {
-  // Both are southern and negative, and the oval moves EQUATORWARD - toward
-  // zero, so toward a less negative number - as the driving strengthens.
-  // `reach` is how many degrees poleward of the viewer the oval's equatorward
-  // edge still sits: zero means overhead, larger means further away.
-  const reach = Math.abs(boundaryGeomagLat) - Math.abs(viewerGeomagLat);
-  if (reach <= 0) return 100;
-  if (reach >= REACH_CAMERA_DEG) return 0;
-  return Math.max(0, Math.min(100, 100 * (1 - reach / REACH_CAMERA_DEG)));
-}
-
 export interface NightOutlook {
   /** Local midnight the night is named by. */
   nightMs: number;
@@ -187,7 +122,7 @@ export function nightlyOutlook(
   outlook: OutlookPoint[],
   latitude: number,
   longitude: number,
-  viewerGeomagLat: number = geomagneticLatitude(latitude, longitude),
+  viewerMlat: number = magneticLatitude(latitude, longitude),
 ): NightOutlook[] {
   if (outlook.length === 0) return [];
 
@@ -208,10 +143,14 @@ export function nightlyOutlook(
     for (const point of points) {
       const sky = skyConditionsAt(point.atMs, latitude, longitude);
       if (sky.darkness === 'daylight') continue;
+      // The shared model: the viewer's corrected magnetic latitude, the oval
+      // where it sits at this hour's magnetic local time, the viewline for
+      // this much activity. The small hours near magnetic midnight win ties
+      // they should win, because that is where the oval comes furthest.
       const likely = visibilityOutlook(
-        strengthAtLatitude(point.boundaryLikely, viewerGeomagLat), sky).effectiveStrength;
+        auroraGeometryAt(point.boundaryLikely, point.atMs, latitude, longitude, viewerMlat).strength, sky).effectiveStrength;
       const bestCase = visibilityOutlook(
-        strengthAtLatitude(point.boundaryBest, viewerGeomagLat), sky).effectiveStrength;
+        auroraGeometryAt(point.boundaryBest, point.atMs, latitude, longitude, viewerMlat).strength, sky).effectiveStrength;
       // Chosen on the LIKELY case. Picking the moment that maximises the
       // optimistic case biases every night toward whichever hour has the
       // largest fluctuation amplitude, which is the hour we know least about.
@@ -224,9 +163,9 @@ export function nightlyOutlook(
     if (!best) continue;
 
     const likelyOutlook = visibilityOutlook(
-      strengthAtLatitude(best.point.boundaryLikely, viewerGeomagLat), best.sky);
+      auroraGeometryAt(best.point.boundaryLikely, best.point.atMs, latitude, longitude, viewerMlat).strength, best.sky);
     const bestOutlook = visibilityOutlook(
-      strengthAtLatitude(best.point.boundaryBest, viewerGeomagLat), best.sky);
+      auroraGeometryAt(best.point.boundaryBest, best.point.atMs, latitude, longitude, viewerMlat).strength, best.sky);
 
     nights.push({
       nightMs: night * 86400000 + 12 * 3600000 - longitude / 15 * 3600000,

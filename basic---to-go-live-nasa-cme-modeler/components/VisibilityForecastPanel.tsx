@@ -27,6 +27,8 @@ import { SubstormForecast, SightingReport } from '../types';
 import type { SubstormRiskData } from '../hooks/useForecastData';
 import { computeOvalBoundary as computeOvalBoundaryPhysics, avgBy30m } from '../utils/ovalPhysics';
 import { moonAt, nextMoonCrossing } from '../utils/skyConditions';
+import { mergeL1Series } from '../utils/auroraVisibility';
+import { computeVisibilitySlots } from '../utils/visibilitySlots';
 import { resolveViewerLocation } from '../utils/viewerLocation';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -53,79 +55,17 @@ interface VisibilityForecastPanelProps {
   /** Proxy-derived data from RTSW merged-24h */
   allNewellData?: { x: number; y: number }[];
   allMagneticData?: { time: number; bt: number; bz: number; by: number; bx: number }[];
+  /** L1 speed and dynamic pressure, for the travel time and the pressure term. */
+  allSpeedData?: { x: number; y: number }[];
+  allPressureData?: { x: number; y: number }[];
 }
 
 type ConfidenceLevel = 'high' | 'medium' | 'low';
 
-// ─── Oval geometry (mirrors AuroraSightings) ─────────────────────────────────
-const POLE_LAT_RAD =  80.65 * Math.PI / 180;
-const POLE_LON_RAD = -72.68 * Math.PI / 180;
-
-function geoToGmagLat(latDeg: number, lonDeg: number): number {
-  const phi = latDeg * Math.PI / 180;
-  const lam = lonDeg * Math.PI / 180;
-  const sin = Math.sin(phi) * Math.sin(POLE_LAT_RAD) +
-              Math.cos(phi) * Math.cos(POLE_LAT_RAD) * Math.cos(lam - POLE_LON_RAD);
-  return Math.asin(Math.max(-1, Math.min(1, sin))) * 180 / Math.PI;
-}
-
-/**
- * Oval boundary with pressure expansion + Russell-McPherron weighting.
- * Thin wrapper over utils/ovalPhysics so the panel and the push worker
- * share identical physics. latestBy is the most recent IMF By (nT) from
- * the RTSW mag data, used for the RM seasonal projection; null disables
- * the RM term (factor = 1).
- */
-function computeOvalBoundary(
-  metrics: SubstormRiskData['metrics'],
-  bayOnset: boolean,
-  latestBy: number | null = null,
-): number {
-  return computeOvalBoundaryPhysics(
-    {
-      newell_avg_60m: metrics?.solar_wind?.newell_avg_60m,
-      newell_avg_30m: metrics?.solar_wind?.newell_avg_30m,
-      dynamic_pressure_nPa: metrics?.solar_wind?.dynamic_pressure_nPa,
-      avg_30m_pressure_nPa: metrics?.solar_wind?.avg_30m_pressure_nPa,
-      by: latestBy,
-      bz: metrics?.solar_wind?.bz,
-    },
-    bayOnset,
-  );
-}
-
-/**
- * Returns a location-adjusted score for visibility display.
- * If the user is north of the visibility horizon, the score is reduced
- * proportionally so the phrase matches what the map shows.
- * If no location is available, the raw score is returned unchanged.
- */
-function locationAdjustedScore(
-  rawScore: number,
-  userLat: number | null | undefined,
-  userLon: number | null | undefined,
-  metrics: SubstormRiskData['metrics'],
-  bayOnset: boolean,
-  latestBy: number | null = null,
-): number {
-  if (userLat == null || userLon == null) return rawScore;
-  const userGmag   = geoToGmagLat(userLat, userLon);
-  const boundary   = computeOvalBoundary(metrics, bayOnset, latestBy);
-  const visDeg     = 9.0 + (Math.max(0, Math.min(rawScore, 100)) / 100) * 16.0;
-  const visHorizon = boundary + visDeg; // geomagnetic lat of visibility line (negative)
-  // distFromVis: positive = user is equatorward (north) of vis line = can't see
-  //              negative = user is poleward (south) of vis line = can see
-  const distFromVis = userGmag - visHorizon;
-  if (distFromVis <= 0) {
-    // User is within or past the visibility horizon - no adjustment needed
-    return rawScore;
-  }
-  // User is north of visibility line. Scale score down based on how far.
-  // Every 1° north of the line roughly halves visibility, capped at 0.
-  // 3° north = almost invisible, 5° north = nothing to see.
-  const penalty = Math.min(1, distFromVis / 2.0);
-  return rawScore * (1 - penalty);
-}
+// ─── Oval geometry ───────────────────────────────────────────────────────────
+//
+// Everything about where the oval is and what can be seen of it comes from
+// utils/auroraVisibility, the model every other surface uses too.
 
 interface VisibilityResult {
   phrase: string;
@@ -205,101 +145,6 @@ function getVisibilityPhrase(
   return { phrase, icon: '😴', subtext: nothingReported ? subtext : null };
 }
 
-// ─── Score projection - substorm worker only ─────────────────────────────────
-//
-// All projected scores derive exclusively from the substorm worker's current
-// score and its own physics-based trend signals. The SpotTheAurora composite
-// is NOT used here - it's a visibility estimate, not a substorm measurement.
-
-export function projectSubstormScores(
-  workerScore: number,
-  forecast: SubstormForecast,
-  workerTrend?: string,
-  newellNow?: number,
-  newellAvg30?: number,
-  confidence?: number | null,
-): { score15: number; score30: number; score60: number; score120: number } {
-  const { status, p30, p60 } = forecast;
-
-  // Trend from the worker's own risk_trend field
-  const trendMult =
-    workerTrend === 'Rapidly Increasing' ? 1.18 :
-    workerTrend === 'Increasing'         ? 1.08 :
-    workerTrend === 'Decreasing'         ? 0.88 :
-    workerTrend === 'Rapidly Decreasing' ? 0.72 : 1.0;
-
-  // Newell acceleration - if coupling is intensifying right now, boost near-term
-  const newellAccel = newellNow && newellAvg30 && newellNow > newellAvg30 * 1.2;
-  const newellBoost = newellAccel ? 1.08 : 1.0;
-
-  // Confidence-based dampening - low confidence = wider uncertainty, cap projections
-  const confMult = confidence != null ? (0.7 + (confidence / 100) * 0.3) : 1.0;
-
-  const boostFromP = (p: number, base: number) =>
-    base + p * (100 - base) * 0.75;
-
-  let score15: number, score30: number, score60: number;
-
-  switch (status) {
-    case 'ONSET':
-      // Already happening - near-term stays high, 60 min starts to decay
-      score15 = workerScore * 1.05;
-      score30 = workerScore * 0.90;
-      score60 = workerScore * 0.62;
-      break;
-    case 'IMMINENT_30':
-      // Substorm expected within 30 min - peaks around 30 min mark
-      score15 = boostFromP(p30, workerScore);
-      score30 = boostFromP(p30, workerScore) * 1.05;
-      score60 = boostFromP(p60, workerScore) * 0.78;
-      break;
-    case 'LIKELY_60':
-      // Gradual build toward 60 min
-      score15 = workerScore * 1.08;
-      score30 = boostFromP(p30 * 0.65, workerScore);
-      score60 = boostFromP(p60, workerScore);
-      break;
-    case 'WATCH':
-      // Building but uncertain
-      score15 = workerScore * 1.04;
-      score30 = workerScore * 1.12;
-      score60 = boostFromP(p60 * 0.45, workerScore);
-      break;
-    case 'QUIET':
-    default:
-      // Stable or decaying
-      score15 = workerScore * 0.94;
-      score30 = workerScore * 0.83;
-      score60 = workerScore * 0.68;
-      break;
-  }
-
-  const applyAll = (s: number) =>
-    Math.max(0, s * trendMult * newellBoost * confMult);
-
-  // 2-hour projection - substorm worker has no 2h probability so we use
-  // the SpotTheAurora composite score (auroraScore) for this slot.
-  // Passed in as spotAuroraScore2h, already location-adjusted.
-  // We apply a light trend dampening but keep it independent of substorm state.
-  return {
-    score15: applyAll(score15),
-    score30: applyAll(score30),
-    score60: applyAll(score60),
-    score120: 0, // placeholder - filled by caller using SpotTheAurora score
-  };
-}
-
-function getSlotConfidence(
-  status: SubstormForecast['status'],
-  slot: '15m' | '30m' | '1h'
-): ConfidenceLevel {
-  if (status === 'ONSET')       return slot === '15m' ? 'high' : slot === '30m' ? 'medium' : 'low';
-  if (status === 'IMMINENT_30') return slot === '1h'  ? 'medium' : 'high';
-  if (status === 'LIKELY_60')   return slot === '1h'  ? 'high'   : 'medium';
-  if (status === 'WATCH')       return slot === '15m' ? 'medium' : 'low';
-  return slot === '15m' ? 'high' : slot === '30m' ? 'medium' : 'low';
-}
-
 function summariseSightings(sightings: SightingReport[]) {
   const cutoff = Date.now() - 30 * 60 * 1000;
   const recent = sightings.filter(s => s.timestamp >= cutoff);
@@ -359,6 +204,8 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   userLongitude,
   allNewellData,
   allMagneticData,
+  allSpeedData,
+  allPressureData,
 }) => {
   const [modalState, setModalState] = useState<{ title: string; content: string } | null>(null);
 
@@ -370,11 +217,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
     const l = resolveViewerLocation();
     return { lat: l.latitude, lon: l.longitude };
   }, [userLatitude, userLongitude]);
-  const slotBaseMs = useMemo(() => Date.now(), [auroraScore, substormRiskData]);
-  const moonFactor = useCallback(
-    (offsetMin: number) => 1 - moonAt(slotBaseMs + offsetMin * 60000, where.lat, where.lon).moonlight,
-    [slotBaseMs, where],
-  );
+  const slotBaseMs = useMemo(() => Date.now(), [auroraScore, substormRiskData, allNewellData]);
   const moonLine = useMemo(() => {
     const now = moonAt(slotBaseMs, where.lat, where.lon);
     const lit = `${Math.round(now.illumination * 100)}% lit`;
@@ -402,44 +245,42 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
     'Now': {
       title: 'Now',
       content: `<div class='space-y-3 text-left text-sm text-neutral-300'>
-        <p>This is what's happening right now based on real measurements. Solar wind data from the DSCOVR satellite about 1.5 million km upstream of Earth, plus the Eyrewell magnetometer in Canterbury which measures what's actually going on in the sky above New Zealand.</p>
-        <p>Your GPS location is converted to geomagnetic latitude so the forecast matches what you'd see from where you're standing. This is the most reliable slot because it's observation, not prediction.</p>
+        <p>Worked out from the real solar wind. The satellites at L1, about 1.5 million km upstream, measured this wind roughly 45 to 60 minutes ago, and it has now reached Earth. The oval responds to the last hour of it, so that is what this slot uses, with each reading moved forward by its own travel time.</p>
+        <p>From that comes where the auroral oval sits over New Zealand right now, and from your location, in the same magnetic coordinates the oval is measured in, what you can see of it. The Eyrewell magnetometer adds a confirmed substorm onset when there is one. The Moon and twilight are allowed for at your location.</p>
       </div>`,
     },
     '15 min': {
       title: '15 minutes',
       content: `<div class='space-y-3 text-left text-sm text-neutral-300'>
-        <p>A short range projection based on how conditions are trending right now. If energy is building in the magnetosphere and the magnetic field has been pointing south, we expect things to intensify. If conditions are fading, this will reflect that.</p>
-        <p>Still closely tied to real data but it's looking forward rather than measuring directly.</p>
+        <p>Also real solar wind, not a projection. The wind that will be driving the oval in 15 minutes has already been measured at L1 and is on its way, so this is the same calculation as Now, run 15 minutes ahead on wind that is in flight.</p>
       </div>`,
     },
     '30 min': {
       title: '30 minutes',
       content: `<div class='space-y-3 text-left text-sm text-neutral-300'>
-        <p>Same approach as the 15 minute forecast but further out, so a bit less certain. Based on the substorm risk index which tracks energy loading into the magnetosphere using the Newell coupling function and watches for signs that a substorm is about to fire.</p>
-        <p>Good indication of where things are heading but solar wind conditions can shift quickly.</p>
+        <p>Still real solar wind. At ordinary speeds it takes the wind 45 minutes or more to get here from L1, so the wind for this slot has been measured already. Only in very fast wind, over about 850 km/s, is part of this half hour not yet measured, and then it is marked with a lower confidence.</p>
       </div>`,
     },
     '1 hour': {
       title: '1 hour',
       content: `<div class='space-y-3 text-left text-sm text-neutral-300'>
-        <p>This is where we shift from trends to probabilities. Based on how much energy has been flowing into the magnetosphere, how long the magnetic field has been pointing south, and the likelihood of a substorm firing within the next hour.</p>
-        <p>Substorm timing is one of the hardest things to predict in space weather. The magnetosphere can be loaded and ready for ages without going off. Treat this as a reasonable guide, not a certainty.</p>
+        <p>Past what L1 has measured, so from here it is a forecast. This slot starts from the Spot The Aurora score and adjusts it by the substorm engine's chance of an onset in the next hour, then applies your location and the sky at that time.</p>
+        <p>Substorm timing is one of the hardest things to predict in space weather. Treat this as a reasonable guide, not a certainty.</p>
       </div>`,
     },
     '2 hours': {
       title: '2 hours',
       content: `<div class='space-y-3 text-left text-sm text-neutral-300'>
-        <p>Rough guide only. This uses the broader Spot The Aurora composite score rather than the substorm model because our substorm predictions don't extend reliably this far out.</p>
-        <p>It's basically saying if current conditions keep up, roughly expect this. A lot can change in two hours. Don't drive somewhere dark based on this slot alone. Wait for it to move into the shorter windows first.</p>
+        <p>Rough guide only. This is the Spot The Aurora score itself, with your location and the sky at that time applied - in effect, if current conditions hold, roughly this.</p>
+        <p>A lot can change in two hours. Don't drive somewhere dark based on this slot alone. Wait for it to move into the shorter windows first.</p>
       </div>`,
     },
     'about': {
       title: 'About What to Expect',
       content: `<div class='space-y-3 text-left text-sm text-neutral-300'>
-        <p>This forecast uses your GPS location and real time solar wind data to tell you what you'll actually see from where you are, right now and over the next two hours.</p>
-        <p>The closer to "now", the more you can trust it. The Now forecast is based on what satellites and ground stations are actually measuring. The further out you go, the more we're projecting based on trends and probabilities.</p>
-        <p>That's not a limitation of this app. It's a limitation of space weather. Nobody can reliably predict exactly when a substorm will fire.</p>
+        <p>This uses your location and the real solar wind to tell you what you'll actually see from where you are, right now and over the next two hours.</p>
+        <p>Now, 15 minutes and 30 minutes are not predictions. The wind that will reach Earth in that time has already been measured by the satellites at L1, so those slots are worked out from it directly. The hour and two hour slots are past what has been measured, and come from the Spot The Aurora score.</p>
+        <p>The number beside each slot is how strong the aurora is for your location, 0 to 100, with what the Moon and twilight will cost you at that time already taken off - the same scale as the Spot The Aurora score.</p>
         <p class='text-xs text-neutral-500'>Tap any time label (Now, 15 min, etc.) for details on how that slot works.</p>
       </div>`,
     },
@@ -480,18 +321,8 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   }, [openSlotTooltip]);
   const rawWorkerScore = substormRiskData?.current?.score   ?? null;
   // 30-min average IMF By from RTSW mag data - feeds the Russell-McPherron
-  // seasonal projection in the oval boundary (see utils/ovalPhysics).
+  // seasonal projection when the oval has to come from the substorm worker.
   const latestBy = useMemo(() => avgBy30m(allMagneticData), [allMagneticData]);
-  const workerScore    = rawWorkerScore != null
-    ? locationAdjustedScore(
-        rawWorkerScore,
-        userLatitude,
-        userLongitude,
-        substormRiskData?.metrics,
-        substormRiskData?.current?.bay_onset_flag ?? false,
-        latestBy,
-      )
-    : null;
   const workerTrend   = substormRiskData?.current?.risk_trend;
   const workerLevel   = substormRiskData?.current?.level;
   const bayOnset      = substormRiskData?.current?.bay_onset_flag   ?? false;
@@ -507,61 +338,80 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   const bz            = _pBz ?? substormRiskData?.metrics?.solar_wind?.bz;
   const southMin30    = _pSouthMin30 ?? substormRiskData?.metrics?.solar_wind?.southward_minutes_30m;
 
-  // Now slot: anchored on auroraScore (the SpotTheAurora composite %) so it
-  // always matches the big % gauge shown elsewhere on the page.
-  // The substorm worker score drives the PROJECTED slots (15/30/60m) where its
-  // real-time energy signal is genuinely forward-looking - but for "right now"
-  // it measures magnetospheric loading, not aurora visibility directly, and can
-  // diverge significantly from the composite score, causing contradictions.
-  const nowScore    = auroraScore ?? workerScore ?? 0;
-
-  // Forecast slots projected from raw (unadjusted) score, then each slot
-  // gets the location penalty applied individually via locationAdjustedScore.
-  const base = rawWorkerScore ?? auroraScore ?? 0;
-
   const sightingContext = useMemo(() => summariseSightings(recentSightings), [recentSightings]);
 
-  const { score15: rawScore15, score30: rawScore30, score60: rawScore60 } = useMemo(
-    () => projectSubstormScores(base, substormForecast, workerTrend, newellNow, newellAvg30, workerConf),
-    [base, substormForecast, workerTrend, newellNow, newellAvg30, workerConf]
-  );
+  // ── Now, 15 and 30 minutes: the real solar wind ──────────────────────────
+  //
+  // Every reading at L1 is moved forward by its own travel time to Earth, and
+  // the oval at each slot is worked out from the hour of wind that has
+  // reached Earth by then. At ordinary speeds that wind is all measured
+  // already - it takes 45 minutes or more to get here - so these three slots
+  // are not projections of anything.
+  const l1Samples = useMemo(() => mergeL1Series({
+    speed: allSpeedData ?? [],
+    newell: allNewellData ?? [],
+    pressure: allPressureData ?? [],
+    magnetic: allMagneticData ?? [],
+  }), [allSpeedData, allNewellData, allPressureData, allMagneticData]);
 
-  const conf15 = getSlotConfidence(substormForecast.status, '15m');
-  const conf30 = getSlotConfidence(substormForecast.status, '30m');
-  const conf60 = getSlotConfidence(substormForecast.status, '1h');
+  // Where the oval sits when the L1 series is missing: the substorm worker's
+  // own averages, unshifted. Only used when there is no real wind to use.
+  const workerBoundary = useMemo(() => computeOvalBoundaryPhysics({
+    newell_avg_60m: substormRiskData?.metrics?.solar_wind?.newell_avg_60m,
+    newell_avg_30m: substormRiskData?.metrics?.solar_wind?.newell_avg_30m,
+    dynamic_pressure_nPa: substormRiskData?.metrics?.solar_wind?.dynamic_pressure_nPa,
+    avg_30m_pressure_nPa: substormRiskData?.metrics?.solar_wind?.avg_30m_pressure_nPa,
+    by: latestBy,
+    bz: substormRiskData?.metrics?.solar_wind?.bz,
+  }, bayOnset), [substormRiskData, latestBy, bayOnset]);
+
+  // The five slots, from the shared function the marketing site's embed uses
+  // too (utils/visibilitySlots).
+  const [s0, s15, s30, s60, s120] = useMemo(() => computeVisibilitySlots({
+    nowMs: slotBaseMs,
+    latitude: where.lat,
+    longitude: where.lon,
+    samples: l1Samples,
+    bayOnset,
+    fallbackBoundary: workerBoundary,
+    auroraScore: auroraScore ?? 0,
+    substormForecast,
+    workerTrend,
+    newellNow,
+    newellAvg30,
+    workerConfidence: workerConf,
+  }), [slotBaseMs, where, l1Samples, bayOnset, workerBoundary, auroraScore, substormForecast,
+       workerTrend, newellNow, newellAvg30, workerConf]);
+
+  const nowScore = s0.strength;
+  const headlineScore = auroraScore ?? 0;
 
   const nowVisibility = useMemo(() => {
-    const base = getVisibilityPhrase(nowScore * moonFactor(0), 'high', sightingContext);
+    const base = getVisibilityPhrase(s0.effective, 'high', sightingContext);
     const extraNotes: string[] = [];
     if (bayOnset)  extraNotes.push('Activity just picked up - aurora may be starting right now');
     if (cmeSheath) extraNotes.push('A solar storm is passing Earth right now - conditions could change fast');
     if (workerConf != null && nowScore >= 30) {
       extraNotes.push(`${workerConf}% chance of a display based on current solar conditions`);
     }
+    if (!s0.measured) extraNotes.push('Live L1 solar wind unavailable - using the substorm worker instead');
     return {
       ...base,
       subtext: [base.subtext, ...extraNotes].filter(Boolean).join(' · ') || null,
     };
-  }, [nowScore, sightingContext, bayOnset, cmeSheath, workerConf, moonFactor]);
+  }, [s0, nowScore, sightingContext, bayOnset, cmeSheath, workerConf]);
 
-  const score15 = useMemo(() => locationAdjustedScore(rawScore15, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset, latestBy), [rawScore15, userLatitude, userLongitude, substormRiskData, bayOnset, latestBy]);
-  const score30 = useMemo(() => locationAdjustedScore(rawScore30, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset, latestBy), [rawScore30, userLatitude, userLongitude, substormRiskData, bayOnset, latestBy]);
-  const score60 = useMemo(() => locationAdjustedScore(rawScore60, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset, latestBy), [rawScore60, userLatitude, userLongitude, substormRiskData, bayOnset, latestBy]);
-  // 2-hour slot uses SpotTheAurora score - it already incorporates longer-range
-  // solar wind coupling models. Apply location penalty the same way.
-  const rawScore120 = auroraScore ?? 0;
-  const score120 = useMemo(() => locationAdjustedScore(rawScore120, userLatitude, userLongitude, substormRiskData?.metrics, bayOnset, latestBy), [rawScore120, userLatitude, userLongitude, substormRiskData, bayOnset, latestBy]);
-  const vis15 = useMemo(() => getVisibilityPhrase(score15 * moonFactor(15), conf15), [score15, conf15, moonFactor]);
-  const vis30 = useMemo(() => getVisibilityPhrase(score30 * moonFactor(30), conf30), [score30, conf30, moonFactor]);
-  const vis60 = useMemo(() => getVisibilityPhrase(score60 * moonFactor(60), conf60), [score60, conf60, moonFactor]);
-  const vis120 = useMemo(() => getVisibilityPhrase(score120 * moonFactor(120), 'low'), [score120, moonFactor]);
+  const vis15 = useMemo(() => getVisibilityPhrase(s15.effective, s15.confidence), [s15]);
+  const vis30 = useMemo(() => getVisibilityPhrase(s30.effective, s30.confidence), [s30]);
+  const vis60 = useMemo(() => getVisibilityPhrase(s60.effective, s60.confidence), [s60]);
+  const vis120 = useMemo(() => getVisibilityPhrase(s120.effective, s120.confidence), [s120]);
 
   const daylightNowLine = useMemo(() => {
-    const score = Math.round(nowScore);
+    const score = Math.round(headlineScore);
     const level = workerLevel ?? 'Unknown';
     const bzTxt = bz != null ? `${bz > 0 ? '+' : ''}${bz.toFixed(1)} nT` : 'n/a';
     return `Current activity: score ${score}/100 · ${level} · IMF Bz ${bzTxt}.`;
-  }, [nowScore, workerLevel, bz]);
+  }, [headlineScore, workerLevel, bz]);
 
   const daylightMoonLine = moonLine;
 
@@ -588,14 +438,16 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
     time: string;
     vis: VisibilityResult;
     conf: SlotConfig['confidence'];
+    /** How strong the aurora is for this location, 0-100, after the Moon and twilight. */
     substormScore: number;
+    source: 'wind' | 'score';
   }[] = [
-    { time: 'Now',    vis: nowVisibility, conf: 'ground', substormScore: Math.round(nowScore)  },
+    { time: 'Now',    vis: nowVisibility, conf: s0.measured ? 'ground' : 'low', substormScore: Math.round(s0.effective), source: 'wind' as const },
     ...(showForecast ? [
-      { time: '15 min', vis: vis15, conf: conf15 as SlotConfig['confidence'], substormScore: Math.round(score15) },
-      { time: '30 min', vis: vis30, conf: conf30 as SlotConfig['confidence'], substormScore: Math.round(score30) },
-      { time: '1 hour', vis: vis60, conf: conf60 as SlotConfig['confidence'], substormScore: Math.round(score60) },
-      { time: '2 hours', vis: vis120, conf: 'low' as SlotConfig['confidence'], substormScore: Math.round(score120) },
+      { time: '15 min', vis: vis15, conf: s15.confidence as SlotConfig['confidence'], substormScore: Math.round(s15.effective), source: s15.source },
+      { time: '30 min', vis: vis30, conf: s30.confidence as SlotConfig['confidence'], substormScore: Math.round(s30.effective), source: s30.source },
+      { time: '1 hour', vis: vis60, conf: s60.confidence as SlotConfig['confidence'], substormScore: Math.round(s60.effective), source: s60.source },
+      { time: '2 hours', vis: vis120, conf: s120.confidence as SlotConfig['confidence'], substormScore: Math.round(s120.effective), source: s120.source },
     ] : []),
   ];
 
@@ -624,7 +476,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
       <p className="text-xs text-neutral-500 mb-3 leading-snug">{moonLine}</p>
 
       {/* Substorm context bar - just below the header */}
-      {workerScore != null && (
+      {rawWorkerScore != null && (
         <div className="flex items-center gap-3 mb-4 py-2 border-b border-neutral-800/60">
           <div className="flex items-center gap-1.5">
             <button onClick={() => openSlotTooltip('substorm')} className="text-xs text-neutral-500 hover:underline hover:text-white transition-colors cursor-help" title="Tap for info about the substorm index">Substorm index</button>
@@ -656,7 +508,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
 
       {/* Slots */}
       <div className="space-y-0 divide-y divide-neutral-800/60">
-        {slots.map(({ time, vis, conf, substormScore }) => (
+        {slots.map(({ time, vis, conf, substormScore, source }) => (
           <div key={time} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
 
             {/* Time label - tap for info */}
@@ -696,7 +548,9 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
               <span
                 className="text-xs font-bold tabular-nums"
                 style={{ color: scoreColour(substormScore) }}
-                title="Substorm index score"
+                title={source === 'wind'
+                  ? 'Aurora strength for your location from the solar wind measured at L1, after the Moon and twilight (0-100)'
+                  : 'Spot The Aurora score for your location, after the Moon and twilight (0-100)'}
               >
                 {substormScore}
               </span>
@@ -739,7 +593,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
             <span className="inline-block w-2 h-2 rounded-full bg-neutral-500" />
             <span className="text-xs text-neutral-500">Low</span>
           </div>
-          <span className="text-xs text-neutral-600 ml-auto">Score = substorm index (no upper limit)</span>
+          <span className="text-xs text-neutral-600 ml-auto">Number = strength for your location, 0-100</span>
         </div>
       </div>
     </div>

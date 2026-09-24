@@ -1,54 +1,40 @@
 // --- START OF FILE src/components/OvalForecastTimeline.tsx ---
 //
 // Aurora oval forecast timeline slider.
-// Sits directly below the sightings map and projects the oval + viewline
-// forward in 5-minute steps up to 2 hours, using the same physics
-// (Newell coupling, IGRF-13 dipole) that drives the real-time oval.
+// Sits directly below the sightings map and steps the oval + viewline
+// forward in 5-minute frames up to 2 hours.
 //
-// The "Now" frame uses live measured data. All future frames are projections
-// with decreasing confidence, reflected visually by increasing dash length
-// and decreasing fill opacity on the oval.
+// The frames are not extrapolated. Each one is the oval from the solar wind
+// that will have reached Earth by then - measured at L1 already, and moved
+// forward by its own travel time (utils/auroraVisibility). At ordinary speeds
+// that covers the first 45 minutes or more. Past the newest measurement the
+// oval is held where that wind leaves it, and the frame says so.
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { realWindBoundary, type L1Sample } from '../utils/auroraVisibility';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-interface OvalForecastFrame {
+export interface OvalForecastFrame {
   minutesFromNow: number;
   timestamp: number;          // absolute ms
-  newellProjected: number;    // projected Newell coupling value
-  scoreProjected: number;     // projected aurora score (0-100)
+  /** The oval's midnight-sector equatorward edge, magnetic latitude. */
+  boundary: number;
   bayOnset: boolean;
+  /**
+   * ground - now; high - measured wind; medium - partly measured;
+   * low - past the newest measurement, the oval held where it leaves off.
+   */
   confidence: 'ground' | 'high' | 'medium' | 'low';
 }
 
 export interface OvalForecastTimelineProps {
-  // Current measured values
-  substormRiskData: {
-    current?: {
-      score?: number;
-      bay_onset_flag?: boolean;
-      risk_trend?: string;
-      confidence?: number | null;
-    } | null;
-    metrics?: {
-      solar_wind?: {
-        newell_coupling_now?: number;
-        newell_avg_30m?: number;
-        newell_avg_60m?: number;
-      };
-    } | null;
-  } | null | undefined;
-
-  /** Proxy-derived newell coupling history (from RTSW merged-24h) */
-  allNewellData?: { x: number; y: number }[];
-
-  // Projected scores from VisibilityForecastPanel (raw, before location adjustment)
-  auroraScore: number | null;
-  score15: number;
-  score30: number;
-  score60: number;
-  score120: number;
+  /** L1 readings, merged (see mergeL1Series). */
+  samples: L1Sample[];
+  /** A confirmed substorm onset at Eyrewell - carried into the first quarter hour. */
+  bayOnset: boolean;
+  /** Where the oval sits if there is no L1 series at all. */
+  fallbackBoundary: number;
 
   // Callback: tells the parent which frame is active so it can adjust
   // the oval overlay and sighting marker opacity
@@ -63,17 +49,6 @@ const TOTAL_FRAMES = (TOTAL_MINUTES / STEP_MINUTES) + 1; // 0..120 = 25 frames
 const PLAYBACK_INTERVAL_MS = 1200; // ms per frame during auto-play
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * Math.max(0, Math.min(1, t));
-}
-
-function getConfidence(minutes: number): OvalForecastFrame['confidence'] {
-  if (minutes === 0) return 'ground';
-  if (minutes <= 15) return 'high';
-  if (minutes <= 45) return 'medium';
-  return 'low';
-}
 
 function formatNZTime(timestamp: number): string {
   try {
@@ -91,105 +66,50 @@ function formatNZTime(timestamp: number): string {
 }
 
 // ── Frame generation ─────────────────────────────────────────────────────────
-//
-// We have projected scores at 0, 15, 30, 60, and 120 minutes.
-// Interpolate linearly between these anchor points to fill all 25 frames.
-// For Newell coupling, extrapolate from the current value using the
-// trend (difference between now and 30m average), then dampen over time.
 
-function buildFrames(
-  newellNow: number,
-  newellAvg30: number,
-  currentScore: number,
-  score15: number,
-  score30: number,
-  score60: number,
-  score120: number,
+export function buildFrames(
+  samples: L1Sample[],
   bayOnset: boolean,
+  fallbackBoundary: number,
+  now: number = Date.now(),
 ): OvalForecastFrame[] {
-  const now = Date.now();
-
-  // Newell trend: rate of change per minute, dampened exponentially
-  const newellTrend = (newellNow - newellAvg30) / 30;
-
-  // Score anchor points for interpolation
-  const scoreAnchors: [number, number][] = [
-    [0, currentScore],
-    [15, score15],
-    [30, score30],
-    [60, score60],
-    [120, score120],
-  ];
-
-  function interpolateScore(minutes: number): number {
-    if (minutes <= 0) return scoreAnchors[0][1];
-    if (minutes >= 120) return scoreAnchors[scoreAnchors.length - 1][1];
-    // Find surrounding anchors
-    for (let i = 0; i < scoreAnchors.length - 1; i++) {
-      const [m0, s0] = scoreAnchors[i];
-      const [m1, s1] = scoreAnchors[i + 1];
-      if (minutes >= m0 && minutes <= m1) {
-        const t = (minutes - m0) / (m1 - m0);
-        return lerp(s0, s1, t);
-      }
-    }
-    return currentScore;
-  }
-
   const frames: OvalForecastFrame[] = [];
-
+  let held = fallbackBoundary;
   for (let i = 0; i < TOTAL_FRAMES; i++) {
     const minutes = i * STEP_MINUTES;
-
-    // Newell projection: extrapolate with exponential dampening
-    // After 30 minutes the trend influence halves every 15 minutes
-    const dampen = minutes <= 30
-      ? 1.0
-      : Math.pow(0.5, (minutes - 30) / 15);
-    const newellProjected = Math.max(0, newellNow + newellTrend * minutes * dampen);
-
-    const scoreProjected = Math.max(0, Math.min(100, interpolateScore(minutes)));
-
-    frames.push({
-      minutesFromNow: minutes,
-      timestamp: now + minutes * 60_000,
-      newellProjected,
-      scoreProjected,
-      bayOnset: minutes === 0 ? bayOnset : false, // bay onset only applies to "now"
-      confidence: getConfidence(minutes),
-    });
+    const timestamp = now + minutes * 60_000;
+    const onset = minutes <= 15 && bayOnset;
+    const real = realWindBoundary(samples, timestamp, onset);
+    let confidence: OvalForecastFrame['confidence'];
+    let boundary: number;
+    if (real) {
+      boundary = real.boundary;
+      held = boundary;
+      confidence = minutes === 0 ? 'ground' : real.wind.coverage >= 0.999 ? 'high' : 'medium';
+    } else {
+      boundary = held;
+      confidence = minutes === 0 ? 'ground' : 'low';
+    }
+    frames.push({ minutesFromNow: minutes, timestamp, boundary, bayOnset: onset, confidence });
   }
-
   return frames;
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
 
 export const OvalForecastTimeline: React.FC<OvalForecastTimelineProps> = ({
-  substormRiskData,
-  allNewellData,
-  auroraScore,
-  score15,
-  score30,
-  score60,
-  score120,
+  samples,
+  bayOnset,
+  fallbackBoundary,
   onFrameChange,
 }) => {
   const [frameIndex, setFrameIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const playIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Prefer proxy RTSW data, fall back to substorm worker
-  const _pNewellNow = allNewellData && allNewellData.length > 0 ? allNewellData[allNewellData.length - 1].y : undefined;
-  const _pNewellAvg30 = (() => { if (!allNewellData || allNewellData.length === 0) return undefined; const c = Date.now() - 30 * 60000; const pts = allNewellData.filter(p => p.x >= c); return pts.length > 0 ? pts.reduce((s, p) => s + p.y, 0) / pts.length : undefined; })();
-  const newellNow = _pNewellNow ?? substormRiskData?.metrics?.solar_wind?.newell_coupling_now ?? 0;
-  const newellAvg30 = _pNewellAvg30 ?? substormRiskData?.metrics?.solar_wind?.newell_avg_30m ?? 0;
-  const currentScore = substormRiskData?.current?.score ?? auroraScore ?? 0;
-  const bayOnset = substormRiskData?.current?.bay_onset_flag ?? false;
-
   const frames = useMemo(
-    () => buildFrames(newellNow, newellAvg30, currentScore, score15, score30, score60, score120, bayOnset),
-    [newellNow, newellAvg30, currentScore, score15, score30, score60, score120, bayOnset]
+    () => buildFrames(samples, bayOnset, fallbackBoundary),
+    [samples, bayOnset, fallbackBoundary]
   );
 
   // Notify parent of frame changes
@@ -260,9 +180,9 @@ export const OvalForecastTimeline: React.FC<OvalForecastTimelineProps> = ({
   // Confidence label and colour
   const confMap: Record<string, { label: string; colour: string }> = {
     ground: { label: 'Live data', colour: '#34d399' },
-    high:   { label: 'High confidence', colour: '#34d399' },
-    medium: { label: 'Medium confidence', colour: '#fbbf24' },
-    low:    { label: 'Rough guide', colour: '#525252' },
+    high:   { label: 'Measured wind, on its way', colour: '#34d399' },
+    medium: { label: 'Partly measured', colour: '#fbbf24' },
+    low:    { label: 'Held at the last measured wind', colour: '#525252' },
   };
   const conf = confMap[activeFrame?.confidence ?? 'ground'];
 

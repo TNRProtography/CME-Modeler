@@ -6,6 +6,10 @@ import 'leaflet/dist/leaflet.css';
 import { SightingReport, SightingStatus } from '../types';
 import type { SubstormRiskData } from '../hooks/useForecastData';
 import { computeOvalBoundary as computeOvalBoundaryPhysics, avgBy30m } from '../utils/ovalPhysics';
+import {
+  activityFromBoundary, geographicLatitudeFor, magneticLocalTime, mergeL1Series, mltPolewardShiftDeg,
+  QUIET_BOUNDARY, realWindBoundary, viewlineReachDeg,
+} from '../utils/auroraVisibility';
 import LoadingSpinner from './icons/LoadingSpinner';
 import GuideIcon from './icons/GuideIcon';
 import CloseIcon from './icons/CloseIcon';
@@ -79,13 +83,10 @@ interface AuroraSightingsProps {
   /** Proxy-derived newell coupling history (from RTSW merged-24h) */
   allNewellData?: { x: number; y: number }[];
   /** Proxy-derived mag history - used for the RM By average in the oval physics */
-  allMagneticData?: { time: number; by?: number | null }[];
-  // Oval forecast timeline props
-  auroraScore?: number | null;
-  rawScore15?: number;
-  rawScore30?: number;
-  rawScore60?: number;
-  rawScore120?: number;
+  allMagneticData?: { time: number; by?: number | null; bz?: number | null }[];
+  /** L1 speed and dynamic pressure: the travel time to Earth, and the pressure term. */
+  allSpeedData?: { x: number; y: number }[];
+  allPressureData?: { x: number; y: number }[];
 }
 
 interface SightingMapControllerProps {
@@ -181,53 +182,37 @@ const InfoModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen
 
 
 // ─────────────────────────────────────────────────────────────
-// Aurora Oval Overlay - IGRF-13 dipole geomagnetic projection
+// Aurora Oval Overlay
+//
+// Drawn from the shared model in utils/auroraVisibility, the one every
+// forecast card uses: corrected geomagnetic (AACGM) coordinates, and the
+// oval following magnetic local time, so it sits furthest north around
+// magnetic midnight and pulls back toward the pole either side of it.
 // ─────────────────────────────────────────────────────────────
 
-// IGRF-13 north magnetic dipole pole (geographic)
-const POLE_LAT_RAD =  80.65 * Math.PI / 180;
-const POLE_LON_RAD = -72.68 * Math.PI / 180;
+// Wide enough to cover what the map can show at its lowest zoom.
+const RING_LON_FROM = 130;
+const RING_LON_TO = 210;
 
-function geoToGmag(latDeg: number, lonDeg: number): number {
-  const φ = latDeg * Math.PI / 180;
-  const λ = lonDeg * Math.PI / 180;
-  const sin = Math.sin(φ) * Math.sin(POLE_LAT_RAD) +
-              Math.cos(φ) * Math.cos(POLE_LAT_RAD) * Math.cos(λ - POLE_LON_RAD);
-  return Math.asin(Math.max(-1, Math.min(1, sin))) * 180 / Math.PI;
-}
-
-function gmagToGeoLat(gmagLat: number, lonDeg: number): number {
-  // Numerical inversion via bisection
-  let lo = -90, hi = 90;
-  for (let i = 0; i < 48; i++) {
-    const mid = (lo + hi) / 2;
-    if (geoToGmag(mid, lonDeg) < gmagLat) lo = mid; else hi = mid;
-  }
-  return (lo + hi) / 2;
-}
-
-function buildOvalRing(gmagLat: number, lonStep = 1.5): [number, number][] {
+/**
+ * A line at a fixed magnetic latitude as it would sit at magnetic midnight,
+ * drawn where it actually sits at `atMs` - moved poleward at each longitude
+ * by that longitude's magnetic local time.
+ */
+function buildOvalRing(midnightMlat: number, atMs: number, lonStep = 1.5): [number, number][] {
   const pts: [number, number][] = [];
-  // Loop -180 → 200 to ensure the ring extends well past the antimeridian and
-  // fully covers the NZ map bounds (which reach 185° E). Leaflet renders >180° correctly.
-  for (let lon = -180; lon <= 200; lon += lonStep) {
-    const normLon = ((lon + 180) % 360) - 180; // normalise for gmagToGeoLat calc
-    const geoLat = gmagToGeoLat(gmagLat, normLon);
-    if (geoLat >= -85 && geoLat <= 85) pts.push([geoLat, lon]);
+  for (let lon = RING_LON_FROM; lon <= RING_LON_TO; lon += lonStep) {
+    const guess = geographicLatitudeFor(midnightMlat, lon);
+    const shift = mltPolewardShiftDeg(magneticLocalTime(atMs, guess, lon));
+    const geoLat = geographicLatitudeFor(midnightMlat - shift, lon);
+    if (geoLat >= -85 && geoLat <= -1) pts.push([geoLat, lon]);
   }
   return pts;
 }
 
-function buildBandPolygon(gmagInner: number, gmagOuter: number, lonStep = 2): [number, number][] {
-  const outer: [number, number][] = [];
-  const inner: [number, number][] = [];
-  // Extend to 200° to match buildOvalRing and fully cover the NZ map bounds.
-  for (let lon = -180; lon <= 200; lon += lonStep) {
-    const normLon = ((lon + 180) % 360) - 180;
-    outer.push([gmagToGeoLat(gmagOuter, normLon), lon]);
-    inner.push([gmagToGeoLat(gmagInner, normLon), lon]);
-  }
-  inner.reverse();
+function buildBandPolygon(midnightInner: number, midnightOuter: number, atMs: number, lonStep = 2): [number, number][] {
+  const outer = buildOvalRing(midnightOuter, atMs, lonStep);
+  const inner = buildOvalRing(midnightInner, atMs, lonStep).reverse();
   return [...outer, ...inner];
 }
 
@@ -241,54 +226,29 @@ function ovalColour(score: number): { line: string; fill: string; fillOpacity: n
   return             { line: '#38bdf8', fill: '#38bdf8', fillOpacity: 0.08 };
 }
 
-function computeOvalParams(
-  metrics: SubstormRiskData['metrics'],
-  bayOnset: boolean,
-  score: number,
-  latestBy: number | null = null,
-) {
-  // Equatorward edge via shared oval physics (Newell base + dynamic
-  // pressure expansion + Russell-McPherron weighting) - identical to the
-  // What to Expect panel and the push worker so every surface agrees.
-  const equatorward = computeOvalBoundaryPhysics(
-    {
-      newell_avg_60m: metrics?.solar_wind?.newell_avg_60m,
-      newell_avg_30m: metrics?.solar_wind?.newell_avg_30m,
-      dynamic_pressure_nPa: (metrics?.solar_wind as any)?.dynamic_pressure_nPa,
-      avg_30m_pressure_nPa: (metrics?.solar_wind as any)?.avg_30m_pressure_nPa,
-      by: latestBy,
-      bz: metrics?.solar_wind?.bz,
-    },
-    bayOnset,
-  );
-
-  // The poleward (southern) edge is anchored at its quiet-time position and never moves.
-  // Only the equatorward edge expands northward during storms, making the oval thicker.
-  const QUIET_BOUNDARY  = -65.5;
-  const QUIET_HALFWIDTH =  3.5;
-  const poleward = QUIET_BOUNDARY - QUIET_HALFWIDTH; // fixed at ~-69 geomagnetic
-
-  // halfWidth is derived from the two edges so the band-polygon renderer still works.
-  const halfWidth = equatorward - poleward;
-  const boundary  = equatorward;
-
-  return { boundary, halfWidth };
+/**
+ * The band's two edges at magnetic midnight, and how active it is. The
+ * poleward edge is anchored at its quiet-time position; only the equatorward
+ * edge expands during storms, making the oval thicker.
+ */
+function ovalParams(boundary: number) {
+  const QUIET_HALFWIDTH = 3.5;
+  const poleward = QUIET_BOUNDARY - QUIET_HALFWIDTH; // fixed at ~-69 magnetic
+  // The same activity measure that sets the viewline, on a 0-100 scale for
+  // the colours.
+  const score = activityFromBoundary(boundary) * 100;
+  return { boundary, halfWidth: boundary - poleward, score };
 }
 
 // ── React overlay component ───────────────────────────────────
 interface OvalOverlayProps {
-  substormRiskData: SubstormRiskData | null | undefined;
-  latestBy?: number | null;
+  /** The oval's midnight-sector equatorward edge, magnetic latitude. */
+  boundary: number;
+  atMs: number;
 }
 
-const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ substormRiskData, latestBy = null }) => {
-  const score    = substormRiskData?.current?.score     ?? 0;
-  const bayOnset = substormRiskData?.current?.bay_onset_flag ?? false;
-  const metrics  = substormRiskData?.metrics;
-
-  if (!metrics) return null;
-
-  const { boundary, halfWidth } = computeOvalParams(metrics, bayOnset, score, latestBy);
+const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ boundary: edge, atMs }) => {
+  const { boundary, halfWidth, score } = ovalParams(edge);
   const poleward    = boundary - halfWidth;
   const equatorward = boundary;
 
@@ -296,12 +256,12 @@ const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ substormRiskData, lates
   const { line } = ovalColour(score);
 
   // Build boundary rings
-  const eqRing = buildOvalRing(equatorward, 1.5);
-  const pwRing = buildOvalRing(poleward, 1.5);
+  const eqRing = buildOvalRing(equatorward, atMs, 1.5);
+  const pwRing = buildOvalRing(poleward, atMs, 1.5);
 
-  // Visibility horizon - linearly boosted by activity (higher emission altitude during storms)
-  const VISIBILITY_DEG = 9.0 + (Math.max(0, Math.min(score, 100)) / 100) * 16.0;
-  const visRing    = buildOvalRing(equatorward + VISIBILITY_DEG, 1.5);
+  // Viewline - the shared model's: further out as activity rises, because a
+  // stronger display is brighter and higher, and seen from further off.
+  const visRing    = buildOvalRing(equatorward + viewlineReachDeg(equatorward), atMs, 1.5);
   const visOpacity = 0.3 + (score / 100) * 0.45;
   const visWeight  = 1.0 + (score / 100) * 1.0;
 
@@ -363,7 +323,7 @@ const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ substormRiskData, lates
     const bandColour = lerpHex(EDGE, CORE, colourT);
 
     return {
-      poly:  buildBandPolygon(g0, g1, 3),
+      poly:  buildBandPolygon(g0, g1, atMs, 3),
       colour: bandColour,
       alpha:  envelope * 0.55 * globalAlpha,
     };
@@ -411,36 +371,19 @@ const AuroraOvalOverlay: React.FC<OvalOverlayProps> = ({ substormRiskData, lates
 
 interface ForecastOvalOverlayProps {
   frame: OvalForecastFrame;
-  latestBy?: number | null;
-  /** Current pressure/Bz carried into projected frames (persistence assumption) */
-  currentPdynNPa?: number | null;
-  currentBz?: number | null;
 }
 
-const ForecastOvalOverlay: React.FC<ForecastOvalOverlayProps> = ({ frame, latestBy = null, currentPdynNPa = null, currentBz = null }) => {
-  const { newellProjected, scoreProjected, bayOnset, confidence } = frame;
-
-  // Build projected metrics so we can reuse computeOvalParams unchanged
-  const projectedMetrics = {
-    solar_wind: {
-      newell_avg_60m: newellProjected,
-      newell_avg_30m: newellProjected,
-      avg_30m_pressure_nPa: currentPdynNPa,
-      bz: currentBz,
-    },
-  } as SubstormRiskData['metrics'];
-
-  const { boundary, halfWidth } = computeOvalParams(projectedMetrics, bayOnset, scoreProjected, latestBy);
+const ForecastOvalOverlay: React.FC<ForecastOvalOverlayProps> = ({ frame }) => {
+  const { confidence, timestamp } = frame;
+  const { boundary, halfWidth, score: scoreProjected } = ovalParams(frame.boundary);
   const poleward    = boundary - halfWidth;
   const equatorward = boundary;
 
   const { line } = ovalColour(scoreProjected);
 
-  const eqRing = buildOvalRing(equatorward, 1.5);
-  const pwRing = buildOvalRing(poleward, 1.5);
-
-  const VISIBILITY_DEG = 9.0 + (Math.max(0, Math.min(scoreProjected, 100)) / 100) * 16.0;
-  const visRing = buildOvalRing(equatorward + VISIBILITY_DEG, 1.5);
+  const eqRing = buildOvalRing(equatorward, timestamp, 1.5);
+  const pwRing = buildOvalRing(poleward, timestamp, 1.5);
+  const visRing = buildOvalRing(equatorward + viewlineReachDeg(equatorward), timestamp, 1.5);
 
   // Confidence-based visual styling: further out = more dashed, more transparent
   const confOpacity: Record<string, number> = { ground: 1.0, high: 0.85, medium: 0.6, low: 0.4 };
@@ -485,7 +428,7 @@ const ForecastOvalOverlay: React.FC<ForecastOvalOverlayProps> = ({ frame, latest
     const colourT = (1 - distFromCentre) * coreInfluence;
     const bandColour = lerpHex(EDGE, CORE, colourT);
     return {
-      poly: buildBandPolygon(g0, g1, 3),
+      poly: buildBandPolygon(g0, g1, timestamp, 3),
       colour: bandColour,
       alpha: envelope * 0.55 * globalAlpha,
     };
@@ -511,9 +454,35 @@ const ForecastOvalOverlay: React.FC<ForecastOvalOverlayProps> = ({ frame, latest
   );
 };
 
-const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSignal, onSightingsLoaded, substormRiskData, allNewellData, allMagneticData, auroraScore, rawScore15, rawScore30, rawScore60, rawScore120 }) => {
+const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSignal, onSightingsLoaded, substormRiskData, allNewellData, allMagneticData, allSpeedData, allPressureData }) => {
   // 30-min average IMF By for the Russell-McPherron term in the oval physics
-  const latestBy = useMemo(() => avgBy30m(allMagneticData), [allMagneticData]);
+  const latestBy = useMemo(() => avgBy30m(allMagneticData as { time: number; by?: number | null }[] | undefined), [allMagneticData]);
+  const bayOnset = substormRiskData?.current?.bay_onset_flag ?? false;
+  // The oval from the real solar wind, as every forecast card has it: each L1
+  // reading moved forward by its own travel time to Earth.
+  const l1Samples = useMemo(() => mergeL1Series({
+    speed: allSpeedData ?? [],
+    newell: allNewellData ?? [],
+    pressure: allPressureData ?? [],
+    magnetic: allMagneticData ?? [],
+  }), [allSpeedData, allNewellData, allPressureData, allMagneticData]);
+  // Only when there is no L1 series: the substorm worker's own averages.
+  const workerBoundary = useMemo(() => {
+    const sw = substormRiskData?.metrics?.solar_wind;
+    return computeOvalBoundaryPhysics({
+      newell_avg_60m: sw?.newell_avg_60m,
+      newell_avg_30m: sw?.newell_avg_30m,
+      dynamic_pressure_nPa: (sw as any)?.dynamic_pressure_nPa,
+      avg_30m_pressure_nPa: (sw as any)?.avg_30m_pressure_nPa,
+      by: latestBy,
+      bz: sw?.bz,
+    }, bayOnset);
+  }, [substormRiskData, latestBy, bayOnset]);
+  const liveAtMs = useMemo(() => Date.now(), [l1Samples, workerBoundary]);
+  const liveBoundary = useMemo(
+    () => realWindBoundary(l1Samples, liveAtMs, bayOnset)?.boundary ?? workerBoundary,
+    [l1Samples, liveAtMs, bayOnset, workerBoundary],
+  );
     const [sightings, setSightings] = useState<SightingReport[]>([]);
     // Leaflet is heavy to start: it builds a tile grid, a heat layer and a
     // marker cluster, and then does work on every scroll and resize. The map
@@ -871,7 +840,7 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                         />
 
                         <TileLayer attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>' url={CARTO_DARK_TILE_URL}/>
-        {isForecastMode ? <ForecastOvalOverlay frame={forecastFrame} latestBy={latestBy} currentPdynNPa={substormRiskData?.metrics?.solar_wind?.avg_30m_pressure_nPa ?? substormRiskData?.metrics?.solar_wind?.dynamic_pressure_nPa ?? null} currentBz={substormRiskData?.metrics?.solar_wind?.bz ?? null} /> : <AuroraOvalOverlay substormRiskData={substormRiskData} latestBy={latestBy} />}
+        {isForecastMode ? <ForecastOvalOverlay frame={forecastFrame} /> : (substormRiskData?.metrics || l1Samples.length > 0) && <AuroraOvalOverlay boundary={liveBoundary} atMs={liveAtMs} />}
                         <LocationFinder onLocationSelect={() => {}} />
                         {userPosition && <Marker position={userPosition} icon={userMarkerIcon} draggable={false}><Popup>Your GPS location.</Popup></Marker>}
                         <>
@@ -905,13 +874,9 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
                     </div>
                     {/* Oval forecast timeline slider */}
                     <OvalForecastTimeline
-                        substormRiskData={substormRiskData}
-                        allNewellData={allNewellData}
-                        auroraScore={auroraScore ?? null}
-                        score15={rawScore15 ?? 0}
-                        score30={rawScore30 ?? 0}
-                        score60={rawScore60 ?? 0}
-                        score120={rawScore120 ?? 0}
+                        samples={l1Samples}
+                        bayOnset={bayOnset}
+                        fallbackBoundary={workerBoundary}
                         onFrameChange={setForecastFrame}
                     />
                 </div>

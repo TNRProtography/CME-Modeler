@@ -36,6 +36,9 @@ import {
   MoonArcPanel, SubstormIndexPanel,
 } from '@app/components/AdvancedForecastPanels';
 import { fetchCMEData } from '@app/services/nasaService';
+import { computeVisibilitySlots } from '@app/utils/visibilitySlots';
+import { mergeL1Series } from '@app/utils/auroraVisibility';
+import { computeOvalBoundary } from '@app/utils/ovalPhysics';
 import { ViewMode, FocusTarget, InteractionMode } from '@app/types';
 import type { ProcessedCME, PlanetLabelInfo } from '@app/types';
 
@@ -288,8 +291,10 @@ function MagnetotailEmbed() {
 }
 
 /* ------------------------------------------------------------------ *
- * Forecast slots: the app's data hook, the app's slot maths.
- * Derivation matches ForecastDashboard.tsx simpleTimelineSlots exactly.
+ * Forecast slots: the app's data hook, the app's own slot function
+ * (utils/visibilitySlots) - Now, 15 and 30 minutes from the real solar wind,
+ * the hour and two hours from the Spot The Aurora score. The site has no
+ * location, so it is worked out for Greymouth, the score's reference town.
  * ------------------------------------------------------------------ */
 function phraseFor(score: number, confidence: 'high' | 'medium' | 'low', label: string) {
   const timeRef = label === 'Now' ? 'right now'
@@ -323,57 +328,41 @@ function phraseFor(score: number, confidence: 'high' | 'medium' | 'low', label: 
     : `Quiet ${timeRef}, come back later` };
 }
 
+const GREYMOUTH: [number, number] = [-42.45, 171.21];
+
 function ForecastEmbed() {
   const d = useSharedForecast();
 
   const slots = useMemo(() => {
     if (!d) return [];
     const risk = d.substormRiskData;
-    const workerScore = risk?.current?.score ?? null;
-    const workerTrend = risk?.current?.risk_trend;
-    const nowNewell = d.allNewellData?.length ? d.allNewellData[d.allNewellData.length - 1].y : 0;
+    const sw = risk?.metrics?.solar_wind;
     const cutoff = Date.now() - 30 * 60000;
-    const pts = (d.allNewellData || []).filter((p: any) => p.x >= cutoff);
-    const avg30 = pts.length ? pts.reduce((s: number, p: any) => s + p.y, 0) / pts.length : nowNewell;
-    const newellNow = nowNewell || (risk?.metrics?.solar_wind?.newell_coupling_now ?? 0);
-    const newellAvg30 = avg30 || (risk?.metrics?.solar_wind?.newell_avg_30m ?? 0);
-    const base = workerScore ?? d.auroraScore ?? 0;
-    const spotScore = d.auroraScore ?? 0;
-
-    const trendMult =
-      workerTrend === 'Rapidly Increasing' ? 1.15 :
-      workerTrend === 'Increasing' ? 1.07 :
-      workerTrend === 'Decreasing' ? 0.90 :
-      workerTrend === 'Rapidly Decreasing' ? 0.75 : 1.0;
-    const newellBoost = newellNow > 0 && newellAvg30 > 0 && newellNow > newellAvg30 * 1.2 ? 1.08 : 1.0;
-    const applyMods = (s: number) => Math.min(100, Math.max(0, s * trendMult * newellBoost));
-
-    const { status, p30, p60 } = d.substormForecast;
-    const boostFromP = (p: number, b: number) => Math.min(100, b + p * (100 - b) * 0.75);
-
-    let raw15: number, raw30: number, raw60: number;
-    switch (status) {
-      case 'ONSET':       raw15 = Math.min(100, base * 1.05); raw30 = base * 0.90; raw60 = base * 0.65; break;
-      case 'IMMINENT_30': raw15 = boostFromP(p30, base); raw30 = boostFromP(p30, base) * 1.05; raw60 = boostFromP(p60, base) * 0.80; break;
-      case 'LIKELY_60':   raw15 = base * 1.10; raw30 = boostFromP(p30 * 0.7, base); raw60 = boostFromP(p60, base); break;
-      case 'WATCH':       raw15 = base * 1.05; raw30 = base * 1.15; raw60 = boostFromP(p60 * 0.5, base); break;
-      default:            raw15 = base * 0.95; raw30 = base * 0.85; raw60 = base * 0.70;
-    }
-    const slotConf = (slot: '15m' | '30m' | '1h'): 'high' | 'medium' | 'low' => {
-      if (status === 'ONSET') return slot === '15m' ? 'high' : slot === '30m' ? 'medium' : 'low';
-      if (status === 'IMMINENT_30') return slot === '1h' ? 'medium' : 'high';
-      if (status === 'LIKELY_60') return slot === '1h' ? 'high' : 'medium';
-      if (status === 'WATCH') return slot === '15m' ? 'medium' : 'low';
-      return slot === '15m' ? 'high' : slot === '30m' ? 'medium' : 'low';
-    };
-
-    return [
-      { label: 'Now',     score: Math.round(workerScore ?? d.auroraScore ?? 0), conf: 'high' as const },
-      { label: '15 min',  score: Math.round(applyMods(raw15)), conf: slotConf('15m') },
-      { label: '30 min',  score: Math.round(applyMods(raw30)), conf: slotConf('30m') },
-      { label: '1 hour',  score: Math.round(applyMods(raw60)), conf: slotConf('1h') },
-      { label: '2 hours', score: Math.round(spotScore), conf: 'low' as const }
-    ].map(s => ({ label: s.label, ...phraseFor(s.score, s.conf, s.label) }));
+    const recent = (d.allNewellData || []).filter((p: any) => p.x >= cutoff);
+    const newellNow = d.allNewellData?.length ? d.allNewellData[d.allNewellData.length - 1].y : sw?.newell_coupling_now;
+    const newellAvg30 = recent.length ? recent.reduce((t: number, p: any) => t + p.y, 0) / recent.length : sw?.newell_avg_30m;
+    const bayOnset = risk?.current?.bay_onset_flag ?? false;
+    const fallbackBoundary = computeOvalBoundary({
+      newell_avg_60m: sw?.newell_avg_60m, newell_avg_30m: sw?.newell_avg_30m,
+      dynamic_pressure_nPa: sw?.dynamic_pressure_nPa, avg_30m_pressure_nPa: sw?.avg_30m_pressure_nPa,
+      bz: sw?.bz,
+    }, bayOnset);
+    const computed = computeVisibilitySlots({
+      nowMs: Date.now(),
+      latitude: GREYMOUTH[0], longitude: GREYMOUTH[1],
+      samples: mergeL1Series({
+        speed: d.allSpeedData || [], newell: d.allNewellData || [],
+        pressure: d.allPressureData || [], magnetic: d.allMagneticData || [],
+      }),
+      bayOnset,
+      fallbackBoundary,
+      auroraScore: d.auroraScore ?? 0,
+      substormForecast: d.substormForecast,
+      workerTrend: risk?.current?.risk_trend,
+      newellNow, newellAvg30,
+      workerConfidence: risk?.current?.confidence,
+    });
+    return computed.map(s => ({ label: s.key, ...phraseFor(s.effective, s.confidence, s.key) }));
   }, [d]);
 
   if (!d || (d.isLoading && d.auroraScore == null)) {

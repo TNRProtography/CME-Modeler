@@ -19,7 +19,7 @@ const SRC = join(HERE, '..', 'worker', 'push-notification-worker.js');
 const dir = mkdtempSync(join(tmpdir(), 'stapush-'));
 const copy = join(dir, 'w.mjs');
 writeFileSync(copy, readFileSync(SRC, 'utf8') +
-  '\nexport { checkShockDetection, checkSubstormActivity, pickVisibilityTier, moonAdjustedTriggers };\n');
+  '\nexport { checkShockDetection, checkSubstormActivity, visibilityTierFor };\n');
 const W = await import(pathToFileURL(copy).href);
 
 const store = new Map();
@@ -67,10 +67,20 @@ for (const [label, f, shouldFire] of shockCases) {
 }
 
 console.log('\nVisibility tiers');
-const trig = W.moonAdjustedTriggers(0, false);
+// The shared model, from the generated block: every tier is reachable
+// somewhere between the far south and Auckland on a moderate night, at local
+// midnight on a moonless night (11 Sep 2026 12:00 UTC, the new moon).
 const seen = new Set();
-for (let d = 6; d >= -25; d -= 0.5) { const t = W.pickVisibilityTier(d, d + 12, trig); if (t) seen.add(t); }
+const midnight = Date.UTC(2026, 8, 11, 12, 0);
+for (const boundary of [-60, -56, -52]) {
+  for (let lat = -47; lat <= -36; lat += 0.5) {
+    const t = W.visibilityTierFor(boundary, midnight, lat, 172);
+    if (t) seen.add(t);
+  }
+}
 for (const tier of ['dslr', 'phone', 'naked']) check(seen.has(tier), `${tier} is reachable`);
+check(W.visibilityTierFor(-64, midnight, -36.85, 174.76) === null, 'a quiet oval is nothing from Auckland');
+check(W.visibilityTierFor(-52, midnight + 12 * 3600000, -46.41, 168.35) === null, 'and nothing at all in daylight');
 
 console.log('\nSubstorm');
 store.clear();

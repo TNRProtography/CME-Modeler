@@ -210,18 +210,18 @@ console.log('\nWhat you could expect to see');
                     phase: { illumination: 1, elongation: 180, waxing: false, name: 'Full moon' } };
   const day = { ...dark, sunAltitude: 30, darkness: 'daylight', washout: 1 };
 
-  // The thresholds match the instrument reaches in auroraOutlook: with a
-  // sixteen degree camera limit, the eye's four degrees lands at 75 and the
-  // phone's nine at 44. Anything looser announces a merely fast stream as a
-  // guaranteed naked-eye display, which is the failure this is calibrated
-  // against.
-  check(S.visibilityOutlook(85, dark).tier === 'eye', 'the oval nearly overhead in a dark sky is naked eye');
-  check(S.visibilityOutlook(65, dark).tier !== 'eye',
-        'but the oval six degrees away is not - speed alone does not make a display',
-        S.visibilityOutlook(65, dark).tier);
-  check(S.visibilityOutlook(50, dark).tier === 'phone', 'a moderate one is a phone shot');
-  check(S.visibilityOutlook(15, dark).tier === 'camera', 'a weak one needs a long exposure');
-  check(S.visibilityOutlook(4, dark).tier === 'none', 'and a very weak one is not worth going out for');
+  // One scale for every surface, the app's published one (tierForStrength):
+  // 20 long exposure, 35 phone, 50 a faint glow to the eye. Where a given
+  // oval position lands on it is utils/auroraVisibility's job, and that is
+  // tested against typical New Zealand nights in test-aurora-visibility.
+  check(S.visibilityOutlook(85, dark).tier === 'eye', 'a strong display in a dark sky is naked eye');
+  check(S.visibilityOutlook(55, dark).tier === 'eye', 'a faint glow to the eye still counts as eye');
+  check(/faint glow/.test(S.visibilityOutlook(55, dark).label), 'and says it is only a faint one');
+  check(S.visibilityOutlook(40, dark).tier === 'phone', 'a moderate one is a phone shot');
+  check(S.visibilityOutlook(25, dark).tier === 'camera', 'a weak one needs a long exposure');
+  check(S.visibilityOutlook(15, dark).tier === 'none', 'and a very weak one is not worth going out for');
+  check(S.tierForStrength(S.TIER_CAMERA) === 'camera' && S.tierForStrength(S.TIER_PHONE) === 'phone'
+        && S.tierForStrength(S.TIER_EYE) === 'eye', 'each tier starts exactly at its threshold');
 
   // The tiers must never invert: more light in the sky can only cost you.
   let monotonic = true;
@@ -233,8 +233,13 @@ console.log('\nWhat you could expect to see');
   check(monotonic, 'a washed-out sky never beats a dark one at the same strength');
 
   const sameDisplay = S.visibilityOutlook(85, moonlit);
-  check(sameDisplay.tier !== 'eye',
-        'the same display under a full moon drops a tier', sameDisplay.tier);
+  check(sameDisplay.effectiveStrength < 65 && /faint glow/.test(sameDisplay.label),
+        'a display under a high full moon drops to a faint glow', sameDisplay.label);
+  // Moonlight drowns what is faint and leaves what is bright.
+  check(S.visibilityOutlook(40, moonlit).tier !== 'phone',
+        'but a phone shot under the same moon is gone', S.visibilityOutlook(40, moonlit).tier);
+  check(S.visibilityOutlook(100, moonlit).tier === 'eye',
+        'while the oval overhead is still a naked-eye display');
   check(/washing out/.test(sameDisplay.note), 'and says the moon is why', sameDisplay.note);
   check(/as dark as it gets/.test(S.visibilityOutlook(85, dark).note),
         'while a moonless sky is called out as the good case');
