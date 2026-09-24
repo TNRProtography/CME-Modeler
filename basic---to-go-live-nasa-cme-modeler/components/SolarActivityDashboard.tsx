@@ -43,6 +43,8 @@ import FrameScrubber from './FrameScrubber';
 import RegionMagneticHistory from './RegionMagneticHistory';
 import { spotCountChanges, type SpotCountChange } from '../hooks/useSunspotRegions';
 import { fetchGoesProtons, fetchGoesXrays } from '../utils/goesSeries';
+import { hasDecodedImage, loadDecodedImage, prefetchImage } from '../utils/decodedImages';
+import SunspotCloseupCanvas from './SunspotCloseupCanvas';
 
 interface SolarActivityDashboardProps {
   setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | { type: 'image_with_labels'; url: string; regions: RegionInput[]; geometry: SolarDiskGeometry; imageNatural: { width: number; height: number }; atMs: number } | null) => void;
@@ -1076,7 +1078,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [isCloseupImageLoading, setIsCloseupImageLoading] = useState(false);
   const [overviewGeometry, setOverviewGeometry] = useState<{ width: number; height: number; cx: number; cy: number; radius: number } | null>(null);
   const touchStartXRef = useRef<number | null>(null);
-  const closeupImgRef = useRef<HTMLImageElement | null>(null);
 
   // General state
   const [modalState, setModalState] = useState<{isOpen: boolean; title: string; content: string | React.ReactNode} | null>(null);
@@ -2310,54 +2311,38 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   // served from the browser instead of downloaded again.
   const archiveImageUrl = useCallback((url: string) => proxyImageUrl(url, ARCHIVE_IMAGE_TTL_S), []);
 
-  // Which frame images are downloaded and decoded. Playback steps only onto a
-  // frame that is ready, so a first run through the window waits a moment on
-  // a slow frame instead of flashing a blank or half-drawn one - which is what
-  // made the first couple of plays glitch and later ones not.
-  const spotImageState = useRef(new Map<string, Promise<void>>());
-  const spotImageReady = useRef(new Set<string>());
-  // The last few decoded frames, held on to so the browser keeps their
-  // bitmaps: the displayed <img> then reuses them rather than decoding (or,
-  // on a browser with a less willing cache, downloading) again. A handful,
-  // not the window - a decoded 1024px frame is about 4 MB of memory.
-  const spotImageKeep = useRef<HTMLImageElement[]>([]);
+  // Which frame images are downloaded and decoded (utils/decodedImages).
+  // Playback steps only onto a frame that is ready, so a first run through
+  // the window waits a moment on a slow frame instead of flashing a blank or
+  // half-drawn one. A frame that failed counts as ready, so playback moves
+  // past it rather than stalling on it.
+  const spotImageFailed = useRef(new Set<string>());
   const [detailTick, setDetailTick] = useState(0);
-  const warmSpotImage = useCallback((url: string): Promise<void> => {
-    const known = spotImageState.current.get(url);
-    if (known) return known;
-    const done = new Promise<void>((resolve) => {
-      const img = new Image();
-      const finish = () => {
-        spotImageReady.current.add(url);
-        spotImageKeep.current.push(img);
-        if (spotImageKeep.current.length > 16) spotImageKeep.current.shift();
-        resolve();
-      };
-      // A frame that fails still counts as ready: playback moves past it
-      // rather than stalling on it forever.
-      img.onload = () => { (img.decode ? img.decode() : Promise.resolve()).catch(() => {}).then(finish); };
-      img.onerror = finish;
-      img.src = url;
-    });
-    spotImageState.current.set(url, done);
-    return done;
-  }, []);
+  const isSpotImageReady = useCallback((url: string) =>
+    hasDecodedImage(url) || spotImageFailed.current.has(url), []);
+  const warmSpotImage = useCallback((url: string): Promise<void> =>
+    loadDecodedImage(url).then((img) => { if (!img) spotImageFailed.current.add(url); }), []);
 
   // Every frame's 512px copy, in the background, four at a time. About 60 KB
   // each, so even the week is a few megabytes - and it is what makes dragging
   // across the whole window immediate rather than a wait at every stop.
+  // Downloaded, not decoded, so they do not push the frames playback needs
+  // out of memory; and held back while playing, so they do not compete with
+  // the frames about to be shown.
+  const spotPlayingRef = useRef(false);
   useEffect(() => {
     const queue = spotArchive.map((f) => f.preview).filter((u): u is string => !!u).reverse();
     let cancelled = false;
     const next = () => {
       if (cancelled) return;
+      if (spotPlayingRef.current) { window.setTimeout(next, 1000); return; }
       const url = queue.shift();
       if (!url) return;
-      warmSpotImage(archiveImageUrl(url)).then(next);
+      prefetchImage(archiveImageUrl(url)).then(next);
     };
     for (let k = 0; k < 4; k++) next();
     return () => { cancelled = true; };
-  }, [spotArchive, warmSpotImage]);
+  }, [spotArchive, archiveImageUrl]);
 
   // Land on now whenever the set of frames changes - the rule every imagery
   // panel in the app follows.
@@ -2408,22 +2393,31 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       if (!url) return n;
       void warmSpotImage(url);
       // Not loaded yet: hold this frame and try again on the next tick.
-      return spotImageReady.current.has(url) ? n : i;
+      return isSpotImageReady(url) ? n : i;
     });
-  }, [spotFrames, playbackUrlOf, warmSpotImage]);
+  }, [spotFrames, playbackUrlOf, warmSpotImage, isSpotImageReady]);
 
-  // Frames ahead, fetched in order so playback rarely has to wait. Further
-  // ahead while playing than while paused; never the whole window, which at
-  // three days of 1024px frames is tens of megabytes nobody asked for.
+  // Frames ahead, nearest first, three at a time so playback rarely has to
+  // wait. Further ahead while playing, and further the faster it plays;
+  // never the whole window, which at three days of 1024px frames is tens of
+  // megabytes nobody asked for.
+  useEffect(() => { spotPlayingRef.current = spotPlaying; }, [spotPlaying]);
   useEffect(() => {
-    const ahead = spotPlaying ? 8 : 2;
-    let chain = Promise.resolve();
+    const ahead = !spotPlaying ? 2 : spotSpeed >= 5 ? 14 : spotSpeed >= 2 ? 10 : 8;
+    const urls: string[] = [];
     for (let k = 1; k <= ahead; k++) {
       const next = spotFrames[(spotIndex + k) % spotFrames.length];
       const url = next ? playbackUrlOf(next) : null;
-      if (url) chain = chain.then(() => warmSpotImage(url));
+      if (url) urls.push(url);
     }
-  }, [spotIndex, spotFrames, spotPlaying, playbackUrlOf, warmSpotImage]);
+    let cancelled = false;
+    const work = () => {
+      const url = cancelled ? undefined : urls.shift();
+      if (url) warmSpotImage(url).then(work);
+    };
+    for (let k = 0; k < 3; k++) work();
+    return () => { cancelled = true; };
+  }, [spotIndex, spotFrames, spotPlaying, spotSpeed, playbackUrlOf, warmSpotImage]);
 
   useEffect(() => {
     if (spotIsLive || archiveGeometry || !spotDisplayUrl) return;
@@ -2516,11 +2510,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     // frame the disk is showing, already downloaded; only when the frame
     // settles, the 2048px copy that holds up to the zoom. Playing through
     // 2048px frames was a second, several-times-larger download per frame
-    // that nothing had fetched ahead.
-    // The 2048px copy takes over only once it has loaded, so settling on a
-    // frame sharpens the close-up rather than blanking it for a moment.
+    // that nothing had fetched ahead. The 2048px copy takes over only once it
+    // is decoded, so stepping shows the frame at once and settling then fades
+    // it sharper.
     const detailUrl = spotFrame.detail ? archiveImageUrl(spotFrame.detail) : null;
-    const detailReady = !!detailUrl && spotImageReady.current.has(detailUrl) && detailTick >= 0;
+    const detailReady = !!detailUrl && hasDecodedImage(detailUrl) && detailTick >= 0;
     const src = (spotDragging && spotFrame.preview)
       || (!spotPlaying && detailReady ? spotFrame.detail : spotFrame.url);
     return {
@@ -2538,10 +2532,18 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     if (!selectedSunspotRegion || spotIsLive || spotPlaying || spotDragging || !spotFrame.detail) return;
     let cancelled = false;
     const url = archiveImageUrl(spotFrame.detail);
-    if (spotImageReady.current.has(url)) return;
-    warmSpotImage(url).then(() => { if (!cancelled) setDetailTick((t) => t + 1); });
+    if (hasDecodedImage(url)) return;
+    loadDecodedImage(url).then(() => { if (!cancelled) setDetailTick((t) => t + 1); });
     return () => { cancelled = true; };
-  }, [selectedSunspotRegion, spotIsLive, spotPlaying, spotDragging, spotFrame, archiveImageUrl, warmSpotImage]);
+  }, [selectedSunspotRegion, spotIsLive, spotPlaying, spotDragging, spotFrame, archiveImageUrl]);
+
+  // How long each new close-up frame fades in over the last. While playing,
+  // most of a frame's time on screen, so the frames blend into motion; when
+  // settling or stepping, a short fade; while dragging, none - a finger wants
+  // the picture to be where it is, now.
+  const closeupFadeMs = spotDragging ? 0
+    : spotPlaying ? Math.round(Math.max(40, Math.round(220 / spotSpeed)) * 0.85)
+      : 180;
 
   // ── Region history, for the growth read ──────────────────────────────────
   // NOAA only ever publishes the current state, so the worker keeps a snapshot
@@ -4432,25 +4434,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                           onClick={() => setCloseupLightbox(false)}
                         >
                           <div className="relative w-[90vw] h-[90vw] max-w-[90vh] max-h-[90vh] overflow-hidden rounded-lg">
-                            {(() => {
-                              const adjustedX = Math.max(0, Math.min(100, closeupView.xPercent));
-                              const adjustedY = Math.max(0, Math.min(100, closeupView.yPercent));
-                              return (
-                                <img
-                                  src={closeupView.url}
-                                  alt={`AR ${selectedSunspotRegion?.region} fullscreen closeup`}
-                                  className="absolute"
-                                  style={{
-                                    width: '420%',
-                                    height: '420%',
-                                    left: `${50 - adjustedX * 4.2}%`,
-                                    top: `${50 - adjustedY * 4.2}%`,
-                                    objectFit: 'contain',
-                                    maxWidth: 'none',
-                                  }}
-                                />
-                              );
-                            })()}
+                            <SunspotCloseupCanvas
+                              url={closeupView.url}
+                              xPercent={closeupView.xPercent}
+                              yPercent={closeupView.yPercent}
+                              fadeMs={closeupFadeMs}
+                              alt={`AR ${selectedSunspotRegion?.region} fullscreen closeup`}
+                              className="absolute inset-0 w-full h-full"
+                            />
                           </div>
                           <div className="absolute top-4 right-4 text-white/60 text-sm">Click anywhere to close</div>
                           <div className="absolute bottom-4 text-white/60 text-sm">AR {selectedSunspotRegion?.region} · {selectedSunspotRegion?.location}</div>
@@ -4486,34 +4477,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                           </div>
                         ) : closeupView?.url ? (
                           <div className="relative w-full h-full overflow-hidden bg-black">
-                            {(() => {
-                              const adjustedX = Math.max(0, Math.min(100, closeupView.xPercent));
-                              const adjustedY = Math.max(0, Math.min(100, closeupView.yPercent));
-                              return (
-                                <img
-                                  ref={closeupImgRef}
-                                  src={closeupView.url}
-                                  alt={`AR ${selectedSunspotRegion.region} closeup`}
-                                  className="absolute"
-                                  onLoad={() => setIsCloseupImageLoading(false)}
-                                  onError={() => setIsCloseupImageLoading(false)}
-                                  style={{
-                                    // Glide between frames during playback, over exactly one frame's
-                                    // interval, so each pan ends as the next frame arrives. Not while
-                                    // dragging: a finger wants the view to be where it is, now.
-                                    transition: spotPlaying
-                                      ? `left ${Math.max(40, Math.round(220 / spotSpeed))}ms linear, top ${Math.max(40, Math.round(220 / spotSpeed))}ms linear`
-                                      : undefined,
-                                    width: '420%',
-                                    height: '420%',
-                                    left: `${50 - adjustedX * 4.2}%`,
-                                    top: `${50 - adjustedY * 4.2}%`,
-                                    objectFit: 'contain',
-                                    maxWidth: 'none',
-                                  }}
-                                />
-                              );
-                            })()}
+                            <SunspotCloseupCanvas
+                              url={closeupView.url}
+                              xPercent={closeupView.xPercent}
+                              yPercent={closeupView.yPercent}
+                              fadeMs={closeupFadeMs}
+                              alt={`AR ${selectedSunspotRegion.region} closeup`}
+                              className="absolute inset-0 w-full h-full"
+                              onReady={() => setIsCloseupImageLoading(false)}
+                            />
                             {isCloseupImageLoading && (
                               <div className="absolute inset-0 flex items-center justify-center bg-black/45">
                                 <LoadingSpinner message="Loading close-up image..." />
