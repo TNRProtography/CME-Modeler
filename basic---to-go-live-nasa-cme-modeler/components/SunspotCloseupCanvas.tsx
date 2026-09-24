@@ -22,7 +22,11 @@ interface Props {
   /** Where the region is on the image, as a percentage of its width and height. */
   xPercent: number;
   yPercent: number;
-  /** How far in: the box shows 1/zoom of the image across. */
+  /**
+   * How far in: the box shows 1/zoom of the image across. 6 frames a typical
+   * active region with a little of the surface round it; a large one fills
+   * the box.
+   */
   zoom?: number;
   /** How long a new frame takes to fade in. 0 cuts straight to it. */
   fadeMs: number;
@@ -51,7 +55,7 @@ function drawLayer(ctx: CanvasRenderingContext2D, W: number, H: number, zoom: nu
   ctx.drawImage(l.img, sx, sy, ex - sx, ey - sy, left + sx * s, top + sy * s, (ex - sx) * s, (ey - sy) * s);
 }
 
-const SunspotCloseupCanvas: React.FC<Props> = ({ url, xPercent, yPercent, zoom = 4.2, fadeMs, alt, className, onReady }) => {
+const SunspotCloseupCanvas: React.FC<Props> = ({ url, xPercent, yPercent, zoom = 6, fadeMs, alt, className, onReady }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   // What was on screen when the current frame started to fade in.
   const underRef = useRef<HTMLCanvasElement | null>(null);
