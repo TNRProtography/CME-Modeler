@@ -8,6 +8,8 @@ import {
   ActivitySummary,
 } from '../types';
 import { cleanSolarWindSeries, summariseRejections } from '../utils/solarWindQuality';
+import { fetchGoesMagnetometer } from '../utils/goesSeries';
+import { sharedFetchText } from '../utils/sharedFetch';
 
 // --- Type Definitions ---
 interface CelestialTimeData {
@@ -675,9 +677,15 @@ export const useForecastData = (
 
     const results = await Promise.allSettled([
       withInitialProgress(fetchJsonWithRecovery(`${FORECAST_API_URL}?_=${Date.now()}`), 'forecastApi'),
-      withInitialProgress(fetchJsonWithRecovery(`${SOLAR_WIND_IMF_URL}?_=${Date.now()}`), 'solarWindApi'),
-      withInitialProgress(fetchJsonWithRecovery(`${NOAA_GOES18_MAG_URL}?_=${Date.now()}`), 'goes18Api'),
-      withInitialProgress(fetchJsonWithRecovery(`${NOAA_GOES19_MAG_URL}?_=${Date.now()}`), 'goes19Api'),
+      // One download of the L1 feed, shared with the other panels that read it.
+      withInitialProgress(sharedFetchText(SOLAR_WIND_IMF_URL, { timeoutMs: 15000 }).then((raw) => {
+        const parsed = parseJsonWithRowRecovery(raw);
+        if (parsed === null) throw new Error(`Unable to parse JSON from ${SOLAR_WIND_IMF_URL}`);
+        return parsed;
+      }), 'solarWindApi'),
+      // A day of GOES magnetometer, topped up from what is already held.
+      withInitialProgress(fetchGoesMagnetometer('primary').catch(() => fetchJsonWithRecovery(`${NOAA_GOES18_MAG_URL}?_=${Date.now()}`)), 'goes18Api'),
+      withInitialProgress(fetchGoesMagnetometer('secondary').catch(() => fetchJsonWithRecovery(`${NOAA_GOES19_MAG_URL}?_=${Date.now()}`)), 'goes19Api'),
       // ipsApi and nzMagApi are non-blocking (not in FORECAST_INITIAL_TASKS) so they don't
       // hold the loader. Give them tighter timeouts since they feed secondary widgets only.
       withInitialProgress(fetchJsonWithRecovery(`${NASA_IPS_URL}?_=${Date.now()}`, 7000), 'ipsApi'),

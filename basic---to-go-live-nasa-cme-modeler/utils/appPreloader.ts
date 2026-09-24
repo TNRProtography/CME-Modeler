@@ -1,3 +1,5 @@
+import { fetchGoesProtons, fetchGoesXrays } from './goesSeries';
+
 // Worker base URLs - must match SolarActivityDashboard constants exactly
 const CORONAGRAPHY_WORKER_BASE = 'https://coronagraphy-processing.thenamesrock.workers.dev';
 const SUVI_DIFF_WORKER_BASE = 'https://suvi-difference-imagery.thenamesrock.workers.dev';
@@ -5,8 +7,6 @@ const SUVI_DIFF_WORKER_BASE = 'https://suvi-difference-imagery.thenamesrock.work
 let started = false;
 
 const preloadRequests = [
-  'https://services.swpc.noaa.gov/json/goes/primary/xrays-7-day.json',
-  'https://services.swpc.noaa.gov/json/goes/primary/integral-protons-plot-7-day.json',
   'https://services.swpc.noaa.gov/json/sunspot_report.json',
   'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png',
   '/api/proxy/image?url=https%3A%2F%2Fsdo.gsfc.nasa.gov%2Fassets%2Fimg%2Flatest%2Flatest_1024_HMIBC.jpg&ttl=60',
@@ -33,6 +33,11 @@ export const startAppPreload = () => {
   preloadBundles.forEach((load) => {
     load().catch(() => undefined);
   });
+
+  // The week-long GOES series: topped up from what an earlier visit left,
+  // and shared with the panels that ask for them while this is in flight.
+  fetchGoesXrays('primary').catch(() => undefined);
+  fetchGoesProtons('primary').catch(() => undefined);
 
   preloadRequests.forEach((url) => {
     fetch(url, { method: 'GET', cache: 'force-cache' }).catch(() => undefined);

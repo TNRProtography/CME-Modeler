@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useForecastData } from '../hooks/useForecastData';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
+import { fetchGoesXrays } from '../utils/goesSeries';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -30,8 +31,6 @@ interface SightingItem {
 
 type GaugeColorKey = 'gray' | 'yellow' | 'orange' | 'red' | 'purple' | 'pink';
 
-const XRAY_URL_3D = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-3-day.json';
-const XRAY_URL_1D = 'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json';
 const SUVI_131_URL = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png';
 const HMI_URL = 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_1024_HMIBC.jpg';
 const AURORA_SIGHTINGS_URL = 'https://aurora-sightings.thenamesrock.workers.dev/';
@@ -168,19 +167,11 @@ const UnifiedDashboardMode: React.FC<UnifiedDashboardModeProps> = ({ refreshSign
     let mounted = true;
     const pullXray = async () => {
       try {
-        const endpoints = [XRAY_URL_3D, XRAY_URL_1D];
-        let records: any[] = [];
-        for (const url of endpoints) {
-          const response = await fetch(`${url}?_=${Date.now()}`);
-          if (!response.ok) continue;
-          const payload = await response.json();
-          if (Array.isArray(payload) && payload.length) {
-            records = payload;
-            break;
-          }
-        }
+        // The shared week of X-ray flux, topped up rather than re-downloaded.
+        const records = await fetchGoesXrays('primary');
         const points = records
-          .map((r: any) => ({ t: new Date(r?.time_tag).getTime(), v: Number(r?.flux) }))
+          .filter((r) => r.energy === '0.1-0.8nm')
+          .map((r) => ({ t: new Date(r.time_tag).getTime(), v: Number(r.flux) }))
           .filter((p: any) => Number.isFinite(p.t) && Number.isFinite(p.v))
           .sort((a: any, b: any) => a.t - b.t)
           .slice(-720);

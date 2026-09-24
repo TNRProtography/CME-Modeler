@@ -42,6 +42,7 @@ import { proxyImageUrl } from '../utils/imagePixels';
 import FrameScrubber from './FrameScrubber';
 import RegionMagneticHistory from './RegionMagneticHistory';
 import { spotCountChanges, type SpotCountChange } from '../hooks/useSunspotRegions';
+import { fetchGoesProtons, fetchGoesXrays } from '../utils/goesSeries';
 
 interface SolarActivityDashboardProps {
   setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | { type: 'image_with_labels'; url: string; regions: RegionInput[]; geometry: SolarDiskGeometry; imageNatural: { width: number; height: number }; atMs: number } | null) => void;
@@ -1577,8 +1578,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       // is fetched in parallel purely as a backup chart line - if it fails,
       // we still render the primary line exactly like before this change.
       const [primaryResult, secondaryResult] = await Promise.allSettled([
-        fetchFirstAvailableJson(NOAA_XRAY_FLUX_URLS),
-        fetchFirstAvailableJson(NOAA_XRAY_FLUX_URLS_SECONDARY),
+        // Topped up from what is already held; the full lists are the fallback.
+        fetchGoesXrays('primary').catch(() => fetchFirstAvailableJson(NOAA_XRAY_FLUX_URLS)),
+        fetchGoesXrays('secondary').catch(() => fetchFirstAvailableJson(NOAA_XRAY_FLUX_URLS_SECONDARY)),
       ]);
 
       if (primaryResult.status === 'rejected') {
@@ -1607,7 +1609,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         }
       });
 
-      const primarySatelliteNumber = rawData.find((d: any) => typeof d.satellite === 'number')?.satellite ?? null;
+      // The newest reading's satellite: a week of held rows can span a switch.
+      const primarySatelliteNumber = [...rawData].reverse().find((d: any) => typeof d.satellite === 'number')?.satellite ?? null;
       setXrayPrimarySatellite(primarySatelliteNumber);
       setXraySecondarySatellite(secondarySatelliteNumber);
 
@@ -1653,7 +1656,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
         setLoadingProton('Loading proton flux data...');
     }
     try {
-      const rawData = await fetchFirstAvailableJson(NOAA_PROTON_FLUX_URLS);
+      const rawData = await fetchGoesProtons('primary').catch(() => fetchFirstAvailableJson(NOAA_PROTON_FLUX_URLS));
         const processedData = rawData
           .filter((d: any) => d.energy === ">=10 MeV" && d.flux !== null && !isNaN(d.flux))
           .map((d: any) => ({ time: new Date(d.time_tag).getTime(), flux: parseFloat(d.flux) }))

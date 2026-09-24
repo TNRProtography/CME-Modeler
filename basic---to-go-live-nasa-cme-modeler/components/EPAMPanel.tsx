@@ -31,6 +31,7 @@ import {
 } from './epamWarning';
 import { detectShocks, type DetectedShock } from '../utils/shockDetection';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
+import { sharedFetchJson } from '../utils/sharedFetch';
 
 interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string | React.ReactNode; }
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
@@ -432,7 +433,7 @@ const EPAMPanel: React.FC<EPAMPanelProps> = ({ shockEvents: shockEventsProp }) =
         fetch(`${EPAM_BASE}/epam/stereo`).then(r=>r.ok?r.json():null),
         fetch(`${EPAM_BASE}/epam/analysis`).then(r=>r.ok?r.json():null),
         fetch(`${EPAM_BASE}/epam/combined`).then(r=>r.ok?r.json():null),
-        fetch(`${SOLAR_WIND_IMF_URL}?_=${Date.now()}`).then(r=>r.ok?r.json():null),
+        sharedFetchJson<any>(SOLAR_WIND_IMF_URL).catch(() => null),
         // Neutron monitor (Forbush detection). Candidate chain; fails soft.
         fetchNeutronMonitor(),
       ]);

@@ -131,6 +131,7 @@ import {
 } from './utils/navigation';
 import { useCoronalHoles } from './hooks/useCoronalHoles';
 import { useSunspotRegions } from './hooks/useSunspotRegions';
+import { fetchGoesXrays } from './utils/goesSeries';
 import SolarSurfaceLabels, { type SurfaceLabelInfo } from './components/SolarSurfaceLabels';
 
 const RefreshIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -226,12 +227,6 @@ const IS_EMBED = typeof window !== 'undefined' && new URLSearchParams(window.loc
 const CME_TUTORIAL_KEY = 'hasSeenCmeTutorial_v1';
 const APP_VERSION = 'V2.0 (September 2026)';
 const DASHBOARD_MODE_KEY = 'dashboard_mode_enabled_v1';
-
-const BANNER_XRAY_URLS = [
-  'https://services.swpc.noaa.gov/json/goes/primary/xrays-7-day.json',
-  'https://services.swpc.noaa.gov/json/goes/xrays-7-day.json',
-  'https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json',
-];
 
 const parseLatestShortBandFlux = (raw: any[]): number | null => {
   if (!Array.isArray(raw)) return null;
@@ -666,20 +661,14 @@ const App: React.FC = () => {
   useEffect(() => {
     let cancelled = false;
 
+    // The shared, stored X-ray series (utils/goesSeries): a small top-up of
+    // the newest readings every 30 seconds, not the whole week each time.
     const fetchBannerXray = async () => {
-      for (const url of BANNER_XRAY_URLS) {
-        try {
-          const response = await fetch(`${url}?_=${Date.now()}`);
-          if (!response.ok) continue;
-          const raw = await response.json();
-          const latestFlux = parseLatestShortBandFlux(raw);
-          if (latestFlux !== null) {
-            if (!cancelled) setLatestXrayFlux(latestFlux);
-            return;
-          }
-        } catch {
-          // Try fallback URL silently.
-        }
+      try {
+        const latestFlux = parseLatestShortBandFlux(await fetchGoesXrays('primary'));
+        if (latestFlux !== null && !cancelled) setLatestXrayFlux(latestFlux);
+      } catch {
+        // Keep the last value; the next tick tries again.
       }
     };
 

@@ -11,6 +11,7 @@
 // can see, and the panel says which it got.
 
 import { useEffect, useMemo, useState } from 'react';
+import { sharedFetchJson } from '../utils/sharedFetch';
 import { buildForecastTimeline, type L1State, type StreamSource } from '../utils/forecastTimeline';
 import { buildOutlook, type OutlookPoint } from '../utils/auroraOutlook';
 import { chEarthConnection, chTiming } from '../utils/coronalHoleDynamics';
@@ -79,9 +80,8 @@ interface ObservedSample {
 
 async function fetchObserved(): Promise<ObservedSample[]> {
   try {
-    const res = await fetch(RTSW_URL);
-    if (!res.ok) return [];
-    const data = await res.json();
+    // Shared with the other panels that read the same feed.
+    const data = await sharedFetchJson<any>(RTSW_URL);
     const rows = Array.isArray(data) ? data : (data?.data ?? []);
     return rows
       .map((row: any) => ({
