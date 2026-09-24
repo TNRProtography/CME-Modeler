@@ -27,7 +27,7 @@ import {
   CHEvolution,
 } from '../utils/coronalHoleHistory';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
-import { getChState, publishDetection, subscribeToChDetections } from '../utils/chDetectionStore';
+import { getChState, holesForScene, publishDetection, subscribeToChDetections } from '../utils/chDetectionStore';
 
 /**
  * How fresh a shared detection has to be for the scene to use it rather than
@@ -108,7 +108,9 @@ export function useCoronalHoles({ enabled = false, sourceImageUrl }: UseCoronalH
       const shared = getChState();
       const newest = shared.detections[shared.detections.length - 1];
       if (newest && Date.now() - newest.atMs < SHARED_DETECTION_MAX_AGE_MS && newest.holes.length > 0) {
-        setCoronalHoles(newest.holes);
+        // The tracker's live holes, not only the newest frame's.
+        const scene = holesForScene(shared);
+        setCoronalHoles(scene?.holes ?? newest.holes);
         setLastDetectedAt(new Date(newest.atMs));
         setStatus('detected');
         return;
@@ -165,7 +167,7 @@ export function useCoronalHoles({ enabled = false, sourceImageUrl }: UseCoronalH
     const newest = shared.detections[shared.detections.length - 1];
     if (!newest || newest.holes.length === 0) return;
     if (Date.now() - newest.atMs > SHARED_DETECTION_MAX_AGE_MS) return;
-    setCoronalHoles(newest.holes);
+    setCoronalHoles(holesForScene(shared)?.holes ?? newest.holes);
     setLastDetectedAt(new Date(newest.atMs));
     setStatus('detected');
   }), []);

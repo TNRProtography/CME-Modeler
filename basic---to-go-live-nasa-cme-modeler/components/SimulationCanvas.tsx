@@ -22,7 +22,6 @@ import {
   createGrowingStreamMesh,
   updateGrowingStreamMesh,
   GROWING_STREAM_RINGS,
-  buildChLabelAnchor,
 } from '../utils/coronalHoleGeometry';
 import {
   processedCMEToCMEInput,
@@ -75,13 +74,6 @@ const TEX = {
  * between two frames to show. Anything finer just rebuilds the same Sun.
  */
 const CH_SHAPE_QUANTUM_MS = 2 * 3600000;
-
-/** Matches the palette the tracker numbers the holes in. */
-const chLabelColour = (id: string): string => {
-  const n = Number(String(id).replace(/\D/g, '')) || 0;
-  return CH_LABEL_COLOURS[n % CH_LABEL_COLOURS.length];
-};
-const CH_LABEL_COLOURS = ['#38bdf8', '#a78bfa', '#fbbf24', '#34d399', '#fb7185', '#facc15', '#22d3ee', '#f472b6'];
 
 const CH_HSS_LONGITUDE_VISUAL_OFFSET_DEG = -12;
 const CH_HSS_LONGITUDE_VISUAL_OFFSET_RAD = CH_HSS_LONGITUDE_VISUAL_OFFSET_DEG * Math.PI / 180;
@@ -2047,23 +2039,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
 
     clearGroup(chGroupRef.current);
 
-    const chLabels: SurfaceLabelInfo[] = [];
+    // No labels on the holes: the detector's ids mean nothing to anyone
+    // looking at the Sun, and the Coronal Hole Tracker is where holes are
+    // named. Sunspot region labels are unaffected.
     drawn.forEach(({ ch, scale }) => {
       chGroupRef.current.add(buildChSurfaceMesh(THREE, ch, sunR, scale));
       chGroupRef.current.add(buildChOutlineLine(THREE, ch, sunR, scale));
-
-      // The anchor is parented to the CH group, so it inherits the Sun's
-      // rotation exactly as the patch does and the label cannot drift off it.
-      const anchor = buildChLabelAnchor(THREE, ch, sunR);
-      chGroupRef.current.add(anchor);
-      chLabels.push({
-        id: `ch-${ch.id}`,
-        text: ch.id,
-        mesh: anchor,
-        color: chLabelColour(ch.id),
-      });
     });
-    chLabelsRef.current = chLabels;
+    chLabelsRef.current = [];
     publishSurfaceLabels();
   }, [coronalHoles, chEvolutions, chShapeTimeMs, chDetectedAtMs, threeReady, sceneReady]); // eslint-disable-line react-hooks/exhaustive-deps
 

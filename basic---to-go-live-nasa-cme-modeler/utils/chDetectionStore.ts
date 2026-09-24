@@ -23,7 +23,9 @@
 import { detectCoronalHolesFromSuvi195 } from './suviCoronalHoleDetector';
 import type { CoronalHole } from './coronalHoleData';
 import type { DiskFraction } from './solarDisk';
-import type { ChTrack, TrackedHole } from './chTracking';
+import { buildChTracks, type ChTrack, type TrackedHole } from './chTracking';
+import { longitudeAt } from './solarDisk';
+import { estimateHssSpeedFromChWidthAndDarkness } from './solarWindModel';
 import { assignChNumbers, parseRegistry, type ChRegistry } from './chRegistry';
 
 const STORAGE_KEY = 'sta-ch-history-v1';
@@ -391,4 +393,65 @@ export function resetChStore(): void {
       localStorage.removeItem(REGISTRY_KEY);
     }
   } catch { /* storage disabled */ }
+}
+
+/**
+ * The holes the 3D scene should draw: the same ones the Coronal Hole Tracker
+ * lists as live.
+ *
+ * The newest detection on its own is not enough. The detector misses holes -
+ * a faint frame, a flare washing out part of the disk - and the tracker keeps
+ * such a hole live for a grace period, rotating with the Sun, rather than
+ * letting it blink out. Drawing only the newest detection made the scene lose
+ * holes the tracker was still showing. So every live track the newest
+ * detection does not already have is added back, carried forward to the
+ * newest detection's time.
+ *
+ * A carried-forward hole has no outline of its own unless its last sighting
+ * was a full detection this session; otherwise it is drawn as an ellipse of
+ * its measured size, the same fallback the scene already uses.
+ */
+export function holesForScene(state: ChStoreState): { holes: CoronalHole[]; atMs: number } | null {
+  const newest = state.detections[state.detections.length - 1];
+  if (!newest) return null;
+
+  const tracks = buildChTracks(framesForTracking(state));
+  const numbers = numberTracks(tracks);
+  const holes: CoronalHole[] = [...newest.holes];
+
+  // Close enough on the Sun to be the same hole, degrees.
+  const SAME_HOLE_DEG = 8;
+  const near = (a: { lat: number; lon: number }, b: { lat: number; lon: number }) =>
+    Math.hypot(a.lat - b.lat, (a.lon - b.lon) * Math.cos(((a.lat + b.lat) / 2) * Math.PI / 180)) < SAME_HOLE_DEG;
+
+  for (const track of tracks) {
+    if (!track.live || track.lastSeenMs >= newest.atMs) continue;
+    const lon = longitudeAt(track.latest.lon, track.lastSeenMs, newest.atMs);
+    const at = { lat: track.latest.lat, lon };
+    if (holes.some((h) => near(h, at))) continue;
+
+    const full = state.detections
+      .find((d) => d.atMs === track.lastSeenMs)?.holes
+      .find((h) => h.id === track.latest.id);
+    const widthDeg = Math.max(5, track.latest.widthDeg);
+    const darkness = track.latest.darkness ?? 0.5;
+    const id = `CH${numbers.get(track.key) ?? track.key}`;
+    holes.push(full
+      ? { ...full, id, lon, sourceDirectionDeg: { lat: full.lat, lon } }
+      : {
+          id,
+          lat: at.lat,
+          lon,
+          widthDeg,
+          heightDeg: Math.max(5, track.latest.heightDeg ?? widthDeg),
+          estimatedSpeedKms: estimateHssSpeedFromChWidthAndDarkness(widthDeg, darkness),
+          darkness,
+          sourceDirectionDeg: { lat: at.lat, lon },
+          expansionHalfAngleDeg: Math.min(22, 8 + widthDeg * 0.30),
+          opacity: 0.45,
+          hssVisible: true,
+          animPhase: (holes.length * 0.37) % 1,
+        });
+  }
+  return { holes, atMs: newest.atMs };
 }
