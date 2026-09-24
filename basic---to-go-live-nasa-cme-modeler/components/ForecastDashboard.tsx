@@ -610,7 +610,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 advanced structure panel, without the physics
                                 line under each entry. */}
                             <div className="col-span-12 card bg-neutral-950/80 p-4">
-                                <h3 className="text-lg font-semibold text-white mb-1">What to expect</h3>
+                                <h3 className="text-lg font-semibold text-white mb-1">What to expect in the next couple of days</h3>
                                 <p className="text-xs text-neutral-500 mb-3">
                                     Coronal hole streams and CMEs due to reach Earth in the next three days,
                                     and what each would be worth seeing.
@@ -667,7 +667,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             {/* The same three-day outlook as the simple view,
                                 with the physics line under each entry. */}
                             <div className="col-span-12 card bg-neutral-950/80 p-4">
-                                <h3 className="text-lg font-semibold text-white mb-1">What to expect</h3>
+                                <h3 className="text-lg font-semibold text-white mb-1">What to expect in the next couple of days</h3>
                                 <p className="text-xs text-neutral-500 mb-3">
                                     Coronal hole streams and CMEs due to reach Earth in the next three days,
                                     and what each would be worth seeing.

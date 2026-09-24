@@ -23,6 +23,15 @@ const TIER_TEXT: Record<string, string> = {
   none: 'text-neutral-400',
 };
 
+// The same icons as the next-couple-of-hours card, so a glance means the
+// same thing in both.
+const TIER_ICON: Record<string, string> = {
+  eye: '👁️',
+  phone: '📱',
+  camera: '📷',
+  none: '😴',
+};
+
 const fmtNz = (ms: number, withDate = true): string =>
   new Date(ms).toLocaleString('en-NZ', {
     timeZone: 'Pacific/Auckland',
@@ -164,7 +173,12 @@ export const ExpectedArrivals: React.FC<{
         const night = nightFor(nights, a);
         return (
           <li key={`${a.atMs}-${a.sourceId ?? a.kind}`}
-              className="rounded border border-neutral-700/60 bg-neutral-800/40 p-2">
+              className="rounded border border-neutral-700/60 bg-neutral-800/40 p-2 flex items-start gap-3">
+            {/* The likely tier on its best night; nothing to see if it lands in daylight. */}
+            <div className="text-xl flex-shrink-0 leading-none mt-0.5">
+              {TIER_ICON[night?.tier ?? 'none'] ?? TIER_ICON.none}
+            </div>
+            <div className="flex-1 min-w-0">
             <div className="flex items-baseline justify-between gap-2 flex-wrap">
               <span className="text-xs font-semibold text-neutral-100">{what}</span>
               <span className="text-[11px] font-mono text-neutral-400">
@@ -195,6 +209,7 @@ export const ExpectedArrivals: React.FC<{
                 {detail} Expect {sectorNote(a)}.
               </p>
             )}
+            </div>
           </li>
         );
       })}

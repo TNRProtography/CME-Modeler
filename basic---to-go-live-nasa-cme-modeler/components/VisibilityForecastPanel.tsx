@@ -556,7 +556,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
   if (isDaylight) {
     return (
       <div className="col-span-12 card bg-neutral-950/80 p-5 h-full flex flex-col">
-        <h3 className="text-lg font-semibold text-white mb-4">What to expect</h3>
+        <h3 className="text-lg font-semibold text-white mb-4">What to expect in the next couple of hours</h3>
         <div className="flex items-start gap-3 text-neutral-400 text-sm">
           <span className="text-2xl">☀️</span>
           <div className="space-y-1">
@@ -590,7 +590,7 @@ export const VisibilityForecastPanel: React.FC<VisibilityForecastPanelProps> = (
       <InfoModal isOpen={!!modalState} onClose={() => setModalState(null)} title={modalState?.title ?? ''} content={modalState?.content ?? ''} />
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-2">
-          <h3 className="text-lg font-semibold text-white">What to expect</h3>
+          <h3 className="text-lg font-semibold text-white">What to expect in the next couple of hours</h3>
           <button
             onClick={openModal}
             className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
