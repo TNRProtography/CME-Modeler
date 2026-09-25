@@ -92,21 +92,28 @@ const nearest = (points: OutlookPoint[], atMs: number, within = 45 * 60000): Out
   return best;
 };
 
-/** One hour: each forecast's strength there, the strongest, then the sky. */
-function evaluateHour(t: number, i: GridInputs) {
+/**
+ * One hour, before the sky: the strongest of the three forecasts for the
+ * viewer, which set it, and the Kp it amounts to - NOAA's own when NOAA set
+ * it, otherwise the Kp whose oval sits where that forecast's does. The Kp is
+ * what lets a Kp-styled chart draw a stream-driven night in the right colours.
+ */
+export function combinedAt(t: number, i: GridInputs): { raw: number; driver: GridDriver; kp: number | null; equivalentKp: number } {
   const strengthAt = (boundary: number) => auroraGeometryAt(boundary, t, i.latitude, i.longitude).strength;
   let raw = 0;
   let driver: GridDriver = 'quiet';
+  let boundary: number | null = null;
 
   const hole = nearest(i.holeOutlook, t);
   if (hole) {
     raw = strengthAt(hole.boundaryLikely);
+    boundary = hole.boundaryLikely;
     driver = hole.disturbance === 'ambient' ? 'quiet' : 'coronal hole';
   }
   const cme = nearest(i.cmeOutlook.filter((p) => String(p.disturbance).startsWith('CME')), t);
   if (cme) {
     const s = strengthAt(cme.boundaryLikely);
-    if (s > raw) { raw = s; driver = 'CME'; }
+    if (s > raw) { raw = s; driver = 'CME'; boundary = cme.boundaryLikely; }
   }
   const block = kpAt(i.kpBlocks, t);
   if (block) {
@@ -114,9 +121,27 @@ function evaluateHour(t: number, i: GridInputs) {
     if (s > raw) { raw = s; driver = 'NOAA Kp'; }
   }
 
+  let equivalentKp = 0;
+  if (driver === 'NOAA Kp' && block) equivalentKp = block.kp;
+  else if (boundary != null) {
+    // boundaryForKp rises towards the equator with Kp, so bisect.
+    let lo = 0, hi = 9;
+    for (let n = 0; n < 24; n++) {
+      const mid = (lo + hi) / 2;
+      if (boundaryForKp(mid, t) < boundary) lo = mid; else hi = mid;
+    }
+    equivalentKp = Math.max(block?.kp ?? 0, (lo + hi) / 2);
+  } else equivalentKp = block?.kp ?? 0;
+
+  return { raw, driver, kp: block?.kp ?? null, equivalentKp };
+}
+
+/** One hour: the combined strength, then the sky. */
+function evaluateHour(t: number, i: GridInputs) {
+  const c = combinedAt(t, i);
   const sky = skyConditionsAt(t, i.latitude, i.longitude);
-  const vis = visibilityOutlook(raw, sky);
-  return { t, raw, driver, sky, vis, kp: block?.kp ?? null };
+  const vis = visibilityOutlook(c.raw, sky);
+  return { t, raw: c.raw, driver: c.driver, sky, vis, kp: c.kp };
 }
 
 export function buildThreeDayGrid(i: GridInputs): GridDay[] {

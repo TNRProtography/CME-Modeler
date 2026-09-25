@@ -6,6 +6,11 @@ import { kpIndex, gScale, gColor } from '../utils/kpScale';
 import { moonAt } from '../utils/skyConditions';
 import { resolveViewerLocation } from '../utils/viewerLocation';
 import { sharedFetchJson } from '../utils/sharedFetch';
+import { useThreeDayOutlook } from '../hooks/useThreeDayOutlook';
+import { combinedAt, type GridDriver } from '../utils/threeDayGrid';
+import { TIER_CAMERA } from '../utils/skyConditions';
+
+const TIER_EMOJI: Record<string, string> = { camera: '📷', phone: '📱', eye: '👁️' };
 
 const NOAA_KP_URL   = 'https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json';
 // NOAA republishes this forecast roughly 3-hourly. Re-fetching every 5 minutes
@@ -39,6 +44,14 @@ interface KpSlot {
   dayLabel: string;
   kp:       number;
   observed: string; // 'observed' | 'estimated' | 'predicted'
+  /**
+   * The combined forecast's strength for the viewer, 0-100, before the sky
+   * (utils/threeDayGrid). When set, it draws the aurora and `kp` is the Kp it
+   * amounts to; NOAA's own is kept in `noaaKp`.
+   */
+  strength?: number;
+  driver?:   GridDriver;
+  noaaKp?:   number;
 }
 interface PopupState { slotIdx: number; anchorX: number; }
 
@@ -390,6 +403,8 @@ function drawCanvas(
   lon:        number,
   minKp:       number,
   selectedCol: number,
+  /** Per column: the emoji to draw, on the middle hour of each three-hour block. */
+  emojis:      (string | null)[] = [],
 ) {
   const COLS   = slots.length;
   if (COLS === 0) return;
@@ -485,9 +500,15 @@ function drawCanvas(
       for (let s=0;s<sc;s++){ctx.beginPath();ctx.arc(rand(i*300+s*7.3)*COL_W+x,LBEL_H+rand(i*400+s*13.7)*SKY_H*0.78,0.3+rand(i*600+s*3.7)*0.5,0,Math.PI*2);ctx.fillStyle=`rgba(255,255,255,${(0.15+rand(i*500+s*5.1)*0.78).toFixed(2)})`;ctx.fill();}
     }
 
-    // Aurora overlay
-    if (slot.kp > minKp) {
-      const ah  = auroraH(slot.kp, SKY_H, minKp);
+    // Aurora overlay: from the combined forecast's strength for this viewer
+    // when there is one - it shows from where a camera would pick it up, the
+    // same line the emoji use - otherwise from NOAA's Kp against the
+    // location's threshold.
+    const ahCombined = slot.strength != null && slot.strength >= TIER_CAMERA
+      ? Math.pow(Math.min(1, (slot.strength - TIER_CAMERA) / (100 - TIER_CAMERA)), 0.70) * SKY_H * 0.92 + 4
+      : 0;
+    if (slot.strength != null ? ahCombined > 0 : slot.kp > minKp) {
+      const ah  = slot.strength != null ? ahCombined : auroraH(slot.kp, SKY_H, minKp);
       const op  = st === 'night' ? 1.0 : st === 'nautical' ? 0.78 : st === 'civil' ? 0.52 : st === 'golden' ? 0.38 : 0.28;
       ctx.fillStyle = auroraGrad(ctx, x, HOR_Y - ah, HOR_Y, slot.kp, op);
       ctx.fillRect(x, HOR_Y - ah, COL_W, ah);
@@ -543,6 +564,14 @@ function drawCanvas(
       }
     }
   });
+
+  // What each three-hour block is worth, from the same grid the days card
+  // shows: camera, phone or eye, after the Moon and twilight at that hour.
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '14px system-ui,"Apple Color Emoji","Segoe UI Emoji",sans-serif';
+  emojis.forEach((e, i) => { if (e) ctx.fillText(e, (i + 0.5) * COL_W, LBEL_H + 14); });
+  ctx.textBaseline = 'alphabetic';
 
   // Ground silhouette
   ctx.fillStyle = '#020609';
@@ -609,7 +638,25 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef   = useRef<HTMLDivElement>(null);
-  const [slots,   setSlots]   = useState<KpSlot[]>([]);
+  const [noaaSlots, setSlots] = useState<KpSlot[]>([]);
+  // NOAA's hours, carrying the combined forecast instead: NOAA's Kp, the
+  // Coronal Hole Tracker's streams and the CME model, the strongest of them
+  // (see utils/threeDayGrid - the days card's grid is built from the same).
+  const { grid, gridInputs } = useThreeDayOutlook(3);
+  const slots = React.useMemo(() => noaaSlots.map((slot) => {
+    if (!gridInputs) return slot;
+    const c = combinedAt(slot.utcMs + 30 * 60000, gridInputs);
+    return { ...slot, kp: Math.round(c.equivalentKp * 3) / 3, strength: c.raw, driver: c.driver, noaaKp: slot.kp };
+  }), [noaaSlots, gridInputs]);
+  const emojis = React.useMemo(() => slots.map((slot) => {
+    for (const day of grid) for (const cell of day.cells) {
+      const mid = cell.startMs + (cell.endMs - cell.startMs) / 2;
+      if (mid >= slot.utcMs && mid < slot.utcMs + 3600000) {
+        return cell.past || cell.tier === 'none' ? null : TIER_EMOJI[cell.tier] ?? null;
+      }
+    }
+    return null;
+  }), [slots, grid]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(false);
   const [popup,   setPopup]   = useState<PopupState | null>(null);
@@ -737,8 +784,8 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   useEffect(() => {
     if (!canvasRef.current || slots.length === 0) return;
     const drawW = Math.max(canvasW, slots.length * 22);
-    drawCanvas(canvasRef.current, slots, drawW, sunriseMs, sunsetMs, where.lat, where.lon, minKpForLocation(userLatitude), popup?.slotIdx ?? -1);
-  }, [slots, canvasW, sunriseMs, sunsetMs, where, userLatitude, popup]);
+    drawCanvas(canvasRef.current, slots, drawW, sunriseMs, sunsetMs, where.lat, where.lon, minKpForLocation(userLatitude), popup?.slotIdx ?? -1, emojis);
+  }, [slots, canvasW, sunriseMs, sunsetMs, where, userLatitude, popup, emojis]);
 
   // Click
   const handleClick = useCallback((e: React.MouseEvent) => {
@@ -849,8 +896,16 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
             <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginLeft:8 }}>
               {/* KP */}
               <span style={{ fontSize:13, fontWeight:500, color: gColor(sel.kp) }}>
-                Kp {sel.kp.toFixed(2).replace(/\.?0+$/, '') || '0'}
+                {sel.driver && sel.driver !== 'NOAA Kp' ? '≈ ' : ''}Kp {sel.kp.toFixed(2).replace(/\.?0+$/, '') || '0'}
               </span>
+              {sel.driver && (
+                <span style={{ fontSize:11, color:'var(--color-text-tertiary)' }}>
+                  {sel.driver === 'NOAA Kp' ? 'NOAA forecast'
+                    : sel.driver === 'coronal hole' ? `coronal hole stream (NOAA Kp ${sel.noaaKp?.toFixed(2).replace(/\.?0+$/, '')})`
+                    : sel.driver === 'CME' ? `CME (NOAA Kp ${sel.noaaKp?.toFixed(2).replace(/\.?0+$/, '')})`
+                    : 'quiet'}
+                </span>
+              )}
               {gScale(sel.kp) && (
                 <span style={{ fontSize:11, fontWeight:500, padding:'2px 8px', borderRadius:20, background:gColor(sel.kp)+'22', color:gColor(sel.kp) }}>
                   {gScale(sel.kp)}
@@ -896,7 +951,12 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
             {l}
           </span>
         ))}
-        <span className="text-xs text-neutral-600 ml-auto">{userLatitude != null ? `Bar height calibrated to ${Math.abs(userLatitude).toFixed(1)}°${userLatitude < 0 ? 'S' : 'N'} - aurora threshold Kp ${minKpForLocation(userLatitude).toFixed(1)}` : 'No GPS - showing NZ-wide aurora threshold (Kp 4.67)'}</span>
+        <span className="text-xs text-neutral-500">📷 camera · 📱 phone · 👁️ naked eye, after the Moon and twilight</span>
+        <span className="text-xs text-neutral-600 ml-auto">
+          {gridInputs
+            ? 'The strongest of NOAA\'s Kp forecast, the Coronal Hole Tracker\'s streams and the CME model, for your location'
+            : userLatitude != null ? `Bar height calibrated to ${Math.abs(userLatitude).toFixed(1)}°${userLatitude < 0 ? 'S' : 'N'} - aurora threshold Kp ${minKpForLocation(userLatitude).toFixed(1)}` : 'No GPS - showing NZ-wide aurora threshold (Kp 4.67)'}
+        </span>
       </div>
 
     </div>
