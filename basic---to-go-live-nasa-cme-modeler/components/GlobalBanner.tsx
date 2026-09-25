@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { SubstormActivity, InterplanetaryShock } from '../types';
 import type { SubstormRiskData } from '../hooks/useForecastData';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
+import { sharedFetchJson } from '../utils/sharedFetch';
 
 const SUBSTORM_URL = 'https://aurora-index-sta.thenamesrock.workers.dev/api/substorm?resolution=5m';
 
@@ -165,8 +166,9 @@ const GlobalBanner: React.FC<GlobalBannerProps> = ({
   useEffect(() => {
     const fetchSubstorm = async () => {
       try {
-        const r = await fetch(SUBSTORM_URL);
-        if (r.ok) setSubstormRisk(await r.json());
+        // Shared with the forecast, which reads the same feed on the same
+        // cadence: one download every 30 seconds instead of two.
+        setSubstormRisk(await sharedFetchJson<SubstormRiskData>(SUBSTORM_URL, { maxAgeMs: 15000 }));
       } catch { /* non-critical */ }
     };
     fetchSubstorm();

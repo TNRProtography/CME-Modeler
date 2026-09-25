@@ -574,7 +574,12 @@ const AuroraSightings: React.FC<AuroraSightingsProps> = ({ isDaylight, refreshSi
         }
     }, [fetchSightings, requestGpsFix]);
 
+    // A manual refresh - not on mount, where the effect above has just
+    // fetched, and this used to fetch the same list a second time.
+    const lastRefreshSignal = useRef(refreshSignal);
     useEffect(() => {
+        if (lastRefreshSignal.current === refreshSignal) return;
+        lastRefreshSignal.current = refreshSignal;
         if (refreshSignal !== undefined) {
             fetchSightings();
         }

@@ -29,8 +29,9 @@ async function fetchRows(url: string): Promise<GoesRow[]> {
   return data.map(slim);
 }
 
-const goesSeries = (sat: 'primary' | 'secondary', name: string, days: 1 | 7) =>
+const goesSeries = (sat: 'primary' | 'secondary', name: string, days: 1 | 7, recentOnly = false) =>
   fetchIncrementalSeries<GoesRow>({
+    recentOnly,
     key: `goes:${sat}:${name}`,
     variants: goesVariants(`${GOES}/${sat}`, name, days === 7 ? '7-day' : '1-day'),
     retentionMs: days * DAY,
@@ -39,11 +40,16 @@ const goesSeries = (sat: 'primary' | 'secondary', name: string, days: 1 | 7) =>
     fetchRows,
   });
 
-/** A week of GOES X-ray flux, both bands. */
-export const fetchGoesXrays = (sat: 'primary' | 'secondary' = 'primary') => goesSeries(sat, 'xrays', 7);
+/**
+ * A week of GOES X-ray flux, both bands. `recentOnly` for a caller that
+ * wants only the latest readings - see IncrementalSeriesOptions.recentOnly.
+ */
+export const fetchGoesXrays = (sat: 'primary' | 'secondary' = 'primary', opts: { recentOnly?: boolean } = {}) =>
+  goesSeries(sat, 'xrays', 7, !!opts.recentOnly);
 
 /** A week of GOES integral proton flux, every energy. */
-export const fetchGoesProtons = (sat: 'primary' | 'secondary' = 'primary') => goesSeries(sat, 'integral-protons-plot', 7);
+export const fetchGoesProtons = (sat: 'primary' | 'secondary' = 'primary', opts: { recentOnly?: boolean } = {}) =>
+  goesSeries(sat, 'integral-protons-plot', 7, !!opts.recentOnly);
 
 export interface GoesMagRow { time_tag: string; Hp: number | null }
 

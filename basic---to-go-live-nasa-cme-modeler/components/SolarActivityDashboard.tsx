@@ -26,7 +26,7 @@ import {
 } from '../services/nasaService';
 import { stableHash } from '../utils/dataFreshness';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
-import { workerStatePreload } from '../utils/appPreloader';
+import { WORKER_STATE_SHARE_MS } from '../utils/appPreloader';
 import FaqModal from './FaqModal';
 import AuroraOverlay from './AuroraOverlay';
 import StarField from './StarField';
@@ -48,6 +48,9 @@ import SunspotCloseupCanvas from './SunspotCloseupCanvas';
 // Cache lifetime asked of the proxy for SDO archive frames, which never change;
 // shared with the background preload so both ask for the same address.
 import { ARCHIVE_IMAGE_TTL_S, preloadedImageUrls } from '../utils/imageryPreload';
+import { useAppReady, whenAppIdle } from '../utils/appReady';
+import { sharedFetchJson, sharedFetchText } from '../utils/sharedFetch';
+import { SOLAR_BOOT_URLS } from '../utils/solarBoot';
 
 interface SolarActivityDashboardProps {
   setViewerMedia: (media: { url: string, type: 'image' | 'video' | 'animation' } | { type: 'image_with_labels'; url: string; regions: RegionInput[]; geometry: SolarDiskGeometry; imageNatural: { width: number; height: number }; atMs: number } | null) => void;
@@ -215,8 +218,10 @@ const NOAA_PROTON_FLUX_URLS = [
  */
 const SPOT_WINDOW_OPTIONS = [6, 12, 24, 72, 168] as const;
 
-const NOAA_ACTIVE_REGIONS_TEXT_URL = 'https://services.swpc.noaa.gov/text/solar-regions.txt';
-const NOAA_SOLAR_PROBABILITIES_URL = 'https://services.swpc.noaa.gov/json/solar_probabilities.json';
+const NOAA_ACTIVE_REGIONS_TEXT_URL = SOLAR_BOOT_URLS.regionsText;
+const NOAA_SOLAR_PROBABILITIES_URL = SOLAR_BOOT_URLS.probabilities;
+const NOAA_SUNSPOT_REPORT_URL = SOLAR_BOOT_URLS.sunspotReport;
+const NOAA_SOLAR_REGIONS_JSON_URL = SOLAR_BOOT_URLS.regionsJson;
 const NOAA_ACTIVE_REGIONS_URLS = [
   'https://services.swpc.noaa.gov/json/sunspot_report.json',
   'https://services.swpc.noaa.gov/json/solar_regions.json',
@@ -1004,6 +1009,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   // Shared with the background imagery preload, so a frame it has already
   // loaded shows without a spinner.
   const loadedFrameUrlsRef = useRef<Set<string>>(preloadedImageUrls);
+  const appReady = useAppReady();
   // Refs so playback interval closures always see the latest loading state
   const suviFrameLoadingRef = useRef<boolean>(false);
   const coronagraphFrameLoadingRef = useRef<boolean>(false);
@@ -1549,9 +1555,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, []);
 
 
+  // Each address through the app's shared fetch first - which takes over a
+  // request started early on opening (utils/solarBoot) and shares one with
+  // any panel asking at the same moment - then the retrying fetch.
   const fetchFirstAvailableJson = useCallback(async (urls: string[]) => {
     let lastError: Error | null = null;
     for (const url of urls) {
+      try {
+        return JSON.parse(await sharedFetchText(url, { timeoutMs: 15000, maxAgeMs: 15000 }));
+      } catch { /* the retrying fetch below */ }
       try {
         return await fetchWithTimeoutAndRetry(`${url}?_=${Date.now()}`, 'json');
       } catch (error) {
@@ -1565,6 +1577,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     let lastError: Error | null = null;
     for (const url of urls) {
       try {
+        return await sharedFetchText(url, { timeoutMs: 15000, maxAgeMs: 15000 });
+      } catch { /* the retrying fetch below */ }
+      try {
         return await fetchWithTimeoutAndRetry(`${url}?_=${Date.now()}`, 'text') as string;
       } catch (error) {
         lastError = error instanceof Error ? error : new Error('Unknown fetch error');
@@ -1573,7 +1588,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     throw lastError ?? new Error('No text endpoint available');
   }, []);
 
-  const fetchXrayFlux = useCallback(async () => {
+  const fetchXrayFlux = useCallback(async (opts: { recentOnly?: boolean } = {}) => {
     if (isInitialLoad.current) {
         setLoadingXray('Loading X-ray flux data...');
     }
@@ -1583,8 +1598,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       // we still render the primary line exactly like before this change.
       const [primaryResult, secondaryResult] = await Promise.allSettled([
         // Topped up from what is already held; the full lists are the fallback.
-        fetchGoesXrays('primary').catch(() => fetchFirstAvailableJson(NOAA_XRAY_FLUX_URLS)),
-        fetchGoesXrays('secondary').catch(() => fetchFirstAvailableJson(NOAA_XRAY_FLUX_URLS_SECONDARY)),
+        fetchGoesXrays('primary', opts).catch(() => fetchFirstAvailableJson(NOAA_XRAY_FLUX_URLS)),
+        fetchGoesXrays('secondary', opts).catch(() => fetchFirstAvailableJson(NOAA_XRAY_FLUX_URLS_SECONDARY)),
       ]);
 
       if (primaryResult.status === 'rejected') {
@@ -1655,12 +1670,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     }
   }, [fetchFirstAvailableJson, reportInitialTask, setLatestXrayFlux, stampIfChanged]);
 
-  const fetchProtonFlux = useCallback(async () => {
+  const fetchProtonFlux = useCallback(async (opts: { recentOnly?: boolean } = {}) => {
     if (isInitialLoad.current) {
         setLoadingProton('Loading proton flux data...');
     }
     try {
-      const rawData = await fetchGoesProtons('primary').catch(() => fetchFirstAvailableJson(NOAA_PROTON_FLUX_URLS));
+      const rawData = await fetchGoesProtons('primary', opts).catch(() => fetchFirstAvailableJson(NOAA_PROTON_FLUX_URLS));
         const processedData = rawData
           .filter((d: any) => d.energy === ">=10 MeV" && d.flux !== null && !isNaN(d.flux))
           .map((d: any) => ({ time: new Date(d.time_tag).getTime(), flux: parseFloat(d.flux) }))
@@ -1759,6 +1774,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       // solar-regions.txt defines which regions exist and provides:
       // region number, location (lat/lon), area, spot count, magnetic class.
       // Only regions in this file are shown - JSON is supplementary only.
+      // All four at once: the JSON and positions used to wait for the text
+      // file, a second round trip before the regions could show.
+      const supplementary = Promise.all([
+        fetchFirstAvailableJson([NOAA_SUNSPOT_REPORT_URL]).catch(() => null),
+        fetchFirstAvailableJson([NOAA_SOLAR_REGIONS_JSON_URL]).catch(() => null),
+        fetchSharpByRegion(),
+      ]);
+      supplementary.catch(() => {});
       const rawText = await fetchFirstAvailableText([NOAA_ACTIVE_REGIONS_TEXT_URL]);
       const textRegions = parseNoaaSolarRegionsText(rawText);
 
@@ -1778,11 +1801,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       // solar_regions.json:  same, different field names - both tried, latest wins
       // SHARP positions ride along: NOAA says which regions exist, HMI says
       // where they are now. See utils/sharpPositions.
-      const [sunspotReportRaw, solarRegionsRaw, sharp] = await Promise.all([
-        fetchFirstAvailableJson(['https://services.swpc.noaa.gov/json/sunspot_report.json']).catch(() => null),
-        fetchFirstAvailableJson(['https://services.swpc.noaa.gov/json/solar_regions.json']).catch(() => null),
-        fetchSharpByRegion(),
-      ]);
+      const [sunspotReportRaw, solarRegionsRaw, sharp] = await supplementary;
 
       // solar_regions.json keeps a row per region per day, so the day-on-day
       // change in each region's spot count is already in this download.
@@ -1884,18 +1903,27 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     fetchImage(SUVI_304_URL, setSuvi304);
     fetchImage(SUVI_195_URL, setSuvi195);
     fetchImage(SUVI_284_URL, setSuvi284);
-    fetchXrayFlux();
-    fetchProtonFlux();
+    if (isInitialLoad.current) {
+      // On opening, the latest hours first - on a first visit that is a small
+      // file instead of a week's, and the page can show on it - then the rest
+      // of the week straight after. On a return visit both are the same small
+      // top-up, and the second is answered from the first.
+      void fetchXrayFlux({ recentOnly: true }).then(() => whenAppIdle()).then(() => fetchXrayFlux());
+      void fetchProtonFlux({ recentOnly: true }).then(() => whenAppIdle()).then(() => fetchProtonFlux());
+    } else {
+      fetchXrayFlux();
+      fetchProtonFlux();
+    }
   }, [embed, fetchFlares, fetchImage, fetchNoaaSolarProbabilities, fetchProtonFlux, fetchSunspotRegions, fetchXrayFlux, stampIfChanged]);
 
   const fetchCoronagraphState = useCallback(async () => {
     try {
       setCoronagraphLoading((prev) => prev ?? 'Refreshing coronagraph data...');
-      // Use the preloaded promise if available (started during loading screen) to
-      // avoid a cold duplicate fetch. Consume it once, then null it out.
-      const preload = workerStatePreload.coronagraph;
-      workerStatePreload.coronagraph = null;
-      const data = (preload ? await preload : await fetchWithTimeoutAndRetry(`${CORONAGRAPHY_WORKER_BASE}/api/state`, 'json')) as CoronagraphStateResponse;
+      // Shared: a preload or another panel's read from the last few seconds
+      // is taken over; anything older is read again.
+      const url = `${CORONAGRAPHY_WORKER_BASE}/api/state`;
+      const data = (await sharedFetchJson(url, { maxAgeMs: WORKER_STATE_SHARE_MS, timeoutMs: FETCH_TIMEOUT_MS })
+        .catch(() => fetchWithTimeoutAndRetry(`${url}?_=${Date.now()}`, 'json'))) as CoronagraphStateResponse;
       if (!data?.ok) throw new Error('Worker state returned not-ok response');
       setCoronagraphState(data);
       setCoronagraphLoading(null);
@@ -1908,14 +1936,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const fetchSuviWorkerState = useCallback(async () => {
     try {
       setSuviWorkerLoading((prev) => prev ?? 'Refreshing SUVI timeline...');
-      // Use the preloaded promise if available (started during loading screen).
-      const preload = workerStatePreload.suvi;
-      workerStatePreload.suvi = null;
-      const data = (preload ? await preload : await fetchWithTimeoutAndRetry(
-        `${SUVI_DIFF_WORKER_BASE}/api/state`,
-        'json',
-        { timeoutMs: SUVI_WORKER_FETCH_TIMEOUT_MS, retries: 1, cache: 'no-store' }
-      )) as SuviWorkerStateResponse;
+      // Shared, as for the coronagraphs above.
+      const url = `${SUVI_DIFF_WORKER_BASE}/api/state`;
+      const data = (await sharedFetchJson(url, { maxAgeMs: WORKER_STATE_SHARE_MS, timeoutMs: SUVI_WORKER_FETCH_TIMEOUT_MS })
+        .catch(() => fetchWithTimeoutAndRetry(`${url}?_=${Date.now()}`, 'json',
+          { timeoutMs: SUVI_WORKER_FETCH_TIMEOUT_MS, retries: 1, cache: 'no-store' }))) as SuviWorkerStateResponse;
       if (!data?.ok) throw new Error('SUVI worker state returned not-ok response');
       setSuviWorkerState(data);
       setSuviWorkerLoading(null);
@@ -1954,17 +1979,29 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   }, [runAllUpdates, fetchPanelsOnly]);
 
 
+  // The 4096px frames behind the region zoom are several megabytes each, so
+  // they are warmed once the app is up and idle, not while the page is still
+  // loading what it opens on.
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      prefetchSolarImage(resolveSdoImageUrl(SDO_HMI_BC_4096_URL, forceDirectSdoRef.current));
-      prefetchSolarImage(resolveSdoImageUrl(SDO_HMI_B_4096_URL, forceDirectSdoRef.current));
-      prefetchSolarImage(resolveSdoImageUrl(SDO_HMI_IF_4096_URL, forceDirectSdoRef.current));
-    }, 1800);
-
-    return () => window.clearTimeout(timer);
+    let timer: number | undefined;
+    let cancelled = false;
+    void whenAppIdle().then(() => {
+      if (cancelled) return;
+      timer = window.setTimeout(() => {
+        prefetchSolarImage(resolveSdoImageUrl(SDO_HMI_BC_4096_URL, forceDirectSdoRef.current));
+        prefetchSolarImage(resolveSdoImageUrl(SDO_HMI_B_4096_URL, forceDirectSdoRef.current));
+        prefetchSolarImage(resolveSdoImageUrl(SDO_HMI_IF_4096_URL, forceDirectSdoRef.current));
+      }, 1800);
+    });
+    return () => { cancelled = true; if (timer) window.clearTimeout(timer); };
   }, [prefetchSolarImage]);
 
+  // A manual refresh - not on mount, where the effect above has just run
+  // the same updates, which fetched every feed on this page twice.
+  const lastRefreshSignal = useRef(refreshSignal);
   useEffect(() => {
+    if (lastRefreshSignal.current === refreshSignal) return;
+    lastRefreshSignal.current = refreshSignal;
     runAllUpdates();
     fetchPanelsOnly();
   }, [refreshSignal, runAllUpdates, fetchPanelsOnly]);
@@ -3850,7 +3887,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   return (
     <div
       className={embed ? "w-full text-neutral-300 relative" : "w-full h-full bg-neutral-900 text-neutral-300 relative"}
-      style={embed ? undefined : { backgroundImage: `url('https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/Rapahoe%20Blue%20Aurora%20-%20Full%20Pano.jpg')`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}
+      // The panorama waits for the loading screen to go, leaving the network
+      // to the data the page opens on.
+      style={embed ? undefined : { backgroundImage: appReady ? `url('https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/Rapahoe%20Blue%20Aurora%20-%20Full%20Pano.jpg')` : undefined, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}
     >
       {!embed && <>
       <div className="absolute inset-0 bg-black/50 z-0"></div>

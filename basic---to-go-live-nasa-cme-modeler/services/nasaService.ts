@@ -1,3 +1,4 @@
+import { sharedFetchJson } from '../utils/sharedFetch';
 import { CMEData, ProcessedCME } from '../types';
 import { pickAnalysis, isUsableAnalysis, isEarthDirected } from '../utils/cmeAnalysis';
 
@@ -54,16 +55,18 @@ export const fetchCMEData = async (days: number, apiKey: string): Promise<Proces
   const url = `${PROXY_BASE_URL}/CME`;
 
   try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      const errorData = await response.text();
-      console.error("Proxy Worker API Error Response (CME):", errorData);
-      if (response.status === 503) {
+    // Shared: opening on the 3D page asked for this twice at once, once to
+    // preload and once for the page.
+    let data: CMEData[];
+    try {
+      data = await sharedFetchJson<CMEData[]>(url, { maxAgeMs: 15000 });
+    } catch (e) {
+      const status = Number(String((e as Error)?.message ?? '').match(/HTTP (\d+)/)?.[1]);
+      if (status === 503) {
         throw new Error('NASA DONKI API is currently unavailable (503 Service Unavailable). This is due to NASA API downtime.');
       }
-      throw new Error(`Proxy Worker API Error: ${response.status} ${response.statusText}`);
+      throw status ? new Error(`Proxy Worker API Error: ${status}`) : e;
     }
-    const data: CMEData[] = await response.json();
     const processed = processCMEData(data);
 
     // Filter to the requested window (24 hours, 3 days, 7 days, etc.)
@@ -81,14 +84,18 @@ export const fetchCMEData = async (days: number, apiKey: string): Promise<Proces
 export const fetchFlareData = async (): Promise<SolarFlare[]> => {
   const url = `${PROXY_BASE_URL}/FLR`;
   try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      if (response.status === 503) {
+    // Shared, so a request started early on opening (utils/solarBoot) is
+    // taken over rather than repeated.
+    let data: SolarFlare[];
+    try {
+      data = await sharedFetchJson<SolarFlare[]>(url, { maxAgeMs: 15000 });
+    } catch (e) {
+      const status = Number(String((e as Error)?.message ?? '').match(/HTTP (\d+)/)?.[1]);
+      if (status === 503) {
         throw new Error('NASA DONKI API is currently unavailable (503 Service Unavailable). This is due to NASA API downtime.');
       }
-      throw new Error(`Proxy Worker API Error (FLR): ${response.status}`);
+      throw status ? new Error(`Proxy Worker API Error (FLR): ${status}`) : e;
     }
-    const data: SolarFlare[] = await response.json();
     // Sort by peak time, newest first
     return data.sort((a, b) => new Date(b.peakTime).getTime() - new Date(a.peakTime).getTime());
   } catch (error) {

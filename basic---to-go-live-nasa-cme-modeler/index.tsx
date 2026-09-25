@@ -5,6 +5,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { initLogCapture } from './utils/logCapture';
 import { reportNotificationClick } from './utils/notifications';
 import { registerServiceWorker } from './utils/serviceWorker';
+import { startSolarBoot } from './utils/solarBoot';
 import './styles.css';
 
 // Start capturing console output immediately so the debug panel
@@ -14,6 +15,11 @@ initLogCapture();
 // If this load came from tapping a notification, report it before anything
 // else touches the URL. Does nothing on an ordinary load.
 reportNotificationClick();
+
+// Opening on the solar page: start its core feeds now, while the page's code
+// downloads and renders, rather than after (see utils/solarBoot). index.html
+// has already started the forecast page's, and set which page this is.
+if ((window as unknown as { __stLandingPage?: string }).__stLandingPage === 'solar-activity') startSolarBoot();
 
 // Chart.js is NOT registered here - it is registered lazily inside ForecastDashboard
 // and SolarActivityDashboard via chartSetup.ts, so it never loads on the CME modeler

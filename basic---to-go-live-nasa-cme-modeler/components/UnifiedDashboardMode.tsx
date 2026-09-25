@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useForecastData } from '../hooks/useForecastData';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
 import { fetchGoesXrays } from '../utils/goesSeries';
+import { useAppReady } from '../utils/appReady';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -140,6 +141,8 @@ const getEmojiForStatus = (status: string) => {
 };
 
 const UnifiedDashboardMode: React.FC<UnifiedDashboardModeProps> = ({ refreshSignal }) => {
+  // The two embeds are whole web pages of their own; they wait for the app to be up.
+  const appReady = useAppReady();
   const [, setScoreMirror] = useState<number | null>(null);
   const [, setSubstormMirror] = useState<any>(null);
   const [xrayFlux, setXrayFlux] = useState<number | null>(null);
@@ -570,11 +573,11 @@ const UnifiedDashboardMode: React.FC<UnifiedDashboardModeProps> = ({ refreshSign
         <div className="col-span-12 md:col-span-4 row-span-3 rounded-xl bg-neutral-900/70 border border-neutral-700/60 p-2 grid grid-cols-2 gap-2">
           <div className="rounded-lg bg-black/50 border border-white/10 overflow-hidden">
             <div className="text-[11px] text-neutral-300 px-2 py-1 border-b border-white/10">Windy Clouds</div>
-            <iframe title="Windy Clouds" src={WINDY_URL} className="w-full h-[calc(100%-24px)]" />
+            {appReady && <iframe title="Windy Clouds" src={WINDY_URL} className="w-full h-[calc(100%-24px)]" />}
           </div>
           <div className="rounded-lg bg-black/50 border border-white/10 overflow-hidden">
             <div className="text-[11px] text-neutral-300 px-2 py-1 border-b border-white/10">Queenstown Camera</div>
-            <iframe title="Queenstown Camera" src={QUEENSTOWN_CAM_URL} className="w-full h-[calc(100%-24px)]" />
+            {appReady && <iframe title="Queenstown Camera" src={QUEENSTOWN_CAM_URL} className="w-full h-[calc(100%-24px)]" />}
           </div>
         </div>
 

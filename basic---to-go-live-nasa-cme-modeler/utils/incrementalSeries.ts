@@ -42,6 +42,14 @@ export interface IncrementalSeriesOptions<T> {
   /** Re-read so much before the newest held row, to pick up revisions. */
   overlapMs?: number;
   nowMs?: number;
+  /**
+   * Only what is newer than what is held - the shortest file that covers
+   * it, and the shortest of all when nothing is held. For a caller that wants
+   * the latest reading, like the X-ray banner, which should not pull a week
+   * of history on a first visit just to read one number. Whatever it fetches
+   * is kept, and the next full caller fills in the rest.
+   */
+  recentOnly?: boolean;
 }
 
 const HOUR = 3600000;
@@ -83,14 +91,43 @@ export function mergeRows<T>(
     .sort((a, b) => timeOf(a) - timeOf(b));
 }
 
-// Callers asking for the same series at the same moment share one top-up.
+// Callers asking for the same series the same way at the same moment share
+// one top-up, and one that finished a few seconds ago - the banner and a
+// dashboard opening together both want the X-ray series, for instance. A
+// full top-up answers a recent-only caller too, not the other way round.
+//
+// Top-ups of one series run one after another, never side by side: each
+// merges into what the last one stored, so two at once could each write
+// back only their own rows.
 const running = new Map<string, Promise<unknown>>();
+const tails = new Map<string, Promise<unknown>>();
+const recent = new Map<string, { atMs: number; rows: unknown[]; full: boolean }>();
+const REUSE_MS = 10000;
 
 export function fetchIncrementalSeries<T>(o: IncrementalSeriesOptions<T>): Promise<T[]> {
-  const existing = running.get(o.key);
+  const full = !o.recentOnly;
+  const runKey = `${o.key}|${full ? 'full' : 'recent'}`;
+  const existing = running.get(runKey) ?? (full ? undefined : running.get(`${o.key}|full`));
   if (existing) return existing as Promise<T[]>;
-  const p = topUp(o).finally(() => running.delete(o.key));
-  running.set(o.key, p);
+  const nowMs = o.nowMs ?? Date.now();
+  const last = recent.get(o.key);
+  if (last && (last.full || !full) && nowMs - last.atMs >= 0 && nowMs - last.atMs < REUSE_MS) {
+    return Promise.resolve(last.rows as T[]);
+  }
+  const before = tails.get(o.key) ?? Promise.resolve();
+  const p: Promise<T[]> = before.catch(() => {}).then(() => topUp(o))
+    .then((rows) => {
+      // A recent-only top-up onto a week already held is as good as a full one.
+      const covers = rows.length > 0 && nowMs - o.timeOf(rows[0]) >= o.retentionMs * 0.9;
+      recent.set(o.key, { atMs: nowMs, rows, full: full || covers });
+      return rows;
+    })
+    .finally(() => {
+      running.delete(runKey);
+      if (tails.get(o.key) === p) tails.delete(o.key);
+    });
+  running.set(runKey, p);
+  tails.set(o.key, p);
   return p;
 }
 
@@ -101,11 +138,18 @@ async function topUp<T>(o: IncrementalSeriesOptions<T>): Promise<T[]> {
   const cutoff = nowMs - o.retentionMs;
   const held = stored.rows.filter((r) => o.timeOf(r) >= cutoff);
 
-  const start = chooseVariant(o.variants, {
-    newestMs: held.length ? o.timeOf(held[held.length - 1]) : null,
+  const newestMs = held.length ? o.timeOf(held[held.length - 1]) : null;
+  let start = chooseVariant(o.variants, {
+    newestMs,
     oldestMs: held.length ? o.timeOf(held[0]) : null,
     fullAtMs: stored.fullAtMs,
   }, o.retentionMs, nowMs, overlapMs);
+  if (o.recentOnly) {
+    // Just past what is held: never the fill-in of the whole window.
+    const needed = newestMs == null ? 0 : nowMs - newestMs + overlapMs;
+    const i = o.variants.findIndex((v) => v.spanMs >= needed);
+    start = Math.min(start, i === -1 ? o.variants.length - 1 : i);
+  }
 
   // The chosen variant, then longer ones if it fails.
   let fresh: T[] | null = null;

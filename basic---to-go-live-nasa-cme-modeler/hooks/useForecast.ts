@@ -12,6 +12,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { sharedFetchJson } from '../utils/sharedFetch';
+import { whenAppIdle } from '../utils/appReady';
 import { buildForecastTimeline, type L1State, type StreamSource } from '../utils/forecastTimeline';
 import { buildOutlook, type OutlookPoint } from '../utils/auroraOutlook';
 import { chEarthConnection, chTiming } from '../utils/coronalHoleDynamics';
@@ -39,11 +40,21 @@ const SUVI_WORKER = 'https://suvi-difference-imagery.thenamesrock.workers.dev';
  * de-duplicates by frame, so if the dashboard has already done the work this
  * costs nothing.
  */
-async function primeCoronalHoles(): Promise<void> {
+let priming: { atMs: number; promise: Promise<void> } | null = null;
+/** How long one priming pass covers every panel that asks. */
+const PRIME_REUSE_MS = 10 * 60 * 1000;
+
+function primeCoronalHoles(): Promise<void> {
+  // Two panels on the forecast page use this hook; one pass serves both.
+  if (priming && Date.now() - priming.atMs < PRIME_REUSE_MS) return priming.promise;
+  priming = { atMs: Date.now(), promise: runPriming() };
+  return priming.promise;
+}
+
+async function runPriming(): Promise<void> {
   try {
-    const res = await fetch(`${SUVI_WORKER}/api/state`);
-    if (!res.ok) return;
-    const json = await res.json();
+    // Shared with the solar page and the imagery preload.
+    const json = await sharedFetchJson<any>(`${SUVI_WORKER}/api/state`, { maxAgeMs: 25000 });
     const frames = json?.sources?.suvi_195_primary?.frames ?? [];
     const cutoff = Date.now() - 12 * 3600000;
     const refs = frames
@@ -136,7 +147,15 @@ async function publishNewestSnapshot(): Promise<boolean> {
  * tabs opening at once, since another client is already doing this work, so
  * read the result back rather than treating it as a failure.
  */
-async function refreshWorkerForecast(): Promise<any | null> {
+let refreshingRun: Promise<any | null> | null = null;
+
+function refreshWorkerForecast(): Promise<any | null> {
+  // One re-run however many panels notice the forecast is stale.
+  if (!refreshingRun) refreshingRun = runWorkerRefresh().finally(() => { refreshingRun = null; });
+  return refreshingRun;
+}
+
+async function runWorkerRefresh(): Promise<any | null> {
   try {
     await publishNewestSnapshot();
     const run = await fetch(`${FORECAST_WORKER}/run`);
@@ -166,22 +185,30 @@ export function useForecast(enabled = true): ForecastState {
     let cancelled = false;
 
     (async () => {
-      // Kick detection off immediately, in parallel with everything else, so
-      // the outlook works from a cold start on any page.
-      const priming = primeCoronalHoles();
-
+      // Shared by the panels using this hook, so the page asks once.
       const [workerResult, observedResult] = await Promise.allSettled([
-        fetch(`${FORECAST_WORKER}/forecast`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        sharedFetchJson<any>(`${FORECAST_WORKER}/forecast`, { maxAgeMs: 30000 }).catch(() => null),
         fetchObserved(),
       ]);
       if (cancelled) return;
       if (workerResult.status === 'fulfilled' && workerResult.value?.ok) setWorker(workerResult.value);
       if (observedResult.status === 'fulfilled') setObserved(observedResult.value);
 
-      // Only stop showing a spinner once there is either a server forecast or
-      // some holes of our own to build one from.
       const stored = workerResult.status === 'fulfilled' ? workerResult.value : null;
       const haveWorker = !!stored?.ok;
+
+      // Detecting coronal holes means downloading SUVI frames and measuring
+      // them - real work. It is what the outlook is built from when the
+      // server has no forecast, or only a stale one, so then it starts at
+      // once. When the server's is fresh it is not needed for this view, and
+      // only keeps the coronal hole history filling in the background, so it
+      // waits until the app is up and idle rather than competing with it.
+      const needHoles = !haveWorker || !!stored?.stale;
+      const priming = needHoles ? primeCoronalHoles() : null;
+      if (!needHoles) void whenAppIdle(5000).then(() => { if (!cancelled) void primeCoronalHoles(); });
+
+      // Only stop showing a spinner once there is either a server forecast or
+      // some holes of our own to build one from.
       if (haveWorker) setLoading(false);
       else { await priming; if (!cancelled) setLoading(false); }
 
@@ -207,11 +234,8 @@ export function useForecast(enabled = true): ForecastState {
       // observations would be the sort of number that looks authoritative and
       // means nothing.
       try {
-        const res = await fetch(`${FORECAST_WORKER}/track-record`);
-        if (res.ok && !cancelled) {
-          const data = await res.json();
-          if (data?.ok) setScores(data.scores ?? []);
-        }
+        const data = await sharedFetchJson<any>(`${FORECAST_WORKER}/track-record`, { maxAgeMs: 5 * 60 * 1000 });
+        if (!cancelled && data?.ok) setScores(data.scores ?? []);
       } catch { /* not deployed yet */ }
     })();
 

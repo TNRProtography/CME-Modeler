@@ -1,7 +1,7 @@
 //--- START OF FILE src/hooks/useForecastData.ts ---
 
 import { magneticLatitude } from '../utils/auroraVisibility';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   SubstormActivity,
   SubstormForecast,
@@ -406,6 +406,24 @@ const fetchJsonWithRecovery = async (url: string, timeoutMs = 15000) => {
   }
 };
 
+/**
+ * The same, through the app's shared fetch: a request index.html started
+ * before the app loaded is taken over, and panels asking for the same feed
+ * within `maxAgeMs` share one download.
+ */
+const sharedJsonWithRecovery = async (url: string, timeoutMs = 15000, maxAgeMs = 15000) => {
+  const parsed = parseJsonWithRowRecovery(await sharedFetchText(url, { timeoutMs, maxAgeMs }));
+  if (parsed === null) throw new Error(`Unable to parse JSON from ${url}`);
+  return parsed;
+};
+
+/**
+ * DONKI's shock list changes a few times a week and NASA's own pipeline
+ * lags hours behind a shock, so it is read every few minutes, not on every
+ * 30-second tick of the rest of the forecast.
+ */
+const IPS_REFRESH_MS = 5 * 60 * 1000;
+
 const getVisibilityBlurb = (score: number | null): string => {
     if (score === null) return 'Potential visibility is unknown.';
     if (score >= 80) return 'Potential visibility is high, with a significant display likely.';
@@ -454,6 +472,11 @@ export const useForecastData = (
   const [owmDailyForecast, setOwmDailyForecast] = useState<OwmDailyForecastEntry[]>([]);
   const [interplanetaryShockData, setInterplanetaryShockData] = useState<InterplanetaryShock[]>([]);
   const [locationAdjustment, setLocationAdjustment] = useState<number>(0);
+  // Read by fetchAllData through a ref, so a location fix does not make a new
+  // fetch function - which re-ran every feed a second time. The effects below
+  // re-apply a new adjustment to what is already loaded.
+  const locationAdjustmentRef = useRef(0);
+  locationAdjustmentRef.current = locationAdjustment;
   const [locationBlurb, setLocationBlurb] = useState<string>('Getting location for a more accurate forecast...');
   const [userLatitude, setUserLatitude] = useState<number | null>(null);
   const [userLongitude, setUserLongitude] = useState<number | null>(null);
@@ -676,43 +699,26 @@ export const useForecastData = (
     };
 
     const results = await Promise.allSettled([
-      withInitialProgress(fetchJsonWithRecovery(`${FORECAST_API_URL}?_=${Date.now()}`), 'forecastApi'),
-      // One download of the L1 feed, shared with the other panels that read it.
-      withInitialProgress(sharedFetchText(SOLAR_WIND_IMF_URL, { timeoutMs: 15000 }).then((raw) => {
-        const parsed = parseJsonWithRowRecovery(raw);
-        if (parsed === null) throw new Error(`Unable to parse JSON from ${SOLAR_WIND_IMF_URL}`);
-        return parsed;
-      }), 'solarWindApi'),
+      // Both started by index.html on a cold start, and the L1 feed shared
+      // with the other panels that read it.
+      withInitialProgress(sharedJsonWithRecovery(FORECAST_API_URL), 'forecastApi'),
+      withInitialProgress(sharedJsonWithRecovery(SOLAR_WIND_IMF_URL), 'solarWindApi'),
       // A day of GOES magnetometer, topped up from what is already held.
       withInitialProgress(fetchGoesMagnetometer('primary').catch(() => fetchJsonWithRecovery(`${NOAA_GOES18_MAG_URL}?_=${Date.now()}`)), 'goes18Api'),
       withInitialProgress(fetchGoesMagnetometer('secondary').catch(() => fetchJsonWithRecovery(`${NOAA_GOES19_MAG_URL}?_=${Date.now()}`)), 'goes19Api'),
       // ipsApi and nzMagApi are non-blocking (not in FORECAST_INITIAL_TASKS) so they don't
       // hold the loader. Give them tighter timeouts since they feed secondary widgets only.
-      withInitialProgress(fetchJsonWithRecovery(`${NASA_IPS_URL}?_=${Date.now()}`, 7000), 'ipsApi'),
+      withInitialProgress(sharedJsonWithRecovery(NASA_IPS_URL, 7000, IPS_REFRESH_MS), 'ipsApi'),
       withInitialProgress(fetchJsonWithRecovery(nzMagUrl, 5000), 'nzMagApi'),
-      // Substorm risk worker - non-blocking, plain fetch to avoid the row-recovery
-      // parser mangling the object-format JSON response from this worker.
-      (async () => {
-        try {
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), 15000);
-          console.log('[SubstormWorker] Fetching:', SUBSTORM_RISK_URL);
-          const res = await fetch(`${SUBSTORM_RISK_URL}&_=${Date.now()}`, { signal: controller.signal });
-          clearTimeout(timer);
-          console.log('[SubstormWorker] HTTP status:', res.status, res.ok);
-          if (!res.ok) {
-            console.warn('[SubstormWorker] Non-OK response:', res.status);
-            return null;
-          }
-          const json = await res.json();
-          console.log('[SubstormWorker] Keys:', json ? Object.keys(json) : 'null');
-          console.log('[SubstormWorker] ok:', json?.ok, '| current:', !!json?.current, '| history_24h:', Array.isArray(json?.history_24h) ? json.history_24h.length + ' entries' : 'NOT ARRAY');
-          return json;
-        } catch (err) {
+      // Substorm risk worker - non-blocking, parsed as plain JSON so the
+      // row-recovery parser cannot mangle its object-format response. Shared
+      // with the banner, which reads the same feed.
+      sharedFetchText(SUBSTORM_RISK_URL, { timeoutMs: 15000 })
+        .then((raw) => JSON.parse(raw))
+        .catch((err) => {
           console.error('[SubstormWorker] Error:', err);
           return null;
-        }
-      })(),
+        }),
     ]);
     const [forecastResult, solarWindResult, goes18Result, goes19Result, ipsResult, nzMagResult, substormRiskResult] = results;
 
@@ -732,7 +738,7 @@ export const useForecastData = (
       const baseScore = currentForecast?.spotTheAuroraForecast ?? null;
       setBaseAuroraScore(baseScore);
 
-      const rawAdjusted = baseScore !== null ? Math.max(0, Math.min(100, baseScore + locationAdjustment)) : null;
+      const rawAdjusted = baseScore !== null ? Math.max(0, Math.min(100, baseScore + locationAdjustmentRef.current)) : null;
       // Compute daylight directly from the freshly received sun times rather than
       // relying on the isDaylight state, which may not have updated yet on first load.
       const freshSun = currentForecast?.sun;
@@ -1018,7 +1024,7 @@ export const useForecastData = (
     } finally {
       if (isInitialLoad) setIsLoading(false);
     }
-  }, [locationAdjustment, getMoonData, reportInitialProgress, setCurrentAuroraScore, setSubstormActivityStatus]);
+  }, [getMoonData, reportInitialProgress, setCurrentAuroraScore, setSubstormActivityStatus]);
 
   const activitySummary: ActivitySummary | null = useMemo(() => {
     const now = Date.now();

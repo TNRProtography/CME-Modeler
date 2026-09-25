@@ -42,6 +42,49 @@
     })();
   </script>
 
+  <!-- Start the landing page's core feeds now, while the app's JavaScript is
+       still downloading, instead of after it has run - which on a phone was
+       a second and a half later. The app picks these requests up
+       (utils/sharedFetch) rather than making its own. The addresses and keys
+       here are checked against the app's by npm run test:boot-fetch. -->
+  <script>
+    (function () {
+      try {
+        // Embedded in the marketing site: no full-screen splash in a small box.
+        if (/[?&]embed(=|&|$)/.test(location.search)) document.documentElement.className += ' st-embed';
+        var path = location.pathname, page = null, store = null;
+        if (path.indexOf('/spot-the-aurora-forecast') === 0) page = 'forecast';
+        else if (path.indexOf('/solar-dashboard') === 0) page = 'solar-activity';
+        else if (path.indexOf('/cme-visualization') === 0) page = 'modeler';
+        try { store = window.localStorage; } catch (_) {}
+        if (!page) {
+          var saved = store && store.getItem('sta_default_main_page');
+          page = saved === 'solar-activity' || saved === 'modeler' ? saved : 'forecast';
+        }
+        var dashboard = !!store && store.getItem('dashboard_mode_enabled_v1') === 'true';
+        window.__stLandingPage = dashboard ? 'dashboard' : page;
+        if (!dashboard && page !== 'forecast') return;
+        var urls = [
+          'https://spottheaurora.thenamesrock.workers.dev/',
+          'https://imap-solar-data-test.thenamesrock.workers.dev/rtsw/merged-24h',
+          'https://aurora-index-sta.thenamesrock.workers.dev/api/substorm?resolution=5m'
+        ];
+        var boot = window.__stBoot = {};
+        urls.forEach(function (url) {
+          var at = Date.now();
+          var p = fetch(url + (url.indexOf('?') < 0 ? '?' : '&') + '_=' + at).then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status + ' for ' + url);
+            return r.text();
+          });
+          p.catch(function () {});
+          boot[url] = { at: at, promise: p };
+        });
+      } catch (_) {
+        // The app fetches for itself.
+      }
+    })();
+  </script>
+
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-H8KY78RQJC"></script>
   <script>
@@ -130,7 +173,14 @@
   <!-- Keep the app typography on Inter, but load it from a real stylesheet.
        The previous local /fonts/inter-var-latin.woff2 file was not shipped,
        so browsers received the SPA HTML fallback as a font and logged OTS errors. -->
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
+  <!-- Not render-blocking: text shows at once in the system font and swaps
+       to Inter when it arrives, instead of the first paint waiting on a
+       second site. -->
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet"></noscript>
+  <link rel="preconnect" href="https://photos.spottheaurora.co.nz">
+  <link rel="preload" as="image" href="https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/SpotTheAuroraLogo.png" fetchpriority="high">
 
   <!-- Leaflet CSS is imported in AuroraSightings.tsx and bundled by Vite -->
 
@@ -324,7 +374,11 @@
   <!-- React is bundled by Vite from node_modules - no importmap needed -->
 </head>
 <body>
-  <div id="root"></div>
+  <!-- What shows before the app's JavaScript has run: the loading screen's
+       first frame, so the screen is not blank while it downloads. React
+       replaces it. -->
+  <style>.st-embed #st-splash{display:none}</style>
+  <div id="root"><div id="st-splash" style="position:fixed;inset:0;z-index:4999;background:#000;display:flex;flex-direction:column;align-items:center"><img src="https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/SpotTheAuroraLogo.png" alt="Spot The Aurora" width="112" height="112" fetchpriority="high" style="margin-top:25vh;width:112px;height:112px;border-radius:24px;box-shadow:0 25px 50px -12px rgba(0,0,0,.25)"><p style="margin:32px 0 0;color:#e5e5e5;font:500 18px/1.5 Inter,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;letter-spacing:.025em;text-align:center">Loading the latest space weather&hellip;</p></div></div>
   <div id="timeline-portal"></div>
   <script type="module" src="/index.tsx"></script>
 </body>

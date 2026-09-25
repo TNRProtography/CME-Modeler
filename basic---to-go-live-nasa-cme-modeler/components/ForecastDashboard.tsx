@@ -8,7 +8,6 @@ import SolarWindQuickView, { type DetectedShock } from './SolarWindQuickView';
 import FluxRopeAnalyzer from './FluxRopeAnalyzer';
 import KpForecastTimeline from './KpForecastTimeline';
 import LoadingSpinner from './icons/LoadingSpinner';
-import AuroraSightings from './AuroraSightings';
 import { VisibilityForecastPanel } from './VisibilityForecastPanel';
 import GuideIcon from './icons/GuideIcon';
 import { useForecastData } from '../hooks/useForecastData';
@@ -22,6 +21,13 @@ import AuroraOverlay from './AuroraOverlay';
 import StarField from './StarField';
 import DriftingMoon from './DriftingMoon';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
+import { useAppReady } from '../utils/appReady';
+
+// The sightings map, and the map library it brings (Leaflet, a fifth of the
+// page's code), load once the page is up rather than before it can show.
+const AuroraSightings = React.lazy(() => import('./AuroraSightings'));
+/** Holds the map's place until it loads, so the page below does not jump. */
+const SightingsPlaceholder = () => <div className="card bg-neutral-950/80 rounded-lg" style={{ minHeight: 560 }} />;
 
 import {
     TipsSection,
@@ -160,6 +166,11 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     // ... [Original State: modalState, isFaqOpen, etc] ...
     const [modalState, setModalState] = useState<{ isOpen: boolean; title: string; content: string | React.ReactNode } | null>(null);
     const [isFaqOpen, setIsFaqOpen] = useState(false);
+    // Mounted from the first time it opens, not on every visit.
+    const faqOpened = useRef(false);
+    if (isFaqOpen) faqOpened.current = true;
+    const faqEverOpen = faqOpened.current;
+    const appReady = useAppReady();
     const [outsideNZDismissed, setOutsideNZDismissed] = useState(false);
     const [epamImageUrl, setEpamImageUrl] = useState<string>('/placeholder.png');
     const [selectedCamera, setSelectedCamera] = useState<Camera>(CAMERAS.find(c => c.name === 'Queenstown')!);
@@ -185,7 +196,12 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
       return registerDatasetTicker('forecast-core-data', () => fetchAllData(false, getGaugeStyle), 30_000);
     }, [fetchAllData]);
 
+    // A manual refresh. Not on mount: the effect above has just fetched
+    // everything, and running this too fetched every feed twice.
+    const lastRefreshSignal = useRef(refreshSignal);
     useEffect(() => {
+      if (lastRefreshSignal.current === refreshSignal) return;
+      lastRefreshSignal.current = refreshSignal;
       if (import.meta.env.DEV) console.info('[polling] forecast manual refresh');
       fetchAllData(false, getGaugeStyle);
     }, [fetchAllData, refreshSignal]);
@@ -498,7 +514,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     const faqContent = ''; // FAQ content now handled by FaqModal component
 
     return (
-        <div className="w-full h-full bg-neutral-900 text-neutral-300 relative" style={{ backgroundImage: `url('https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/Rapahoe%20Blue%20Aurora%20-%20Full%20Pano.jpg')`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}>
+        // The panorama behind the page is a large photo, and until the loading
+        // screen goes it is behind that too - so it waits, and leaves the
+        // network to the forecast.
+        <div className="w-full h-full bg-neutral-900 text-neutral-300 relative" style={{ backgroundImage: appReady ? `url('https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/Rapahoe%20Blue%20Aurora%20-%20Full%20Pano.jpg')` : undefined, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}>
 
             {/* Outside NZ warning modal */}
             {isOutsideNZ && !outsideNZDismissed && (
@@ -531,11 +550,13 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
             )}
             <div className="absolute inset-0 bg-black/50 z-0"></div>
             <StarField />
-            <DriftingMoon
-                size={72}
-                illumination={celestialTimes?.moon?.illumination ?? null}
-                waxing={celestialTimes?.moon?.waxing ?? null}
-            />
+            {appReady && (
+              <DriftingMoon
+                  size={72}
+                  illumination={celestialTimes?.moon?.illumination ?? null}
+                  waxing={celestialTimes?.moon?.waxing ?? null}
+              />
+            )}
             <AuroraOverlay />
             <div className="w-full h-full overflow-y-auto p-5 relative z-10 styled-scrollbar">
                  <div className="container mx-auto">
@@ -604,7 +625,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 </p>
                                 <ExpectedArrivals />
                             </div>
-                            <div id="aurora-sightings-section" className="col-span-12"><AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} allNewellData={allNewellData} allMagneticData={allMagneticData} allSpeedData={allSpeedData} allPressureData={allPressureData} /></div>
+                            <div id="aurora-sightings-section" className="col-span-12">{appReady ? <React.Suspense fallback={<SightingsPlaceholder />}><AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} allNewellData={allNewellData} allMagneticData={allMagneticData} allSpeedData={allSpeedData} allPressureData={allPressureData} /></React.Suspense> : <SightingsPlaceholder />}</div>
                             <div id="kp-forecast-section" className="col-span-12"><KpForecastTimeline
                                 userLongitude={userLongitude}
                                 moonIllumination={celestialTimes?.moon?.illumination ?? null}
@@ -617,8 +638,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                             /></div>
                             <SimpleTrendChart auroraScoreHistory={auroraScoreHistory} />
                             {/* ... (Cloud & Cameras) ... */}
-                            <div id="cloud-cover-section" className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3><div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div></div>
-                            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><div className="flex justify-center items-center mb-4"><h3 className="text-xl font-semibold text-center text-white">Live Cameras</h3></div><div className="flex justify-center gap-2 my-2 flex-wrap">{CAMERAS.map((camera) => (<button key={camera.name} onClick={() => setSelectedCamera(camera)} className={`px-3 py-1 text-xs rounded transition-colors ${selectedCamera.name === camera.name ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>{camera.name}</button>))}</div><div className="mt-4"><div className="relative w-full bg-black rounded-lg" style={{ paddingBottom: "56.25%" }}>{selectedCamera.type === 'iframe' ? (<iframe title={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg" src={selectedCamera.url} key={selectedCamera.name} />) : (<img src={cameraImageSrc} alt={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg object-contain" key={cameraImageSrc} onError={(e) => { e.currentTarget.src = '/placeholder.png'; e.currentTarget.alt = `Could not load camera from ${selectedCamera.name}.`; }} />)}</div><div className="text-center text-xs text-neutral-500 mt-2">Source: <a href={`http://${selectedCamera.sourceUrl}`} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">{selectedCamera.sourceUrl}</a></div></div></div>
+                            <div id="cloud-cover-section" className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3><div className="relative w-full" style={{paddingBottom: "56.25%"}}>{appReady && <iframe title="Windy.com Cloud Map" loading="lazy" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe>}</div></div>
+                            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><div className="flex justify-center items-center mb-4"><h3 className="text-xl font-semibold text-center text-white">Live Cameras</h3></div><div className="flex justify-center gap-2 my-2 flex-wrap">{CAMERAS.map((camera) => (<button key={camera.name} onClick={() => setSelectedCamera(camera)} className={`px-3 py-1 text-xs rounded transition-colors ${selectedCamera.name === camera.name ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>{camera.name}</button>))}</div><div className="mt-4"><div className="relative w-full bg-black rounded-lg" style={{ paddingBottom: "56.25%" }}>{selectedCamera.type === 'iframe' ? (appReady ? <iframe title={`Live View from ${selectedCamera.name}`} loading="lazy" className="absolute top-0 left-0 w-full h-full rounded-lg" src={selectedCamera.url} key={selectedCamera.name} /> : null) : (<img src={cameraImageSrc} alt={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg object-contain" key={cameraImageSrc} onError={(e) => { e.currentTarget.src = '/placeholder.png'; e.currentTarget.alt = `Could not load camera from ${selectedCamera.name}.`; }} />)}</div><div className="text-center text-xs text-neutral-500 mt-2">Source: <a href={`http://${selectedCamera.sourceUrl}`} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">{selectedCamera.sourceUrl}</a></div></div></div>
                         </main>
                     ) : (
                         <main className="grid grid-cols-12 gap-6">
@@ -703,7 +724,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     />
                                 );
                             })()}
-                            <AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} allNewellData={allNewellData} allMagneticData={allMagneticData} allSpeedData={allSpeedData} allPressureData={allPressureData} />
+                            {appReady ? <React.Suspense fallback={<SightingsPlaceholder />}><AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} allNewellData={allNewellData} allMagneticData={allMagneticData} allSpeedData={allSpeedData} allPressureData={allPressureData} /></React.Suspense> : <SightingsPlaceholder />}
                             
                             <div id="imf-chart-section" className="col-span-12"><ImfPanel fc={forecast} openModal={openModal} /></div>
                             <ForecastChartPanel
@@ -787,8 +808,8 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 <DynamicPressureChart data={allPressureData} />
                             </ForecastChartPanel>
 
-                            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3><div className="relative w-full" style={{paddingBottom: "56.25%"}}><iframe title="Windy.com Cloud Map" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe></div></div>
-                            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><div className="flex justify-center items-center mb-4"><h3 className="text-xl font-semibold text-center text-white">Live Cameras</h3><button onClick={() => openModal('live-cameras')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div><div className="flex justify-center gap-2 my-2 flex-wrap">{CAMERAS.map((camera) => (<button key={camera.name} onClick={() => setSelectedCamera(camera)} className={`px-3 py-1 text-xs rounded transition-colors ${selectedCamera.name === camera.name ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>{camera.name}</button>))}</div><div className="mt-4"><div className="relative w-full bg-black rounded-lg" style={{ paddingBottom: "56.25%" }}>{selectedCamera.type === 'iframe' ? (<iframe title={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg" src={selectedCamera.url} key={selectedCamera.name} />) : (<img src={cameraImageSrc} alt={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg object-contain" key={cameraImageSrc} onError={(e) => { e.currentTarget.src = '/placeholder.png'; e.currentTarget.alt = `Could not load camera from ${selectedCamera.name}.`; }} />)}</div><div className="text-center text-xs text-neutral-500 mt-2">Source: <a href={`http://${selectedCamera.sourceUrl}`} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">{selectedCamera.sourceUrl}</a></div></div></div>
+                            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><h3 className="text-xl font-semibold text-center text-white mb-4">Live Cloud Cover</h3><div className="relative w-full" style={{paddingBottom: "56.25%"}}>{appReady && <iframe title="Windy.com Cloud Map" loading="lazy" className="absolute top-0 left-0 w-full h-full rounded-lg" src="https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=°C&zoom=5&overlay=clouds&product=ecmwf&level=surface&lat=-44.757&lon=169.054" frameBorder="0"></iframe>}</div></div>
+                            <div className="col-span-12 card bg-neutral-950/80 p-4 flex flex-col"><div className="flex justify-center items-center mb-4"><h3 className="text-xl font-semibold text-center text-white">Live Cameras</h3><button onClick={() => openModal('live-cameras')} className="ml-2 p-1 rounded-full text-neutral-400 hover:bg-neutral-700">?</button></div><div className="flex justify-center gap-2 my-2 flex-wrap">{CAMERAS.map((camera) => (<button key={camera.name} onClick={() => setSelectedCamera(camera)} className={`px-3 py-1 text-xs rounded transition-colors ${selectedCamera.name === camera.name ? 'bg-sky-600 text-white' : 'bg-neutral-700 hover:bg-neutral-600'}`}>{camera.name}</button>))}</div><div className="mt-4"><div className="relative w-full bg-black rounded-lg" style={{ paddingBottom: "56.25%" }}>{selectedCamera.type === 'iframe' ? (appReady ? <iframe title={`Live View from ${selectedCamera.name}`} loading="lazy" className="absolute top-0 left-0 w-full h-full rounded-lg" src={selectedCamera.url} key={selectedCamera.name} /> : null) : (<img src={cameraImageSrc} alt={`Live View from ${selectedCamera.name}`} className="absolute top-0 left-0 w-full h-full rounded-lg object-contain" key={cameraImageSrc} onError={(e) => { e.currentTarget.src = '/placeholder.png'; e.currentTarget.alt = `Could not load camera from ${selectedCamera.name}.`; }} />)}</div><div className="text-center text-xs text-neutral-500 mt-2">Source: <a href={`http://${selectedCamera.sourceUrl}`} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">{selectedCamera.sourceUrl}</a></div></div></div>
 
 
                             <DisturbanceIndexPanel />
@@ -835,7 +856,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                  </div>
             </div>
             {modalState && <InfoModal isOpen={modalState.isOpen} onClose={closeModal} title={modalState.title} content={modalState.content} />}
-            <FaqModal isOpen={isFaqOpen} onClose={() => onModalSlugChange?.(null)} />
+            {faqEverOpen && <FaqModal isOpen={isFaqOpen} onClose={() => onModalSlugChange?.(null)} />}
         </div>
     );
 };

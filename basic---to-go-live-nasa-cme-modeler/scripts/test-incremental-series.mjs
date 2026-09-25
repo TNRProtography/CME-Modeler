@@ -87,6 +87,49 @@ try {
   check(held.length >= 168, 'with the source down, the held week is still shown');
   const [a, b] = await Promise.all([series(now + 20 * M), series(now + 20 * M)]);
   check(a === b, 'two panels asking at once share one top-up');
+
+  // A caller that only wants the latest readings, on a first visit.
+  const asked2 = [];
+  let slowFull = null;
+  const series2 = (at, recentOnly) => S.fetchIncrementalSeries({
+    key: 'test2', variants, retentionMs: week, timeOf, idOf, nowMs: at, recentOnly,
+    fetchRows: async (url) => {
+      const name = url.split('/').pop();
+      asked2.push(name);
+      if (slowFull && name.includes('7-day')) await slowFull;
+      const span = variants.find((v) => v.url === url).spanMs;
+      const rows = [];
+      for (let t = at - span; t <= at; t += H) rows.push(row(t - (t % H), 'a', t));
+      return rows;
+    },
+  });
+  await series2(now, true);
+  check(asked2[0] === 'xrays-6-hour.json', 'recent-only on a first visit: just the 6-hour file', String(asked2));
+  await series2(now + 30 * 1000 + 10000, true);
+  check(asked2[1] === 'xrays-6-hour.json', '...and on its next tick, still not the week', String(asked2));
+  const fullRows = await series2(now + 60 * 1000 + 20000, false);
+  check(asked2[2] === 'xrays-7-day.json' && fullRows.length >= 168, 'a full caller then fills in the week', String(asked2));
+
+  // Two top-ups of one series at once: the short one must not write back
+  // over the week the long one just stored.
+  let release;
+  slowFull = new Promise((r) => { release = r; });
+  const series3 = (at, recentOnly) => S.fetchIncrementalSeries({
+    key: 'test3', variants, retentionMs: week, timeOf, idOf, nowMs: at, recentOnly,
+    fetchRows: async (url) => {
+      if (url.includes('7-day')) await slowFull;
+      const span = variants.find((v) => v.url === url).spanMs;
+      const rows = [];
+      for (let t = at - span; t <= at; t += H) rows.push(row(t - (t % H), 'a', t));
+      return rows;
+    },
+  });
+  const pFull = series3(now, false);
+  const pRecent = series3(now + 1000, true);
+  release();
+  await pFull;
+  const after = await pRecent;
+  check(after.length >= 168, 'a short top-up behind a long one keeps the week', `${after.length}`);
 } finally {
   rmSync(out, { recursive: true, force: true });
 }

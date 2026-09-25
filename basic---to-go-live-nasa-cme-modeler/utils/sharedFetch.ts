@@ -12,6 +12,35 @@
 
 const inflight = new Map<string, { at: number; promise: Promise<string> }>();
 
+declare global {
+  interface Window {
+    /** Requests index.html started before the app loaded, by address. */
+    __stBoot?: Record<string, { at: number; promise: Promise<string> }>;
+  }
+}
+
+/**
+ * A request index.html already started for this address, handed over once.
+ * index.html starts the landing page's core feeds while the JavaScript is
+ * still downloading; the first panel to ask takes the request over rather
+ * than making its own.
+ */
+function takeBootRequest(key: string, maxAgeMs: number, timeoutMs?: number): { at: number; promise: Promise<string> } | null {
+  const boot = typeof window !== 'undefined' ? window.__stBoot?.[key] : undefined;
+  if (!boot) return null;
+  delete window.__stBoot![key];
+  if (Date.now() - boot.at >= maxAgeMs) return null;
+  if (!timeoutMs) return boot;
+  // The same limit the caller would have put on its own request.
+  const waited = Date.now() - boot.at;
+  const promise = Promise.race([
+    boot.promise,
+    new Promise<string>((_, reject) => setTimeout(
+      () => reject(new Error(`Timed out: ${key}`)), Math.max(0, timeoutMs - waited))),
+  ]);
+  return { at: boot.at, promise };
+}
+
 /** Strip the cache-buster callers add, so the same file is the same key. */
 const keyOf = (url: string) => url.replace(/([?&])_=\d+&?/, '$1').replace(/[?&]$/, '');
 
@@ -25,6 +54,12 @@ export function sharedFetchText(url: string, opts: { maxAgeMs?: number; timeoutM
   const now = Date.now();
   const hit = inflight.get(key);
   if (hit && now - hit.at < maxAgeMs) return hit.promise;
+  const boot = takeBootRequest(key, maxAgeMs, opts.timeoutMs);
+  if (boot) {
+    inflight.set(key, boot);
+    boot.promise.catch(() => { if (inflight.get(key) === boot) inflight.delete(key); });
+    return boot.promise;
+  }
 
   const bust = `${key}${key.includes('?') ? '&' : '?'}_=${now}`;
   const controller = new AbortController();

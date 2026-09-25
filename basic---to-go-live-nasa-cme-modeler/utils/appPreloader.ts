@@ -1,5 +1,12 @@
 import { fetchGoesProtons, fetchGoesXrays } from './goesSeries';
 import { startImageryPreload } from './imageryPreload';
+import { sharedFetchJson } from './sharedFetch';
+
+/**
+ * How long one read of an imagery worker's state serves everyone who asks.
+ * Under the solar page's 30-second refresh, so each refresh still reads it.
+ */
+export const WORKER_STATE_SHARE_MS = 25000;
 
 // Worker base URLs - must match SolarActivityDashboard constants exactly
 const CORONAGRAPHY_WORKER_BASE = 'https://coronagraphy-processing.thenamesrock.workers.dev';
@@ -7,20 +14,14 @@ const SUVI_DIFF_WORKER_BASE = 'https://suvi-difference-imagery.thenamesrock.work
 
 let started = false;
 
-const preloadRequests = [
-  'https://services.swpc.noaa.gov/json/sunspot_report.json',
-  'https://services.swpc.noaa.gov/images/animations/suvi/primary/131/latest.png',
-  '/api/proxy/image?url=https%3A%2F%2Fsdo.gsfc.nasa.gov%2Fassets%2Fimg%2Flatest%2Flatest_1024_HMIBC.jpg&ttl=60',
-];
-
 const preloadBundles = [
   () => import('../components/game/AuroraGame'),
   () => import('../components/ImpactGraphModal'),
 ];
 
-// Module-level cache for worker state - fetches start at app init (during the
-// loading screen) so SolarActivityDashboard can await an already-in-flight
-// promise instead of starting a cold fetch after the loader dismisses.
+// The imagery workers' state, read once the app is up, for the imagery
+// preload. Panels read it through the shared fetch, not from here, so they
+// never show a read older than a few seconds.
 export const workerStatePreload: {
   coronagraph: Promise<any> | null;
   suvi: Promise<any> | null;
@@ -40,19 +41,13 @@ export const startAppPreload = () => {
   fetchGoesXrays('primary').catch(() => undefined);
   fetchGoesProtons('primary').catch(() => undefined);
 
-  preloadRequests.forEach((url) => {
-    fetch(url, { method: 'GET', cache: 'force-cache' }).catch(() => undefined);
-  });
-
-  // Kick off worker state fetches immediately - fire and forget, but store the
-  // promise so SolarActivityDashboard can consume it without a duplicate request.
-  // These do NOT block the loading screen; they run in parallel with everything else.
-  workerStatePreload.coronagraph = fetch(`${CORONAGRAPHY_WORKER_BASE}/api/state`, { cache: 'no-store' })
-    .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+  // The imagery workers' state, which the imagery preload below reads.
+  // Shared (utils/sharedFetch), so the solar page, the coronal hole outlook
+  // and the imagery preload asking at the same moment make one request.
+  workerStatePreload.coronagraph = sharedFetchJson(`${CORONAGRAPHY_WORKER_BASE}/api/state`, { maxAgeMs: WORKER_STATE_SHARE_MS })
     .catch(() => null);
 
-  workerStatePreload.suvi = fetch(`${SUVI_DIFF_WORKER_BASE}/api/state`, { cache: 'no-store' })
-    .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+  workerStatePreload.suvi = sharedFetchJson(`${SUVI_DIFF_WORKER_BASE}/api/state`, { maxAgeMs: WORKER_STATE_SHARE_MS })
     .catch(() => null);
 
   // Then the solar imagery - sunspot week, SUVI, coronagraphs - in the

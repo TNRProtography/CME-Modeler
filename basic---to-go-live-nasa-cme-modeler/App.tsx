@@ -100,10 +100,7 @@ const ForecastDashboard = retryLazyLoad(() => import('./components/ForecastDashb
 const SolarActivityDashboard = retryLazyLoad(() => import('./components/SolarActivityDashboard'));
 const UnifiedDashboardMode = retryLazyLoad(() => import('./components/UnifiedDashboardMode'));
 import GlobalBanner from './components/GlobalBanner';
-import OnboardingBanner from './components/OnboardingBanner';
-import WhatsNewModal from './components/WhatsNewModal';
 import { shouldShowWhatsNew } from './utils/whatsNew';
-import AppDocumentation from './components/AppDocumentation';
 import InitialLoadingScreen from './components/InitialLoadingScreen';
 
 // Modal Imports - also lazy to keep the initial bundle lean
@@ -112,9 +109,14 @@ const FirstVisitTutorial = retryLazyLoad(() => import('./components/FirstVisitTu
 const CmeModellerTutorial = retryLazyLoad(() => import('./components/CmeModellerTutorial'));
 const AppTutorial = retryLazyLoad(() => import('./components/AppTutorial'));
 const ForecastModelsModal = retryLazyLoad(() => import('./components/ForecastModelsModal'));
+// Not needed for the first screen, so not in the code every visit downloads first.
+const OnboardingBanner = retryLazyLoad(() => import('./components/OnboardingBanner'));
+const WhatsNewModal = retryLazyLoad(() => import('./components/WhatsNewModal'));
+const AppDocumentation = retryLazyLoad(() => import('./components/AppDocumentation'));
 import { calculateStats, getPageViewStorageMode, loadPageViewStats, PageViewStats, recordPageView } from './utils/pageViews';
 import { registerDatasetTicker } from './utils/pollingScheduler';
 import { startAppPreload } from './utils/appPreloader';
+import { markAppReady, useAppReady, whenAppIdle } from './utils/appReady';
 import {
   DEFAULT_FORECAST_VIEW_KEY,
   DEFAULT_MAIN_PAGE_KEY,
@@ -180,15 +182,15 @@ type InitialLoadTaskKey =
 type ForecastLoadPoint = 'forecastApi' | 'solarWindApi' | 'goes18Api' | 'goes19Api' | 'ipsApi' | 'nzMagApi';
 type SolarLoadPoint = 'solarXray' | 'solarProton' | 'solarFlares' | 'solarRegions';
 
-// Only block the loader on the 4 APIs that feed the core aurora score and solar wind display.
-// forecastData is structurally redundant (it fires milliseconds after the last API anyway).
-// ipsApi (IPS shocks) and nzMagApi (NZ magnetometer) feed secondary widgets - they load
-// silently in the background so the user reaches the forecast as fast as possible.
+// Only block the loader on the two feeds the page opens on: the Spot The
+// Aurora score and the solar wind. forecastData is structurally redundant (it
+// fires milliseconds after the last API anyway). The GOES magnetometers (the
+// substorm read's space-side onset check), IPS shocks and the NZ magnetometer
+// feed secondary widgets - they fill in a moment later, so the user reaches
+// the forecast as fast as possible.
 const FORECAST_INITIAL_TASKS: InitialLoadTaskKey[] = [
   'forecastApi',
   'solarWindApi',
-  'goes18Api',
-  'goes19Api',
 ];
 
 const SOLAR_INITIAL_TASKS: InitialLoadTaskKey[] = [
@@ -213,6 +215,17 @@ const getInitialRequiredTasks = (page: 'forecast' | 'modeler' | 'solar-activity'
     default:              return new Set(MODELER_INITIAL_TASKS);
   }
 };
+
+/**
+ * True from the first time `open` is true. A lazy panel is mounted then and
+ * kept, so its code downloads when someone first opens it rather than on
+ * every visit, and it keeps its state and closing animation after that.
+ */
+function useOpenedOnce(open: boolean): boolean {
+  const opened = useRef(false);
+  if (open) opened.current = true;
+  return opened.current;
+}
 
 const logDev = (...args: unknown[]) => {
   if (!import.meta.env.DEV) return;
@@ -665,7 +678,9 @@ const App: React.FC = () => {
     // the newest readings every 30 seconds, not the whole week each time.
     const fetchBannerXray = async () => {
       try {
-        const latestFlux = parseLatestShortBandFlux(await fetchGoesXrays('primary'));
+        // Only the newest readings: a first visit should not download a week
+        // of X-ray history to read one number.
+        const latestFlux = parseLatestShortBandFlux(await fetchGoesXrays('primary', { recentOnly: true }));
         if (latestFlux !== null && !cancelled) setLatestXrayFlux(latestFlux);
       } catch {
         // Keep the last value; the next tick tries again.
@@ -682,23 +697,27 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // Show the loader for at least 600ms so the animation isn't a jarring flash,
-    // but don't hold it longer than needed - dismiss as soon as data is ready.
-    const minTimer = setTimeout(() => setIsMinTimeElapsed(true), 600);
-    // Defer non-critical preloads until after first paint so they don't compete
-    // with the initial render and inflate Total Blocking Time.
-    const preloadTimer = setTimeout(() => {
+    // Show the loader for a moment at least so it isn't a jarring flash, but
+    // don't hold it longer than needed - dismiss as soon as data is ready. The
+    // splash in index.html has been showing the same screen since the first
+    // paint, so this no longer needs to cover for a blank page.
+    const minTimer = setTimeout(() => setIsMinTimeElapsed(true), 350);
+    // Preloads for other pages wait until the app is up and the browser is
+    // idle, so they never compete with what the loading screen is waiting on.
+    let preloadCancelled = false;
+    void whenAppIdle().then(() => {
+      if (preloadCancelled) return;
       logDev('initial preload start');
       startAppPreload();
-    }, 300);
+    });
 
     const hasSeenTutorial = localStorage.getItem(NAVIGATION_TUTORIAL_KEY);
     if (!hasSeenTutorial && !IS_EMBED) {
       // Show the new app tutorial after a short delay to let the app load
       const tutorialTimer = setTimeout(() => setIsAppTutorialOpen(true), 3000);
-      return () => { clearTimeout(minTimer); clearTimeout(preloadTimer); clearTimeout(tutorialTimer); };
+      return () => { preloadCancelled = true; clearTimeout(minTimer); clearTimeout(tutorialTimer); };
     }
-    return () => { clearTimeout(minTimer); clearTimeout(preloadTimer); };
+    return () => { preloadCancelled = true; clearTimeout(minTimer); };
   }, [navigateToModelerOverlay]);
 
   // A one-time note about new notification categories, for people who already
@@ -730,6 +749,17 @@ const App: React.FC = () => {
       setIsDashboardReady(true);
     }
   }, [initialLoadTasks, isDashboardReady]);
+
+  // The loading screen has gone: whatever was waiting for the first page to
+  // be up can go ahead (utils/appReady). A backstop in case the loader never
+  // clears, so nothing waits forever.
+  useEffect(() => {
+    if (!showInitialLoader) markAppReady();
+  }, [showInitialLoader]);
+  useEffect(() => {
+    const t = setTimeout(markAppReady, 15000);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     if (isDashboardReady && isMinTimeElapsed) {
@@ -1088,6 +1118,17 @@ const App: React.FC = () => {
   }, [currentlyModeledCMEId, filteredCmes]);
 
   const shouldShowTimelineControls = activePage === 'modeler';
+  const timelineEverShown = useOpenedOnce(shouldShowTimelineControls);
+  const mediaViewerEverOpen = useOpenedOnce(viewerMedia != null);
+  const settingsEverOpen = useOpenedOnce(isSettingsOpen);
+  const debugEverOpen = useOpenedOnce(isDebugOpen);
+  const firstVisitTutorialEverOpen = useOpenedOnce(isFirstVisitTutorialOpen);
+  const cmeTutorialEverOpen = useOpenedOnce(isCmeTutorialOpen);
+  const appTutorialEverOpen = useOpenedOnce(isAppTutorialOpen);
+  const forecastModelsEverOpen = useOpenedOnce(isForecastModelsModalOpen);
+  const impactGraphEverOpen = useOpenedOnce(isImpactGraphOpen);
+  const whatsNewEverOpen = useOpenedOnce(isWhatsNewOpen);
+  const appReady = useAppReady();
 
   useEffect(() => {
     if (!currentlyModeledCMEId) return;
@@ -1459,17 +1500,22 @@ const App: React.FC = () => {
               onIpsAlertClick={handleIpsAlertClick}
           />
           {showDocumentation && (
-            <AppDocumentation onClose={() => setShowDocumentation(false)} />
+            <Suspense fallback={null}>
+              <AppDocumentation onClose={() => setShowDocumentation(false)} />
+            </Suspense>
           )}
-          <WhatsNewModal
-            isOpen={isWhatsNewOpen}
-            onClose={() => setIsWhatsNewOpen(false)}
-          />
-          {!IS_EMBED && <OnboardingBanner
+          {whatsNewEverOpen && <Suspense fallback={null}>
+            <WhatsNewModal
+              isOpen={isWhatsNewOpen}
+              onClose={() => setIsWhatsNewOpen(false)}
+            />
+          </Suspense>}
+          {/* The install banner, once the page is up: never on the first screen's critical path. */}
+          {!IS_EMBED && appReady && <Suspense fallback={null}><OnboardingBanner
               deferredInstallPrompt={deferredInstallPrompt}
               onInstallClick={handleInstallClick}
               hideForTutorial={isAppTutorialOpen || (!showBannerAfterTutorial && !localStorage.getItem(NAVIGATION_TUTORIAL_KEY))}
-          />}
+          /></Suspense>}
 
           <header className="flex-shrink-0 p-1.5 md:p-3 bg-gradient-to-r from-black/80 via-neutral-900/80 to-black/70 backdrop-blur-xl border-b border-white/10 flex items-center gap-2 sm:gap-3 relative z-[2001] shadow-2xl soft-appear">
               <div className={`flex-1 min-w-0 ${isDashboardMode ? 'hidden' : ''}`}>
@@ -1770,7 +1816,7 @@ const App: React.FC = () => {
 
           {/* TimelineControls rendered at top-level - outside all Suspense boundaries and
               stacking contexts so position:fixed works correctly on desktop AND mobile. */}
-          <Suspense fallback={null}>
+          {timelineEverShown && <Suspense fallback={null}>
             <TimelineControls
               isVisible={shouldShowTimelineControls}
               isPlaying={timelinePlaying}
@@ -1784,12 +1830,14 @@ const App: React.FC = () => {
               maxDate={timelineMaxDate}
               onOpenImpactGraph={handleOpenImpactGraph}
             />
-          </Suspense>
+          </Suspense>}
 
-          <Suspense fallback={null}>
+          {/* Each of these downloads its code the first time it opens, not on
+              every visit: closed, a lazy component still loads if rendered. */}
+          {mediaViewerEverOpen && <Suspense fallback={null}>
             <MediaViewerModal media={viewerMedia} onClose={() => setViewerMedia(null)} />
-          </Suspense>
-          <Suspense fallback={null}>
+          </Suspense>}
+          {settingsEverOpen && <Suspense fallback={null}>
             <SettingsModal
               isOpen={isSettingsOpen}
               onClose={handleCloseSettings}
@@ -1803,29 +1851,29 @@ const App: React.FC = () => {
               pageViewStats={pageViewStats}
               pageViewStorageMode={pageViewStorageMode}
             />
-          </Suspense>
-          
-          <Suspense fallback={null}>
-            <DebugPanel isOpen={isDebugOpen} onClose={handleCloseDebug} />
-          </Suspense>
+          </Suspense>}
 
-          <Suspense fallback={null}>
+          {debugEverOpen && <Suspense fallback={null}>
+            <DebugPanel isOpen={isDebugOpen} onClose={handleCloseDebug} />
+          </Suspense>}
+
+          {firstVisitTutorialEverOpen && <Suspense fallback={null}>
             <FirstVisitTutorial
                 isOpen={isFirstVisitTutorialOpen}
                 onClose={handleCloseFirstVisitTutorial}
                 onStepChange={handleTutorialStepChange}
             />
-          </Suspense>
+          </Suspense>}
 
-          <Suspense fallback={null}>
+          {cmeTutorialEverOpen && <Suspense fallback={null}>
             <CmeModellerTutorial
                 isOpen={isCmeTutorialOpen}
                 onClose={handleCloseCmeTutorial}
                 onStepChange={handleTutorialStepChange}
             />
-          </Suspense>
+          </Suspense>}
 
-          <Suspense fallback={null}>
+          {appTutorialEverOpen && <Suspense fallback={null}>
             <AppTutorial
                 isOpen={isAppTutorialOpen}
                 onClose={handleCloseAppTutorial}
@@ -1837,22 +1885,23 @@ const App: React.FC = () => {
                 onCloseControlsPanel={() => navigateToModelerOverlay(null)}
                 onToggleHss={(show: boolean) => handleShowHssChange(show)}
             />
-          </Suspense>
+          </Suspense>}
 
-          <Suspense fallback={null}>
+          {forecastModelsEverOpen && <Suspense fallback={null}>
             <ForecastModelsModal
                 isOpen={isForecastModelsModalOpen}
                 onClose={() => navigateToModelerOverlay(null)}
                 setViewerMedia={setViewerMedia}
             />
-          </Suspense>
+          </Suspense>}
 
           <Suspense fallback={null}>
-            {/* --- NEW: Render the ImpactGraphModal --- */}
-            <ImpactGraphModal
-              isOpen={isImpactGraphOpen}
-              onClose={() => navigateToModelerOverlay(null)}
-            />
+            {impactGraphEverOpen && (
+              <ImpactGraphModal
+                isOpen={isImpactGraphOpen}
+                onClose={() => navigateToModelerOverlay(null)}
+              />
+            )}
 
             {isGameOpen && <AuroraGame onClose={handleCloseGame} />}
           </Suspense>
