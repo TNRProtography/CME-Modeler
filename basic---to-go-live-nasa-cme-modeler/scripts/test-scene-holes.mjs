@@ -50,6 +50,22 @@ try {
   check(missed && /^CH\d+$/.test(missed.id), `named as the tracker names it (${missed?.id})`);
   check(!holes.some((h) => Math.abs(h.lat - 30) < 1), 'a hole last seen a day ago is not');
   check(holes.length === 2, `and nothing is drawn twice (${holes.length})`);
+
+  // A track from the 90-day record: measured at times this session never
+  // detected (another device, an earlier visit), and under another id. Its
+  // outline still has to be found, by where the hole is.
+  const recordTrack = {
+    key: 'CH200', number: 200, live: true, present: true,
+    points: [{ atMs: now - 30 * 60000, hole: { id: 'CH_SUVI_7', lat: -10.5, lon: -17, widthDeg: 20, darkness: 0.6 } }],
+    firstSeenMs: now - 30 * 60000, lastSeenMs: now - 30 * 60000,
+    latest: { id: 'CH_SUVI_7', lat: -10.5, lon: -17, widthDeg: 20, darkness: 0.6 },
+  };
+  const drawn = S.drawableHoles(S.getChState(), [recordTrack], now);
+  check(drawn.length === 1 && drawn[0].hole.id === 'CH_SUVI_0' && drawn[0].trackKey === 'CH200',
+    'a record track with no measurement from this session is still outlined', JSON.stringify(drawn.map((d) => d.hole.id)));
+  const far = { ...recordTrack, key: 'CH201', latest: { ...recordTrack.latest, lat: 50 },
+    points: [{ ...recordTrack.points[0], hole: { ...recordTrack.latest, lat: 50 } }] };
+  check(S.drawableHoles(S.getChState(), [far], now).length === 0, 'but not with some other hole\'s outline');
 } catch (err) {
   fail++;
   console.error(err);

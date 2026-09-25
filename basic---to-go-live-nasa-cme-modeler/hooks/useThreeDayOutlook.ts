@@ -41,7 +41,7 @@ export function useThreeDayOutlook(horizonDays = 3) {
     return forecastAllHoles(tracks, {
       nowMs, latestFrameMs: newest,
       latitude: location.latitude, longitude: location.longitude,
-      polarityOf: (t) => (shared ? polarityForTrack(t, shared.byHoleId, shared.atMs) : null),
+      polarityOf: (t) => (shared ? polarityForTrack(t, shared.byHoleId, shared.atMs, chState.detections) : null),
     });
   }, [chState, nowMs, location]);
 

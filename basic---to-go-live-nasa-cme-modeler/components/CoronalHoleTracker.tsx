@@ -22,7 +22,7 @@ import {
 } from '../utils/coronalHolePolarity';
 import { buildChTracks, type ChTrack, type TrackedHole } from '../utils/chTracking';
 import {
-  detectionNear, drawableHoles, framesForTracking, numberTracks,
+  detectionNear, drawableHoles, framesForTracking, holeForTrackIn, numberTracks,
   type ChDetection, type DrawableHole, type FrameRef,
 } from '../utils/chDetectionStore';
 import { useCoronalHoleDetections } from '../hooks/useCoronalHoleDetections';
@@ -295,8 +295,11 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
 
     const point = selectedTrack.points.reduce((a, b) =>
       Math.abs(a.atMs - atMs) <= Math.abs(b.atMs - atMs) ? a : b, selectedTrack.points[0]);
-    const detection = point ? store.detections.find((d) => d.atMs === point.atMs) : null;
-    const hole = detection?.holes.find((h) => h.id === point.hole.id) ?? null;
+    // This session's detection nearest the measurement, and the track's hole in it.
+    // No outline rather than a wrong one: only from a detection close in time.
+    const near = point ? detectionNear(store.detections, point.atMs) : null;
+    const detection = near && Math.abs(near.atMs - point.atMs) <= 3 * 3600000 ? near : null;
+    const hole = detection ? holeForTrackIn(selectedTrack, detection) : null;
 
     const frameMs = new Date(frame.ts).getTime();
     return {
@@ -445,11 +448,11 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
     return forecastHole(selectedTrack, {
       nowMs: Date.now(),
       latestFrameMs,
-      polarity: polarityForTrack(selectedTrack, polarity, polarityAtMs),
+      polarity: polarityForTrack(selectedTrack, polarity, polarityAtMs, store.detections),
       latitude: location.latitude,
       longitude: location.longitude,
     });
-  }, [selectedTrack, polarity, polarityAtMs, latestFrameMs, location]);
+  }, [selectedTrack, polarity, polarityAtMs, store.detections, latestFrameMs, location]);
 
   const windowSpan = frameSpanHours(windowFrames);
   const historyDays = store.history.length > 1

@@ -15,7 +15,8 @@ import { holeStream } from './holeStream';
 import { isLifecycleTrack, lifecycleDisappearance } from './chLifecycle';
 import { sectorSeasonNote, type ChPolarityResult } from './coronalHolePolarity';
 import { buildChTracks, chDisappearance, type ChTrack, type TrackedHole } from './chTracking';
-import { framesForTracking, type ChStoreState } from './chDetectionStore';
+import { framesForTracking, holeForTrackIn, type ChStoreState } from './chDetectionStore';
+import type { CoronalHole } from './coronalHoleData';
 import { bestSkyWithin, skyConditionsAt, visibilityOutlook } from './skyConditions';
 import { buildOutlook } from './auroraOutlook';
 import { auroraGeometryAt } from './auroraVisibility';
@@ -156,18 +157,25 @@ export function readHolePolarity(nowMs = Date.now()): SharedPolarity | null {
 }
 
 /**
- * A track's polarity from a reading of one detection. Only if the track was
- * in that detection: hole ids are numbered afresh in every frame, so an id
- * alone would hand a hole that has gone the polarity of whichever hole now
- * has its number.
+ * A track's polarity from a reading of one detection. Only for the hole in
+ * that detection the track actually is: hole ids are numbered afresh in every
+ * frame, so an id alone would hand a hole that has gone the polarity of
+ * whichever hole now has its number.
  */
 export function polarityForTrack(
   track: ChTrack<TrackedHole>,
   byHoleId: Record<string, ChPolarityResult>,
   atMs: number | null,
+  detections: { atMs: number; holes: CoronalHole[] }[] = [],
 ): ChPolarityResult | null {
+  if (atMs == null) return null;
+  const detection = detections.find((d) => d.atMs === atMs);
+  if (detection) {
+    const hole = holeForTrackIn(track, detection);
+    return hole ? byHoleId[hole.id] ?? null : null;
+  }
   const last = track.points[track.points.length - 1];
-  if (atMs == null || !last || last.atMs !== atMs) return null;
+  if (!last || last.atMs !== atMs) return null;
   return byHoleId[track.latest.id] ?? null;
 }
 

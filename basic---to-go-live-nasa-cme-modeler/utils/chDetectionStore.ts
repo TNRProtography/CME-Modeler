@@ -423,6 +423,38 @@ export function numberTracks(tracks: ChTrack[], nowMs = Date.now()): Map<string,
   return result.numbers;
 }
 
+/** How far, once rotation is taken out, a detected hole can be from a track and be it. */
+const TRACK_HOLE_MATCH_DEG = 12;
+
+/**
+ * The hole in one detection that a track is, or null.
+ *
+ * By frame time and id when the track has a measurement from that very frame;
+ * otherwise by where the track would be at that frame's moment. The second
+ * is what matters for the 90-day record: its measurements come from whichever
+ * frames the shared record or an earlier visit took, which are seldom the
+ * frames this session happened to measure, and matching on time alone left
+ * nothing to draw.
+ */
+export function holeForTrackIn(
+  track: ChTrack,
+  detection: { atMs: number; holes: CoronalHole[] },
+): CoronalHole | null {
+  const point = track.points.find((p) => p.atMs === detection.atMs);
+  if (point) {
+    const exact = detection.holes.find((h) => h.id === point.hole.id);
+    if (exact) return exact;
+  }
+  const lon = longitudeAt(track.latest.lon, track.lastSeenMs, detection.atMs);
+  let best: CoronalHole | null = null;
+  let bestDistance = TRACK_HOLE_MATCH_DEG;
+  for (const h of detection.holes) {
+    const distance = Math.hypot(h.lon - lon, h.lat - track.latest.lat);
+    if (distance < bestDistance) { bestDistance = distance; best = h; }
+  }
+  return best;
+}
+
 export interface DrawableHole {
   /** The track this outline belongs to. */
   trackKey: string;
@@ -451,22 +483,20 @@ export function drawableHoles(
   atMs: number,
 ): DrawableHole[] {
   if (state.detections.length === 0) return [];
-  const byTime = new Map<number, ChDetection>();
-  for (const d of state.detections) byTime.set(d.atMs, d);
-
   const frameDetection = detectionNear(state.detections, atMs);
+  // The frame's own detection first, then the rest nearest in time to it.
+  const ordered = [...state.detections].sort((a, b) => Math.abs(a.atMs - atMs) - Math.abs(b.atMs - atMs));
   const out: DrawableHole[] = [];
+  const claimed = new Set<string>();
 
   for (const track of tracks) {
     if (!track.live) continue;
-
-    // Newest first: the freshest outline we have for this hole.
-    for (let i = track.points.length - 1; i >= 0; i--) {
-      const point = track.points[i];
-      const detection = byTime.get(point.atMs);
-      if (!detection) continue;
-      const hole = detection.holes.find((h) => h.id === point.hole.id);
+    for (const detection of ordered) {
+      const hole = holeForTrackIn(track, detection);
       if (!hole) continue;
+      const id = `${detection.atMs}|${hole.id}`;
+      if (claimed.has(id)) continue;
+      claimed.add(id);
       out.push({
         trackKey: track.key,
         hole,
@@ -478,7 +508,6 @@ export function drawableHoles(
       break;
     }
   }
-
   return out;
 }
 
@@ -543,9 +572,8 @@ export function holesForScene(state: ChStoreState): { holes: CoronalHole[]; atMs
     const at = { lat: track.latest.lat, lon };
     if (holes.some((h) => near(h, at))) continue;
 
-    const full = state.detections
-      .find((d) => d.atMs === track.lastSeenMs)?.holes
-      .find((h) => h.id === track.latest.id);
+    const lastDetection = state.detections.find((d) => d.atMs === track.lastSeenMs);
+    const full = lastDetection ? holeForTrackIn(track, lastDetection) : null;
     const widthDeg = Math.max(5, track.latest.widthDeg);
     const darkness = track.latest.darkness ?? 0.5;
     const id = `CH${numbers.get(track.key) ?? track.key}`;
