@@ -1,8 +1,14 @@
 // What is due in the next three days, and whether it is worth staying up for.
 //
 // The rest of the dashboard measures what is at Earth now. This is the only
-// part that looks forward, and it reads the same forecast timeline the impact
-// modal is drawn from, so the two cannot disagree.
+// part that looks forward.
+//
+// Coronal holes come from the Coronal Hole Tracker: every hole it has reaching
+// Earth inside the horizon, with its arrival, speed and verdict worked out by
+// the same function the tracker uses (utils/holeForecast), so the two cannot
+// disagree. They did when this read the combined forecast timeline instead -
+// the tracker could have a stream arriving tomorrow that this said was not
+// coming. CMEs still come from that timeline, which is where they are modelled.
 //
 // Three things are said about each arrival, in the order somebody planning a
 // night needs them: when, how good, and why. "How good" is the visibility
@@ -10,11 +16,13 @@
 // arriving at 2pm under a full Moon is not a good night, and a speed on its
 // own cannot say so.
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useForecast } from '../hooks/useForecast';
 import { expectedArrivals, type ExpectedChange } from '../utils/forecastTimeline';
 import { nightlyOutlook, type NightOutlook } from '../utils/auroraOutlook';
-import { resolveViewerLocation, locationLabel } from '../utils/viewerLocation';
+import { resolveViewerLocation, locationLabel, type ViewerLocation } from '../utils/viewerLocation';
+import { subscribeToChDetections, type ChStoreState } from '../utils/chDetectionStore';
+import { holesDueWithin, polarityForTrack, readHolePolarity, tracksFromStore, type HoleForecast } from '../utils/holeForecast';
 
 const TIER_TEXT: Record<string, string> = {
   eye: 'text-emerald-300',
@@ -116,20 +124,96 @@ const sectorNote = (a: ExpectedChange): string =>
       ? 'only a fraction of a nT southward from its polarity, so it needs luck with the field'
       : 'no southward field guaranteed by its polarity, so it needs the field to swing south on its own';
 
+/** A coronal hole from the tracker, in the card's words. */
+const HoleItem: React.FC<{ f: HoleForecast; nowMs: number; detailed: boolean }> = ({ f, nowMs, detailed }) => {
+  const arrival = f.arrival as number;
+  const tier = f.outlook?.tier ?? 'none';
+  return (
+    <li className="rounded border border-neutral-700/60 bg-neutral-800/40 p-2 flex items-start gap-3">
+      {/* The tracker's verdict for the best moment inside its arrival window. */}
+      <div className="text-xl flex-shrink-0 leading-none mt-0.5">{TIER_ICON[tier] ?? TIER_ICON.none}</div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-baseline justify-between gap-2 flex-wrap">
+          <span className="text-xs font-semibold text-neutral-100">A coronal hole</span>
+          <span className="text-[11px] font-mono text-neutral-400">
+            {arrival > nowMs ? relative(arrival, nowMs) : 'arriving now'} · {fmtNz(arrival)}
+          </span>
+        </div>
+
+        <div className="text-[11px] text-neutral-400 mt-0.5">
+          {f.choice.speedKms != null && (
+            <>Stream at about <span className="text-neutral-200 font-mono">{f.choice.speedKms} km/s</span></>
+          )}
+          {f.ensemble && f.windowFromMs != null && f.windowToMs != null && (
+            <> · 8 in 10 land between {fmtNz(f.windowFromMs)} and {fmtNz(f.windowToMs)}</>
+          )}
+        </div>
+
+        {f.outlook ? (
+          <div className="text-[11px] mt-1">
+            <span className={TIER_TEXT[tier] ?? TIER_TEXT.none}>{f.outlook.label}</span>
+            {f.arrivalSky && <span className="text-neutral-500"> · best {fmtNz(f.arrivalSky.atMs)}</span>}
+            {/* The note opens with the label; the label is already on the line above. */}
+            <div className="text-neutral-500 mt-0.5">
+              {f.outlook.note.startsWith(f.outlook.label)
+                ? f.outlook.note.slice(f.outlook.label.length).replace(/^[.\s]+/, '')
+                : f.outlook.note}
+            </div>
+          </div>
+        ) : null}
+
+        {detailed && (
+          <p className="text-[10px] text-neutral-500 mt-1 leading-snug">
+            High-speed wind from an open-field region on the Sun.
+            {f.connection.factor < 1 && <> {f.connection.note}</>}
+            {f.pol && f.pol.confidence !== 'none' && <> Magnetogram polarity: {f.pol.summary}</>}
+            {f.gone.gone && ' It has since gone from view, but its stream is already on the way.'}
+          </p>
+        )}
+      </div>
+    </li>
+  );
+};
+
 export const ExpectedArrivals: React.FC<{
   /** Advanced view shows the physics line; simple view does not. */
   detailed?: boolean;
   horizonDays?: number;
 }> = ({ detailed = false, horizonDays = 3 }) => {
+  // useForecast also primes coronal hole detection on this page, so the
+  // tracker's store fills even if the tracker has never been opened here.
   const forecast = useForecast();
-  const location = useMemo(() => resolveViewerLocation(), []);
-  const nowMs = Date.now();
+  const [location, setLocation] = useState<ViewerLocation>(() => resolveViewerLocation());
+  useEffect(() => { resolveViewerLocation(setLocation); }, []);
+  const [chState, setChState] = useState<ChStoreState | null>(null);
+  useEffect(() => subscribeToChDetections(setChState), []);
+  // Arrival countdowns and "is it still due" move with the clock.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 5 * 60000);
+    return () => clearInterval(id);
+  }, []);
+  const horizonMs = horizonDays * 86400000;
 
-  const arrivals = useMemo(
+  // Coronal holes: the tracker's own forecasts, the ones reaching Earth.
+  const holes = useMemo(() => {
+    if (!chState) return [];
+    const tracks = tracksFromStore(chState);
+    const newest = chState.detections[chState.detections.length - 1]?.atMs ?? 0;
+    const shared = readHolePolarity(nowMs);
+    return holesDueWithin(tracks, {
+      nowMs, horizonMs, latestFrameMs: newest,
+      latitude: location.latitude, longitude: location.longitude,
+      polarityOf: (t) => (shared ? polarityForTrack(t, shared.byHoleId, shared.atMs) : null),
+    }).map((h) => h.forecast);
+  }, [chState, nowMs, horizonMs, location]);
+
+  // CMEs: from the forecast timeline, where they are modelled.
+  const cmes = useMemo(
     () => (forecast.timeline.length
-      ? expectedArrivals(forecast.timeline, Date.now(), horizonDays * 86400000)
+      ? expectedArrivals(forecast.timeline, nowMs, horizonMs).filter(isCme)
       : []),
-    [forecast.timeline, horizonDays],
+    [forecast.timeline, nowMs, horizonMs],
   );
 
   const nights = useMemo(
@@ -139,36 +223,52 @@ export const ExpectedArrivals: React.FC<{
     [forecast.outlook, location],
   );
 
-  if (forecast.timeline.length === 0) {
+  const haveHoleData = !!chState && (chState.history.length > 0 || chState.detections.length > 0);
+
+  if (!haveHoleData && cmes.length === 0) {
     return (
       <p className="text-xs text-neutral-500">
-        {forecast.loading
-          ? 'Working out what is due...'
-          : 'No forecast available, so nothing can be said about the next few days.'}
+        {chState?.error
+          ? 'The coronal hole imagery could not be read, so nothing can be said about the next few days yet.'
+          : 'Working out what is due...'}
       </p>
     );
   }
 
-  if (arrivals.length === 0) {
+  if (holes.length === 0 && cmes.length === 0) {
     return (
       <p className="text-xs text-neutral-400">
-        Nothing is due in the next {horizonDays} days. The coronal holes currently on the disk either
-        miss Earth or are too small to matter, and no CME is in the model.
+        Nothing is due in the next {horizonDays} days. None of the coronal holes on the Coronal Hole Tracker
+        reaches Earth in that time, and no CME is in the model.
         {' '}<span className="text-neutral-600">That is a real forecast, not missing data.</span>
       </p>
     );
   }
 
-  const holes = countSources(arrivals, (a) => !isCme(a));
-  const cmes = countSources(arrivals, isCme);
+  const cmeCount = countSources(cmes, isCme);
+  type Item = { atMs: number; hole?: HoleForecast; cme?: ExpectedChange };
+  const items: Item[] = [
+    ...holes.map((f): Item => ({ atMs: f.arrival as number, hole: f })),
+    ...cmes.map((a): Item => ({ atMs: a.atMs, cme: a })),
+  ].sort((a, b) => a.atMs - b.atMs);
 
   return (
     <ul className="space-y-2">
       <li className="text-xs text-neutral-200">
-        In the next {horizonDays} days: {plural(holes, 'coronal hole', 'coronal holes')} and{' '}
-        {plural(cmes, 'CME', 'CMEs')} expected to affect Earth.
+        {haveHoleData ? (
+          <>In the next {horizonDays} days: {plural(holes.length, 'coronal hole', 'coronal holes')} and{' '}
+          {plural(cmeCount, 'CME', 'CMEs')} expected to affect Earth.</>
+        ) : (
+          // CMEs known, holes not yet measured: say so rather than "no coronal holes".
+          <>In the next {horizonDays} days: {plural(cmeCount, 'CME', 'CMEs')} expected to affect Earth. Coronal
+          holes are still being measured.</>
+        )}
       </li>
-      {arrivals.map((a) => {
+      {items.map((item, i) => {
+        if (item.hole) {
+          return <HoleItem key={`hole-${i}-${item.atMs}`} f={item.hole} nowMs={nowMs} detailed={detailed} />;
+        }
+        const a = item.cme as ExpectedChange;
         const { what, detail } = describe(a);
         const night = nightFor(nights, a);
         return (
@@ -214,8 +314,8 @@ export const ExpectedArrivals: React.FC<{
         );
       })}
       <li className="text-[10px] text-neutral-600 pt-0.5">
-        For {locationLabel(location)}. Arrival times carry a day either way - see the impact graph for
-        the spread. Nothing here is a measurement; it is the same model the outlook chart is drawn from.
+        For {locationLabel(location)}. Coronal holes are the Coronal Hole Tracker&apos;s forecasts; CMEs come from
+        the CME model. Arrival times carry real uncertainty - the tracker and the impact graph show the spread.
       </li>
     </ul>
   );
