@@ -5,6 +5,7 @@ import { registerDatasetTicker } from '../utils/pollingScheduler';
 import { kpIndex, gScale, gColor } from '../utils/kpScale';
 import { moonAt } from '../utils/skyConditions';
 import { resolveViewerLocation } from '../utils/viewerLocation';
+import { sharedFetchJson } from '../utils/sharedFetch';
 
 const NOAA_KP_URL   = 'https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json';
 // NOAA republishes this forecast roughly 3-hourly. Re-fetching every 5 minutes
@@ -623,8 +624,8 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
 
   // Fetch KP data
   const fetchKpData = useCallback(() => {
-    fetch(NOAA_KP_URL)
-      .then(r => r.json())
+    // Shared with the 3-day visibility grid, which reads the same forecast.
+    sharedFetchJson<any>(NOAA_KP_URL, { maxAgeMs: 60000 })
       .then((raw: any) => {
         // The NOAA endpoint returns either:
         //   • array-of-objects: [{time_tag, kp, observed, noaa_scale}, ...]

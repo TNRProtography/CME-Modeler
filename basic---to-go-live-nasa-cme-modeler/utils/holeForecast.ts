@@ -21,7 +21,7 @@ import { solarDiskOrientation } from './solarEphemeris';
 import { bestSkyWithin, skyConditionsAt, visibilityOutlook } from './skyConditions';
 import { buildOutlook } from './auroraOutlook';
 import { auroraGeometryAt } from './auroraVisibility';
-import { buildForecastTimeline } from './forecastTimeline';
+import { buildForecastTimeline, type StreamSource } from './forecastTimeline';
 import { hssArrivalEnsemble, measurementConfidence } from './arrivalEnsemble';
 import { bySignForPolarity, rmWindows, windowsDuring } from './rmWindows';
 
@@ -121,7 +121,7 @@ export function forecastHole(track: ChTrack<TrackedHole>, o: HoleForecastOptions
       widthDeg: latest.widthDeg,
       bySign,
       earthConnection: connection.factor,
-    }], { fromMs: from - 6 * 3600000, toMs: to + 3 * DAY_MS, stepMs: 3600000 });
+    } satisfies StreamSource], { fromMs: from - 6 * 3600000, toMs: to + 3 * DAY_MS, stepMs: 3600000 });
 
     const chainOutlook = buildOutlook(streamTimeline);
     const atArrival = chainOutlook.reduce((a, b) =>
@@ -140,6 +140,23 @@ export function forecastHole(track: ChTrack<TrackedHole>, o: HoleForecastOptions
 }
 
 export type HoleForecast = ReturnType<typeof forecastHole>;
+
+/**
+ * A hole's stream as the forecast timeline takes it - the same one the
+ * tracker's own verdict is drawn from. Null for a hole whose stream does not
+ * reach Earth, or that has no speed yet.
+ */
+export function streamSourceFor(track: ChTrack<TrackedHole>, f: HoleForecast): StreamSource | null {
+  if (!f.connection.reachesEarth || f.choice.speedKms == null) return null;
+  return {
+    id: track.key,
+    centralMeridianMs: f.centralMeridianMs,
+    peakSpeedKms: f.choice.speedKms,
+    widthDeg: f.latest.widthDeg,
+    bySign: f.pol ? bySignForPolarity(f.pol.polarity) : null,
+    earthConnection: f.connection.factor,
+  };
+}
 
 // ── polarity, shared ──────────────────────────────────────────────────────
 // Polarity is read from the magnetogram's pixels by the tracker, which is
@@ -188,11 +205,26 @@ export function polarityForTrack(
 /** The tracker's tracks, from the shared detection store. */
 export const tracksFromStore = (state: ChStoreState) => buildChTracks(framesForTracking(state));
 
+/** Every tracked hole's forecast, once. */
+export function forecastAllHoles(
+  tracks: ChTrack<TrackedHole>[],
+  o: Omit<HoleForecastOptions, 'polarity'> & { polarityOf: (track: ChTrack<TrackedHole>) => ChPolarityResult | null },
+): { track: ChTrack<TrackedHole>; forecast: HoleForecast }[] {
+  return tracks.map((track) => ({ track, forecast: forecastHole(track, { ...o, polarity: o.polarityOf(track) }) }));
+}
+
+/**
+ * Whether the tracker has this hole reaching Earth within the horizon: its
+ * arrival window overlaps it, so a stream landing now still counts.
+ */
+export const isDueWithin = (f: HoleForecast, nowMs: number, horizonMs: number): boolean =>
+  f.arrival != null && f.windowFromMs != null && f.windowToMs != null
+  && f.windowToMs >= nowMs && f.windowFromMs <= nowMs + horizonMs;
+
 /**
  * Every hole the tracker has reaching Earth within the horizon - live, or
  * gone round the limb or closed with its stream already on the way, exactly
- * as the tracker shows them. "Within" means its arrival window overlaps the
- * horizon, so a stream landing now still counts. Soonest first.
+ * as the tracker shows them. Soonest first.
  */
 export function holesDueWithin(
   tracks: ChTrack<TrackedHole>[],
@@ -201,9 +233,7 @@ export function holesDueWithin(
     polarityOf: (track: ChTrack<TrackedHole>) => ChPolarityResult | null;
   },
 ): { track: ChTrack<TrackedHole>; forecast: HoleForecast }[] {
-  return tracks
-    .map((track) => ({ track, forecast: forecastHole(track, { ...o, polarity: o.polarityOf(track) }) }))
-    .filter(({ forecast: f }) => f.arrival != null && f.windowFromMs != null && f.windowToMs != null
-      && f.windowToMs >= o.nowMs && f.windowFromMs <= o.nowMs + o.horizonMs)
+  return forecastAllHoles(tracks, o)
+    .filter(({ forecast }) => isDueWithin(forecast, o.nowMs, o.horizonMs))
     .sort((a, b) => (a.forecast.arrival as number) - (b.forecast.arrival as number));
 }

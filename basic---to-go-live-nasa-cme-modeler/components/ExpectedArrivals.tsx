@@ -22,7 +22,20 @@ import { expectedArrivals, type ExpectedChange } from '../utils/forecastTimeline
 import { nightlyOutlook, type NightOutlook } from '../utils/auroraOutlook';
 import { resolveViewerLocation, locationLabel, type ViewerLocation } from '../utils/viewerLocation';
 import { subscribeToChDetections, type ChStoreState } from '../utils/chDetectionStore';
-import { holesDueWithin, polarityForTrack, readHolePolarity, tracksFromStore, type HoleForecast } from '../utils/holeForecast';
+import {
+  forecastAllHoles, isDueWithin, polarityForTrack, readHolePolarity, streamSourceFor, tracksFromStore,
+  type HoleForecast,
+} from '../utils/holeForecast';
+import { buildForecastTimeline, type StreamSource } from '../utils/forecastTimeline';
+import { buildOutlook } from '../utils/auroraOutlook';
+import { parseNoaaKpForecast, type KpBlock } from '../utils/kpVisibility';
+import { buildThreeDayGrid } from '../utils/threeDayGrid';
+import { sharedFetchJson } from '../utils/sharedFetch';
+import { registerDatasetTicker } from '../utils/pollingScheduler';
+import ThreeDayVisibilityGrid from './ThreeDayVisibilityGrid';
+
+/** The same feed the NOAA 3-day panel reads, shared with it. */
+const NOAA_KP_URL = 'https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json';
 
 const TIER_TEXT: Record<string, string> = {
   eye: 'text-emerald-300',
@@ -195,18 +208,57 @@ export const ExpectedArrivals: React.FC<{
   }, []);
   const horizonMs = horizonDays * 86400000;
 
-  // Coronal holes: the tracker's own forecasts, the ones reaching Earth.
-  const holes = useMemo(() => {
+  // Every tracked hole, forecast once by the tracker's own function.
+  const allHoles = useMemo(() => {
     if (!chState) return [];
     const tracks = tracksFromStore(chState);
     const newest = chState.detections[chState.detections.length - 1]?.atMs ?? 0;
     const shared = readHolePolarity(nowMs);
-    return holesDueWithin(tracks, {
-      nowMs, horizonMs, latestFrameMs: newest,
+    return forecastAllHoles(tracks, {
+      nowMs, latestFrameMs: newest,
       latitude: location.latitude, longitude: location.longitude,
       polarityOf: (t) => (shared ? polarityForTrack(t, shared.byHoleId, shared.atMs) : null),
-    }).map((h) => h.forecast);
-  }, [chState, nowMs, horizonMs, location]);
+    });
+  }, [chState, nowMs, location]);
+
+  // The ones reaching Earth inside the horizon, soonest first.
+  const holes = useMemo(() => allHoles
+    .map((h) => h.forecast)
+    .filter((f) => isDueWithin(f, nowMs, horizonMs))
+    .sort((a, b) => (a.arrival as number) - (b.arrival as number)), [allHoles, nowMs, horizonMs]);
+
+  // NOAA's Kp forecast, for the grid.
+  const [kpBlocks, setKpBlocks] = useState<KpBlock[]>([]);
+  useEffect(() => {
+    let live = true;
+    const load = async () => {
+      try {
+        const blocks = parseNoaaKpForecast(await sharedFetchJson(NOAA_KP_URL, { maxAgeMs: 60000 }));
+        if (live && blocks.length) setKpBlocks(blocks);
+      } catch { /* the grid runs on the other two forecasts */ }
+    };
+    void load();
+    const unregister = registerDatasetTicker('three-day-grid-kp', load, 5 * 60 * 1000);
+    return () => { live = false; unregister(); };
+  }, []);
+
+  // The grid: every stream the tracker has reaching Earth, run hour by hour
+  // through the chain, alongside NOAA and the CME model.
+  const grid = useMemo(() => {
+    const streams = allHoles
+      .map(({ track, forecast }) => streamSourceFor(track, forecast))
+      .filter((s): s is StreamSource => s != null);
+    const from = Math.floor(nowMs / 3600000) * 3600000 - 3600000;
+    const holeOutlook = buildOutlook(buildForecastTimeline([], streams, {
+      fromMs: from, toMs: nowMs + (horizonDays + 1) * 86400000, stepMs: 3600000,
+    }));
+    if (!kpBlocks.length && !streams.length && !forecast.outlook.length) return [];
+    return buildThreeDayGrid({
+      nowMs, latitude: location.latitude, longitude: location.longitude,
+      kpBlocks, holeOutlook, cmeOutlook: forecast.outlook, days: horizonDays,
+    });
+  }, [allHoles, kpBlocks, forecast.outlook, nowMs, location, horizonDays]);
+  const gridView = <ThreeDayVisibilityGrid grid={grid} locationNote={`for ${locationLabel(location)}`} />;
 
   // CMEs: from the forecast timeline, where they are modelled.
   const cmes = useMemo(
@@ -227,21 +279,26 @@ export const ExpectedArrivals: React.FC<{
 
   if (!haveHoleData && cmes.length === 0) {
     return (
-      <p className="text-xs text-neutral-500">
-        {chState?.error
-          ? 'The coronal hole imagery could not be read, so nothing can be said about the next few days yet.'
-          : 'Working out what is due...'}
-      </p>
+      <div>
+        {gridView}
+        <p className="text-xs text-neutral-500">
+          {chState?.error
+            ? 'The coronal hole imagery could not be read, so no stream can be listed yet.'
+            : 'Working out which coronal hole streams are due...'}
+        </p>
+      </div>
     );
   }
 
   if (holes.length === 0 && cmes.length === 0) {
     return (
-      <p className="text-xs text-neutral-400">
-        Nothing is due in the next {horizonDays} days. None of the coronal holes on the Coronal Hole Tracker
-        reaches Earth in that time, and no CME is in the model.
-        {' '}<span className="text-neutral-600">That is a real forecast, not missing data.</span>
-      </p>
+      <div>
+        {gridView}
+        <p className="text-xs text-neutral-400">
+          No coronal hole stream or CME is due in the next {horizonDays} days. None of the holes on the Coronal
+          Hole Tracker reaches Earth in that time, and no CME is in the model.
+        </p>
+      </div>
     );
   }
 
@@ -253,6 +310,8 @@ export const ExpectedArrivals: React.FC<{
   ].sort((a, b) => a.atMs - b.atMs);
 
   return (
+    <div>
+    {gridView}
     <ul className="space-y-2">
       <li className="text-xs text-neutral-200">
         {haveHoleData ? (
@@ -318,6 +377,7 @@ export const ExpectedArrivals: React.FC<{
         the CME model. Arrival times carry real uncertainty - the tracker and the impact graph show the spread.
       </li>
     </ul>
+    </div>
   );
 };
 

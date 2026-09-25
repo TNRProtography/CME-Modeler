@@ -44,6 +44,31 @@ export function newellCoupling(speedKms: number, byNt: number, bzNt: number): nu
   return Math.pow(Math.max(0, speedKms), 4 / 3) * Math.pow(bt, 2 / 3) * Math.pow(Math.abs(s), 8 / 3);
 }
 
+// Probabilists' Gauss-Hermite nodes and weights, seven points: the expected
+// value of f(z) for z ~ N(0, 1) is the weighted sum of f at the nodes.
+const GAUSS_HERMITE_7: [number, number][] = [
+  [-3.7504397, 0.000548268858737], [-2.3667594, 0.030757123967586], [-1.1544054, 0.240123178605013],
+  [0, 0.457142857142857],
+  [1.1544054, 0.240123178605013], [2.3667594, 0.030757123967586], [3.7504397, 0.000548268858737],
+];
+
+/**
+ * The coupling to expect over an hour of a field whose Bz swings about
+ * `bzMeanNt` by `bzSigmaNt`.
+ *
+ * Not the coupling at the average Bz. Coupling only counts the southward
+ * part of the field, so the swings do not cancel: the southward half of
+ * them feeds the magnetosphere and the northward half costs little. An hour
+ * of a stream whose field averages zero but swings a few nT either way
+ * drives far more than an hour of a field that sits at zero - and it is the
+ * hourly average of exactly that which the nowcast's measured coupling is.
+ */
+export function expectedNewellCoupling(speedKms: number, byNt: number, bzMeanNt: number, bzSigmaNt: number): number {
+  const sigma = Math.abs(bzSigmaNt);
+  if (!(sigma > 0)) return newellCoupling(speedKms, byNt, bzMeanNt);
+  return GAUSS_HERMITE_7.reduce((sum, [z, w]) => sum + w * newellCoupling(speedKms, byNt, bzMeanNt + sigma * z), 0);
+}
+
 /** Dynamic pressure from speed and density, in nPa. */
 export function dynamicPressureNPa(speedKms: number, densityCm3: number): number {
   return 1.6726e-6 * Math.max(0, densityCm3) * Math.max(0, speedKms) ** 2;
@@ -64,10 +89,12 @@ export interface OutlookPoint {
  * Run the timeline through the nowcast chain.
  *
  * Two passes, because Bz is the input nobody can forecast. The likely case
- * uses only what the sector geometry guarantees - that is a real, computable
- * southward field. The best case adds the fluctuation amplitude on top, which
- * is what happens when the swings happen to line up southward. The truth is
- * somewhere between and nobody can say where.
+ * is the coupling to expect over an hour of the field swinging about what the
+ * sector geometry guarantees - the swings' timing cannot be forecast, but
+ * their size can, and their southward half drives the aurora whichever hours
+ * they fall in. (It used to take only the guaranteed part, as if the field sat
+ * perfectly still: a floor, which read every fast stream as barely worth a
+ * camera.) The best case has the swings lined up southward for the hour.
  */
 export function buildOutlook(timeline: L1State[]): OutlookPoint[] {
   return timeline.map((point) => {
@@ -76,7 +103,7 @@ export function buildOutlook(timeline: L1State[]): OutlookPoint[] {
     const bzLikely = point.bzFromSectorNt;
     const bzBest = point.bzFromSectorNt - Math.abs(point.bzFluctuationNt);
 
-    const couplingLikely = newellCoupling(point.speedKms, by, bzLikely);
+    const couplingLikely = expectedNewellCoupling(point.speedKms, by, bzLikely, point.bzFluctuationNt);
     const couplingBest = newellCoupling(point.speedKms, by, bzBest);
     const pressure = dynamicPressureNPa(point.speedKms, point.densityCm3);
     const at = new Date(point.atMs);
