@@ -21,7 +21,7 @@ const hourLabel = (h: number) => {
     const hh = x % 24;
     return `${hh % 12 === 0 ? 12 : hh % 12}${hh < 12 ? 'am' : 'pm'}`;
   };
-  return `${f(h)}–${f(h + 3)}`;
+  return `${f(h)}-${f(h + 3)}`;
 };
 
 const dayLabel = (ms: number) => new Date(ms + 12 * 3600000).toLocaleDateString('en-NZ', {
@@ -89,7 +89,7 @@ const ThreeDayVisibilityGrid: React.FC<{ grid: GridDay[]; locationNote: string }
                         title={describeCell(c)}
                         className={`w-full h-8 rounded border text-center leading-none flex items-center justify-center gap-1 ${cls} ${isShown ? 'ring-1 ring-white/60' : ''}`}
                       >
-                        {c.past ? <span className="text-[10px] text-neutral-600">–</span>
+                        {c.past ? <span className="text-[10px] text-neutral-600">-</span>
                           : day ? <span className="text-sm opacity-60">☀️</span>
                           : (
                             <>
