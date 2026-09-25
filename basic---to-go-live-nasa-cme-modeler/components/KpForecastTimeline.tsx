@@ -5,7 +5,6 @@ import { moonAt } from '../utils/skyConditions';
 import { resolveViewerLocation } from '../utils/viewerLocation';
 import { useThreeDayOutlook } from '../hooks/useThreeDayOutlook';
 import { combinedAt, type GridDriver } from '../utils/threeDayGrid';
-import { expectedArrivals } from '../utils/forecastTimeline';
 import { skyConditionsAt, visibilityOutlook, type VisibilityTier } from '../utils/skyConditions';
 
 const TIER_EMOJI: Record<string, string> = { camera: '📷', phone: '📱', eye: '👁️' };
@@ -487,7 +486,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   // Coronal Hole Tracker's streams and the CME model (utils/threeDayGrid -
   // the days card's grid is built from the same). Each hour carries what can
   // be seen after the Sun, twilight and the Moon at that hour.
-  const { gridInputs, allHoles, forecast } = useThreeDayOutlook(3);
+  const { gridInputs, allHoles, cmeArrivals } = useThreeDayOutlook(3);
   const slots = React.useMemo((): KpSlot[] => {
     if (!gridInputs) return [];
     const HOUR = 3600000;
@@ -516,18 +515,17 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
     () => slots.map((slot) => (slot.observed !== 'observed' && slot.tier && slot.tier !== 'none' ? TIER_EMOJI[slot.tier] ?? null : null)),
     [slots]);
   // What is due each hour: the tracker's arrival for every hole it has
-  // reaching Earth, and the CME model's arrivals.
+  // reaching Earth, and every CME the CME Visualization has touching Earth.
   const arrivalHours = React.useMemo(() => {
     const now = Date.now();
     const holeTimes = allHoles.map((h) => h.forecast.arrival).filter((t): t is number => t != null);
-    const cmeTimes = (forecast.timeline.length ? expectedArrivals(forecast.timeline, now, 3 * 86400000) : [])
-      .filter((a) => a.kind.startsWith('CME')).map((a) => a.atMs);
+    const cmeTimes = cmeArrivals.map((a) => a.arrivalMs).filter((t) => t >= now - 3600000);
     const inHour = (t: number, slot: KpSlot) => t >= slot.utcMs && t < slot.utcMs + 3600000;
     return slots.map((slot) => ({
       hole: holeTimes.some((t) => inHour(t, slot)),
       cme: cmeTimes.some((t) => inHour(t, slot)),
     }));
-  }, [slots, allHoles, forecast.timeline]);
+  }, [slots, allHoles, cmeArrivals]);
   const arrivals = React.useMemo(
     () => arrivalHours.map((a) => (a.hole ? ARRIVAL_ICON.hole : '') + (a.cme ? ARRIVAL_ICON.cme : '')),
     [arrivalHours]);
@@ -706,7 +704,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
         <span className="text-xs text-neutral-500">{ARRIVAL_ICON.hole} coronal hole stream arrives · {ARRIVAL_ICON.cme} CME arrives</span>
         <span className="text-xs text-neutral-500">Aurora height: 📷 camera a third · 📱 phone two thirds · 👁️ naked eye the full sky, after the Moon and twilight</span>
         <span className="text-xs text-neutral-600 ml-auto">
-          From the Coronal Hole Tracker&apos;s streams and the CME model, for your location
+          From the Coronal Hole Tracker&apos;s streams and the CMEs the CME Visualization has reaching Earth, for your location
         </span>
       </div>
 

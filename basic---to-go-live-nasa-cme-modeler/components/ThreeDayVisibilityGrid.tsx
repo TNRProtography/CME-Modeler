@@ -38,7 +38,7 @@ const describeCell = (c: GridCell): string => {
   if (c.darkness === 'daylight') return 'Daylight: nothing can be seen, whatever the activity.';
   const why = c.driver === 'NOAA Kp' ? `NOAA forecasts Kp ${c.kp?.toFixed(2)}`
     : c.driver === 'coronal hole' ? 'a coronal hole stream from the tracker'
-    : c.driver === 'CME' ? 'a CME from the model'
+    : c.driver === 'CME' ? 'a CME the CME Visualization has reaching Earth'
     : 'quiet conditions';
   const moon = c.moonUp ? `the Moon is up, ${Math.round(c.moonIllumination * 100)}% lit` : 'the Moon is down';
   return `${TIER_WORD[c.tier]} (${c.effective}/100) around ${timeLabel(c.bestMs)}: ${why}; ${moon}`
@@ -114,7 +114,8 @@ const ThreeDayVisibilityGrid: React.FC<{ grid: GridDay[]; locationNote: string }
       <p className="text-[10px] text-neutral-500 mt-1 leading-snug">
         👁️ naked eye · 📱 phone camera · 📷 camera only · 😴 nothing · ☀️ daylight. The number is strength for your
         location, 0-100, after the Moon and twilight. Each block takes the stronger of the coronal hole streams on the
-        Coronal Hole Tracker and the CME model. Tap a block for why.
+        Coronal Hole Tracker and the CMEs the CME Visualization has reaching
+        Earth. Tap a block for why.
       </p>
     </div>
   );

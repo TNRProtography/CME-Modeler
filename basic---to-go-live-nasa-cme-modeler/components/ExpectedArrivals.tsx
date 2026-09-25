@@ -8,7 +8,8 @@
 // the same function the tracker uses (utils/holeForecast), so the two cannot
 // disagree. They did when this read the combined forecast timeline instead -
 // the tracker could have a stream arriving tomorrow that this said was not
-// coming. CMEs still come from that timeline, which is where they are modelled.
+// coming. CMEs are the ones the CME Visualization has touching Earth
+// (utils/cmeEarthArrivals).
 //
 // Three things are said about each arrival, in the order somebody planning a
 // night needs them: when, how good, and why. "How good" is the visibility
@@ -17,12 +18,13 @@
 // own cannot say so.
 
 import React, { useMemo } from 'react';
-import { expectedArrivals, type ExpectedChange } from '../utils/forecastTimeline';
-import { nightlyOutlook, type NightOutlook } from '../utils/auroraOutlook';
+import type { ExpectedChange } from '../utils/forecastTimeline';
 import { locationLabel } from '../utils/viewerLocation';
 import { isDueWithin, type HoleForecast } from '../utils/holeForecast';
 import ThreeDayVisibilityGrid from './ThreeDayVisibilityGrid';
 import { useThreeDayOutlook } from '../hooks/useThreeDayOutlook';
+import { CME_EASE_MS, CME_FULL_MS } from '../utils/cmeEarthArrivals';
+import type { GridCell } from '../utils/threeDayGrid';
 
 const TIER_TEXT: Record<string, string> = {
   eye: 'text-emerald-300',
@@ -102,28 +104,6 @@ const countSources = (arrivals: ExpectedChange[], pick: (a: ExpectedChange) => b
 const plural = (n: number, one: string, many: string): string =>
   n === 0 ? `no ${many}` : n === 1 ? `1 ${one}` : `${n} ${many}`;
 
-/**
- * The best night inside an arrival's window.
- *
- * Nights rather than hours, because that is the unit a decision is made in,
- * and the night is scored by its darkest moment rather than by the arrival
- * time - the stream is still blowing at midnight, and midnight is when you
- * would go out.
- */
-const nightFor = (nights: NightOutlook[], a: ExpectedChange): NightOutlook | null => {
-  const within = nights.filter((n) => n.bestMs >= a.atMs && n.bestMs <= a.endMs);
-  if (within.length === 0) return null;
-  return within.reduce((best, n) => (n.strengthLikely > best.strengthLikely ? n : best));
-};
-
-/** How the field geometry reads, which decides more than the speed does. */
-const sectorNote = (a: ExpectedChange): string =>
-  a.peakSouthwardNt <= -1
-    ? `about ${Math.abs(a.peakSouthwardNt).toFixed(1)} nT of southward field guaranteed by its polarity`
-    : a.peakSouthwardNt < 0
-      ? 'only a fraction of a nT southward from its polarity, so it needs luck with the field'
-      : 'no southward field guaranteed by its polarity, so it needs the field to swing south on its own';
-
 /** A coronal hole from the tracker, in the card's words. */
 const HoleItem: React.FC<{ f: HoleForecast; nowMs: number; detailed: boolean }> = ({ f, nowMs, detailed }) => {
   const arrival = f.arrival as number;
@@ -180,7 +160,7 @@ export const ExpectedArrivals: React.FC<{
   detailed?: boolean;
   horizonDays?: number;
 }> = ({ detailed = false, horizonDays = 3 }) => {
-  const { forecast, location, chState, nowMs, allHoles, grid } = useThreeDayOutlook(horizonDays);
+  const { location, chState, nowMs, allHoles, grid, cmeArrivals } = useThreeDayOutlook(horizonDays);
   const horizonMs = horizonDays * 86400000;
 
   // The ones reaching Earth inside the horizon, soonest first.
@@ -191,20 +171,25 @@ export const ExpectedArrivals: React.FC<{
 
   const gridView = <ThreeDayVisibilityGrid grid={grid} locationNote={`for ${locationLabel(location)}`} />;
 
-  // CMEs: from the forecast timeline, where they are modelled.
-  const cmes = useMemo(
-    () => (forecast.timeline.length
-      ? expectedArrivals(forecast.timeline, nowMs, horizonMs).filter(isCme)
-      : []),
-    [forecast.timeline, nowMs, horizonMs],
-  );
+  // CMEs: every one the CME Visualization has touching Earth, arriving
+  // inside the horizon or still blowing past (utils/cmeEarthArrivals).
+  const cmes = useMemo((): ExpectedChange[] => cmeArrivals
+    .filter((a) => a.arrivalMs + CME_FULL_MS + CME_EASE_MS >= nowMs && a.arrivalMs <= nowMs + horizonMs)
+    .sort((a, b) => a.arrivalMs - b.arrivalMs)
+    .map((a) => ({
+      atMs: a.arrivalMs, peakMs: a.arrivalMs, endMs: a.arrivalMs + CME_FULL_MS + CME_EASE_MS,
+      fromSpeedKms: 0, peakSpeedKms: Math.round(a.speedKms), sourceId: a.id, kind: 'CME sheath', peakSouthwardNt: 0,
+    })), [cmeArrivals, nowMs, horizonMs]);
 
-  const nights = useMemo(
-    () => (forecast.outlook.length
-      ? nightlyOutlook(forecast.outlook, location.latitude, location.longitude)
-      : []),
-    [forecast.outlook, location],
-  );
+  // A CME's verdict: the best block of the 3-day grid while it is here.
+  const cellFor = (a: ExpectedChange) => {
+    let best: GridCell | null = null;
+    for (const day of grid) for (const c of day.cells) {
+      if (c.past || c.endMs <= a.atMs || c.startMs >= a.endMs || c.darkness === 'daylight') continue;
+      if (!best || c.effective > best.effective) best = c;
+    }
+    return best;
+  };
 
   const haveHoleData = !!chState && (chState.history.length > 0 || chState.detections.length > 0);
 
@@ -227,7 +212,7 @@ export const ExpectedArrivals: React.FC<{
         {gridView}
         <p className="text-xs text-neutral-400">
           No coronal hole stream or CME is due in the next {horizonDays} days. None of the holes on the Coronal
-          Hole Tracker reaches Earth in that time, and no CME is in the model.
+          Hole Tracker reaches Earth in that time, and the CME Visualization has no CME reaching Earth.
         </p>
       </div>
     );
@@ -260,7 +245,8 @@ export const ExpectedArrivals: React.FC<{
         }
         const a = item.cme as ExpectedChange;
         const { what, detail } = describe(a);
-        const night = nightFor(nights, a);
+        const cell = cellFor(a);
+        const night = cell ? { tier: cell.tier, label: cell.label, bestMs: cell.bestMs } : null;
         return (
           <li key={`${a.atMs}-${a.sourceId ?? a.kind}`}
               className="rounded border border-neutral-700/60 bg-neutral-800/40 p-2 flex items-start gap-3">
@@ -277,8 +263,8 @@ export const ExpectedArrivals: React.FC<{
             </div>
 
             <div className="text-[11px] text-neutral-400 mt-0.5">
-              Speed {a.fromSpeedKms} → <span className="text-neutral-200 font-mono">{a.peakSpeedKms} km/s</span>
-              {' '}peaking {fmtNz(a.peakMs, false)}
+              Launched at <span className="text-neutral-200 font-mono">{a.peakSpeedKms} km/s</span>
+              {' '}· the CME Visualization has its particles reaching Earth
             </div>
 
             {night ? (
@@ -296,7 +282,7 @@ export const ExpectedArrivals: React.FC<{
 
             {detailed && (
               <p className="text-[10px] text-neutral-500 mt-1 leading-snug">
-                {detail} Expect {sectorNote(a)}.
+                {detail} The size of the storm is from its speed alone.
               </p>
             )}
             </div>
@@ -304,8 +290,8 @@ export const ExpectedArrivals: React.FC<{
         );
       })}
       <li className="text-[10px] text-neutral-600 pt-0.5">
-        For {locationLabel(location)}. Coronal holes are the Coronal Hole Tracker&apos;s forecasts; CMEs come from
-        the CME model. Arrival times carry real uncertainty - the tracker and the impact graph show the spread.
+        For {locationLabel(location)}. Coronal holes are the Coronal Hole Tracker&apos;s forecasts; CMEs are the ones
+        the CME Visualization has reaching Earth. Arrival times carry real uncertainty - the tracker and the impact graph show the spread.
       </li>
     </ul>
     </div>

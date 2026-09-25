@@ -12,6 +12,9 @@ import {
 import { buildForecastTimeline, type StreamSource } from '../utils/forecastTimeline';
 import { buildOutlook } from '../utils/auroraOutlook';
 import type { KpBlock } from '../utils/kpVisibility';
+import { cmeEarthArrival, cmeOutlook, type CmeEarthArrival } from '../utils/cmeEarthArrivals';
+import { fetchCMEData } from '../services/nasaService';
+import { registerDatasetTicker } from '../utils/pollingScheduler';
 import { buildThreeDayGrid, type GridInputs } from '../utils/threeDayGrid';
 
 export function useThreeDayOutlook(horizonDays = 3) {
@@ -45,6 +48,22 @@ export function useThreeDayOutlook(horizonDays = 3) {
   // No NOAA Kp: the forecast is the app's own, the tracker's streams and the CME model.
   const kpBlocks: KpBlock[] = [];
 
+  // CMEs: the ones the CME Visualization has touching Earth (utils/cmeEarthArrivals).
+  const [cmeArrivals, setCmeArrivals] = useState<CmeEarthArrival[]>([]);
+  useEffect(() => {
+    let live = true;
+    const load = async () => {
+      try {
+        const cmes = await fetchCMEData(7, '');
+        if (!live) return;
+        setCmeArrivals(cmes.map(cmeEarthArrival).filter((a): a is CmeEarthArrival => a != null));
+      } catch { /* no CME list: the forecast runs on the coronal hole streams */ }
+    };
+    void load();
+    const unregister = registerDatasetTicker('three-day-cmes', load, 15 * 60 * 1000);
+    return () => { live = false; unregister(); };
+  }, []);
+
   // The grid: every stream the tracker has reaching Earth, run hour by hour
   // through the chain, alongside the CME model.
   const gridInputs = useMemo(() => {
@@ -55,13 +74,14 @@ export function useThreeDayOutlook(horizonDays = 3) {
     const holeOutlook = buildOutlook(buildForecastTimeline([], streams, {
       fromMs: from, toMs: nowMs + (horizonDays + 1) * 86400000, stepMs: 3600000,
     }));
-    if (!streams.length && !forecast.outlook.length && !chState) return null;
+    if (!streams.length && !cmeArrivals.length && !chState) return null;
     return {
       nowMs, latitude: location.latitude, longitude: location.longitude,
-      kpBlocks, holeOutlook, cmeOutlook: forecast.outlook, days: horizonDays,
+      kpBlocks, holeOutlook, days: horizonDays,
+      cmeOutlook: cmeOutlook(cmeArrivals, from, nowMs + (horizonDays + 1) * 86400000),
     } satisfies GridInputs;
-  }, [allHoles, forecast.outlook, nowMs, location, horizonDays, chState]);
+  }, [allHoles, cmeArrivals, nowMs, location, horizonDays, chState]);
   const grid = useMemo(() => (gridInputs ? buildThreeDayGrid(gridInputs) : []), [gridInputs]);
 
-  return { forecast, location, chState, nowMs, allHoles, grid, gridInputs };
+  return { forecast, location, chState, nowMs, allHoles, grid, gridInputs, cmeArrivals };
 }

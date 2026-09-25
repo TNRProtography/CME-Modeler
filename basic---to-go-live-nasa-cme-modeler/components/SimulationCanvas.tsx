@@ -51,6 +51,9 @@ import {
   computeMoonSceneAngle,
   EARTH_TILT_RAD,
 } from '../utils/astronomicalPositions';
+import {
+  GCS_ARC_RADIUS_FRAC, GCS_ARC_SPAN, GCS_TUBE_RADIUS_FRAC, GCS_AXIAL_DEPTH_FRAC,
+} from '../utils/cmeEarthArrivals';
 
 /** =========================================================
  *  STABLE, HOTLINK-SAFE TEXTURE URLS
@@ -309,10 +312,8 @@ const buildSpacecraftMarker = (THREE: any, size: number, color: number) => {
 // ============================================================
 //  GCS GEOMETRY CONSTANTS
 // ============================================================
-const GCS_ARC_RADIUS_FRAC  = 0.55;
-const GCS_ARC_SPAN         = Math.PI * 0.85;
-const GCS_TUBE_RADIUS_FRAC = 0.52; // thicker cross-section for a bolder CME shape
-const GCS_AXIAL_DEPTH_FRAC = 0.38;  // slightly deeper than before for teardrop body
+// The CME shape constants live in utils/cmeEarthArrivals, shared with the
+// 3-day forecast's check of which CMEs' particles reach Earth.
 
 // Number of helical field lines around the tube, and points per line
 const BZ_FIELD_LINE_COUNT  = 8;
