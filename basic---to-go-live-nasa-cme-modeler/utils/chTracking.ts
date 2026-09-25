@@ -161,6 +161,25 @@ export type ChDisappearance =
   | { gone: false }
   | { gone: true; reason: 'rotated-off' | 'closed' | 'lost'; label: string; note: string };
 
+/** What each way of going means, in words. */
+export const GONE_WORDS: Record<'rotated-off' | 'closed' | 'lost', { label: string; note: string }> = {
+  'rotated-off': {
+    label: 'Round the back',
+    note: 'It has turned past the west limb. The hole still exists and any stream already '
+        + 'on its way still arrives - we simply cannot see it from here until it comes round again.',
+  },
+  closed: {
+    label: 'Closed',
+    note: 'Still on the near side of the Sun but no longer dark enough to detect, which means '
+        + 'the open field has closed down. Any stream it already sent is still on its way.',
+  },
+  lost: {
+    label: 'Not in the latest frame',
+    note: 'On the disk but missed in the most recent frame. That is usually a faint or partial '
+        + 'image rather than the hole going anywhere, and it often reappears in the next one.',
+  },
+};
+
 /**
  * Why a hole is no longer in the latest frame.
  *
@@ -181,28 +200,12 @@ export function chDisappearance(
   const projected = longitudeAt(track.latest.lon, track.lastSeenMs, nowMs);
   const hoursMissing = (latestFrameMs - track.lastSeenMs) / 3600000;
 
-  if (projected > 80) {
-    return {
-      gone: true, reason: 'rotated-off', label: 'Round the back',
-      note: 'It has turned past the west limb. The hole still exists and any stream already '
-          + 'on its way still arrives - we simply cannot see it from here until it comes round again.',
-    };
-  }
+  if (projected > 80) return { gone: true, reason: 'rotated-off', ...GONE_WORDS['rotated-off'] };
 
   // Still on the visible disk but not being found. Over a few frames that is
   // the hole closing up; over one it is more likely the detector losing it in
   // a faint frame.
-  if (hoursMissing >= 4) {
-    return {
-      gone: true, reason: 'closed', label: 'Closed',
-      note: 'Still on the near side of the Sun but no longer dark enough to detect, which means '
-          + 'the open field has closed down. Any stream it already sent is still on its way.',
-    };
-  }
+  if (hoursMissing >= 4) return { gone: true, reason: 'closed', ...GONE_WORDS.closed };
 
-  return {
-    gone: true, reason: 'lost', label: 'Not in the latest frame',
-    note: 'On the disk but missed in the most recent frame. That is usually a faint or partial '
-        + 'image rather than the hole going anywhere, and it often reappears in the next one.',
-  };
+  return { gone: true, reason: 'lost', ...GONE_WORDS.lost };
 }

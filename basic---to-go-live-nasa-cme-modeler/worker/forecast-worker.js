@@ -37,6 +37,15 @@ const TIMELINE_KEY = 'forecast:timeline:current';
 const FORECASTS_KEY = 'forecast:pending';
 const SCORES_KEY = 'forecast:scores';
 const LAST_RUN_KEY = 'forecast:last-run';
+/** Every coronal hole's life, 90 days of it (utils/chLifecycle). */
+const LIFECYCLE_KEY = 'ch:lifecycle';
+
+/** Limits on what one device can send. */
+const MAX_OBSERVE_BYTES = 512 * 1024;
+const MAX_OBSERVE_FRAMES = 120;
+const MAX_HOLES_PER_FRAME = 40;
+/** The shared record, used by the forecast only while it is this fresh. */
+const LIFECYCLE_FRESH_MS = 24 * 3600000;
 
 /** Throttle for the manual /run trigger. */
 const MIN_MANUAL_RUN_GAP_MS = 60000;
@@ -223,8 +232,43 @@ export async function runForecast(env, modules) {
 
   const streams = [];
   const issued = [];
+  const issue = (sourceId, centralMeridianMs, ensemble) => {
+    if (!ensemble || ensemble.medianMs <= now) return;
+    issued.push({
+      id: `${sourceId}-${Math.round(centralMeridianMs / 3600000)}`,
+      issuedAtMs: now,
+      sourceId,
+      kind: 'HSS',
+      predictedArrivalMs: ensemble.medianMs,
+      p10Ms: ensemble.p10Ms,
+      p90Ms: ensemble.p90Ms,
+      predictedSpeedKms: ensemble.medianSpeedKms,
+    });
+  };
 
-  for (const hole of holes) {
+  // The shared 90-day record first: every hole under its own number, with
+  // its whole history behind the speed and the spread.
+  const fromRecord = modules.lifecycleTracks ? await lifecycleStreams(env, modules, now) : null;
+  let holesAsOfMs = asOfMs;
+  if (fromRecord) {
+    holesAsOfMs = fromRecord.asOfMs;
+    lastInputNotes.lifecycle = `ok, ${fromRecord.holeCount} holes on record, ${fromRecord.streams.length} streams`;
+    for (const { track, hs } of fromRecord.streams) {
+      streams.push({
+        id: track.key,
+        centralMeridianMs: hs.centralMeridianMs,
+        peakSpeedKms: hs.choice.speedKms,
+        widthDeg: track.latest.widthDeg,
+        bySign: null,
+        earthConnection: hs.connection.factor,
+      });
+      issue(track.key, hs.centralMeridianMs, hs.ensemble);
+    }
+  } else {
+    lastInputNotes.lifecycle = 'none fresh; using the latest snapshot';
+  }
+
+  for (const hole of fromRecord ? [] : holes) {
     const connection = chEarthConnection(hole.lat, b0);
     // A polar hole crosses the middle of the disk exactly like an equatorial
     // one and sends its wind over the top of us. No forecast for it.
@@ -245,19 +289,7 @@ export async function runForecast(env, modules) {
 
     const confidence = measurementConfidence(
       hole.sampleCount ?? 6, hole.spanHours ?? 12, hole.lon ?? 0);
-    const ensemble = hssArrivalEnsemble({ centralMeridianMs, speedKms, confidence });
-    if (ensemble && ensemble.medianMs > now) {
-      issued.push({
-        id: `${hole.id}-${Math.round(centralMeridianMs / 3600000)}`,
-        issuedAtMs: now,
-        sourceId: hole.id,
-        kind: 'HSS',
-        predictedArrivalMs: ensemble.medianMs,
-        p10Ms: ensemble.p10Ms,
-        p90Ms: ensemble.p90Ms,
-        predictedSpeedKms: ensemble.medianSpeedKms,
-      });
-    }
+    issue(hole.id, centralMeridianMs, hssArrivalEnsemble({ centralMeridianMs, speedKms, confidence }));
   }
 
   const timeline = buildForecastTimeline(observed, streams, {
@@ -274,10 +306,10 @@ export async function runForecast(env, modules) {
 
   const payload = {
     generatedAtMs: now,
-    coronalHolesAsOfMs: asOfMs,
+    coronalHolesAsOfMs: holesAsOfMs,
     // Said out loud rather than implied. Nobody can tell stale holes from
     // fresh ones by looking at a forecast.
-    stale: asOfMs == null || now - asOfMs > 6 * 3600000,
+    stale: holesAsOfMs == null || now - holesAsOfMs > 6 * 3600000,
     streams,
     timeline,
     outlook: buildOutlook(timeline),
@@ -343,6 +375,61 @@ export async function runScoring(env, modules) {
   return { scored };
 }
 
+const withMaxAge = (res, seconds) => {
+  res.headers.set('Cache-Control', seconds > 0 ? `public, max-age=${seconds}` : 'no-store');
+  return res;
+};
+
+/**
+ * Coronal hole frames from a device, added to the shared record.
+ *
+ * Detection needs a canvas, so devices do it and send the compact result.
+ * Anything malformed is dropped rather than failing the batch, and the
+ * record itself only takes frames newer than the newest it has, so a device
+ * sending frames twice, or two devices sending the same frame, changes
+ * nothing. Written only when something was added.
+ */
+export async function observeFrames(env, modules, request) {
+  const text = await request.text();
+  if (text.length > MAX_OBSERVE_BYTES) return { status: 413, body: { ok: false, error: 'Too large' } };
+  let body;
+  try { body = JSON.parse(text); } catch { return { status: 400, body: { ok: false, error: 'Not JSON' } }; }
+  if (!Array.isArray(body?.frames)) return { status: 400, body: { ok: false, error: 'No frames' } };
+
+  const now = Date.now();
+  const frames = body.frames.slice(0, MAX_OBSERVE_FRAMES)
+    .filter((f) => Number.isFinite(f?.atMs) && f.atMs > now - 8 * 86400000 && f.atMs < now + 15 * 60000
+      && Array.isArray(f.holes) && f.holes.length <= MAX_HOLES_PER_FRAME)
+    .map((f) => ({ atMs: f.atMs, holes: f.holes.filter(modules.isUsableHole) }));
+
+  const lifecycle = modules.parseLifecycle(await readJson(env.FORECAST_KV, LIFECYCLE_KEY, null));
+  const applied = modules.applyFrames(lifecycle, frames);
+  if (applied > 0) {
+    modules.pruneLifecycle(lifecycle, now);
+    await env.FORECAST_KV.put(LIFECYCLE_KEY, JSON.stringify(lifecycle));
+  }
+  return { status: 200, body: { ok: true, applied, lifecycle } };
+}
+
+/**
+ * The streams the shared record has coming: live holes, and holes gone round
+ * the limb or closed whose streams are still on the way. Null when the record
+ * is missing or too old to forecast from.
+ */
+async function lifecycleStreams(env, modules, now) {
+  const lifecycle = modules.parseLifecycle(await readJson(env.FORECAST_KV, LIFECYCLE_KEY, null));
+  if (!lifecycle.lastFrameMs || now - lifecycle.lastFrameMs > LIFECYCLE_FRESH_MS) return null;
+  const out = [];
+  for (const track of modules.lifecycleTracks(lifecycle)) {
+    const hs = modules.holeStream(track, now);
+    if (!hs.connection.reachesEarth || hs.choice.speedKms == null) continue;
+    // Long gone by: its stream has come and gone.
+    if (!track.live && hs.centralMeridianMs < now - 6 * 86400000) continue;
+    out.push({ track, hs });
+  }
+  return { asOfMs: lifecycle.lastFrameMs, holeCount: lifecycle.lives.length, streams: out };
+}
+
 export function makeHandler(modules) {
   return {
     async fetch(request, env) {
@@ -353,7 +440,9 @@ export function makeHandler(modules) {
           status: 204,
           headers: {
             'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET,OPTIONS',
+            'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+            'Access-Control-Max-Age': '86400',
           },
         });
       }
@@ -362,6 +451,18 @@ export function makeHandler(modules) {
         const stored = await readJson(env.FORECAST_KV, TIMELINE_KEY, null);
         if (!stored) return json({ ok: false, error: 'No forecast computed yet' }, 503);
         return json({ ok: true, ...stored });
+      }
+
+      if (url.pathname === '/ch/lifecycle' && request.method === 'GET') {
+        if (!env.FORECAST_KV) return json({ ok: false, error: 'FORECAST_KV binding is missing' }, 500);
+        const lifecycle = modules.parseLifecycle(await readJson(env.FORECAST_KV, LIFECYCLE_KEY, null));
+        return withMaxAge(json({ ok: true, lifecycle }), 60);
+      }
+
+      if (url.pathname === '/ch/observe' && request.method === 'POST') {
+        if (!env.FORECAST_KV) return json({ ok: false, error: 'FORECAST_KV binding is missing' }, 500);
+        const result = await observeFrames(env, modules, request);
+        return withMaxAge(json(result.body, result.status), 0);
       }
 
       if (url.pathname === '/track-record') {

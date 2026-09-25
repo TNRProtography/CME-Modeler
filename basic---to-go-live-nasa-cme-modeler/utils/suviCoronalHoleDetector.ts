@@ -258,6 +258,51 @@ function diskMedian(data: Uint8ClampedArray, mask: boolean[], W: number): number
   return vals[Math.floor(vals.length / 2)];
 }
 
+// ── Joining holes across slivers ─────────────────────────────────────────────
+/**
+ * How far apart two dark patches can be and still be one coronal hole, in
+ * analysis pixels (a morphological closing radius). A bright filament or a
+ * thin band of brighter plasma often runs across a hole and cut it in two;
+ * two patches nearly touching are, on the Sun, one open-field region. At the
+ * analysis size a degree near disk centre is about three pixels, so this
+ * bridges gaps up to about two degrees.
+ */
+export const CH_JOIN_RADIUS_PX = 3;
+
+/**
+ * The dark mask with gaps up to twice `radius` closed: dilate, then erode,
+ * both by a disk of that radius, and never outside the solar disk. A gap
+ * narrower than the disk fills in and stays filled; the outer edge of a hole
+ * comes back to where it was.
+ */
+export function closeMask(mask: boolean[], within: boolean[], W: number, H: number, radius: number): boolean[] {
+  if (radius <= 0) return mask;
+  const offsets: [number, number][] = [];
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) if (dx * dx + dy * dy <= radius * radius) offsets.push([dx, dy]);
+  }
+  const pass = (src: boolean[], dilate: boolean): boolean[] => {
+    const out = new Array<boolean>(W * H).fill(false);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (!within[i]) continue;
+        let hit = !dilate;
+        for (const [dx, dy] of offsets) {
+          const xx = x + dx, yy = y + dy;
+          // Off the image or the disk counts as dark when eroding, so the
+          // limb does not eat the edge of a hole that touches it.
+          const v = xx < 0 || yy < 0 || xx >= W || yy >= H || !within[yy * W + xx] ? !dilate : src[yy * W + xx];
+          if (dilate ? v : !v) { hit = dilate; break; }
+        }
+        out[i] = hit;
+      }
+    }
+    return out;
+  };
+  return pass(pass(mask, true), false);
+}
+
 // ── BFS connected-component flood fill ───────────────────────────────────────
 function connectedComponents(
   darkMask: boolean[], W: number, H: number
@@ -598,7 +643,9 @@ export async function detectCoronalHolesFromSuvi195(
     // ── 6. Connected components ────────────────────────────────────────────
     const diskPixelCount = diskMask.filter(Boolean).length;
     const minPixels      = diskPixelCount * MIN_CH_PIXEL_FRAC;
-    const allRegions     = connectedComponents(darkMask, size, size);
+    // Holes cut by a sliver of brighter sky, or nearly touching, are one hole.
+    const joinedMask     = closeMask(darkMask, diskMask, size, size, CH_JOIN_RADIUS_PX);
+    const allRegions     = connectedComponents(joinedMask, size, size);
 
     const candidates = allRegions
       .filter(r => r.pixels.length >= minPixels)
@@ -632,11 +679,15 @@ export async function detectCoronalHolesFromSuvi195(
       const areaFrac = region.pixels.length / diskPixelCount;
       if (!polygon && areaFrac < SUNSPOT_MAX_FRAC) return [];
 
-      let regionLumaSum = 0;
+      // Darkness from the hole's own dark pixels, not the slivers joined across.
+      let regionLumaSum = 0, regionDarkCount = 0;
       for (const p of region.pixels) {
-        regionLumaSum += luma(data, (p.y * size + p.x) * 4);
+        const i = p.y * size + p.x;
+        if (!darkMask[i]) continue;
+        regionLumaSum += luma(data, i * 4);
+        regionDarkCount++;
       }
-      const regionLumaMean = regionLumaSum / Math.max(1, region.pixels.length);
+      const regionLumaMean = regionLumaSum / Math.max(1, regionDarkCount);
       const darkness = Math.max(0, Math.min(1, (median - regionLumaMean) / Math.max(1, median)));
 
       const opacity   = Math.min(0.65, 0.30 + areaFrac * 3.0);

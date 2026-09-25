@@ -10,19 +10,16 @@
 // missing from it. The tracker is the one that looks at each hole, so it is
 // the one that decides.
 
-import { estimateHssSpeedFromChWidthAndDarkness } from './solarWindModel';
-import {
-  chEarthConnection, chGrowth, chSpeedForEarth, chTiming, hssArrivalMs, type ChSample,
-} from './coronalHoleDynamics';
+import { chGrowth, hssArrivalMs } from './coronalHoleDynamics';
+import { holeStream } from './holeStream';
+import { isLifecycleTrack, lifecycleDisappearance } from './chLifecycle';
 import { sectorSeasonNote, type ChPolarityResult } from './coronalHolePolarity';
 import { buildChTracks, chDisappearance, type ChTrack, type TrackedHole } from './chTracking';
 import { framesForTracking, type ChStoreState } from './chDetectionStore';
-import { solarDiskOrientation } from './solarEphemeris';
 import { bestSkyWithin, skyConditionsAt, visibilityOutlook } from './skyConditions';
 import { buildOutlook } from './auroraOutlook';
 import { auroraGeometryAt } from './auroraVisibility';
 import { buildForecastTimeline, type StreamSource } from './forecastTimeline';
-import { hssArrivalEnsemble, measurementConfidence } from './arrivalEnsemble';
 import { bySignForPolarity, rmWindows, windowsDuring } from './rmWindows';
 
 const DAY_MS = 86400000;
@@ -39,48 +36,20 @@ export interface HoleForecastOptions {
 
 export function forecastHole(track: ChTrack<TrackedHole>, o: HoleForecastOptions) {
   const now = o.nowMs;
-  const latest = track.latest;
-
-  const samples: ChSample[] = track.points.map((p) => ({
-    atMs: p.atMs, widthDeg: p.hole.widthDeg, darkness: p.hole.darkness, longitude: p.hole.lon,
-  }));
-
-  const timing = chTiming(latest.lon, track.lastSeenMs, now);
-  const choice = chSpeedForEarth(samples, estimateHssSpeedFromChWidthAndDarkness);
+  const {
+    latest, samples, timing, choice, centralMeridianMs, confidence, connection, ensemble,
+  } = holeStream(track, now);
   const growth = chGrowth(samples);
 
-  const centralMeridianMs = now + timing.daysToCentralMeridian * DAY_MS;
-
-  // How well this hole is actually measured, which is what the spread
-  // should respond to. A hole seen fifty times while it crossed the middle
-  // of the disk is a different proposition from one glimpsed once near the
-  // limb, and a fixed plus-or-minus cannot say so.
-  const closestToMeridian = samples.length > 0
-    ? samples.reduce((a, b) => (Math.abs(a) <= Math.abs(b.longitude) ? a : b.longitude), 180)
-    : 90;
-  const spanHours = samples.length > 1
-    ? (samples[samples.length - 1].atMs - samples[0].atMs) / 3600000
-    : 0;
-  const confidence = measurementConfidence(samples.length, spanHours, closestToMeridian);
-
-  // Whether the stream can reach Earth at all. A hole over a pole crosses
-  // the middle of the disk exactly like an equatorial one and sends its wind
-  // straight over the top of us; forecasting an arrival for it would mean a
-  // near-permanent stream that never comes, since polar holes are the Sun's
-  // normal state for most of the cycle.
-  const { b0 } = solarDiskOrientation(new Date(now));
-  const connection = chEarthConnection(latest.lat, b0);
-
-  const ensemble = choice.speedKms != null && connection.reachesEarth
-    ? hssArrivalEnsemble({ centralMeridianMs, speedKms: choice.speedKms, confidence })
-    : null;
   const arrival = !connection.reachesEarth ? null
     : ensemble ? ensemble.medianMs
     : (choice.speedKms != null ? hssArrivalMs(choice.speedKms, centralMeridianMs) : null);
 
   const pol = o.polarity;
   const season = pol ? sectorSeasonNote(pol.sector, new Date(now)) : null;
-  const gone = chDisappearance(track, now, o.latestFrameMs || track.lastSeenMs);
+  const gone = isLifecycleTrack(track)
+    ? lifecycleDisappearance(track, now, o.latestFrameMs || track.lastSeenMs)
+    : chDisappearance(track, now, o.latestFrameMs || track.lastSeenMs);
 
   // The whole arrival window, not the nominal moment: the Moon sets and
   // twilight ends inside seven hours, so the best part of it is often not
@@ -202,8 +171,9 @@ export function polarityForTrack(
   return byHoleId[track.latest.id] ?? null;
 }
 
-/** The tracker's tracks, from the shared detection store. */
-export const tracksFromStore = (state: ChStoreState) => buildChTracks(framesForTracking(state));
+/** The tracker's tracks: the 90-day record's, from the shared detection store. */
+export const tracksFromStore = (state: ChStoreState): ChTrack<TrackedHole>[] =>
+  state.tracks ?? buildChTracks(framesForTracking(state));
 
 /** Every tracked hole's forecast, once. */
 export function forecastAllHoles(

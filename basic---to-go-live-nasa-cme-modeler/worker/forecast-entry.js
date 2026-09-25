@@ -15,6 +15,10 @@ import { hssArrivalEnsemble, measurementConfidence } from '../utils/arrivalEnsem
 import { buildOutlook } from '../utils/auroraOutlook';
 import { solarDiskOrientation } from '../utils/solarEphemeris';
 import { detectArrival, scoreForecast, dueForScoring, buildTrackRecord } from '../utils/forecastScoring';
+import {
+  applyFrames, isUsableHole, lifecycleTracks, parseLifecycle, pruneLifecycle,
+} from '../utils/chLifecycle';
+import { holeStream } from '../utils/holeStream';
 import { makeHandler } from './forecast-worker';
 
 export default makeHandler({
@@ -28,4 +32,10 @@ export default makeHandler({
   scoreForecast,
   dueForScoring,
   buildTrackRecord,
+  applyFrames,
+  isUsableHole,
+  lifecycleTracks,
+  parseLifecycle,
+  pruneLifecycle,
+  holeStream,
 });

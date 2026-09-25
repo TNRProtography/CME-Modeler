@@ -27,9 +27,15 @@ import { buildChTracks, type ChTrack, type TrackedHole } from './chTracking';
 import { longitudeAt } from './solarDisk';
 import { estimateHssSpeedFromChWidthAndDarkness } from './solarWindModel';
 import { assignChNumbers, parseRegistry, type ChRegistry } from './chRegistry';
+import {
+  applyFrames, emptyLifecycle, isLifecycleTrack, lifecycleTracks, parseLifecycle, pruneLifecycle,
+  MIN_FRAME_GAP_MS, type ChLifecycle, type LifecycleTrack,
+} from './chLifecycle';
 
 const STORAGE_KEY = 'sta-ch-history-v1';
 const REGISTRY_KEY = 'sta-ch-registry-v1';
+/** The 90-day record of every hole (utils/chLifecycle), and where it came from. */
+const LIFECYCLE_KEY = 'sta-ch-lifecycle-v1';
 export const HISTORY_WINDOW_MS = 7 * 86400000;
 
 /**
@@ -63,6 +69,14 @@ export interface ChStoreState {
   history: ChRecord[];
   progress: { done: number; total: number } | null;
   error: string | null;
+  /**
+   * Every hole's life, up to 90 days: the shared record from the forecast
+   * worker when it has been fetched, this device's own otherwise, with any
+   * newer frames detected here added on top.
+   */
+  lifecycle: ChLifecycle;
+  /** The record as tracks, numbered for good: what every panel follows. */
+  tracks: LifecycleTrack[];
 }
 
 type Listener = (state: ChStoreState) => void;
@@ -77,6 +91,10 @@ let progress: ChStoreState['progress'] = null;
 let error: string | null = null;
 let running = false;
 let loaded = false;
+/** The record as last stored or fetched, before this device's newer frames. */
+let lifecycle: ChLifecycle = emptyLifecycle();
+let lifecycleSource: 'server' | 'local' = 'local';
+let lifecycleRev = 0;
 
 function compact(holes: CoronalHole[]): TrackedHole[] {
   return holes.map((h) => ({
@@ -94,6 +112,14 @@ function loadHistory(): void {
   } catch {
     registry = parseRegistry(null);
   }
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(LIFECYCLE_KEY) : null;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      lifecycle = parseLifecycle(parsed?.lifecycle);
+      lifecycleSource = parsed?.source === 'server' ? 'server' : 'local';
+    }
+  } catch { lifecycle = emptyLifecycle(); }
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
     if (!raw) return;
@@ -133,14 +159,92 @@ function remember(atMs: number, holes: CoronalHole[]): void {
   saveHistory();
 }
 
+function saveLifecycle(): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(LIFECYCLE_KEY, JSON.stringify({ source: lifecycleSource, lifecycle }));
+  } catch { /* quota or disabled: the session keeps it in memory */ }
+}
+
+let working: { key: string; lifecycle: ChLifecycle; tracks: LifecycleTrack[] } | null = null;
+
+/**
+ * The record with this device's newer frames added.
+ *
+ * While a detection pass is running, frames arrive newest first, and the
+ * record only takes frames in order, so the additions are made to a copy and
+ * kept only once the pass is over. A record this device built itself, younger
+ * than the frames it now has, is rebuilt from them, so the first visit's
+ * backfill is not lost; the shared record is never rebuilt here.
+ */
+function workingLifecycle(frames: { atMs: number; holes: TrackedHole[] }[]): typeof working & object {
+  const key = `${lifecycleRev}|${frames.length}|${frames[frames.length - 1]?.atMs ?? 0}|${running}`;
+  if (working && working.key === key) return working;
+
+  let base = lifecycle;
+  if (lifecycleSource === 'local' && frames.length > 0
+      && (!base.startedMs || frames[0].atMs < base.startedMs - MIN_FRAME_GAP_MS)) {
+    base = emptyLifecycle();
+  }
+  const newer = frames.filter((f) => f.atMs > base.lastFrameMs);
+  let next = base;
+  if (newer.length > 0 || base !== lifecycle) {
+    next = parseLifecycle(JSON.parse(JSON.stringify(base)));
+    applyFrames(next, newer);
+    pruneLifecycle(next, Date.now());
+    if (!running) {
+      lifecycle = next;
+      lifecycleRev++;
+      saveLifecycle();
+    }
+  }
+  working = {
+    key: `${lifecycleRev}|${frames.length}|${frames[frames.length - 1]?.atMs ?? 0}|${running}`,
+    lifecycle: next,
+    tracks: lifecycleTracks(next),
+  };
+  return working;
+}
+
 function snapshot(): ChStoreState {
-  return {
+  const base = {
     detections: [...detections.values()].sort((a, b) => a.atMs - b.atMs),
     history: [...history],
     progress,
     error,
   };
+  const w = workingLifecycle(framesForTracking(base));
+  return { ...base, lifecycle: w.lifecycle, tracks: w.tracks };
 }
+
+/**
+ * Take the shared record from the forecast worker. Frames detected here that
+ * are newer than it are added on top, as with any record.
+ */
+export function adoptSharedLifecycle(raw: unknown): boolean {
+  loadHistory();
+  const next = parseLifecycle(raw);
+  if (!next.lastFrameMs) return false;
+  // An older copy than the one already held (a cached response) changes nothing.
+  if (lifecycleSource === 'server' && next.lastFrameMs < lifecycle.lastFrameMs) return false;
+  lifecycle = next;
+  lifecycleSource = 'server';
+  lifecycleRev++;
+  saveLifecycle();
+  emit();
+  return true;
+}
+
+/** Frames this device has that the record does not, for sending to the worker. */
+export function framesNewerThan(atMs: number): { atMs: number; holes: TrackedHole[] }[] {
+  loadHistory();
+  if (running) return [];
+  return framesForTracking({ history, detections: [...detections.values()] } as Pick<ChStoreState, 'history' | 'detections'>)
+    .filter((f) => f.atMs > atMs);
+}
+
+/** Whether a detection pass is under way. */
+export const isDetecting = () => running;
 
 function emit(): void {
   const state = snapshot();
@@ -287,7 +391,7 @@ export function detectionNear(all: ChDetection[], atMs: number): ChDetection | n
  * Everything worth following: a week of remembered records, with this
  * session's full detections layered over the top where they overlap.
  */
-export function framesForTracking(state: ChStoreState): { atMs: number; holes: TrackedHole[] }[] {
+export function framesForTracking(state: Pick<ChStoreState, 'history' | 'detections'>): { atMs: number; holes: TrackedHole[] }[] {
   const byTime = new Map<number, TrackedHole[]>();
   for (const record of state.history) byTime.set(record.atMs, record.holes);
   for (const detection of state.detections) byTime.set(detection.atMs, compact(detection.holes));
@@ -305,6 +409,10 @@ export function framesForTracking(state: ChStoreState): { atMs: number; holes: T
  */
 export function numberTracks(tracks: ChTrack[], nowMs = Date.now()): Map<string, number> {
   loadHistory();
+  // Tracks from the record carry their number already.
+  if (tracks.length > 0 && tracks.every(isLifecycleTrack)) {
+    return new Map(tracks.map((t) => [t.key, (t as LifecycleTrack).number]));
+  }
   const result = assignChNumbers(tracks, registry, nowMs);
   registry = result.registry;
   try {
@@ -380,6 +488,10 @@ export function resetChStore(): void {
   attempted.clear();
   history = [];
   registry = { nextNumber: 0, entries: [] };
+  lifecycle = emptyLifecycle();
+  lifecycleSource = 'local';
+  lifecycleRev++;
+  working = null;
   progress = null;
   error = null;
   running = false;
@@ -391,6 +503,7 @@ export function resetChStore(): void {
     if (typeof localStorage !== 'undefined') {
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(REGISTRY_KEY);
+      localStorage.removeItem(LIFECYCLE_KEY);
     }
   } catch { /* storage disabled */ }
 }
@@ -415,7 +528,7 @@ export function holesForScene(state: ChStoreState): { holes: CoronalHole[]; atMs
   const newest = state.detections[state.detections.length - 1];
   if (!newest) return null;
 
-  const tracks = buildChTracks(framesForTracking(state));
+  const tracks: ChTrack[] = state.tracks ?? buildChTracks(framesForTracking(state));
   const numbers = numberTracks(tracks);
   const holes: CoronalHole[] = [...newest.holes];
 

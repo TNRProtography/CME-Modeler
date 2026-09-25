@@ -35,6 +35,8 @@ import { frameSpanHours } from '../utils/framePlayback';
 import { describeSpread } from '../utils/arrivalEnsemble';
 import { locationLabel, resolveViewerLocation, type ViewerLocation } from '../utils/viewerLocation';
 import { forecastHole, polarityForTrack, publishHolePolarity } from '../utils/holeForecast';
+import { isLifecycleTrack, lifeSummary, STATUS_WORDS, type ChLife, type ChLifecycle } from '../utils/chLifecycle';
+import { startChLifecycleSync } from '../utils/chLifecycleSync';
 
 const SUVI_DIFF_WORKER_BASE = 'https://suvi-difference-imagery.thenamesrock.workers.dev';
 /**
@@ -206,6 +208,9 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
     .filter((f) => f.url), [windowFrames, resolveUrl]);
 
   const store = useCoronalHoleDetections(frameRefs);
+  // The shared 90-day record lives on the forecast worker; keep in step with it.
+  useEffect(() => { startChLifecycleSync(); }, []);
+  const [showHistory, setShowHistory] = useState(false);
 
   const clampedIndex = Math.min(frameIndex, Math.max(0, windowFrames.length - 1));
   const activeFrame = windowFrames[clampedIndex] ?? null;
@@ -235,8 +240,8 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
 
   // ── tracks ────────────────────────────────────────────────────────────────
   const tracks = useMemo(
-    () => buildChTracks(framesForTracking(store)),
-    [store.history, store.detections],
+    () => store.tracks ?? buildChTracks(framesForTracking(store)),
+    [store.tracks, store.history, store.detections],
   );
 
   // Numbers come from the persistent registry, not from position in a list.
@@ -644,6 +649,10 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
             return (
               <div className="bg-neutral-900/60 rounded p-3 text-sm flex flex-col gap-3">
 
+                {isLifecycleTrack(selectedTrack) && (
+                  <LifeLine life={selectedTrack.life} lifecycle={store.lifecycle} />
+                )}
+
                 {/* Whether it is still there. A hole that has rotated off is
                     still sending wind, so this cannot just be an absence. */}
                 {gone.gone && !selectedTrack.live && (
@@ -850,6 +859,20 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
                   <div className="text-neutral-400 text-xs uppercase tracking-wide mb-1">Width over time</div>
                   <WidthSparkline samples={samples} preview={previewAt} numberOf={numberOf} />
                 </div>
+                {isLifecycleTrack(selectedTrack) && selectedTrack.life.sightings.length >= 2 && (
+                  <div>
+                    <div className="text-neutral-400 text-xs uppercase tracking-wide mb-1">Stream speed over time</div>
+                    <ValueSparkline
+                      points={selectedTrack.life.sightings.map((x) => ({ atMs: x.atMs, value: x.speedKms }))}
+                      unit=" km/s"
+                      colour="#7dd3fc"
+                    />
+                    <p className="text-[11px] text-neutral-600 mt-0.5">
+                      The speed each measurement of its size and darkness gives. The forecast uses the one taken
+                      nearest the middle of the disk.
+                    </p>
+                  </div>
+                )}
 
                 {/* Where it is, and what it is doing */}
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
@@ -895,7 +918,161 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
               </div>
             );
           })()}
+
+          {store.lifecycle && store.lifecycle.lives.length > 0 && (
+            <div className="bg-neutral-900/60 rounded p-3">
+              <button
+                type="button"
+                onClick={() => setShowHistory((v) => !v)}
+                className="w-full flex items-center justify-between text-xs text-neutral-300"
+                aria-expanded={showHistory}
+              >
+                <span className="uppercase tracking-wide text-neutral-400">
+                  Every hole, last {recordDays(store.lifecycle)} days ({store.lifecycle.lives.length})
+                </span>
+                <span className="text-neutral-500">{showHistory ? 'Hide' : 'Show'}</span>
+              </button>
+              {showHistory && (
+                <HoleHistoryTable
+                  lifecycle={store.lifecycle}
+                  selectable={new Set(tracks.map((t) => t.key))}
+                  onSelect={(key) => setSelectedKey(key)}
+                />
+              )}
+            </div>
+          )}
         </div>
+      </div>
+    </div>
+  );
+};
+
+const fmtDay = (ms: number) => new Date(ms).toLocaleDateString('en-NZ', {
+  timeZone: 'Pacific/Auckland', day: 'numeric', month: 'short',
+});
+
+const fmtSpan = (ms: number) => {
+  const hours = ms / 3600000;
+  return hours < 48 ? `${Math.max(1, Math.round(hours))} hours` : `${(hours / 24).toFixed(1)} days`;
+};
+
+const recordDays = (lc: ChLifecycle) =>
+  Math.max(1, Math.min(90, Math.ceil((lc.lastFrameMs - (lc.startedMs || lc.lastFrameMs)) / DAY_MS)));
+
+const goneWords = (life: ChLife): string =>
+  life.status === 'merged' && life.mergedInto != null ? `Merged into CH${life.mergedInto}` : STATUS_WORDS[life.status];
+
+/** When a hole first appeared and when it went, and why. */
+const LifeLine: React.FC<{ life: ChLife; lifecycle: ChLifecycle }> = ({ life, lifecycle }) => {
+  const recordBegan = life.firstSeenMs <= lifecycle.startedMs;
+  const endMs = life.endedMs ?? life.lastSeenMs;
+  const { maxWidthDeg, maxSpeedKms, sightings } = lifeSummary(life);
+  return (
+    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+      <div>
+        <div className="text-neutral-500">First appeared</div>
+        <div className="text-neutral-200">
+          {fmtNz(life.firstSeenMs)}
+          {recordBegan && <span className="text-neutral-500"> (when the record began)</span>}
+        </div>
+      </div>
+      <div>
+        <div className="text-neutral-500">{life.status === 'live' ? 'On the disk' : 'Disappeared'}</div>
+        <div className="text-neutral-200">
+          {life.status === 'live'
+            ? `for ${fmtSpan(endMs - life.firstSeenMs)}`
+            : <>{fmtNz(endMs)} · {goneWords(life)}</>}
+        </div>
+      </div>
+      <div className="col-span-2 text-[11px] text-neutral-500">
+        Largest {maxWidthDeg.toFixed(0)}° across, fastest stream {maxSpeedKms} km/s, measured {sightings} time{sightings === 1 ? '' : 's'}.
+        {life.returnOf != null && <> Back round the east limb: this is CH{life.returnOf} from last rotation.</>}
+      </div>
+    </div>
+  );
+};
+
+/** Every hole on record, newest first. */
+const HoleHistoryTable: React.FC<{
+  lifecycle: ChLifecycle;
+  selectable: Set<string>;
+  onSelect: (key: string) => void;
+}> = ({ lifecycle, selectable, onSelect }) => {
+  const lives = [...lifecycle.lives].sort((a, b) => b.firstSeenMs - a.firstSeenMs);
+  return (
+    <div className="mt-2 overflow-x-auto">
+      <table className="w-full text-[11px]">
+        <thead>
+          <tr className="text-neutral-500 text-left">
+            <th className="font-normal pr-2">Hole</th>
+            <th className="font-normal pr-2">Appeared</th>
+            <th className="font-normal pr-2">Gone</th>
+            <th className="font-normal pr-2 text-right">Max size</th>
+            <th className="font-normal text-right">Max speed</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lives.map((life) => {
+            const key = `CH${life.number}`;
+            const canSelect = selectable.has(key);
+            const { maxWidthDeg, maxSpeedKms } = lifeSummary(life);
+            return (
+              <tr key={life.number} className="border-t border-neutral-800">
+                <td className="pr-2 py-1">
+                  {canSelect ? (
+                    <button type="button" onClick={() => onSelect(key)} className="font-semibold hover:underline"
+                            style={{ color: holeColour(life.number) }}>{key}</button>
+                  ) : (
+                    <span className="font-semibold text-neutral-400">{key}</span>
+                  )}
+                  {life.returnOf != null && <span className="text-neutral-500"> (was CH{life.returnOf})</span>}
+                </td>
+                <td className="pr-2 py-1 text-neutral-300 whitespace-nowrap">{fmtDay(life.firstSeenMs)}</td>
+                <td className="pr-2 py-1 text-neutral-300">
+                  {life.status === 'live'
+                    ? <span className="text-emerald-300">On the disk</span>
+                    : <>{fmtDay(life.endedMs ?? life.lastSeenMs)} <span className="text-neutral-500">{goneWords(life)}</span></>}
+                </td>
+                <td className="pr-2 py-1 text-right font-mono text-neutral-300">{maxWidthDeg.toFixed(0)}°</td>
+                <td className="py-1 text-right font-mono text-neutral-300">{maxSpeedKms}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <p className="text-[10px] text-neutral-600 mt-1">
+        Kept for 90 days and shared by everyone using the app. Speeds are km/s, from each hole's size and darkness.
+      </p>
+    </div>
+  );
+};
+
+/** A small line of one value over time. */
+const ValueSparkline: React.FC<{ points: { atMs: number; value: number }[]; unit: string; colour: string }> = ({
+  points, unit, colour,
+}) => {
+  const pts = [...points].sort((a, b) => a.atMs - b.atMs);
+  const W = 260, H = 44, PAD = 3;
+  const t0 = pts[0].atMs, t1 = pts[pts.length - 1].atMs;
+  const vals = pts.map((p) => p.value);
+  const lo = Math.min(...vals), hi = Math.max(...vals);
+  const span = Math.max(1, hi - lo);
+  const x = (ms: number) => PAD + ((ms - t0) / Math.max(1, t1 - t0)) * (W - PAD * 2);
+  const y = (v: number) => H - PAD - ((v - lo) / span) * (H - PAD * 2);
+  const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.atMs).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
+  const last = pts[pts.length - 1];
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-11" preserveAspectRatio="none" role="img"
+           aria-label={`From ${lo}${unit} to ${hi}${unit}`}>
+        <path d={`${path} L${x(t1).toFixed(1)},${H} L${x(t0).toFixed(1)},${H} Z`} fill={colour} fillOpacity={0.12} />
+        <path d={path} fill="none" stroke={colour} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+        <circle cx={x(last.atMs)} cy={y(last.value)} r="2.5" fill="#e5e5e5" />
+      </svg>
+      <div className="flex justify-between text-[10px] text-neutral-600">
+        <span>{lo}{unit} min</span>
+        <span>{fmtSpan(t1 - t0)}</span>
+        <span>{hi}{unit} max</span>
       </div>
     </div>
   );

@@ -3180,8 +3180,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   // frame's detections also stops holes blinking out in the frames where the
   // detector happened to miss them.
   const chTracks = useMemo(
-    () => buildChTracks(framesForTracking(chStore)),
-    [chStore.history, chStore.detections],
+    () => chStore.tracks ?? buildChTracks(framesForTracking(chStore)),
+    [chStore.tracks, chStore.history, chStore.detections],
   );
   const chNumbers = useMemo(() => numberTracks(chTracks), [chTracks]);
   const chNumberOf = useCallback((trackKey: string) => chNumbers.get(trackKey), [chNumbers]);

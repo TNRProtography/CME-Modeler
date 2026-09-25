@@ -15,16 +15,16 @@ import { sharedFetchJson } from '../utils/sharedFetch';
 import { whenAppIdle } from '../utils/appReady';
 import { buildForecastTimeline, type L1State, type StreamSource } from '../utils/forecastTimeline';
 import { buildOutlook, type OutlookPoint } from '../utils/auroraOutlook';
-import { chEarthConnection, chTiming } from '../utils/coronalHoleDynamics';
+import { holeStream } from '../utils/holeStream';
 import { hssArrivalEnsemble, measurementConfidence } from '../utils/arrivalEnsemble';
 import { buildTrackRecord, type ForecastScore, type TrackRecord } from '../utils/forecastScoring';
-import { solarDiskOrientation } from '../utils/solarEphemeris';
 import { buildChTracks } from '../utils/chTracking';
 import {
   ensureChDetections, framesForTracking, getChState, numberTracks, subscribeToChDetections,
   type ChStoreState,
 } from '../utils/chDetectionStore';
 import { postSnapshotToWorker } from '../utils/coronalHoleHistory';
+import { startChLifecycleSync, syncChLifecycle } from '../utils/chLifecycleSync';
 
 const FORECAST_WORKER = 'https://spot-the-aurora-forecast-worker.thenamesrock.workers.dev';
 const RTSW_URL = 'https://imap-solar-data-test.thenamesrock.workers.dev/rtsw/merged-24h';
@@ -157,7 +157,8 @@ function refreshWorkerForecast(): Promise<any | null> {
 
 async function runWorkerRefresh(): Promise<any | null> {
   try {
-    await publishNewestSnapshot();
+    // The shared coronal hole record is what the server forecasts from.
+    await Promise.all([publishNewestSnapshot(), syncChLifecycle()]);
     const run = await fetch(`${FORECAST_WORKER}/run`);
     if (!run.ok && run.status !== 429) return null;
     const res = await fetch(`${FORECAST_WORKER}/forecast`);
@@ -179,6 +180,7 @@ export function useForecast(enabled = true): ForecastState {
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => subscribeToChDetections(setChState), []);
+  useEffect(() => { startChLifecycleSync(); }, []);
 
   useEffect(() => {
     if (!enabled) return;
@@ -266,27 +268,23 @@ export function useForecast(enabled = true): ForecastState {
 
     // Compute it here instead, from the holes this device has detected.
     const now = Date.now();
-    const { b0 } = solarDiskOrientation(new Date(now));
-    const tracks = buildChTracks(framesForTracking(chState));
+    // The 90-day record's holes: live ones, and ones gone round the limb or
+    // closed whose streams are still to come.
+    const tracks = chState.tracks ?? buildChTracks(framesForTracking(chState));
     const numbers = numberTracks(tracks, now);
 
     const streams: StreamSource[] = [];
     for (const track of tracks) {
-      if (!track.live) continue;
-      const connection = chEarthConnection(track.latest.lat, b0);
-      if (!connection.reachesEarth) continue;
-
-      const timing = chTiming(track.latest.lon, track.lastSeenMs, now);
-      const centralMeridianMs = now + timing.daysToCentralMeridian * 86400000;
-      const speed = estimateSpeed(track.latest.widthDeg, track.latest.darkness);
-
+      const hs = holeStream(track, now);
+      if (!hs.connection.reachesEarth || hs.choice.speedKms == null) continue;
+      if (!track.live && hs.centralMeridianMs < now - 6 * 86400000) continue;
       streams.push({
         id: `CH${numbers.get(track.key) ?? '?'}`,
-        centralMeridianMs,
-        peakSpeedKms: speed,
+        centralMeridianMs: hs.centralMeridianMs,
+        peakSpeedKms: hs.choice.speedKms,
         widthDeg: track.latest.widthDeg,
         bySign: null,
-        earthConnection: connection.factor,
+        earthConnection: hs.connection.factor,
       });
     }
 
@@ -310,10 +308,5 @@ export function useForecast(enabled = true): ForecastState {
   }, [worker, chState, observed, scores, loading, refreshing]);
 }
 
-/** Mirrors the width-and-darkness model the tracker uses. */
-function estimateSpeed(widthDeg: number, darkness: number): number {
-  const t = Math.max(0, Math.min(1, (widthDeg - 5) / 55));
-  return Math.round(338 + Math.sqrt(t) * 337 + 90 * Math.max(0, Math.min(1, darkness)));
-}
 
 export { hssArrivalEnsemble, measurementConfidence };
