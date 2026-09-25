@@ -1,16 +1,16 @@
 // components/KpForecastTimeline.tsx
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { kpIndex, gScale, gColor } from '../utils/kpScale';
 import { moonAt } from '../utils/skyConditions';
 import { resolveViewerLocation } from '../utils/viewerLocation';
 import { useThreeDayOutlook } from '../hooks/useThreeDayOutlook';
 import { combinedAt, type GridDriver } from '../utils/threeDayGrid';
+import { expectedArrivals } from '../utils/forecastTimeline';
 import { skyConditionsAt, visibilityOutlook, type VisibilityTier } from '../utils/skyConditions';
 
 const TIER_EMOJI: Record<string, string> = { camera: '📷', phone: '📱', eye: '👁️' };
+const ARRIVAL_ICON = { hole: '💨', cme: '☄️' } as const;
 
-const KP_THRESHOLD  = 4.33; // below this: no aurora overlay
 const NZ_TIME_ZONE  = 'Pacific/Auckland';
 
 
@@ -35,18 +35,18 @@ interface KpSlot {
   nztHour:  number;
   dayIdx:   number;
   dayLabel: string;
-  kp:       number;
   observed: string; // 'observed' | 'estimated' | 'predicted'
   /**
    * The combined forecast's strength for the viewer, 0-100, before the sky
-   * (utils/threeDayGrid). When set, it draws the aurora and `kp` is the Kp it
-   * amounts to.
+   * (utils/threeDayGrid).
    */
   strength?: number;
   driver?:   GridDriver;
   /** What can be seen in this hour after the sky, and its 0-100 strength. */
   tier?:     VisibilityTier;
   effective?: number;
+  label?:    string;
+  note?:     string;
 }
 interface PopupState { slotIdx: number; anchorX: number; }
 
@@ -146,54 +146,20 @@ function skyType(h: number): SkyT {
   return 'night';
 }
 
-// minKp: piecewise linear between calibrated NZ anchor points.
-// Northland/Auckland ~36°S → 6.3, Wellington ~41°S → 5.7,
-// Christchurch ~43.5°S → 5.0, Southland ~46°S → 4.5.
-// No GPS → conservative NZ-wide default of 4.67.
-function minKpForLocation(lat: number | null | undefined): number {
-  if (lat == null) return 4.67;
-  const a = Math.abs(lat);
-  // Anchors calibrated: Auckland(36.8°S)→6.3, Wellington(41.3°S)→5.7, Chch(43.5°S)→5.0
-  const anchors = [
-    [34,   6.5],
-    [36.8, 6.3],
-    [41.3, 5.7],
-    [43.5, 5.0],
-    [46,   4.5],
-    [48,   4.5],
-  ];
-  if (a <= anchors[0][0]) return anchors[0][1];
-  if (a >= anchors[anchors.length-1][0]) return anchors[anchors.length-1][1];
-  for (let i = 0; i < anchors.length - 1; i++) {
-    const [la, ka] = anchors[i];
-    const [lb, kb] = anchors[i+1];
-    if (a >= la && a <= lb) {
-      const t = (a - la) / (lb - la);
-      return ka + (kb - ka) * t;
-    }
-  }
-  return 4.67;
-}
-
-function auroraH(kp: number, skyH: number, minKp: number): number {
-  if (kp <= minKp) return 0;
-  // Bar fills from minKp to Kp 8 (where aurora is visible everywhere in NZ)
-  const fraction = Math.min(1, (kp - minKp) / (8.0 - minKp));
-  return Math.pow(fraction, 0.70) * skyH * 0.92;
-}
-
 // Always green (bottom) → pink (mid) → blue (top). Height + intensity vary by KP.
 function auroraGrad(
   ctx: CanvasRenderingContext2D,
   x: number, topY: number, botY: number,
-  kp: number, op: number
+  tier: VisibilityTier, op: number
 ) {
   // Gradient runs top→bottom: [0]=top of band [1]=horizon
   // so colour order from stop 0 to stop 1:  blue → pink → green → transparent
   const g = ctx.createLinearGradient(x, topY, x, botY);
   const a = (v: number) => Math.min(1, v * op).toFixed(3);
 
-  const g5 = kpIndex(kp);
+  // Brighter visibility, more colour: a camera-only glow is green with a hint
+  // of pink, a phone display adds a pink band, a naked-eye one blue on top.
+  const g5 = tier === 'eye' ? 7 : tier === 'phone' ? 6 : 5;
   if (g5 >= 8) {                              // G4+ - all three bold
     g.addColorStop(0,    `rgba(80,130,255,${a(0)})`);
     g.addColorStop(0.04, `rgba(80,130,255,${a(0.80)})`);
@@ -259,133 +225,6 @@ function slotMoon(slotUtcMs: number, lat: number, lon: number): SlotMoon {
   return { moon: m.up ? illumPct * height : 0, illumPct, up: m.up, altitude: m.altitude, label };
 }
 
-interface VisInfo {
-  headline: string; detail: string;
-  regions:  string[]; moonNote: string; tip: string;
-  summary:  string; // single overarching sentence shown in compact panel
-}
-
-function getVis(kp: number, slot: SlotMoon, lat: number | null | undefined, sky: SkyT = 'night'): VisInfo {
-  // The Moon as it is at this hour: zero while it is down, whatever its phase.
-  const moon = slot.moon;
-  const ml = slot.label;
-
-  // Sky brightness note - added to tip for daytime/twilight slots
-  const skyNote =
-    sky === 'day'      ? ' Note: the sun is up - aurora is not visible in daylight regardless of activity level.' :
-    sky === 'golden'   ? ' Note: the sun is at or near the horizon - it will still be too bright to see aurora.' :
-    sky === 'civil'    ? ' Note: civil twilight - the sky is still quite bright. Aurora is unlikely to be visible yet.' :
-    sky === 'nautical' ? ' Note: nautical twilight - the sky is getting darker but faint aurora may still be washed out.' :
-    '';
-
-  if (kp <= KP_THRESHOLD) return {
-    headline: sky === 'day' ? 'Daytime - aurora not visible' : 'Not visible from New Zealand',
-    detail:   sky === 'day'
-      ? 'The sun is up. Aurora cannot be seen during daylight hours regardless of space weather conditions.'
-      : sky === 'golden' || sky === 'civil'
-      ? 'The sky is still too bright for aurora to be visible. Activity is also below the NZ threshold.'
-      : 'Activity is too low for aurora to reach New Zealand. The aurora oval sits well south of NZ at this level.',
-    regions: [], moonNote: ml,
-    tip: sky === 'day' || sky === 'golden' || sky === 'civil'
-      ? 'Check back after dark - aurora only becomes visible once the sky is fully dark.'
-      : 'Check back when Kp reaches 5 or above.',
-    summary: sky === 'day' ? 'The sun is up - aurora cannot be seen in daylight.'
-      : sky === 'golden' || sky === 'civil' ? 'Too bright to see aurora - wait until fully dark.'
-      : sky === 'nautical' ? 'Sky nearly dark but Kp too low for NZ aurora tonight.'
-      : 'Activity is too low - aurora not expected to reach New Zealand.',
-  };
-
-  const g = kpIndex(kp);
-
-  if (g >= 8) return {
-    headline: 'Visible across all of New Zealand',
-    detail:   'Major geomagnetic storm. Aurora visible nationwide - Northland to Invercargill - even from suburban areas. Expect greens, pinks, and vivid blue/purple higher in the sky.',
-    regions:  ['Northland','Auckland','Waikato','Bay of Plenty','Wellington','Nelson','Canterbury','Otago','Southland'],
-    moonNote: `${ml} - moon has no meaningful impact at this storm level.`,
-    tip: 'Go outside and look in any direction - at G4+ aurora can appear overhead. Face south for the most dramatic display.',
-    summary: 'Major storm - aurora visible across all of New Zealand, moon is no obstacle.',
-  };
-
-  if (g >= 7) {
-    const northNote = moon > 80
-      ? 'North Island: find a dark hilltop away from city lights - full moon may reduce visibility.'
-      : moon > 55
-      ? 'North Island: head to a dark location for best viewing.'
-      : 'North Island visible clearly, even from suburbs.';
-    return {
-      headline: 'Visible across all of New Zealand',
-      detail:   `Strong storm. The entire South Island will see clear aurora. ${northNote}`,
-      regions:  ['Southland','Otago','Canterbury','Marlborough','Nelson','Wellington','Manawatu',"Hawke's Bay",'Waikato','Auckland','Northland'],
-      moonNote: moon > 80
-        ? `${ml} - may reduce North Island visibility slightly. South Island unaffected.`
-        : ml,
-      tip: 'Face south and look up. Green is most common; pink/red higher up indicates strong activity near you.',
-      summary: moon > 80 ? 'Strong storm - all NZ should see aurora; North Island: find dark skies to counter the full moon.'
-        : 'Strong storm - aurora visible the length of New Zealand tonight.',
-    };
-  }
-
-  if (g >= 6) {
-    if (moon > 80) return {
-      headline: 'South Island likely, North Island difficult',
-      detail:   'Moderate storm. South Island should see clear aurora. Full moon will wash out fainter aurora for North Island - very dark sites needed.',
-      regions:  ['Southland','Otago','Canterbury','Marlborough','Nelson','Wellington (dark sites)'],
-      moonNote: `${ml} - significantly reduces North Island chances.`,
-      tip:      'South Island: any dark spot works. North Island: coastal headlands or hilltops away from light pollution.',
-      summary:  'Moderate storm - South Island clear, North Island needs dark skies to beat the full moon.',
-    };
-    return {
-      headline: moon > 55 ? 'South Island to Northland - dark sites help in North Island' : 'Visible South Island to Northland',
-      detail:   moon > 55
-        ? 'Moderate storm. South Island clear. North Island (Auckland, Northland) has a good chance from dark locations - moon may reduce the faint edges.'
-        : 'Moderate storm. South Island and North Island including Auckland and Northland all have a strong chance. Find a dark spot and look south.',
-      regions:  ['Southland','Otago','Canterbury','Nelson','Wellington','Manawatu','Auckland','Northland'],
-      moonNote: moon > 55 ? `${ml} - North Island: prioritise dark sites.` : ml,
-      tip:      "Point your phone camera south - it's more sensitive than your eyes and may reveal colours before you see them.",
-      summary:  moon > 55 ? 'Moderate storm - South Island to Northland; find dark spots in the North Island.'
-        : 'Moderate storm - good chance across South Island and up to Northland.',
-    };
-  }
-
-  if (g >= 5) {
-    if (moon > 80) return {
-      headline: 'Southland and Otago - dark sites only',
-      detail:   'Minor storm. Full moon makes conditions difficult. Only the very south of New Zealand is likely to see aurora, and only from truly dark locations.',
-      regions:  ['Southland (dark sky sites)','Otago (dark sky sites)'],
-      moonNote: `${ml} - aurora is faint at G1 and the moon compounds this.`,
-      tip:      'Use a camera on a tripod, 10-15 second exposure pointed south. Your eyes may see nothing but the camera might.',
-      summary:  'Minor storm - only extreme south NZ in very dark sites; full moon makes conditions tough.',
-    };
-    if (moon > 55) return {
-      headline: 'South Island south of Christchurch',
-      detail:   'Minor storm. Southern South Island (Southland, Otago, South Canterbury) should see aurora from dark locations. Partial moon reduces visibility further north.',
-      regions:  ['Southland','Otago','South Canterbury'],
-      moonNote: `${ml} - reduces visibility in marginal locations.`,
-      tip:      'Look for a green or pink brightening on the southern horizon before distinct curtains develop.',
-      summary:  'Minor storm - southern South Island has a fair chance from dark locations tonight.',
-    };
-    return {
-      headline: 'South Island including Nelson',
-      detail:   'Minor storm. From Invercargill up to Nelson has a good chance from dark locations. Dark skies are essential at this level.',
-      regions:  ['Southland','Otago','Canterbury','Marlborough','Nelson'],
-      moonNote: moon > 25 ? `${ml} - aurora visible, but darker sites improve chances.` : ml,
-      tip:      'Find a spot with a clear southern horizon - coastal beaches and hilltops are ideal. Look low on the horizon first.',
-      summary:  moon > 25 ? 'Minor storm - South Island to Nelson likely; dark skies improve your chances.'
-        : 'Minor storm - South Island to Nelson has a good chance from dark locations.',
-    };
-  }
-
-  // Kp index 4 and below - "4+" (4.333) and under, which is beneath G1.
-  return {
-    headline: 'Marginal - very unlikely from New Zealand',
-    detail:   'Just above the minimum threshold but below what is needed to reach NZ latitudes. A faint glow might theoretically appear from extreme southern locations under perfect conditions, but is not expected.',
-    regions:  [],
-    moonNote: ml,
-    tip:      "Not worth going out specially. If Kp climbs to 5 the situation will improve quickly - keep the forecast open.",
-    summary:  'Marginal activity - aurora is not expected to be visible from New Zealand.',
-  };
-}
-
 // ── Canvas draw ───────────────────────────────────────────────────────────────
 
 function drawCanvas(
@@ -396,10 +235,11 @@ function drawCanvas(
   sunsetMs:   number | null | undefined,
   lat:        number,
   lon:        number,
-  minKp:       number,
   selectedCol: number,
   /** Per column: the emoji for what can be seen that hour. */
   emojis:      (string | null)[] = [],
+  /** Per column: what is due to arrive that hour - a coronal hole stream, a CME. */
+  arrivals:    string[] = [],
 ) {
   const COLS   = slots.length;
   if (COLS === 0) return;
@@ -499,10 +339,10 @@ function drawCanvas(
     // camera a third, phone two thirds, naked eye the whole column.
     const ahTier = slot.tier === 'eye' ? SKY_H : slot.tier === 'phone' ? SKY_H * 2 / 3
       : slot.tier === 'camera' ? SKY_H / 3 : 0;
-    if (slot.tier != null ? ahTier > 0 : slot.kp > minKp) {
-      const ah  = slot.tier != null ? ahTier : auroraH(slot.kp, SKY_H, minKp);
+    if (ahTier > 0 && slot.tier) {
+      const ah  = ahTier;
       const op  = st === 'night' ? 1.0 : st === 'nautical' ? 0.78 : st === 'civil' ? 0.52 : st === 'golden' ? 0.38 : 0.28;
-      ctx.fillStyle = auroraGrad(ctx, x, HOR_Y - ah, HOR_Y, slot.kp, op);
+      ctx.fillStyle = auroraGrad(ctx, x, HOR_Y - ah, HOR_Y, slot.tier, op);
       ctx.fillRect(x, HOR_Y - ah, COL_W, ah);
     }
 
@@ -562,7 +402,20 @@ function drawCanvas(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font = `${Math.max(9, Math.min(12, COL_W * 0.55))}px system-ui,"Apple Color Emoji","Segoe UI Emoji",sans-serif`;
+  ctx.fillStyle = '#ffffff';
   emojis.forEach((e, i) => { if (e) ctx.fillText(e, (i + 0.5) * COL_W, LBEL_H + 14); });
+  // Arrivals, low over the horizon: a gust of wind for a coronal hole
+  // stream, a comet for a CME, on the hour each is due.
+  ctx.font = `${Math.max(11, Math.min(15, COL_W * 0.7))}px system-ui,"Apple Color Emoji","Segoe UI Emoji",sans-serif`;
+  arrivals.forEach((a, i) => {
+    if (!a) return;
+    const cx = (i + 0.5) * COL_W, cy = HOR_Y - 13;
+    // A dark disc behind it, so it reads on a daytime blue or a green aurora alike.
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.beginPath(); ctx.arc(cx, cy, Math.max(9, Math.min(12, COL_W * 0.6)) * (a.length > 2 ? 1.5 : 1), 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(a, cx, cy);
+  });
   ctx.textBaseline = 'alphabetic';
 
   // Ground silhouette
@@ -634,7 +487,7 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   // Coronal Hole Tracker's streams and the CME model (utils/threeDayGrid -
   // the days card's grid is built from the same). Each hour carries what can
   // be seen after the Sun, twilight and the Moon at that hour.
-  const { gridInputs } = useThreeDayOutlook(3);
+  const { gridInputs, allHoles, forecast } = useThreeDayOutlook(3);
   const slots = React.useMemo((): KpSlot[] => {
     if (!gridInputs) return [];
     const HOUR = 3600000;
@@ -652,9 +505,9 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
       out.push({
         utcMs, nztHour: nztD.getUTCHours(), dayIdx: dayKeys.indexOf(dayKey),
         dayLabel: nztD.toLocaleDateString('en-NZ', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }),
-        kp: Math.round(c.equivalentKp * 3) / 3,
         observed: utcMs + HOUR <= now ? 'observed' : 'predicted',
         strength: c.raw, driver: c.driver, tier: vis.tier, effective: Math.round(vis.effectiveStrength),
+        label: vis.label, note: vis.note,
       });
     }
     return out;
@@ -662,6 +515,22 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   const emojis = React.useMemo(
     () => slots.map((slot) => (slot.observed !== 'observed' && slot.tier && slot.tier !== 'none' ? TIER_EMOJI[slot.tier] ?? null : null)),
     [slots]);
+  // What is due each hour: the tracker's arrival for every hole it has
+  // reaching Earth, and the CME model's arrivals.
+  const arrivalHours = React.useMemo(() => {
+    const now = Date.now();
+    const holeTimes = allHoles.map((h) => h.forecast.arrival).filter((t): t is number => t != null);
+    const cmeTimes = (forecast.timeline.length ? expectedArrivals(forecast.timeline, now, 3 * 86400000) : [])
+      .filter((a) => a.kind.startsWith('CME')).map((a) => a.atMs);
+    const inHour = (t: number, slot: KpSlot) => t >= slot.utcMs && t < slot.utcMs + 3600000;
+    return slots.map((slot) => ({
+      hole: holeTimes.some((t) => inHour(t, slot)),
+      cme: cmeTimes.some((t) => inHour(t, slot)),
+    }));
+  }, [slots, allHoles, forecast.timeline]);
+  const arrivals = React.useMemo(
+    () => arrivalHours.map((a) => (a.hole ? ARRIVAL_ICON.hole : '') + (a.cme ? ARRIVAL_ICON.cme : '')),
+    [arrivalHours]);
   const loading = !gridInputs;
   const error = false;
   const [popup,   setPopup]   = useState<PopupState | null>(null);
@@ -689,8 +558,8 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   useEffect(() => {
     if (!canvasRef.current || slots.length === 0) return;
     const drawW = Math.max(canvasW, slots.length * 22);
-    drawCanvas(canvasRef.current, slots, drawW, sunriseMs, sunsetMs, where.lat, where.lon, minKpForLocation(userLatitude), popup?.slotIdx ?? -1, emojis);
-  }, [slots, canvasW, sunriseMs, sunsetMs, where, userLatitude, popup, emojis]);
+    drawCanvas(canvasRef.current, slots, drawW, sunriseMs, sunsetMs, where.lat, where.lon, popup?.slotIdx ?? -1, emojis, arrivals);
+  }, [slots, canvasW, sunriseMs, sunsetMs, where, userLatitude, popup, emojis, arrivals]);
 
   // Click
   const handleClick = useCallback((e: React.MouseEvent) => {
@@ -708,20 +577,19 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
   const selSky = sel ? skyTypeFromMs(sel.utcMs, sunriseMs, sunsetMs) : 'night';
 
   const selMoon = sel ? slotMoon(sel.utcMs, where.lat, where.lon) : null;
-  const visRaw = sel && selMoon ? getVis(sel.kp, selMoon, userLatitude, selSky) : null;
-  // For daytime/twilight slots with elevated KP, append the sun note to the tip
+  // Why the sky might hide it, for day and twilight hours.
   const daySkyNote =
-    selSky === 'day'      ? 'The sun is currently up - aurora is not visible in daylight even during a storm.'
-    : selSky === 'golden' ? 'The sun is at the horizon - it will still be too bright to see aurora right now.'
-    : selSky === 'civil'  ? 'Civil twilight - the sky is still bright. Aurora will not be visible yet.'
-    : selSky === 'nautical' ? 'Nautical twilight - the sky is darkening but faint aurora may still be washed out by the remaining glow.'
+    selSky === 'day'      ? 'The sun is up - aurora cannot be seen in daylight.'
+    : selSky === 'golden' ? 'The sun is at the horizon - still too bright to see aurora.'
+    : selSky === 'civil'  ? 'Civil twilight - the sky is still too bright.'
+    : selSky === 'nautical' ? 'Nautical twilight - faint aurora is still washed out by the glow.'
     : null;
-  // For day/twilight slots, prepend the sun note to the tip so users understand
-  // why they might not see aurora even during elevated activity
-  const vis = (() => {
-    if (!visRaw || !daySkyNote) return visRaw;
-    return { ...visRaw, tip: daySkyNote + (visRaw.tip ? ' ' + visRaw.tip : '') };
-  })();
+  const selArrival = popup ? arrivalHours[popup.slotIdx] : null;
+  const arrivalNote = selArrival
+    ? [selArrival.hole && `${ARRIVAL_ICON.hole} A coronal hole stream is due to arrive this hour.`,
+       selArrival.cme && `${ARRIVAL_ICON.cme} A CME is due to arrive this hour.`].filter(Boolean).join(' ')
+    : '';
+  const vis = sel ? { summary: [arrivalNote, sel.note, daySkyNote].filter(Boolean).join(' ') } : null;
 
   const fmt  = (h: number) => h===0?'12am':h<12?`${h}am`:h===12?'12pm':`${h-12}pm`;
   const fmtEnd = (h: number) => fmt((h+1)%24);
@@ -791,33 +659,20 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
 
             {/* Stat pills */}
             <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginLeft:8 }}>
-              {/* KP */}
-              <span style={{ fontSize:13, fontWeight:500, color: gColor(sel.kp) }}>
-                ≈ Kp {sel.kp.toFixed(2).replace(/\.?0+$/, '') || '0'}
+              {/* Visibility */}
+              <span style={{ fontSize:13, fontWeight:500, color: sel.tier === 'eye' ? '#6ee7b7' : sel.tier === 'phone' ? '#7dd3fc' : sel.tier === 'camera' ? '#fde047' : 'var(--color-text-tertiary)' }}>
+                {sel.tier && sel.tier !== 'none' ? `${TIER_EMOJI[sel.tier]} ` : ''}{sel.label}
+                {sel.tier && sel.tier !== 'none' ? ` · ${sel.effective}/100` : ''}
               </span>
-              {sel.driver && (
+              {sel.driver && sel.driver !== 'quiet' && (
                 <span style={{ fontSize:11, color:'var(--color-text-tertiary)' }}>
-                  {sel.driver === 'coronal hole' ? 'coronal hole stream'
-                    : sel.driver === 'CME' ? 'CME'
-                    : 'quiet'}
-                  {sel.tier && sel.tier !== 'none' && ` · ${TIER_EMOJI[sel.tier]} ${sel.effective}/100`}
-                </span>
-              )}
-              {gScale(sel.kp) && (
-                <span style={{ fontSize:11, fontWeight:500, padding:'2px 8px', borderRadius:20, background:gColor(sel.kp)+'22', color:gColor(sel.kp) }}>
-                  {gScale(sel.kp)}
+                  {sel.driver === 'coronal hole' ? 'from a coronal hole stream' : 'from a CME'}
                 </span>
               )}
               {/* Moon */}
               <span style={{ fontSize:12, color:'var(--color-text-tertiary)', borderLeft:'0.5px solid var(--color-border-tertiary)', paddingLeft:8 }}>
                 Moon {selMoon ? `${Math.round(selMoon.illumPct)}%${selMoon.up ? ' up' : ' down'}` : ''}
               </span>
-              {/* Regions pill */}
-              {vis.regions.length > 0 && (
-                <span style={{ fontSize:11, color:'var(--color-text-secondary)', borderLeft:'0.5px solid var(--color-border-tertiary)', paddingLeft:8 }}>
-                  {vis.regions[0]}{vis.regions.length > 1 ? ` +${vis.regions.length - 1}` : ''}
-                </span>
-              )}
             </div>
 
             {/* Close */}
@@ -838,9 +693,9 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
       {/* Legend */}
       <div className="mt-2 pt-2 border-t border-neutral-800/60 flex flex-wrap gap-x-4 gap-y-1 items-center">
         {[
-          { c:'#00dc3e', l:'Green (aurora base)' },
-          { c:'#ff3c96', l:'Pink (active)' },
-          { c:'#508cff', l:'Blue (intense, G3+)' },
+          { c:'#00dc3e', l:'Green (camera glow)' },
+          { c:'#ff3c96', l:'Pink (phone camera)' },
+          { c:'#508cff', l:'Blue (naked eye)' },
           { c:'#d2daef', l:'Moonrise / moonset' },
         ].map(({c,l}) => (
           <span key={l} className="flex items-center gap-1.5 text-xs text-neutral-500">
@@ -848,11 +703,10 @@ const KpForecastTimeline: React.FC<KpForecastTimelineProps> = ({
             {l}
           </span>
         ))}
+        <span className="text-xs text-neutral-500">{ARRIVAL_ICON.hole} coronal hole stream arrives · {ARRIVAL_ICON.cme} CME arrives</span>
         <span className="text-xs text-neutral-500">Aurora height: 📷 camera a third · 📱 phone two thirds · 👁️ naked eye the full sky, after the Moon and twilight</span>
         <span className="text-xs text-neutral-600 ml-auto">
-          {gridInputs
-            ? 'From the Coronal Hole Tracker\'s streams and the CME model, for your location'
-            : userLatitude != null ? `Bar height calibrated to ${Math.abs(userLatitude).toFixed(1)}°${userLatitude < 0 ? 'S' : 'N'} - aurora threshold Kp ${minKpForLocation(userLatitude).toFixed(1)}` : 'No GPS - showing NZ-wide aurora threshold (Kp 4.67)'}
+          From the Coronal Hole Tracker&apos;s streams and the CME model, for your location
         </span>
       </div>
 

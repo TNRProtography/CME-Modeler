@@ -100,12 +100,14 @@ console.log('\nThe band and the colour never disagree');
         wrong.join('\n        '));
 }
 
-console.log('\nThe component uses the shared scale');
+console.log('\nThe 3-day forecast shows visibility, not Kp');
 {
-  // The bug existed in three places at once - the badge, the visibility text
-  // and the aurora gradient - because each compared the raw value itself.
+  // It used to draw NOAA's Kp and had to use this shared scale to band it.
+  // It now shows only what can be seen - camera, phone, eye - from the app's
+  // own forecast, so it has no Kp to band, and must not grow a copy of the
+  // band table or a raw comparison back.
   const tsx = readFileSync(join(APP, 'components', 'KpForecastTimeline.tsx'), 'utf8');
-  check(/from '\.\.\/utils\/kpScale'/.test(tsx), 'it imports the shared scale');
+  check(!/>\s*≈?\s*Kp\b|`Kp |'Kp /.test(tsx), 'no Kp is shown in it');
 
   const raw = [...tsx.matchAll(/\bkp\s*>=\s*\d/g)].map(m => m[0]);
   check(raw.length === 0,
