@@ -113,8 +113,8 @@ const ThreeDayVisibilityGrid: React.FC<{ grid: GridDay[]; locationNote: string }
       </p>
       <p className="text-[10px] text-neutral-500 mt-1 leading-snug">
         👁️ naked eye · 📱 phone camera · 📷 camera only · 😴 nothing · ☀️ daylight. The number is strength for your
-        location, 0-100, after the Moon and twilight. Each block takes the strongest of NOAA&apos;s 3-day Kp forecast,
-        the coronal hole streams on the Coronal Hole Tracker and the CME model. Tap a block for why.
+        location, 0-100, after the Moon and twilight. Each block takes the stronger of the coronal hole streams on the
+        Coronal Hole Tracker and the CME model. Tap a block for why.
       </p>
     </div>
   );

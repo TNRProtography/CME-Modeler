@@ -1,6 +1,6 @@
 // The next few days: every tracked hole's forecast, and the three-hour
-// visibility grid built from them, NOAA's Kp and the CME model. Shared by the
-// days card and the NOAA 3-day panel, so the two show the same blocks.
+// visibility grid built from them and the CME model. Shared by the
+// days card and the 3-day aurora forecast panel, so the two show the same blocks.
 
 import { useEffect, useMemo, useState } from 'react';
 import { useForecast } from './useForecast';
@@ -11,13 +11,8 @@ import {
 } from '../utils/holeForecast';
 import { buildForecastTimeline, type StreamSource } from '../utils/forecastTimeline';
 import { buildOutlook } from '../utils/auroraOutlook';
-import { parseNoaaKpForecast, type KpBlock } from '../utils/kpVisibility';
+import type { KpBlock } from '../utils/kpVisibility';
 import { buildThreeDayGrid, type GridInputs } from '../utils/threeDayGrid';
-import { sharedFetchJson } from '../utils/sharedFetch';
-import { registerDatasetTicker } from '../utils/pollingScheduler';
-
-/** The same feed the NOAA 3-day panel reads, shared with it. */
-const NOAA_KP_URL = 'https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json';
 
 export function useThreeDayOutlook(horizonDays = 3) {
   // useForecast also primes coronal hole detection on this page, so the
@@ -47,23 +42,11 @@ export function useThreeDayOutlook(horizonDays = 3) {
     });
   }, [chState, nowMs, location]);
 
-  // NOAA's Kp forecast, for the grid.
-  const [kpBlocks, setKpBlocks] = useState<KpBlock[]>([]);
-  useEffect(() => {
-    let live = true;
-    const load = async () => {
-      try {
-        const blocks = parseNoaaKpForecast(await sharedFetchJson(NOAA_KP_URL, { maxAgeMs: 60000 }));
-        if (live && blocks.length) setKpBlocks(blocks);
-      } catch { /* the grid runs on the other two forecasts */ }
-    };
-    void load();
-    const unregister = registerDatasetTicker('three-day-grid-kp', load, 5 * 60 * 1000);
-    return () => { live = false; unregister(); };
-  }, []);
+  // No NOAA Kp: the forecast is the app's own, the tracker's streams and the CME model.
+  const kpBlocks: KpBlock[] = [];
 
   // The grid: every stream the tracker has reaching Earth, run hour by hour
-  // through the chain, alongside NOAA and the CME model.
+  // through the chain, alongside the CME model.
   const gridInputs = useMemo(() => {
     const streams = allHoles
       .map(({ track, forecast }) => streamSourceFor(track, forecast))
@@ -72,12 +55,12 @@ export function useThreeDayOutlook(horizonDays = 3) {
     const holeOutlook = buildOutlook(buildForecastTimeline([], streams, {
       fromMs: from, toMs: nowMs + (horizonDays + 1) * 86400000, stepMs: 3600000,
     }));
-    if (!kpBlocks.length && !streams.length && !forecast.outlook.length) return null;
+    if (!streams.length && !forecast.outlook.length && !chState) return null;
     return {
       nowMs, latitude: location.latitude, longitude: location.longitude,
       kpBlocks, holeOutlook, cmeOutlook: forecast.outlook, days: horizonDays,
     } satisfies GridInputs;
-  }, [allHoles, kpBlocks, forecast.outlook, nowMs, location, horizonDays]);
+  }, [allHoles, forecast.outlook, nowMs, location, horizonDays, chState]);
   const grid = useMemo(() => (gridInputs ? buildThreeDayGrid(gridInputs) : []), [gridInputs]);
 
   return { forecast, location, chState, nowMs, allHoles, grid, gridInputs };
