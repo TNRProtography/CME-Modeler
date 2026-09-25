@@ -37,8 +37,11 @@ const TIMELINE_KEY = 'forecast:timeline:current';
 const FORECASTS_KEY = 'forecast:pending';
 const SCORES_KEY = 'forecast:scores';
 const LAST_RUN_KEY = 'forecast:last-run';
-/** Every coronal hole's life, 90 days of it (utils/chLifecycle). */
-const LIFECYCLE_KEY = 'ch:lifecycle';
+/**
+ * Every coronal hole's life, 90 days of it (utils/chLifecycle). v2: frames
+ * sent by the app build whose detector dropped most holes are not kept.
+ */
+const LIFECYCLE_KEY = 'ch:lifecycle:v2';
 
 /** Limits on what one device can send. */
 const MAX_OBSERVE_BYTES = 512 * 1024;

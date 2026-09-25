@@ -102,7 +102,7 @@ const SUNSPOT_MAX_FRAC   = 0.025; // only apply shape filters to regions below t
 const SUVI_195_URL     = 'https://services.swpc.noaa.gov/images/animations/suvi/primary/195/latest.png';
 
 // ── Internal types ─────────────────────────────────────────────────────────────
-interface PixelRegion {
+export interface PixelRegion {
   pixels:    Array<{ x: number; y: number }>;
   minX: number; maxX: number;
   minY: number; maxY: number;
@@ -301,6 +301,39 @@ export function closeMask(mask: boolean[], within: boolean[], W: number, H: numb
     return out;
   };
   return pass(pass(mask, true), false);
+}
+
+/** A joined region cut back to the pixels that were dark to begin with. */
+function ownPixels(region: PixelRegion, darkMask: boolean[], W: number): PixelRegion {
+  const pixels = region.pixels.filter((p) => darkMask[p.y * W + p.x]);
+  if (pixels.length === 0 || pixels.length === region.pixels.length) return region;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, sumX = 0, sumY = 0;
+  for (const p of pixels) {
+    if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+    sumX += p.x; sumY += p.y;
+  }
+  return { pixels, minX, maxX, minY, maxY, centroidX: sumX / pixels.length, centroidY: sumY / pixels.length };
+}
+
+/**
+ * The dark regions that are coronal holes: joined across slivers, big
+ * enough, and not shaped like a sunspot. Biggest first.
+ */
+export function holeRegions(darkMask: boolean[], diskMask: boolean[], size: number): PixelRegion[] {
+  const diskPixelCount = diskMask.filter(Boolean).length;
+  const minPixels = diskPixelCount * MIN_CH_PIXEL_FRAC;
+  // Holes cut by a sliver of brighter sky, or nearly touching, are one hole.
+  const joinedMask = closeMask(darkMask, diskMask, size, size, CH_JOIN_RADIUS_PX);
+  // The sunspot test looks at the shape of the region, and a sunspot is
+  // round and smooth-edged. Joining smooths every edge, so the test is run on
+  // the region's own dark pixels - its real, ragged outline - or nearly every
+  // hole under the size limit would be taken for a sunspot and dropped.
+  return connectedComponents(joinedMask, size, size)
+    .filter(r => r.pixels.length >= minPixels)
+    .filter(r => isCoronalHoleCandidate(ownPixels(r, darkMask, size), diskPixelCount))
+    .sort((a, b) => b.pixels.length - a.pixels.length)
+    .slice(0, MAX_CH_REGIONS);
 }
 
 // ── BFS connected-component flood fill ───────────────────────────────────────
@@ -642,16 +675,7 @@ export async function detectCoronalHolesFromSuvi195(
 
     // ── 6. Connected components ────────────────────────────────────────────
     const diskPixelCount = diskMask.filter(Boolean).length;
-    const minPixels      = diskPixelCount * MIN_CH_PIXEL_FRAC;
-    // Holes cut by a sliver of brighter sky, or nearly touching, are one hole.
-    const joinedMask     = closeMask(darkMask, diskMask, size, size, CH_JOIN_RADIUS_PX);
-    const allRegions     = connectedComponents(joinedMask, size, size);
-
-    const candidates = allRegions
-      .filter(r => r.pixels.length >= minPixels)
-      .filter(r => isCoronalHoleCandidate(r, diskPixelCount))
-      .sort((a, b) => b.pixels.length - a.pixels.length)
-      .slice(0, MAX_CH_REGIONS);
+    const candidates     = holeRegions(darkMask, diskMask, size);
 
     // ── 7. Convert to CoronalHole objects ──────────────────────────────────
     const coronalHoles: CoronalHole[] = candidates.flatMap((region, idx) => {

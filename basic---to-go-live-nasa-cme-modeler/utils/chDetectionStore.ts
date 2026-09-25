@@ -32,10 +32,14 @@ import {
   MIN_FRAME_GAP_MS, type ChLifecycle, type LifecycleTrack,
 } from './chLifecycle';
 
-const STORAGE_KEY = 'sta-ch-history-v1';
+// v2: detections saved by the build whose sliver joining made the sunspot
+// filter drop most holes are incomplete, and would leave holes marked closed
+// that never were. Starting again from the imagery is the honest fix.
+const STORAGE_KEY = 'sta-ch-history-v2';
+const STALE_KEYS = ['sta-ch-history-v1', 'sta-ch-lifecycle-v1'];
 const REGISTRY_KEY = 'sta-ch-registry-v1';
 /** The 90-day record of every hole (utils/chLifecycle), and where it came from. */
-const LIFECYCLE_KEY = 'sta-ch-lifecycle-v1';
+const LIFECYCLE_KEY = 'sta-ch-lifecycle-v2';
 export const HISTORY_WINDOW_MS = 7 * 86400000;
 
 /**
@@ -106,6 +110,9 @@ function compact(holes: CoronalHole[]): TrackedHole[] {
 function loadHistory(): void {
   if (loaded) return;
   loaded = true;
+  try {
+    if (typeof localStorage !== 'undefined') for (const key of STALE_KEYS) localStorage.removeItem(key);
+  } catch { /* storage disabled */ }
   try {
     registry = parseRegistry(
       typeof localStorage !== 'undefined' ? localStorage.getItem(REGISTRY_KEY) : null);
@@ -572,13 +579,19 @@ export function holesForScene(state: ChStoreState): { holes: CoronalHole[]; atMs
     const at = { lat: track.latest.lat, lon };
     if (holes.some((h) => near(h, at))) continue;
 
-    const lastDetection = state.detections.find((d) => d.atMs === track.lastSeenMs);
-    const full = lastDetection ? holeForTrackIn(track, lastDetection) : null;
+    // Its real outline from the latest earlier detection this session that has it,
+    // rather than an ellipse, whenever there is one.
+    let full: CoronalHole | null = null;
+    let fullLon = lon;
+    for (let i = state.detections.length - 2; i >= 0 && !full; i--) {
+      full = holeForTrackIn(track, state.detections[i]);
+      if (full) fullLon = longitudeAt(full.lon, state.detections[i].atMs, newest.atMs);
+    }
     const widthDeg = Math.max(5, track.latest.widthDeg);
     const darkness = track.latest.darkness ?? 0.5;
     const id = `CH${numbers.get(track.key) ?? track.key}`;
     holes.push(full
-      ? { ...full, id, lon, sourceDirectionDeg: { lat: full.lat, lon } }
+      ? { ...full, id, lon: fullLon, sourceDirectionDeg: { lat: full.lat, lon: fullLon } }
       : {
           id,
           lat: at.lat,

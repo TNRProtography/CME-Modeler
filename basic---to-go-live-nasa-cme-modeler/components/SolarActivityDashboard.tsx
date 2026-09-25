@@ -2155,13 +2155,20 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [suviBoxSize, setSuviBoxSize] = useState({ width: 0, height: 0 });
   const [suviDiffBoxSize, setSuviDiffBoxSize] = useState({ width: 0, height: 0 });
 
-  const useBoxSize = (
+  // Measured through a callback ref, not an effect. The image box only exists
+  // once a frame has arrived, which is usually after the first render, and an
+  // effect that looked for it then found nothing and never looked again - the
+  // box stayed 0 by 0 and neither the region labels nor the coronal hole
+  // outlines had anywhere to go.
+  const useObservedBox = (
     ref: React.MutableRefObject<HTMLDivElement | null>,
     set: React.Dispatch<React.SetStateAction<{ width: number; height: number }>>,
-    enabled: boolean,
   ) => {
-    useEffect(() => {
-      const el = ref.current;
+    const observer = useRef<ResizeObserver | null>(null);
+    return useCallback((el: HTMLDivElement | null) => {
+      observer.current?.disconnect();
+      observer.current = null;
+      ref.current = el;
       if (!el || typeof ResizeObserver === 'undefined') return;
       const ro = new ResizeObserver(([entry]) => {
         const { width, height } = entry.contentRect;
@@ -2171,11 +2178,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
             : { width, height });
       });
       ro.observe(el);
-      return () => ro.disconnect();
-    }, [ref, set, enabled]);
+      observer.current = ro;
+    }, [ref, set]);
   };
-  useBoxSize(suviBoxRef, setSuviBoxSize, showRegionsOnImagery || showChOnSuvi);
-  useBoxSize(suviDiffBoxRef, setSuviDiffBoxSize, showRegionsOnImagery || showChOnSuvi);
+  const suviBoxRefCallback = useObservedBox(suviBoxRef, setSuviBoxSize);
+  const suviDiffBoxRefCallback = useObservedBox(suviDiffBoxRef, setSuviDiffBoxSize);
 
   // The disk in a SUVI frame is a different size from the one in an HMI frame,
   // and different again between channels, so it is measured rather than
@@ -4036,7 +4043,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                     )}
                     {activeSuviFrameUrl && (
                       <div
-                        ref={suviBoxRef}
+                        ref={suviBoxRefCallback}
                         className="w-full h-full relative cursor-pointer"
                         onClick={() => setViewerMedia(openSuviInViewer())}
                       >
@@ -4086,7 +4093,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                     )}
                     {activeSuviFrameUrl && (
                       <div
-                        ref={suviDiffBoxRef}
+                        ref={suviDiffBoxRefCallback}
                         className="w-full h-full relative cursor-pointer"
                         onClick={() => setViewerMedia(openSuviInViewer())}
                       >

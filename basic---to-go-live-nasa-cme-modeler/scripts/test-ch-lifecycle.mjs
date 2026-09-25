@@ -51,6 +51,36 @@ try {
     check(!limited[10 * W + 20], 'nothing is added off the solar disk');
   }
 
+  console.log('\nJoining does not turn holes into sunspots');
+  {
+    // A disk with a ragged small hole, a smooth round sunspot-like blob, and
+    // two patches split by a thin bright sliver. All under the size where the
+    // sunspot shape test applies.
+    const S = 200, R = 90;
+    const disk = new Array(S * S).fill(false);
+    const dark = new Array(S * S).fill(false);
+    let seed = 7;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+      const i = y * S + x;
+      disk[i] = Math.hypot(x - 100, y - 100) < R;
+      const ang = Math.atan2(y - 70, x - 70);
+      const wob = 1 + 0.2 * Math.sin(ang * 5) + 0.1 * Math.sin(ang * 11);
+      const r = Math.hypot((x - 70) / 16, (y - 70) / 10);
+      if (r < wob && (r < wob - 0.3 || rnd() > 0.35)) dark[i] = true;            // ragged hole
+      if (Math.hypot(x - 140, y - 70) < 10) dark[i] = true;                      // round blob
+      const pair = Math.hypot((x - 92) / 8, (y - 140) / 12) < 1 || Math.hypot((x - 110) / 8, (y - 140) / 12) < 1;
+      if (pair && x !== 100 && x !== 101) dark[i] = true;                       // pair, 2 px sliver at x=100-101
+    }
+    const regions = D.holeRegions(dark, disk, S);
+    const at = (x, y) => regions.find((r) => Math.abs(r.centroidX - x) < 6 && Math.abs(r.centroidY - y) < 6);
+    check(!!at(70, 70), 'a small ragged hole is still found once its edge is smoothed',
+      JSON.stringify(regions.map((r) => [Math.round(r.centroidX), Math.round(r.centroidY), r.pixels.length])));
+    check(!at(140, 70), 'a small round smooth patch is still taken for a sunspot');
+    const pair = at(101, 140);
+    check(!!pair && pair.minX < 90 && pair.maxX > 112, 'two patches split by a sliver are one hole');
+  }
+
   // ── the record ──────────────────────────────────────────────────────────
   const HOUR = 3600000, DAY = 24 * HOUR;
   const RATE = 360 / 27.2753 / 24;             // degrees per hour
