@@ -557,6 +557,7 @@ export default {
     if (url.pathname === '/run-census-shard'          && request.method === 'POST') return handleRunCensusShard(request, env);
     if (url.pathname === '/stats'                     && request.method === 'GET')  return handleStats(request, env);
     if (url.pathname === '/sends'                     && request.method === 'GET')  return handleSends(request, env);
+    if (url.pathname === '/sent-last-24h'             && request.method === 'GET')  return handleSentLast24h(env);
     if (url.pathname === '/dry-run'                   && request.method === 'GET')  return handleDryRun(request, env);
     if (url.pathname === '/diagnose'                  && request.method === 'GET')  return handleDiagnose(request, env);
     if (url.pathname === '/migration'                 && request.method === 'GET')  return handleMigrationStatus(request, env);
@@ -1914,7 +1915,7 @@ function isReservedKey(name) {
          name.startsWith('CONFIG_') || name.startsWith('COOLDOWN_') ||
          name.startsWith('LAST_') || name.startsWith('JOB_') ||
          name.startsWith('JOBSHARD_') || name.startsWith('STATSSHARD_') ||
-         name.startsWith('SEND_') || name.startsWith('CLK_') ||
+         name.startsWith('SEND_') || name.startsWith('CLK_') || name.startsWith('SENTHOUR_') ||
          name.startsWith('MIGSHARD_') || name === MIGRATION_KEY ||
          name === DISPATCH_ERROR_KEY ||
          name === STATS_KEY || name === SELF_ORIGIN_KEY || name === SEND_LOG_KEY;
@@ -2707,7 +2708,7 @@ async function handleRoot(env) {
     healthy ? 'Status:   running' : 'Status:   the scheduled run is overdue',
     `Last run: ${lastRun ?? 'never'}`,
     '',
-    'This worker has no public pages. /health returns the same as JSON.',
+    '/health returns the same as JSON. /sent-last-24h counts what went out.',
     'Everything else needs a secret.',
     '',
   ].join('\n');
@@ -3047,6 +3048,14 @@ async function runShard(env, jobId, ch) {
   let lastKey = shard.lastKey ?? null;
   let sent = shard.sent ?? 0, failed = shard.failed ?? 0;
   let pruned = shard.pruned ?? 0;
+  // Accepted sends by the category the notification actually went out as. A
+  // visibility job sends dslr, phone and naked-eye alerts, so the job's own
+  // topic is not enough to say what people received.
+  const byTopic = { ...(shard.byTopic ?? {}) };
+  const countSent = (decision) => {
+    const t = decision?.payload?.tag ?? job.topic ?? job.kind;
+    byTopic[t] = (byTopic[t] ?? 0) + 1;
+  };
   let ops = OP_BUDGET;
   let complete = false;
   let lastError = null;
@@ -3074,6 +3083,7 @@ async function runShard(env, jobId, ch) {
         ops--;
         if (resp.ok) {
           sent++;
+          countSent(decision);
           if (decision.onSent) { await decision.onSent(); ops -= 2; }
         } else if (resp.status === 410 || resp.status === 404) {
           await kv(env).delete(keyName); ops--; pruned++;
@@ -3120,6 +3130,7 @@ async function runShard(env, jobId, ch) {
         ops--;
         if (resp.ok) {
           sent++;
+          countSent(decision);
           if (decision.onSent) { await decision.onSent(); ops -= 2; }
         } else {
           // A gone subscription is pruned; anything else is left for the next
@@ -3155,10 +3166,10 @@ async function runShard(env, jobId, ch) {
 
   const finished = complete && !lastError && retry.size === 0;
   const next = finished
-    ? { state: 'done', cursor: null, lastKey: null, retry: [], sent, failed, pruned, attempts,
+    ? { state: 'done', cursor: null, lastKey: null, retry: [], sent, failed, pruned, byTopic, attempts,
         leaseUntil: 0, finishedAt: Date.now() }
     : { state: 'pending', cursor: cursor ?? null, lastKey, retry: [...retry],
-        sent, failed, pruned, attempts, leaseUntil: 0,
+        sent, failed, pruned, byTopic, attempts, leaseUntil: 0,
         // Running out of budget is normal progress, not a failure, so it goes
         // straight back into the queue. A push service that just rejected us
         // gets a moment before we ask again.
@@ -3313,7 +3324,7 @@ async function sweepJobs(env, note = /** @type {(name?: string, status?: string,
     const due = [];
     // The sweep is already reading every shard, so total them here rather than
     // paying for a second pass to build the ledger entry.
-    const totals = { sent: 0, failed: 0, pruned: 0 };
+    const totals = { sent: 0, failed: 0, pruned: 0, byTopic: {} };
     let finished = 0, gaveUp = 0;
 
     for (const ch of SHARD_CHARS) {
@@ -3322,6 +3333,7 @@ async function sweepJobs(env, note = /** @type {(name?: string, status?: string,
       totals.sent += shard.sent ?? 0;
       totals.failed += shard.failed ?? 0;
       totals.pruned += shard.pruned ?? 0;
+      for (const [t, n] of Object.entries(shard.byTopic ?? {})) totals.byTopic[t] = (totals.byTopic[t] ?? 0) + n;
 
       if (shard.state === 'done') { finished++; continue; }
       if (shard.state === 'running' && shard.leaseUntil > now) { stillRunning++; continue; }
@@ -3468,12 +3480,20 @@ async function recordSend(env, job, totals) {
     accepted: totals.sent,
     failed: totals.failed,
     pruned: totals.pruned,
+    byTopic: totals.byTopic ?? {},
+    dryRun: !!job.dryRun,
     clicked: existing?.clicked ?? 0,
     clicksCountedAt: existing?.clicksCountedAt ?? null,
     note: 'accepted = the push service took it. clicked = opened the app from the notification.',
   };
 
   await kv(env).put(sendKey(id), JSON.stringify(entry), { expirationTtl: SEND_TTL_SECONDS });
+  if (!job.dryRun) await addToHourlyTally(env, job, totals);
+
+  // The visibility check queues a job every few minutes and most reach nobody.
+  // Indexing those pushed every real send out of the last-sixty list, so an
+  // automatic job that sent nothing and failed nothing is not indexed.
+  if (!job.dryRun && job.kind !== 'topic' && !totals.sent && !totals.failed) return entry;
 
   const index = (await kv(env).get(SEND_LOG_KEY, 'json')) ?? [];
   const next = [id, ...index.filter(x => x !== id)].slice(0, SEND_LOG_LIMIT);
@@ -3481,6 +3501,66 @@ async function recordSend(env, job, totals) {
 
   console.log(`[ledger] ${job.topic ?? job.kind}: accepted ${totals.sent}, failed ${totals.failed}, pruned ${totals.pruned}, ${entry.tookSeconds}s`);
   return entry;
+}
+
+// ── What went out, hour by hour ─────────────────────────────────────────────
+//
+// One small record per UTC hour, keyed by when each job was queued, holding
+// how many notifications of each category the push services accepted. Only
+// the sweep writes these, one finished job at a time, so there is no race to
+// lose counts to. They expire after three days; /sent-last-24h reads 25.
+const HOUR_MS = 60 * 60 * 1000;
+const hourKey = (ms) => `SENTHOUR_${new Date(Math.floor(ms / HOUR_MS) * HOUR_MS).toISOString().slice(0, 13)}`;
+
+async function addToHourlyTally(env, job, totals) {
+  const key = hourKey(job.createdAt ?? Date.now());
+  const hour = (await kv(env).get(key, 'json')) ?? { byTopic: {}, sent: 0, failed: 0, jobs: 0 };
+  for (const [t, n] of Object.entries(totals.byTopic ?? {})) {
+    hour.byTopic[t] = (hour.byTopic[t] ?? 0) + n;
+  }
+  hour.sent += totals.sent ?? 0;
+  hour.failed += totals.failed ?? 0;
+  if (totals.sent || totals.failed) hour.jobs += 1;
+  await kv(env).put(key, JSON.stringify(hour), { expirationTtl: 3 * 24 * 60 * 60 });
+}
+
+/**
+ * GET /sent-last-24h
+ *
+ * How many notifications went out in the last 24 hours, by category and by
+ * hour. Public on purpose: counts only, nothing about who received them.
+ * "sent" is what the push services accepted. A send still going out is
+ * counted once it finishes, usually within a minute or two.
+ */
+async function handleSentLast24h(env) {
+  const now = Date.now();
+  const byCategory = Object.fromEntries(ALL_TOPICS.map((t) => [t, 0]));
+  const hours = [];
+  let total = 0, failed = 0;
+  const reads = [];
+  for (let i = 23; i >= 0; i--) {
+    const start = Math.floor((now - i * HOUR_MS) / HOUR_MS) * HOUR_MS;
+    reads.push(kv(env).get(hourKey(start), 'json').then((h) => ({ start, h })));
+  }
+  for (const { start, h } of await Promise.all(reads)) {
+    const byTopic = h?.byTopic ?? {};
+    for (const [t, n] of Object.entries(byTopic)) byCategory[t] = (byCategory[t] ?? 0) + n;
+    total += h?.sent ?? 0;
+    failed += h?.failed ?? 0;
+    hours.push({ hourNZ: nzTimestamp(start), sent: h?.sent ?? 0, byCategory: byTopic });
+  }
+  let inFlight = 0;
+  try { inFlight = (await kv(env).list({ prefix: 'JOB_', limit: 1000 })).keys.length; } catch { /* just a hint */ }
+  return json({
+    generatedAtNZ: nzTimestamp(now),
+    window: 'last 24 hours, in whole hours',
+    totalSent: total,
+    failed,
+    byCategory: Object.fromEntries(Object.entries(byCategory).sort((a, b) => b[1] - a[1])),
+    hours,
+    jobsStillGoingOut: inFlight,
+    note: 'sent = accepted by the push service. Counted when a send finishes; jobs still going out are not included yet.',
+  }, 200, { 'Cache-Control': 'public, max-age=60' });
 }
 
 /**

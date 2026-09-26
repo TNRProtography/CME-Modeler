@@ -156,6 +156,8 @@ many" is answerable the next morning rather than only from live logs.
     /sends?secret=...            the ledger, newest first, rolled up per topic
     /sends?secret=...&limit=5    fewer
     /sends?secret=...&fold=1     recount clicks before answering
+    /sent-last-24h               public: how many went out in the last 24 hours,
+                                 by category and by hour (counts only)
 
 **Accepted** means a push service took the message, not that a phone displayed
 it. Nothing short of the device reporting back shows that, which is what the

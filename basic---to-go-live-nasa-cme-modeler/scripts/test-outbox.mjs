@@ -26,7 +26,7 @@ writeFileSync(copy, readFileSync(SRC, 'utf8') +
   ' recordSend, foldAllClicks, handleSends, handleNotificationClicked, stampSendId,' +
   ' maybeRunMigration, runMigrationShard, migrationTotals, TOPIC_DEFAULT_ON, ALL_TOPICS,' +
   ' pushServiceOf, enqueueDelivery, OP_BUDGET, isRetryablePushStatus, fitPushPayload,' +
-  ' selfFetch, canSelfCall };\n');
+  ' selfFetch, canSelfCall, handleSentLast24h };\n');
 const W = await import(pathToFileURL(copy).href);
 
 // ---- fake KV with real prefix/cursor semantics -------------------------
@@ -816,6 +816,58 @@ console.log('\n16. fan-out goes through the SELF binding, not the network');
         'without the binding or a URL it reports that it cannot fan out');
 
   globalThis.fetch = realFetch;
+}
+
+// ---- 17. the last 24 hours, by category --------------------------------
+console.log('\n17. what went out in the last 24 hours');
+{
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input.url ?? String(input);
+    if (url.includes('/run-shard')) {
+      const { jobId, shard } = JSON.parse(init.body);
+      const p = W.runShard(env, jobId, shard); inflight.push(p); await p;
+      return new Response('{}', { status: 200 });
+    }
+    if (url.includes('push.example')) { delivered.push(url); return new Response('', { status: 201 }); }
+    return new Response('[]', { status: 200 });
+  };
+  // A fresh, known set: earlier sections replace the subscribers.
+  store.clear();
+  let nightlyHere = 0;
+  for (let i = 0; i < 30; i++) {
+    const endpoint = `https://push.example/tally-${i}`;
+    const on = i % 3 !== 0;
+    if (on) nightlyHere++;
+    store.set(await sha(endpoint), JSON.stringify({
+      subscription: { endpoint, keys: { p256dh: P256DH, auth: b64u(webcrypto.getRandomValues(new Uint8Array(16))) } },
+      preferences: { 'overnight-watch': on, 'admin-broadcast': true },
+      overnight_mode: 'camera', location: { latitude: -41.3, longitude: 174.8 }, lastSeenAt: Date.now(),
+    }));
+  }
+  const before = await (await W.handleSentLast24h(env)).json();
+  check(before.totalSent === 0 && before.hours.length === 24 && 'cme-earth-directed' in before.byCategory,
+        'with nothing sent it reports zeros for every category, hour by hour');
+
+  delivered.length = 0;
+  await W.checkOvernightWatch(env, forecast, substorm, mag, plasma, () => {});
+  await W.enqueueDelivery(env, { kind: 'topic', topic: 'admin-broadcast',
+    payload: { title: 'T', body: 'B', tag: 'admin-broadcast', data: { url: '/' } } });
+  await settle();
+  await W.sweepJobs(env, () => {});
+  const wantBroadcast = 30;
+
+  const res = await W.handleSentLast24h(env);
+  const out = await res.json();
+  console.log(`    total ${out.totalSent}: ${JSON.stringify(Object.fromEntries(Object.entries(out.byCategory).filter(([, n]) => n)))}`);
+  check(out.byCategory['overnight-watch'] === nightlyHere, 'the nightly outlook is counted under its own category',
+        `${out.byCategory['overnight-watch']} vs ${nightlyHere}`);
+  check(out.byCategory['admin-broadcast'] === wantBroadcast, 'and the broadcast under its own',
+        `${out.byCategory['admin-broadcast']} vs ${wantBroadcast}`);
+  check(out.totalSent === delivered.length, 'the total matches what the push services accepted',
+        `${out.totalSent} vs ${delivered.length}`);
+  check(out.hours.at(-1).sent === out.totalSent, 'and it all lands in the current hour');
+  check(res.status === 200 && res.headers.get('Access-Control-Allow-Origin') === '*',
+        'no secret needed, and a browser can read it');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
