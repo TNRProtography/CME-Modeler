@@ -31,6 +31,8 @@ Check afterwards with:
 | `SUBSCRIPTIONS_KV` | KV namespace | subscribers, cooldowns, detector state |
 | `rtsw` | service binding | the IMAP/RTSW merged solar wind proxy |
 | `FORECAST_SERVICE` | service binding | the Spot The Aurora forecast worker |
+| `DONKI` | **service binding, pointing at `nasa-donki-api`** | the CME catalogue. **Without it the Earth-directed CME alert never sees a CME** - see below |
+| `SUBSTORM` | **service binding, pointing at `aurora-index-sta`** | the substorm index. Without it substorm alerts never fire and visibility falls back to its own oval |
 | `TRIGGER_SECRET` | secret | guards every diagnostic and internal route below |
 | `BANNER_AUTH_TOKEN` | secret | also accepted for `/send-broadcast` and `/migrate-preferences` |
 | `VAPID_PUBLIC_KEY` | secret | web push |
@@ -45,6 +47,24 @@ before it does anything. It should carry at least:
 ```json
 { "substorm": { "cooldownMinutes": 30 } }
 ```
+
+## Other workers: DONKI and SUBSTORM
+
+A Worker cannot fetch another Worker on the same `workers.dev` subdomain by its
+public URL. Cloudflare refuses it (error 1042) and the refusal comes back as a
+4xx that looks like the other worker is broken. The September 2026 metrics
+showed every call to `nasa-donki-api` and `aurora-index-sta` failing this way,
+so the CME alert never saw a CME and the substorm data never arrived.
+
+Add two service bindings (Settings -> Bindings -> Add -> Service binding):
+
+- `DONKI` -> `nasa-donki-api`
+- `SUBSTORM` -> `aurora-index-sta`
+
+The worker uses a binding when it is there and the public URL otherwise, so
+adding them needs no other change. `/diagnose?secret=...` now lists each
+upstream with the path it took and what came back, and says which binding to
+add if one is still failing.
 
 ## The SELF binding
 

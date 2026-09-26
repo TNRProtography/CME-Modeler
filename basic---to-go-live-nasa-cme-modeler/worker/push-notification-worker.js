@@ -170,6 +170,55 @@ async function fetchWithRetry(url, retries = 3, delay = 1000) {
   return null;
 }
 
+// ── Other workers on this workers.dev subdomain ──────────────────────────────
+//
+// A Worker cannot fetch another Worker on the same workers.dev subdomain by its
+// public URL: Cloudflare refuses the subrequest with error 1042, and the
+// refusal comes back as a plain 4xx that looks like the other worker is broken.
+// The dashboard metrics showed exactly that - every call to the DONKI proxy and
+// the substorm worker failing - so the CME detector never saw a single CME and
+// the substorm data was never there. A service binding goes through Cloudflare's
+// internal dispatch instead. These are optional: with the binding the call goes
+// straight to the other worker, without it the public URL is still tried, and
+// /diagnose says which path each upstream took and what came back.
+//
+//   DONKI     -> nasa-donki-api
+//   SUBSTORM  -> aurora-index-sta
+const upstreamNotes = {};
+
+/** Fetch from another worker, through its service binding when there is one. */
+async function fetchUpstream(name, binding, url, retries = 3) {
+  const via = binding?.fetch ? 'binding' : 'public url';
+  let lastStatus = null;
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = binding?.fetch
+        ? await binding.fetch(new Request(url, { headers: { Accept: 'application/json' } }))
+        : await fetch(url);
+      lastStatus = res.status;
+      if (res.ok) {
+        upstreamNotes[name] = { via, status: res.status, ok: true };
+        return res;
+      }
+    } catch (e) {
+      lastStatus = `threw: ${e.message}`;
+    }
+    if (i < retries - 1) await sleep(1000 * (i + 1));
+  }
+  upstreamNotes[name] = { via, status: lastStatus, ok: false };
+  console.error(`[upstream] ${name} failed via ${via}: ${lastStatus}`);
+  return null;
+}
+
+/** Why an upstream failed, in a form worth reading in /diagnostics. */
+function upstreamFailure(name, bindingName) {
+  const n = upstreamNotes[name];
+  const how = n ? `${n.via} returned ${n.status}` : 'not reached';
+  return n?.via === 'public url'
+    ? `${how}. A worker cannot fetch another worker on the same workers.dev subdomain by URL - add a service binding named ${bindingName}.`
+    : how;
+}
+
 // ── Shared value parser - matches the app's toFiniteNumber ──────────────────
 function toFiniteNumber(value) {
   if (value == null) return null;
@@ -580,9 +629,8 @@ async function runScheduledTasks(env) {
 
   let substormData = null;
   try {
-    const sRes = await fetch(SUBSTORM_URL);
-    if (sRes.ok) substormData = await sRes.json();
-    else console.warn(`[substorm-fetch] ${SUBSTORM_URL} returned ${sRes.status}`);
+    const sRes = await fetchUpstream('substorm', env.SUBSTORM, SUBSTORM_URL, 2);
+    if (sRes) substormData = await sRes.json();
   } catch (e) {
     console.warn('Substorm worker fetch failed:', e.message);
   }
@@ -593,7 +641,7 @@ async function runScheduledTasks(env) {
     rtswPlasma:  plasmaPoints.length,
     temperature: tempAvailable ? 'present' : 'absent (shock detection runs without it)',
     xray:        Array.isArray(xrayData) ? `${xrayData.length} rows` : 'unavailable',
-    substorm:    substormData?.current ? 'ok' : 'unavailable',
+    substorm:    substormData?.current ? 'ok' : `unavailable - ${upstreamFailure('substorm', 'SUBSTORM')}`,
   };
 
   const loadingState = await updateTailLoadingState(env, substormData, magPoints, plasmaPoints);
@@ -975,6 +1023,10 @@ const CME_EARTH_DIRECTED_MAX_LONGITUDE = 45;
 // pass often under-reads the speed, so a CME is re-checked on every run until
 // it ages out rather than being judged once on a preliminary number.
 const CME_LOOKBACK_MS = 48 * 60 * 60 * 1000;
+// Past the lookback, a CME is still news for as long as it has yet to arrive,
+// up to this age: a slow one takes four days, and DONKI can take a day or more
+// to publish the analysis.
+const CME_MAX_AGE_MS = 5 * 24 * 60 * 60 * 1000;
 
 // Ids already notified. Bounded, because this is one KV value and a busy
 // fortnight should not grow it without limit.
@@ -1108,58 +1160,80 @@ function cmePredictedArrival(cme) {
 async function checkEarthDirectedCMEs(env, cmeData = null, note = /** @type {(name?: string, status?: string, detail?: string) => void} */ (() => {})) {
   try {
     if (!cmeData) {
-      const response = await fetchWithRetry(DONKI_CME_URL);
-      if (!response) { note('cme', 'skipped', 'DONKI CME feed unreachable'); return; }
+      const response = await fetchUpstream('donki', env.DONKI, DONKI_CME_URL);
+      if (!response) { note('cme', 'skipped', `DONKI CME feed unreachable: ${upstreamFailure('donki', 'DONKI')}`); return; }
       cmeData = await response.json().catch(() => null);
     }
     if (!Array.isArray(cmeData)) { note('cme', 'skipped', 'DONKI CME feed unparseable'); return; }
 
     const state = await kv(env).get(CME_SEEN_KEY, 'json');
-    const seen = new Set(state?.ids ?? []);
-    const cutoff = Date.now() - CME_LOOKBACK_MS;
+    // id -> the speed it was last announced at. Records written before speeds
+    // were kept had only ids; those count as announced at whatever speed the
+    // CME has now, so nothing is re-sent for them.
+    const announced = new Map(Object.entries(state?.announced ?? {}));
+    const legacyIds = new Set(state?.ids ?? []);
+    const now = Date.now();
 
-    const fresh = [];
-    let earthDirected = 0;
+    const fresh = [];      // never announced
+    const revised = [];    // announced, but the speed has since been revised up
     for (const cme of cmeData) {
       const id = cme?.activityID;
-      if (!id || seen.has(id)) continue;
+      if (!id) continue;
       const startMs = Date.parse(cme.startTime);
-      if (!isFinite(startMs) || startMs < cutoff) continue;
+      if (!isFinite(startMs) || startMs < now - CME_MAX_AGE_MS) continue;
 
       const a = pickCmeAnalysis(cme.cmeAnalyses);
       if (!isCmeEarthDirected(a)) continue;
-      earthDirected++;
-      fresh.push({
-        id, startMs,
-        speed: Math.round(a.speed),
+      const speed = Math.round(a.speed);
+
+      // Still news while it has yet to arrive. A slow CME's analysis can be
+      // published a day or more after launch, and a fixed 48 hours from launch
+      // dropped exactly those - with their arrival still days away.
+      const forecastMs = cmeArrivalMs(speed, startMs);
+      const stillComing = forecastMs != null
+        ? forecastMs + CME_ARRIVAL_UNCERTAINTY_HOURS * 3600000 > now
+        : startMs >= now - CME_LOOKBACK_MS;
+      if (!stillComing && startMs < now - CME_LOOKBACK_MS) continue;
+
+      if (legacyIds.has(id) && !announced.has(id)) announced.set(id, speed);
+      const entry = {
+        id, startMs, speed,
         longitude: +Number(a.longitude).toFixed(1),
         latitude: +Number(a.latitude).toFixed(1),
         halfAngle: a.halfAngle ?? 30,
         arrivalMs: cmePredictedArrival(cme),
-      });
+      };
+      if (!announced.has(id)) fresh.push(entry);
+      else if (speed > Number(announced.get(id))) revised.push({ ...entry, previousSpeed: Number(announced.get(id)) });
     }
 
-    // First ever run: adopt the current window as already-known rather than
-    // announcing two days of history to everybody at once.
-    if (!state) {
+    const save = async (extra = {}) => {
+      const entries = [...announced.entries()].slice(-CME_SEEN_MAX);
       await kv(env).put(CME_SEEN_KEY, JSON.stringify({
-        ids: fresh.map(c => c.id).slice(-CME_SEEN_MAX), primedAt: Date.now(),
+        announced: Object.fromEntries(entries), updatedAt: Date.now(),
+        ...(state?.primedAt ? { primedAt: state.primedAt } : {}), ...extra,
       }));
+    };
+
+    // First ever run: adopt the current window as already-known rather than
+    // announcing days of history to everybody at once.
+    if (!state) {
+      for (const c of fresh) announced.set(c.id, c.speed);
+      await save({ primedAt: Date.now() });
       note('cme', 'skipped',
            `first run - adopted ${fresh.length} recent Earth-directed CME(s) as already seen`);
       return;
     }
 
-    if (fresh.length === 0) {
-      note('cme', 'quiet',
-           `no new Earth-directed CME in the last ${Math.round(CME_LOOKBACK_MS / 3600000)}h `
-           + `(${cmeData.length} catalogued)`);
+    if (fresh.length === 0 && revised.length === 0) {
+      if (legacyIds.size && !state.announced) await save();
+      note('cme', 'quiet', `no new or revised Earth-directed CME still to arrive (${cmeData.length} catalogued)`);
       return;
     }
 
     // Fastest first, so a capped run reports the one that matters most.
-    fresh.sort((a, b) => b.speed - a.speed);
-    const toSend = fresh.slice(0, CME_MAX_PER_RUN);
+    const queue = [...fresh, ...revised].sort((a, b) => b.speed - a.speed);
+    const toSend = queue.slice(0, CME_MAX_PER_RUN);
 
     for (const c of toSend) {
       // Spot The Aurora's own forecast, from the same model the 3D scene uses,
@@ -1177,10 +1251,15 @@ async function checkEarthDirectedCMEs(env, cmeData = null, note = /** @type {(na
       // will not agree.
       if (c.arrivalMs) arrivalLines.push(`NASA estimate: ${formatNzTime(c.arrivalMs)}`);
       const band = cmeSpeedBand(c.speed);
+      const isRevision = c.previousSpeed != null;
       const payload = {
-        title: `Earth-Directed CME - ${c.speed} km/s`,
+        title: isRevision
+          ? `Earth-Directed CME - revised up to ${c.speed} km/s`
+          : `Earth-Directed CME - ${c.speed} km/s`,
         body: [
-          'A CME has been detected heading toward Earth.',
+          isRevision
+            ? `A CME heading toward Earth has been re-measured faster, up from ${c.previousSpeed} km/s.`
+            : 'A CME has been detected heading toward Earth.',
           '',
           `Speed: ${c.speed} km/s`,
           CME_SPEED_BAND_TEXT[band],
@@ -1196,22 +1275,27 @@ async function checkEarthDirectedCMEs(env, cmeData = null, note = /** @type {(na
       };
       await kv(env).put('LATEST_ALERT_cme-earth-directed', JSON.stringify(payload),
                         { expirationTtl: 86400 });
-      // Per-subscriber, because the speed floor is each subscriber's own.
+      // Per-subscriber, because the speed floor is each subscriber's own. A
+      // revision only goes to those whose floor the old speed was under -
+      // everyone else already has it.
       await enqueueDelivery(env, {
         kind: 'cme', topic: 'cme-earth-directed', payload,
-        params: { id: c.id, speed: c.speed },
+        params: { id: c.id, speed: c.speed, ...(isRevision ? { previousSpeed: c.previousSpeed } : {}) },
       });
     }
 
-    // Everything examined this run is now known, including the ones the cap
-    // skipped - otherwise the next run would send them and the cap would only
-    // have delayed the burst.
-    const ids = [...seen, ...fresh.map(c => c.id)].slice(-CME_SEEN_MAX);
-    await kv(env).put(CME_SEEN_KEY, JSON.stringify({ ids, updatedAt: Date.now() }));
+    // Everything examined this run is now known at its current speed,
+    // including the ones the cap skipped - otherwise the next run would send
+    // them and the cap would only have delayed the burst.
+    for (const c of queue) {
+      announced.delete(c.id);           // re-insert, so the newest stay when trimming
+      announced.set(c.id, c.speed);
+    }
+    await save();
 
     note('cme', 'fired',
-         `${toSend.length} Earth-directed CME(s) queued, fastest ${toSend[0].speed} km/s`
-         + (fresh.length > toSend.length ? ` (${fresh.length - toSend.length} more capped)` : ''));
+         `${toSend.length} Earth-directed CME(s) queued (${toSend.filter(c => c.previousSpeed != null).length} revised), fastest ${toSend[0].speed} km/s`
+         + (queue.length > toSend.length ? ` (${queue.length - toSend.length} more capped)` : ''));
   } catch (e) {
     note('cme', 'error', e.message);
     reportError(e, env, { handler: 'checkEarthDirectedCMEs' });
@@ -2401,7 +2485,7 @@ async function handleTriggerSelfTest(request, env) {
 
     const [forecastData, substormData, xrayData, rtswResult] = await Promise.all([
       getFullForecastData(env).catch(() => null),
-      fetch(SUBSTORM_URL).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetchUpstream('substorm', env.SUBSTORM, SUBSTORM_URL, 1).then(r => r ? r.json() : null).catch(() => null),
       fetchWithRetry(NOAA_XRAY_URL).then(r => r ? r.json() : null).catch(() => null),
       fetchAndParseRtswData(env),
     ]);
@@ -2815,7 +2899,25 @@ async function handleDiagnose(request, env) {
   const url = new URL(request.url);
   if (url.searchParams.get('secret') !== env.TRIGGER_SECRET) return new Response('Forbidden', { status: 403 });
 
+  // Every other worker this one depends on, called the way the detectors call
+  // it. A 4xx through 'public url' is the same-subdomain refusal, and the
+  // answer is the service binding named alongside it.
+  const upstreams = {};
+  for (const [name, bindingName, url] of [
+    ['donki', 'DONKI', DONKI_CME_URL],
+    ['substorm', 'SUBSTORM', SUBSTORM_URL],
+  ]) {
+    const res = await fetchUpstream(name, env[bindingName], url, 1);
+    upstreams[name] = {
+      binding: bindingName,
+      bindingPresent: !!env[bindingName]?.fetch,
+      ...upstreamNotes[name],
+      ...(res ? {} : { fix: upstreamFailure(name, bindingName) }),
+    };
+  }
+
   const out = {
+    upstreams,
     selfBindingPresent: !!env.SELF?.fetch,
     selfUrlConfigured: env.SELF_URL ?? null,
     requestOrigin: new URL(request.url).origin,
@@ -3103,7 +3205,10 @@ async function decideForSubscriber(env, job, keyName, stored, meter = { ops: 0 }
     if (prefs['cme-earth-directed'] !== true) return null;
     // The only alert whose threshold belongs to the subscriber rather than to
     // the detector: everyone gets the same CME judged against their own floor.
-    if ((job.params?.speed ?? 0) < cmeSpeedFloorOf(stored)) return null;
+    const floor = cmeSpeedFloorOf(stored);
+    if ((job.params?.speed ?? 0) < floor) return null;
+    // A revised speed only reaches people the earlier speed was too slow for.
+    if (job.params?.previousSpeed != null && job.params.previousSpeed >= floor) return null;
     return { payload: job.payload };
   }
 

@@ -28,7 +28,7 @@ const copy = join(dir, 'w.mjs');
 writeFileSync(copy, readFileSync(SRC, 'utf8') +
   '\nexport { checkEarthDirectedCMEs, runShard, decideForSubscriber, pickCmeAnalysis,' +
   ' isCmeEarthDirected, cmeSpeedFloorOf, cmeSpeedBand, handleSaveSubscription,' +
-  ' cmeDistanceAU, cmeTransitSeconds, cmeArrivalMs, CME_ARRIVAL_UNCERTAINTY_HOURS };\n');
+  ' cmeDistanceAU, cmeTransitSeconds, cmeArrivalMs, CME_ARRIVAL_UNCERTAINTY_HOURS, fetchUpstream, upstreamFailure };\n');
 const W = await import(pathToFileURL(copy).href);
 
 let pass = 0, fail = 0;
@@ -365,6 +365,76 @@ console.log('\nEnd to end: the right phones light up');
   check(got.join(',') === '400,700',
         'a 950 km/s CME reaches the 400 and 700 floors and nobody else',
         `reached ${got.join(', ') || 'nobody'}`);
+}
+
+// ── late analyses, revised speeds, and the feed itself ─────────────────────
+console.log('\nLate analyses and revised speeds still reach people');
+{
+  store.clear();
+  const floors = [400, 700];
+  for (const f of floors) {
+    await W.handleSaveSubscription(new Request('https://push.invalid/save-subscription', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://www.spottheaurora.co.nz' },
+      body: JSON.stringify({
+        subscription: { endpoint: `https://push.example/rev-${f}`,
+                        keys: { p256dh: P256DH, auth: b64u(webcrypto.getRandomValues(new Uint8Array(16))) } },
+        preferences: { 'cme-earth-directed': true },
+        cme_speed_min: f,
+      }),
+    }), env);
+  }
+  const reached = () => delivered.map(u => Number(u.match(/rev-(\d+)/)?.[1])).filter(Boolean).sort((a, b) => a - b).join(',');
+
+  await W.checkEarthDirectedCMEs(env, [cme({ id: 'prime', speed: 100 })], () => {});  // prime
+  clearJobs();
+
+  // Launched three days ago at 500 km/s: DONKI's analysis only just landed,
+  // and the CME has yet to arrive. That is still news.
+  delivered.length = 0;
+  await W.checkEarthDirectedCMEs(env, [cme({ id: 'late', speed: 500, hoursAgo: 72 })], () => {});
+  await settle();
+  check(reached() === '400', 'a 500 km/s CME first analysed three days after launch, still on its way, is sent',
+        `reached ${reached() || 'nobody'}`);
+  clearJobs();
+
+  // DONKI re-measures it faster. The 700 floor now qualifies; 400 already has it.
+  delivered.length = 0;
+  await W.checkEarthDirectedCMEs(env, [cme({ id: 'late', speed: 750, hoursAgo: 72 })], () => {});
+  await settle();
+  check(reached() === '700', 'revised up to 750 km/s, it reaches the 700 floor and not the 400 floor again',
+        `reached ${reached() || 'nobody'}`);
+  clearJobs();
+
+  // Re-measured slower, or unchanged: nothing more.
+  delivered.length = 0;
+  await W.checkEarthDirectedCMEs(env, [cme({ id: 'late', speed: 650, hoursAgo: 72 })], () => {});
+  await settle();
+  check(delivered.length === 0, 'revised down, nobody is told again');
+
+  // A record from before speeds were kept: no re-send for what it knew.
+  store.set('STATE_cme_seen', JSON.stringify({ ids: ['old-a'], updatedAt: Date.now() }));
+  clearJobs();
+  await W.checkEarthDirectedCMEs(env, [cme({ id: 'old-a', speed: 900 })], () => {});
+  check((await queuedJobs()).length === 0, 'CMEs in an old-style record are not announced again');
+  check(JSON.parse(store.get('STATE_cme_seen')).announced?.['old-a'] === 900, 'and the record is carried over with speeds');
+  clearJobs();
+}
+
+console.log('\nThe DONKI feed through a service binding');
+{
+  let viaBinding = 0;
+  const DONKI = { fetch: async () => { viaBinding++; return new Response('[]', { status: 200 }); } };
+  const res = await W.fetchUpstream('donki', DONKI, 'https://nasa-donki-api.example/CME', 1);
+  check(res && viaBinding === 1, 'with a DONKI binding the feed is fetched through it');
+
+  const saved = globalThis.fetch;
+  globalThis.fetch = async () => new Response('error code: 1042', { status: 404 });
+  const miss = await W.fetchUpstream('donki', undefined, 'https://nasa-donki-api.example/CME', 1);
+  globalThis.fetch = saved;
+  const why = W.upstreamFailure('donki', 'DONKI');
+  check(miss === null && /public url returned 404/.test(why) && /service binding named DONKI/.test(why),
+        'without one, a refusal says so and names the binding to add', why);
 }
 
 // ── reaching the people who were already subscribed ────────────────────────
