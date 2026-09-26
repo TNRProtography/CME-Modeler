@@ -17,7 +17,6 @@ import {
 import SolarWindStructureDiagram from './SolarWindStructureDiagram';
 import { useForecast } from '../hooks/useForecast';
 import { expectedChange } from '../utils/forecastTimeline';
-import ExpectedArrivals from './ExpectedArrivals';
 
 // Per-structure colour + short tag for the phase card. Warm for CME-driven
 // structures, cool for coronal-hole flow, neutral for quiet and boundary states.
@@ -632,14 +631,6 @@ export const IMFClockChart: React.FC<{
                                     <dd className="text-xs text-neutral-300 mt-0.5">{stormPhase.outlook.incoming}</dd>
                                 </div>
                             )}
-                            {/* Everything due in three days, not just the next
-                                one - two holes a day apart are two decisions. */}
-                            <div>
-                                <dt className="text-[10px] uppercase tracking-wide font-semibold text-neutral-500 mb-1">
-                                    Due in the next 3 days
-                                </dt>
-                                <dd><ExpectedArrivals detailed /></dd>
-                            </div>
                         </dl>
                         {stormPhase.outlook.layerNote && (
                             <div className="mt-2 pt-2 border-t border-neutral-700/50 text-[11px] text-neutral-400">

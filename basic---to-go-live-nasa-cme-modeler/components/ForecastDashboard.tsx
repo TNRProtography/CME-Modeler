@@ -44,7 +44,6 @@ import {
     NewellCouplingChart,
     DynamicPressureChart,
 } from './ForecastCharts';
-import ExpectedArrivals from './ExpectedArrivals';
 import {
     getGaugeStyle, getSatelliteSource, formatTimeHHMM, getLatestPointTime,
     ImfPanel, HemisphericPowerPanel, SolarWindSpeedPanel, SolarWindDensityPanel, MoonArcPanel, SubstormIndexPanel,
@@ -613,18 +612,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 />
                             </div>
                             </div>
-                            {/* The only forward-looking thing in the simple
-                                view. Same component and same forecast as the
-                                advanced structure panel, without the physics
-                                line under each entry. */}
-                            <div className="col-span-12 card bg-neutral-950/80 p-4">
-                                <h3 className="text-lg font-semibold text-white mb-1">What to expect in the next couple of days</h3>
-                                <p className="text-xs text-neutral-500 mb-3">
-                                    Coronal hole streams and CMEs due to reach Earth in the next three days,
-                                    and what each would be worth seeing.
-                                </p>
-                                <ExpectedArrivals />
-                            </div>
                             <div id="aurora-sightings-section" className="col-span-12">{appReady ? <React.Suspense fallback={<SightingsPlaceholder />}><AuroraSightings isDaylight={isDaylight} refreshSignal={refreshSignal} onSightingsLoaded={setRecentSightings} substormRiskData={substormRiskData} allNewellData={allNewellData} allMagneticData={allMagneticData} allSpeedData={allSpeedData} allPressureData={allPressureData} /></React.Suspense> : <SightingsPlaceholder />}</div>
                             <div id="kp-forecast-section" className="col-span-12"><KpForecastTimeline
                                 userLongitude={userLongitude}
@@ -674,16 +661,6 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                     allPressureData={allPressureData}
                                 />
                             </div>
-                            </div>
-                            {/* The same three-day outlook as the simple view,
-                                with the physics line under each entry. */}
-                            <div className="col-span-12 card bg-neutral-950/80 p-4">
-                                <h3 className="text-lg font-semibold text-white mb-1">What to expect in the next couple of days</h3>
-                                <p className="text-xs text-neutral-500 mb-3">
-                                    Coronal hole streams and CMEs due to reach Earth in the next three days,
-                                    and what each would be worth seeing.
-                                </p>
-                                <ExpectedArrivals detailed />
                             </div>
                             <KpForecastTimeline
                                 userLongitude={userLongitude}
