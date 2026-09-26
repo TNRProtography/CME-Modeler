@@ -81,7 +81,16 @@ export default {
       // FIX 2: /api/state is now summary-only — reads one latest.json per source.
       // Full frame history is loaded lazily via /api/frames per source.
       if (url.pathname === "/api/state") {
-        const stateData = await readStateCache(env) || await buildState(env);
+        // A snapshot written before a source was added does not list it, and
+        // serving it would hide that source until the next refresh. Rebuild
+        // (and re-save) whenever the snapshot is missing any source.
+        const cached = await readStateCache(env);
+        const complete = cached && Object.keys(SOURCES).every(k => cached.sources?.[k]);
+        let stateData = complete ? cached : null;
+        if (!stateData) {
+          stateData = await buildState(env);
+          try { await env.CORONA_BUCKET.put("meta/state_cache.json", JSON.stringify(stateData), { httpMetadata: { contentType: "application/json" } }); } catch (_) {}
+        }
         return jsonCacheable(stateData, 30);
       }
 

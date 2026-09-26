@@ -13,7 +13,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = join(HERE, '..', 'worker', 'coronagraph-worker.js');
 const dir = mkdtempSync(join(tmpdir(), 'corona-'));
 const copy = join(dir, 'w.mjs');
-writeFileSync(copy, readFileSync(SRC, 'utf8') + '\nexport { refreshAll, buildState, SOURCES, parseListingNameToIso };\n');
+writeFileSync(copy, readFileSync(SRC, 'utf8').replace('export default {', 'const worker = {') + '\nexport default worker;' + '\nexport { refreshAll, buildState, SOURCES, parseListingNameToIso, worker };\n');
 const W = await import(pathToFileURL(copy).href);
 
 let pass = 0, fail = 0;
@@ -80,6 +80,17 @@ const state = await W.buildState(env);
 const n2 = state.sources.ccor2?.frames?.length ?? 0;
 check(n2 >= 20 && state.sources.ccor2.label === 'SWFO-L1 CCOR-2', '/api/state lists the CCOR-2 frames for the app', String(n2));
 check(state.sources.ccor2.frames.every((f) => f.key.startsWith('raw/ccor2/')), 'each under raw/ccor2/');
+
+console.log('\nA snapshot from before CCOR-2 existed');
+{
+  const old = { ok: true, updated_utc: new Date().toISOString(), sources: { ccor1: { label: 'GOES-19 CCOR-1', frames: [] } } };
+  await bucket.put('meta/state_cache.json', JSON.stringify(old));
+  const res = await W.worker.fetch(new Request('https://w.invalid/api/state'), env);
+  const body = await res.json();
+  check(body.sources?.ccor2?.frames?.length > 0, '/api/state rebuilds it rather than hiding CCOR-2');
+  const saved = JSON.parse(new TextDecoder().decode(objects.get('meta/state_cache.json').bytes));
+  check(!!saved.sources?.ccor2, 'and saves the rebuilt one');
+}
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
