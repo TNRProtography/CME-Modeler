@@ -102,7 +102,7 @@ interface ActiveSunspotRegion {
   source: string | null;
 }
 
-type CoronagraphSourceKey = 'soho_c2' | 'soho_c3' | 'stereo_cor2' | 'ccor1';
+type CoronagraphSourceKey = 'soho_c2' | 'soho_c3' | 'stereo_cor2' | 'ccor1' | 'ccor2';
 type SuviWorkerSourceKey = 'suvi_195_primary' | 'suvi_304_secondary' | 'suvi_131_secondary' | 'suvi_284_primary';
 interface CoronagraphFrame {
   key: string;
@@ -244,6 +244,7 @@ const PUSH_WORKER_BASE = 'https://push-notification-worker.thenamesrock.workers.
 const SOLO_BASE = 'https://solo-worker.thenamesrock.workers.dev';
 const CORONAGRAPH_SOURCES: { key: CoronagraphSourceKey; label: string }[] = [
   { key: 'ccor1', label: 'GOES-19 CCOR-1' },
+  { key: 'ccor2', label: 'SWFO-L1 CCOR-2' },
   { key: 'soho_c2', label: 'SOHO LASCO C2' },
   { key: 'soho_c3', label: 'SOHO LASCO C3' },
   { key: 'stereo_cor2', label: 'STEREO-A COR2' },
@@ -1366,7 +1367,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     ),
     'coronagraphy': buildStatTooltip(
       'Multi-source Coronagraphy',
-      'A 6-hour rolling stack of coronagraph frames from CCOR-1, SOHO LASCO, and STEREO-A COR2.',
+      'A 6-hour rolling stack of coronagraph frames from CCOR-1, CCOR-2, SOHO LASCO, and STEREO-A COR2.',
       'Lets you inspect CME fronts and compare viewpoints to assess possible Earth-directed structure.',
       'Difference imagery highlights motion, but off-axis viewpoints (especially STEREO when far from Earth longitude) can mislead halo interpretation.'
     ),
@@ -5103,7 +5104,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   {activeCoronagraphFrame ? `Frame: ${formatNZTimestamp(activeCoronagraphFrame.ts)} · fetched ${activeCoronagraphFrame.fetched_at ? formatNZTimestamp(activeCoronagraphFrame.fetched_at) : ' - '}` : 'No frame selected'}
                 </div>
                 <div className="text-[11px] text-neutral-500 leading-relaxed">
-                  Imagery credits: NOAA SWPC (GOES-19 CCOR-1), NASA/ESA SOHO LASCO (C2/C3), and NASA STEREO-A SECCHI (COR2). Difference imagery processing and visualization by TNR Protography.
+                  Imagery credits: NOAA SWPC (GOES-19 CCOR-1, SWFO-L1 CCOR-2), NASA/ESA SOHO LASCO (C2/C3), and NASA STEREO-A SECCHI (COR2). Difference imagery processing and visualization by TNR Protography.
                 </div>
               </div>
             </div>

@@ -1,4 +1,7 @@
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+// New frames one scheduled run may fetch per listing source. Keeps a run well
+// inside the subrequest limit; anything left is picked up by the next run.
+const MAX_NEW_FRAMES_PER_RUN = 12;
 const FETCH_TIMEOUT_MS = 30000;
 
 // Standard browser User-Agent. NOAA/SWPC (and possibly other space-weather
@@ -32,6 +35,16 @@ const SOURCES = {
     label: "GOES-19 CCOR-1",
     listingUrl: "https://services.swpc.noaa.gov/products/ccor1/jpegs/",
     baseUrl: "https://services.swpc.noaa.gov/products/ccor1/jpegs/",
+    namePattern: /href="(\d{8}_\d{4}_ccor1_1024by960\.jpg)"/g,
+  },
+  // SWFO-L1's coronagraph, from L1. Same file naming as CCOR-1, different
+  // directory.
+  ccor2: {
+    key: "ccor2",
+    label: "SWFO-L1 CCOR-2",
+    listingUrl: "https://services.swpc.noaa.gov/images/animations/ccor2/",
+    baseUrl: "https://services.swpc.noaa.gov/images/animations/ccor2/",
+    namePattern: /href="(\d{8}_\d{4}_ccor2_1024by960\.jpg)"/g,
   },
 };
 
@@ -135,13 +148,17 @@ async function refreshAll(env, { backfill }) {
   for (const source of Object.values(SOURCES)) {
     try {
       if (backfill) {
-        if (source.key === "ccor1") {
-          results[source.key] = await backfillCcor1(env, source);
+        if (source.listingUrl) {
+          results[source.key] = await backfillFromListing(env, source);
         } else if (source.key === "stereo_cor2") {
           results[source.key] = await backfillStereoCor2(env, source);
         } else {
           results[source.key] = await ingestLatestForSource(env, source);
         }
+      } else if (source.listingUrl) {
+        // Every run fills whatever is missing from the listing, newest first,
+        // so a run that is skipped or late leaves no gap in the 24 hours.
+        results[source.key] = await backfillFromListing(env, source, { maxNew: MAX_NEW_FRAMES_PER_RUN });
       } else {
         results[source.key] = await ingestLatestForSource(env, source);
       }
@@ -167,9 +184,9 @@ async function refreshAll(env, { backfill }) {
 }
 
 async function ingestLatestForSource(env, source) {
-  if (source.key === "ccor1") {
-    const latest = await getLatestCcor1FromListing(source);
-    if (!latest) return { ok: false, reason: "No CCOR1 images found" };
+  if (source.listingUrl) {
+    const latest = await getLatestFromListing(source);
+    if (!latest) return { ok: false, reason: `No ${source.label} images found` };
     return ingestRemoteFrame(env, source.key, latest.url, latest.ts, latest.name);
   }
 
@@ -194,26 +211,49 @@ async function ingestLatestForSource(env, source) {
   return ingestFrameBytes(env, source.key, ts, bytes, "latest.jpg", hash);
 }
 
-async function backfillCcor1(env, source) {
+// CCOR-1 and CCOR-2: a NOAA directory listing of timestamped frames.
+//
+// What is already stored is read with one bucket listing, and only frames not
+// in it are fetched. The old path went through ingestRemoteFrame, which skips
+// anything older than the newest frame stored - so once one refresh had taken
+// the latest frame, a backfill could add nothing, and a run that was missed
+// left a hole for good.
+async function backfillFromListing(env, source, { maxNew = Infinity } = {}) {
   const htmlText = await fetchText(source.listingUrl);
   const cutoff = Date.now() - TWENTY_FOUR_HOURS_MS;
 
-  const names = [...htmlText.matchAll(/href="(\d{8}_\d{4}_ccor1_1024by960\.jpg)"/g)].map(m => m[1]);
-
-  const items = names
-    .map(name => ({ name, ts: parseCcor1NameToIso(name), ms: 0 }))
+  const items = listingNames(source, htmlText)
+    .map(name => ({ name, ts: parseListingNameToIso(name) }))
     .map(x => ({ ...x, ms: x.ts ? Date.parse(x.ts) : NaN }))
     .filter(x => x.ts && x.ms >= cutoff)
-    .sort((a, b) => a.ms - b.ms);
+    .sort((a, b) => b.ms - a.ms);            // newest first
 
-  let stored = 0, skipped = 0;
+  const have = new Set();
+  let cursor;
+  do {
+    const page = await env.CORONA_BUCKET.list({ prefix: `raw/${source.key}/`, cursor, limit: 1000 });
+    for (const o of page.objects) have.add(o.key);
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+
+  let stored = 0, skipped = 0, failed = 0, missing = 0;
   for (const item of items) {
-    const out = await ingestRemoteFrame(env, source.key, source.baseUrl + item.name, item.ts, item.name);
-    if (out.stored) stored++;
-    if (out.skipped) skipped++;
+    const key = `raw/${source.key}/${isoToCompact(item.ts)}.jpg`;
+    if (have.has(key)) { skipped++; continue; }
+    missing++;
+    if (stored >= maxNew) continue;
+    try {
+      const res = await fetchWithTimeout(source.baseUrl + item.name);
+      if (!res.ok) { failed++; continue; }
+      const bytes = await res.arrayBuffer();
+      const out = await ingestFrameBytes(env, source.key, item.ts, bytes, item.name, await sha256Hex(bytes));
+      if (out.stored) stored++;
+    } catch (_) {
+      failed++;
+    }
   }
 
-  return { ok: true, attempted: items.length, stored, skipped };
+  return { ok: true, listed: items.length, stored, skipped, failed, stillMissing: missing - stored };
 }
 
 async function backfillStereoCor2(env, source) {
@@ -292,6 +332,12 @@ async function ingestFrameBytes(env, sourceKey, tsIso, bytes, remoteName, hash) 
     },
   });
 
+  // Filling in an older frame must not make it the latest.
+  const currentLatest = await getLatestSourceMeta(env, sourceKey);
+  if (currentLatest?.ts && Date.parse(currentLatest.ts) >= Date.parse(tsIso)) {
+    return { ok: true, stored: true, key: rawKey, ts: tsIso, fetched_at: fetchedAt, hash };
+  }
+
   await env.CORONA_BUCKET.put(
     `meta/${sourceKey}/latest.json`,
     JSON.stringify({
@@ -319,11 +365,11 @@ async function getLatestSourceMeta(env, sourceKey) {
   try { return await obj.json(); } catch { return null; }
 }
 
-// FIX 2: Summary-only state — reads one latest.json per source (4 reads total).
+// FIX 2: Summary-only state — reads one latest.json per source (one read each).
 // Full frames are loaded on-demand via /api/frames.
 // Returns all frames in /api/state. Safe now because listRecent uses
 // include:["customMetadata"] — one paginated list call, no per-object head() requests.
-// All four sources fetched in parallel via Promise.all for extra speed.
+// All sources fetched in parallel via Promise.all for extra speed.
 async function buildState(env) {
   const out = {
     ok: true,
@@ -439,17 +485,24 @@ async function pruneOld(env) {
 // Helpers
 // ---------------------------------------------------------------------------
 
-async function getLatestCcor1FromListing(source) {
+/** Frame file names in a listing, by the source's own pattern, deduplicated. */
+function listingNames(source, htmlText) {
+  const pattern = new RegExp(source.namePattern.source, "g");
+  return [...new Set([...htmlText.matchAll(pattern)].map(m => m[1]))];
+}
+
+async function getLatestFromListing(source) {
   const htmlText = await fetchText(source.listingUrl);
-  const names = [...htmlText.matchAll(/href="(\d{8}_\d{4}_ccor1_1024by960\.jpg)"/g)].map(m => m[1]);
+  const names = listingNames(source, htmlText);
   if (!names.length) return null;
   names.sort();
   const name = names[names.length - 1];
-  return { name, url: source.baseUrl + name, ts: parseCcor1NameToIso(name) };
+  return { name, url: source.baseUrl + name, ts: parseListingNameToIso(name) };
 }
 
-function parseCcor1NameToIso(name) {
-  const m = name.match(/^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})_ccor1_/);
+/** YYYYMMDD_HHMM_ccorN_... to an ISO time, for either coronagraph. */
+function parseListingNameToIso(name) {
+  const m = name.match(/^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})_ccor\d_/);
   if (!m) return null;
   const [, y, mo, d, h, mi] = m;
   return `${y}-${mo}-${d}T${h}:${mi}:00.000Z`;
@@ -471,7 +524,7 @@ function parseHttpDateToIso(value) {
 
 // FIX: added a browser-like User-Agent header. This is the single shared
 // fetch function used for every remote request in this worker (SOHO, STEREO,
-// and NOAA CCOR1 listing + images), so the fix covers all of them at once.
+// and the NOAA CCOR-1 and CCOR-2 listings + images), so the fix covers all of them at once.
 async function fetchWithTimeout(url, init = {}, timeoutMs = FETCH_TIMEOUT_MS) {
   const ctrl = new AbortController();
   const id = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -724,7 +777,7 @@ function renderAppHtml() {
 
 <script>
 const WATERMARK_URL = "/watermark-logo";
-const SOURCE_ORDER = ["soho_c2","soho_c3","stereo_cor2","ccor1"];
+const SOURCE_ORDER = ["ccor2","ccor1","soho_c2","soho_c3","stereo_cor2"];
 
 const state = {
   data: null,
