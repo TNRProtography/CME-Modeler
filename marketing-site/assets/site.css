@@ -237,6 +237,9 @@ section.tight { padding: clamp(44px, 5vw, 70px) 0; }
 .stat .n em { font-style: normal; }
 .stat .l { font-family: var(--label); font-size: .58rem; font-weight: 700; text-transform: uppercase; letter-spacing: .22em; color: var(--gold); margin-top: 12px; display: block; }
 @media (max-width: 720px) { .stats { grid-template-columns: repeat(2, 1fr); } .stat:nth-child(3) { border-left: 0; padding-left: 0; } }
+/* One figure on its own, centred. */
+.stats.single { grid-template-columns: 1fr; justify-items: center; text-align: center; }
+.stats.single .stat { border-left: 0; padding-left: 0; padding-right: 0; }
 
 /* ---------- Imagery, full bleed and unframed ---------- */
 .shot { position: relative; overflow: hidden; border: 0; background: var(--card); box-shadow: 0 16px 50px rgba(0,0,0,0.5); }
