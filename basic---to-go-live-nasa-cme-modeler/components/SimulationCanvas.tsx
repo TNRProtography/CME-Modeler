@@ -32,12 +32,13 @@ import {
 import {
   type CHEvolution,
   chStateAtInFrame,
-  chWasPresentAt,
   chMeasuredSpan,
   anchorEvolution,
   interpolateCHAtTimeMs,
   CH_PRESENCE_GRACE_MS,
 } from '../utils/coronalHoleHistory';
+import { outlineAt, type LifecycleEvolution } from '../utils/chLifecycleScene';
+import { longitudeAt } from '../utils/solarDisk';
 import { streamParcels, unitsPerKmFor, emissionStartMs, type HoleState, type StreamSource } from '../utils/hssParcels';
 import type { RegionInput } from '../utils/regionLabels';
 import {
@@ -1993,16 +1994,35 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         - SUN_ANGULAR_VELOCITY * (anchorMs / 1000);
     }
     const baseById = new Map(coronalHoles.map((ch) => [ch.id, ch]));
-    const drawn: { ch: any; scale: number }[] = [];
+
+    // History from the 90-day record says which holes are still open; a hole
+    // that is can be drawn on past its last sighting, into the forecast.
+    const fromRecord = chEvolutions.some((e) => typeof (e as LifecycleEvolution).openEnded === 'boolean');
+    const drawn: { ch: any; scale: number; shapeMs: number }[] = [];
 
     for (const evolution of chEvolutions) {
-      if (!chWasPresentAt(evolution, chShapeTimeMs)) continue;
+      const openEnded = (evolution as LifecycleEvolution).openEnded === true;
+      const span = chMeasuredSpan(evolution);
+      if (!span) continue;
+      // Not yet opened, or gone: closed, merged, or turned off the disk.
+      if (chShapeTimeMs < span.firstMs - CH_PRESENCE_GRACE_MS) continue;
+      if (!openEnded && chShapeTimeMs > span.lastMs + CH_PRESENCE_GRACE_MS) continue;
       const at = chStateAtInFrame(evolution, chShapeTimeMs, anchorMs);
       if (!at) continue;
+      // Only while it faces us: round the back of the Sun it is not drawn.
+      const facing = longitudeAt(at.lon, anchorMs, chShapeTimeMs);
+      if (fromRecord && Math.abs(facing) > 90) continue;
 
-      // The outline comes from a live detection where there is one, because
-      // only those carry a polygon; a hole that has since closed falls back
-      // to the last shape the track kept.
+      // The outline measured at that moment, where the record has one: the
+      // hole's real shape then, not today's stretched to its width.
+      const then = outlineAt(evolution, chShapeTimeMs);
+      if (then) {
+        drawn.push({ ch: { ...then.ch, lat: at.lat, lon: at.lon }, scale: 1, shapeMs: then.atMs });
+        continue;
+      }
+
+      // Otherwise the live detection's outline, or the last shape the track
+      // kept, scaled to the width at that moment.
       const base = baseById.get(evolution.trackId) ?? evolution.current;
       if (!base) continue;
 
@@ -2014,15 +2034,20 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         // so the two cannot drift apart. Bounded, because one frame where the
         // detector merged two holes should not swallow the disk.
         scale: at.widthDeg > 0 ? Math.max(0.35, Math.min(2.5, at.widthDeg / measured)) : 1,
+        shapeMs: 0,
       });
     }
 
     // Holes the tracker has no history for yet - a first detection this
     // session - are drawn as measured. That is the old behaviour and the
-    // honest one: there is nothing to interpolate.
+    // honest one: there is nothing to interpolate. With the record, only from
+    // when they were detected, since before that nobody had seen them.
     const haveHistory = new Set(chEvolutions.map((e) => e.trackId));
+    const detectedMs = chDetectedAtMs ?? Date.now();
     for (const ch of coronalHoles) {
-      if (!haveHistory.has(ch.id)) drawn.push({ ch, scale: 1 });
+      if (haveHistory.has(ch.id)) continue;
+      if (fromRecord && chShapeTimeMs < detectedMs - CH_PRESENCE_GRACE_MS) continue;
+      drawn.push({ ch, scale: 1, shapeMs: 0 });
     }
 
     // Nothing visible changed? Then do not touch the scene.
@@ -2032,7 +2057,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     // tick that produces an identical Sun. Rounded, so floating-point noise
     // in an interpolation does not count as a change.
     const signature = drawn
-      .map(({ ch, scale }) => `${ch.id}:${ch.lat.toFixed(1)}:${ch.lon.toFixed(1)}:${scale.toFixed(2)}`)
+      .map(({ ch, scale, shapeMs }) => `${ch.id}:${ch.lat.toFixed(1)}:${ch.lon.toFixed(1)}:${scale.toFixed(2)}:${shapeMs}`)
       .sort()
       .join('|');
     if (signature === chSignatureRef.current) return;
@@ -2107,7 +2132,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       streams.push({
         source: {
           firstMs: emissionStartMs({ firstMs: span.firstMs, recordsStartMs, timelineStartMs: timelineStart }),
-          lastMs: liveIds.has(evolution.trackId) ? null : span.lastMs + CH_PRESENCE_GRACE_MS,
+          // Still open: blowing for as long as the clock runs. From the record
+          // that is its own verdict; otherwise, whether it is in this detection.
+          lastMs: ((evolution as LifecycleEvolution).openEnded ?? liveIds.has(evolution.trackId))
+            ? null : span.lastMs + CH_PRESENCE_GRACE_MS,
           stateAt: (ms) => toState(interpolateCHAtTimeMs(anchored, ms)),
         },
         mesh: createGrowingStreamMesh(THREE, evolution.trackId, opacityFor(evolution.current)),
@@ -2123,8 +2151,17 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         estimatedSpeedKms: ch.estimatedSpeedKms,
       });
       streams.push({
-        // No history: older than anything we can see.
-        source: { firstMs: emissionStartMs({ firstMs: null, recordsStartMs, timelineStartMs: timelineStart }), lastMs: null, stateAt: () => state },
+        // No history: older than anything we can see - unless the 90-day
+        // record is the history, in which case it is new since its last frame.
+        source: {
+          firstMs: emissionStartMs({
+            firstMs: chEvolutions.some((e) => typeof (e as LifecycleEvolution).openEnded === 'boolean')
+              ? (chDetectedAtMs ?? Date.now()) : null,
+            recordsStartMs, timelineStartMs: timelineStart,
+          }),
+          lastMs: null,
+          stateAt: () => state,
+        },
         mesh: createGrowingStreamMesh(THREE, ch.id, opacityFor(ch)),
       });
     }

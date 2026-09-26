@@ -8,14 +8,15 @@
 // record and sends what it has missed next time.
 
 import {
-  adoptSharedLifecycle, framesNewerThan, getChState, isDetecting, subscribeToChDetections,
+  adoptSharedLifecycle, framesNewerThan, getChState, isDetecting, LOCAL_OUTLINE_WINDOW_MS,
+  sharedOutlinesCompleteToMs, subscribeToChDetections,
 } from './chDetectionStore';
 import { whenAppIdle } from './appReady';
 import { registerDatasetTicker } from './pollingScheduler';
 
 const FORECAST_WORKER = 'https://spot-the-aurora-forecast-worker.thenamesrock.workers.dev';
-/** The worker takes at most this many frames a request. */
-const MAX_FRAMES_PER_POST = 120;
+/** Frames a request: each carries every hole's outline, about a kilobyte apiece. */
+const MAX_FRAMES_PER_POST = 60;
 const WEEK_MS = 7 * 86400000;
 const SYNC_EVERY_MS = 15 * 60000;
 
@@ -30,7 +31,10 @@ export function syncChLifecycle(): Promise<boolean> {
 
 async function runSync(): Promise<boolean> {
   try {
-    const res = await fetch(`${FORECAST_WORKER}/ch/lifecycle`);
+    // Outlines only for what this device does not already have: after the
+    // last complete copy it took, and never older than the 3D view reaches.
+    const outlinesFrom = Math.max(sharedOutlinesCompleteToMs(), Date.now() - LOCAL_OUTLINE_WINDOW_MS);
+    const res = await fetch(`${FORECAST_WORKER}/ch/lifecycle?outlinesFrom=${Math.floor(outlinesFrom)}`);
     if (!res.ok) return false;
     let shared = (await res.json())?.lifecycle ?? null;
     const since = Math.max(Number(shared?.lastFrameMs) || 0, Date.now() - WEEK_MS);
@@ -38,22 +42,25 @@ async function runSync(): Promise<boolean> {
     // Only once detection has settled: a pass works newest first, and the
     // record takes frames oldest first.
     if (!isDetecting()) {
-      const frames = framesNewerThan(since).slice(0, MAX_FRAMES_PER_POST).map((f) => ({
-        atMs: f.atMs,
-        holes: f.holes.map((h) => ({
-          id: h.id, lat: h.lat, lon: h.lon, widthDeg: h.widthDeg, heightDeg: h.heightDeg, darkness: h.darkness,
-        })),
-      }));
-      if (frames.length > 0) {
-        const post = await fetch(`${FORECAST_WORKER}/ch/observe`, {
+      const pending = framesNewerThan(since);
+      for (let i = 0; i < pending.length; i += MAX_FRAMES_PER_POST) {
+        const frames = pending.slice(i, i + MAX_FRAMES_PER_POST).map((f) => ({
+          atMs: f.atMs,
+          holes: f.holes.map((h) => ({
+            id: h.id, lat: h.lat, lon: h.lon, widthDeg: h.widthDeg, heightDeg: h.heightDeg,
+            darkness: h.darkness, outline: h.outline,
+          })),
+        }));
+        const post = await fetch(`${FORECAST_WORKER}/ch/observe?outlinesFrom=${Math.floor(outlinesFrom)}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ frames }),
         });
-        if (post.ok) shared = (await post.json())?.lifecycle ?? shared;
+        if (!post.ok) break;
+        shared = (await post.json())?.lifecycle ?? shared;
       }
     }
-    return shared ? adoptSharedLifecycle(shared) : false;
+    return shared ? adoptSharedLifecycle(shared, outlinesFrom) : false;
   } catch {
     // Offline, or the worker not yet deployed with the record: this device's
     // own record stands in.

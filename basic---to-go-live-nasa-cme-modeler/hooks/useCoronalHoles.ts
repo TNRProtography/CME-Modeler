@@ -28,6 +28,8 @@ import {
 } from '../utils/coronalHoleHistory';
 import { registerDatasetTicker } from '../utils/pollingScheduler';
 import { getChState, holesForScene, publishDetection, subscribeToChDetections } from '../utils/chDetectionStore';
+import { lifecycleEvolutions } from '../utils/chLifecycleScene';
+import { startChLifecycleSync } from '../utils/chLifecycleSync';
 
 /**
  * How fresh a shared detection has to be for the scene to use it rather than
@@ -83,6 +85,10 @@ export function useCoronalHoles({ enabled = false, sourceImageUrl }: UseCoronalH
 
   const [chHistory,       setChHistory]       = useState<CHHistoryResult | null>(null);
   const [chEvolutions,    setChEvolutions]    = useState<CHEvolution[]>([]);
+  // Once the 90-day record has holes, it is what the scene's history comes
+  // from; the older 72-hour history is only a fallback before then.
+  const usingRecordRef = useRef(false);
+  const recordSignatureRef = useRef('');
   const [historyProgress, setHistoryProgress] = useState<number | null>(null);
 
   const timerRef          = useRef<ReturnType<typeof setTimeout>  | null>(null);
@@ -172,6 +178,30 @@ export function useCoronalHoles({ enabled = false, sourceImageUrl }: UseCoronalH
     setStatus('detected');
   }), []);
 
+  // ── History from the 90-day record ─────────────────────────────────
+  // Every hole the Coronal Hole Tracker has, as it was at each sighting,
+  // outline included, so the scene can show the holes of any moment on its
+  // timeline. Kept in step with the shared record while HSS is on.
+  useEffect(() => {
+    if (!enabled) return;
+    startChLifecycleSync();
+    return subscribeToChDetections((shared) => {
+      if (!mountedRef.current) return;
+      const lc = shared.lifecycle;
+      if (!lc || lc.lives.length === 0) return;
+      let sightings = 0, outlines = 0;
+      for (const life of lc.lives) for (const s of life.sightings) { sightings++; if (s.outline) outlines++; }
+      // Only a real change rebuilds the scene's holes and streams.
+      const signature = `${lc.lastFrameMs}|${lc.lives.length}|${sightings}|${outlines}`;
+      if (signature === recordSignatureRef.current) return;
+      recordSignatureRef.current = signature;
+      const evolutions = lifecycleEvolutions(lc);
+      if (evolutions.length === 0) return;
+      usingRecordRef.current = true;
+      setChEvolutions(evolutions);
+    });
+  }, [enabled]);
+
   // ── Detection lifecycle ────────────────────────────────────────────
   useEffect(() => {
     mountedRef.current = true;
@@ -220,7 +250,7 @@ export function useCoronalHoles({ enabled = false, sourceImageUrl }: UseCoronalH
       if (history) {
         setChHistory(history);
         const evolutions = buildEvolutionTracks(history, coronalHoles);
-        setChEvolutions(evolutions);
+        if (!usingRecordRef.current) setChEvolutions(evolutions);
         setHistoryProgress(0.5);
 
         console.log(
@@ -255,7 +285,7 @@ export function useCoronalHoles({ enabled = false, sourceImageUrl }: UseCoronalH
               const updated = await fetchHistoryFromWorker();
               if (updated && mountedRef.current) {
                 setChHistory(updated);
-                setChEvolutions(buildEvolutionTracks(updated, coronalHoles));
+                if (!usingRecordRef.current) setChEvolutions(buildEvolutionTracks(updated, coronalHoles));
               }
             } else {
               console.log('[CH History] No frames needed backfilling');
@@ -280,6 +310,8 @@ export function useCoronalHoles({ enabled = false, sourceImageUrl }: UseCoronalH
       backfillDoneRef.current = false;
       setChHistory(null);
       setChEvolutions([]);
+      usingRecordRef.current = false;
+      recordSignatureRef.current = '';
       setHistoryProgress(null);
     }
   }, [enabled]);

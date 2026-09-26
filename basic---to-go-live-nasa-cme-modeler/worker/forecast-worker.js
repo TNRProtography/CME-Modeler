@@ -43,8 +43,18 @@ const LAST_RUN_KEY = 'forecast:last-run';
  */
 const LIFECYCLE_KEY = 'ch:lifecycle:v2';
 
-/** Limits on what one device can send. */
-const MAX_OBSERVE_BYTES = 512 * 1024;
+/**
+ * Each hole's outline at each sighting, kept apart from the record, one key a
+ * UTC day, so the record stays small enough to read on every request and a
+ * device only downloads the days of outlines it asks for.
+ */
+const OUTLINE_DAY_PREFIX = 'ch:outlines:v2:';
+const OUTLINE_TTL_SECONDS = 92 * 86400;
+/** The furthest back one request can ask outlines for. */
+const MAX_OUTLINE_SPAN_MS = 10 * 86400000;
+
+/** Limits on what one device can send. Frames carry outlines, about 1 KB a hole. */
+const MAX_OBSERVE_BYTES = 2 * 1024 * 1024;
 const MAX_OBSERVE_FRAMES = 120;
 const MAX_HOLES_PER_FRAME = 40;
 /** The shared record, used by the forecast only while it is this fresh. */
@@ -378,6 +388,52 @@ export async function runScoring(env, modules) {
   return { scored };
 }
 
+const outlineDayKey = (ms) => OUTLINE_DAY_PREFIX + new Date(ms).toISOString().slice(0, 10);
+
+/** File the outlines of sightings newer than sinceMs under their days. */
+async function storeOutlines(env, lifecycle, sinceMs) {
+  const byDay = new Map();
+  for (const life of lifecycle.lives) {
+    for (const s of life.sightings) {
+      if (!s.outline || s.atMs <= sinceMs) continue;
+      const key = outlineDayKey(s.atMs);
+      if (!byDay.has(key)) byDay.set(key, {});
+      byDay.get(key)[`${life.number}@${s.atMs}`] = s.outline;
+    }
+  }
+  for (const [key, added] of byDay) {
+    const existing = await readJson(env.FORECAST_KV, key, {});
+    await env.FORECAST_KV.put(key, JSON.stringify({ ...existing, ...added }),
+      { expirationTtl: OUTLINE_TTL_SECONDS });
+  }
+}
+
+/** Put back the outlines of sightings from fromMs on (at most ten days' worth). */
+async function attachOutlines(env, lifecycle, fromMs) {
+  if (!Number.isFinite(fromMs) || !lifecycle.lastFrameMs) return lifecycle;
+  const from = Math.max(fromMs, lifecycle.lastFrameMs - MAX_OUTLINE_SPAN_MS);
+  const keys = [];
+  for (let t = from - 86400000; t <= lifecycle.lastFrameMs + 86400000; t += 86400000) {
+    const key = outlineDayKey(t);
+    if (!keys.includes(key)) keys.push(key);
+  }
+  const days = await Promise.all(keys.map((k) => readJson(env.FORECAST_KV, k, {})));
+  const all = Object.assign({}, ...days);
+  for (const life of lifecycle.lives) {
+    for (const s of life.sightings) {
+      if (s.atMs < from) continue;
+      const o = all[`${life.number}@${s.atMs}`];
+      if (o) s.outline = o;
+    }
+  }
+  return lifecycle;
+}
+
+const outlinesFromParam = (request) => {
+  const v = Number(new URL(request.url).searchParams.get('outlinesFrom'));
+  return Number.isFinite(v) && v > 0 ? v : NaN;
+};
+
 const withMaxAge = (res, seconds) => {
   res.headers.set('Cache-Control', seconds > 0 ? `public, max-age=${seconds}` : 'no-store');
   return res;
@@ -405,12 +461,18 @@ export async function observeFrames(env, modules, request) {
       && Array.isArray(f.holes) && f.holes.length <= MAX_HOLES_PER_FRAME)
     .map((f) => ({ atMs: f.atMs, holes: f.holes.filter(modules.isUsableHole) }));
 
-  const lifecycle = modules.parseLifecycle(await readJson(env.FORECAST_KV, LIFECYCLE_KEY, null));
+  let lifecycle = modules.parseLifecycle(await readJson(env.FORECAST_KV, LIFECYCLE_KEY, null));
+  const before = lifecycle.lastFrameMs;
   const applied = modules.applyFrames(lifecycle, frames);
   if (applied > 0) {
     modules.pruneLifecycle(lifecycle, now);
+    await storeOutlines(env, lifecycle, before);
+    lifecycle = modules.withoutOutlines(lifecycle);
     await env.FORECAST_KV.put(LIFECYCLE_KEY, JSON.stringify(lifecycle));
+  } else {
+    lifecycle = modules.withoutOutlines(lifecycle);
   }
+  await attachOutlines(env, lifecycle, outlinesFromParam(request));
   return { status: 200, body: { ok: true, applied, lifecycle } };
 }
 
@@ -458,7 +520,9 @@ export function makeHandler(modules) {
 
       if (url.pathname === '/ch/lifecycle' && request.method === 'GET') {
         if (!env.FORECAST_KV) return json({ ok: false, error: 'FORECAST_KV binding is missing' }, 500);
-        const lifecycle = modules.parseLifecycle(await readJson(env.FORECAST_KV, LIFECYCLE_KEY, null));
+        const lifecycle = modules.withoutOutlines(
+          modules.parseLifecycle(await readJson(env.FORECAST_KV, LIFECYCLE_KEY, null)));
+        await attachOutlines(env, lifecycle, outlinesFromParam(request));
         return withMaxAge(json({ ok: true, lifecycle }), 60);
       }
 

@@ -16,7 +16,7 @@ import { buildOutlook } from '../utils/auroraOutlook';
 import { solarDiskOrientation } from '../utils/solarEphemeris';
 import { detectArrival, scoreForecast, dueForScoring, buildTrackRecord } from '../utils/forecastScoring';
 import {
-  applyFrames, isUsableHole, lifecycleTracks, parseLifecycle, pruneLifecycle,
+  applyFrames, isUsableHole, lifecycleTracks, parseLifecycle, pruneLifecycle, withoutOutlines,
 } from '../utils/chLifecycle';
 import { holeStream } from '../utils/holeStream';
 import { makeHandler } from './forecast-worker';
@@ -37,5 +37,6 @@ export default makeHandler({
   lifecycleTracks,
   parseLifecycle,
   pruneLifecycle,
+  withoutOutlines,
   holeStream,
 });

@@ -27,8 +27,9 @@ import { buildChTracks, type ChTrack, type TrackedHole } from './chTracking';
 import { longitudeAt } from './solarDisk';
 import { estimateHssSpeedFromChWidthAndDarkness } from './solarWindModel';
 import { assignChNumbers, parseRegistry, type ChRegistry } from './chRegistry';
+import { encodeOutline } from './chOutline';
 import {
-  applyFrames, emptyLifecycle, isLifecycleTrack, lifecycleTracks, parseLifecycle, pruneLifecycle,
+  applyFrames, emptyLifecycle, mergeOutlines, withoutOutlines, isLifecycleTrack, lifecycleTracks, parseLifecycle, pruneLifecycle,
   MIN_FRAME_GAP_MS, type ChLifecycle, type LifecycleTrack,
 } from './chLifecycle';
 
@@ -101,10 +102,21 @@ let lifecycleSource: 'server' | 'local' = 'local';
 let lifecycleRev = 0;
 
 function compact(holes: CoronalHole[]): TrackedHole[] {
-  return holes.map((h) => ({
-    id: h.id, lat: h.lat, lon: h.lon,
-    widthDeg: h.widthDeg, heightDeg: h.heightDeg, darkness: h.darkness,
-  }));
+  return holes.map((h) => {
+    const outline = encodeOutline(h.polygon);
+    return {
+      id: h.id, lat: h.lat, lon: h.lon,
+      widthDeg: h.widthDeg, heightDeg: h.heightDeg, darkness: h.darkness,
+      ...(outline ? { outline } : {}),
+    };
+  });
+}
+
+const compacted = new WeakMap<object, TrackedHole[]>();
+function compactOnce(detection: { holes: CoronalHole[] }): TrackedHole[] {
+  let out = compacted.get(detection);
+  if (!out) { out = compact(detection.holes); compacted.set(detection, out); }
+  return out;
 }
 
 function loadHistory(): void {
@@ -125,6 +137,7 @@ function loadHistory(): void {
       const parsed = JSON.parse(raw);
       lifecycle = parseLifecycle(parsed?.lifecycle);
       lifecycleSource = parsed?.source === 'server' ? 'server' : 'local';
+      outlinesCompleteToMs = Number(parsed?.outlinesCompleteToMs) || 0;
     }
   } catch { lifecycle = emptyLifecycle(); }
   try {
@@ -166,12 +179,28 @@ function remember(atMs: number, holes: CoronalHole[]): void {
   saveHistory();
 }
 
+/**
+ * How far back this device keeps outlines. The 3D view's timeline reaches a
+ * week back; the shared record keeps every outline for 90 days.
+ */
+export const LOCAL_OUTLINE_WINDOW_MS = 8 * 86400000;
+
 function saveLifecycle(): void {
   try {
     if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(LIFECYCLE_KEY, JSON.stringify({ source: lifecycleSource, lifecycle }));
+    const kept = withoutOutlines(lifecycle, Date.now() - LOCAL_OUTLINE_WINDOW_MS);
+    localStorage.setItem(LIFECYCLE_KEY, JSON.stringify({
+      source: lifecycleSource, lifecycle: kept, outlinesCompleteToMs,
+    }));
   } catch { /* quota or disabled: the session keeps it in memory */ }
 }
+
+/**
+ * The shared record's newest frame as of the last time it was adopted with
+ * every outline since then: outlines are only fetched after this.
+ */
+let outlinesCompleteToMs = 0;
+export const sharedOutlinesCompleteToMs = () => { loadHistory(); return outlinesCompleteToMs; };
 
 let working: { key: string; lifecycle: ChLifecycle; tracks: LifecycleTrack[] } | null = null;
 
@@ -228,12 +257,18 @@ function snapshot(): ChStoreState {
  * Take the shared record from the forecast worker. Frames detected here that
  * are newer than it are added on top, as with any record.
  */
-export function adoptSharedLifecycle(raw: unknown): boolean {
+export function adoptSharedLifecycle(raw: unknown, outlinesFromMs?: number): boolean {
   loadHistory();
   const next = parseLifecycle(raw);
   if (!next.lastFrameMs) return false;
   // An older copy than the one already held (a cached response) changes nothing.
   if (lifecycleSource === 'server' && next.lastFrameMs < lifecycle.lastFrameMs) return false;
+  // The shared copy comes with outlines only from outlinesFromMs on; the
+  // ones this device already has for earlier sightings carry over.
+  mergeOutlines(next, lifecycle);
+  if (outlinesFromMs != null && outlinesFromMs <= Math.max(outlinesCompleteToMs, Date.now() - LOCAL_OUTLINE_WINDOW_MS)) {
+    outlinesCompleteToMs = next.lastFrameMs;
+  }
   lifecycle = next;
   lifecycleSource = 'server';
   lifecycleRev++;
@@ -401,7 +436,10 @@ export function detectionNear(all: ChDetection[], atMs: number): ChDetection | n
 export function framesForTracking(state: Pick<ChStoreState, 'history' | 'detections'>): { atMs: number; holes: TrackedHole[] }[] {
   const byTime = new Map<number, TrackedHole[]>();
   for (const record of state.history) byTime.set(record.atMs, record.holes);
-  for (const detection of state.detections) byTime.set(detection.atMs, compact(detection.holes));
+  // This session's detection wins where both exist: it is the fresher
+  // measurement. Packed once per detection, since packing outlines is not free
+  // and this runs on every change to the store.
+  for (const detection of state.detections) byTime.set(detection.atMs, compactOnce(detection));
   return [...byTime.entries()]
     .map(([atMs, holes]) => ({ atMs, holes }))
     .sort((a, b) => a.atMs - b.atMs);
@@ -526,6 +564,7 @@ export function resetChStore(): void {
   registry = { nextNumber: 0, entries: [] };
   lifecycle = emptyLifecycle();
   lifecycleSource = 'local';
+  outlinesCompleteToMs = 0;
   lifecycleRev++;
   working = null;
   progress = null;
@@ -566,7 +605,16 @@ export function holesForScene(state: ChStoreState): { holes: CoronalHole[]; atMs
 
   const tracks: ChTrack[] = state.tracks ?? buildChTracks(framesForTracking(state));
   const numbers = numberTracks(tracks);
-  const holes: CoronalHole[] = [...newest.holes];
+  // The newest frame's holes, named as the tracker names them, so the scene
+  // can match each to its history in the 90-day record.
+  const named = new Map<string, string>();
+  for (const track of tracks) {
+    if (!track.live) continue;
+    const hole = holeForTrackIn(track, newest);
+    const number = numbers.get(track.key);
+    if (hole && number != null && !named.has(hole.id)) named.set(hole.id, `CH${number}`);
+  }
+  const holes: CoronalHole[] = newest.holes.map((h) => (named.has(h.id) ? { ...h, id: named.get(h.id) as string } : h));
 
   // Close enough on the Sun to be the same hole, degrees.
   const SAME_HOLE_DEG = 8;

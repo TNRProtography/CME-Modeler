@@ -28,6 +28,8 @@ try {
   const L = await bundle('utils/chLifecycle.ts', 'l.mjs');
   const HS = await bundle('utils/holeStream.ts', 'hs.mjs');
   const Wk = await bundle('worker/forecast-entry.js', 'w.mjs');
+  const O = await bundle('utils/chOutline.ts', 'o.mjs');
+  const Sc = await bundle('utils/chLifecycleScene.ts', 'sc.mjs');
 
   // ── joining across slivers ──────────────────────────────────────────────
   console.log('\nThe detector joins holes cut by a sliver');
@@ -79,6 +81,26 @@ try {
     check(!at(140, 70), 'a small round smooth patch is still taken for a sunspot');
     const pair = at(101, 140);
     check(!!pair && pair.minX < 90 && pair.maxX > 112, 'two patches split by a sliver are one hole');
+  }
+
+  console.log('\nOutlines, packed');
+  const ring = (n, r, wob = 0) => Array.from({ length: n }, (_, i) => {
+    const a = (i / n) * 2 * Math.PI;
+    const k = r * (1 + wob * Math.sin(5 * a));
+    return { lat: +(k * Math.sin(a)).toFixed(3), lon: +(k * Math.cos(a)).toFixed(3) };
+  });
+  {
+    const poly = ring(150, 12, 0.2);
+    const enc = O.encodeOutline(poly);
+    const dec = O.decodeOutline(enc);
+    check(dec && dec.length === 150, 'an outline comes back with every vertex');
+    check(dec && dec.every((p, i) => Math.abs(p.lat - poly[i].lat) <= 0.051 && Math.abs(p.lon - poly[i].lon) <= 0.051),
+      'to within a twentieth of a degree');
+    check(enc.length < 900, 'in under a kilobyte', `${enc.length} chars`);
+    const big = O.decodeOutline(O.encodeOutline(ring(1000, 20)));
+    check(big && big.length === O.MAX_OUTLINE_POINTS, 'a very detailed outline is thinned, not refused');
+    check(O.decodeOutline('not an outline!') === null && O.decodeOutline(123) === null, 'anything else is refused');
+    check(O.encodeOutline([{ lat: 1, lon: 1 }]) === undefined, 'two points are not an outline');
   }
 
   // ── the record ──────────────────────────────────────────────────────────
@@ -177,6 +199,42 @@ try {
     check(L.parseLifecycle('nonsense').lives.length === 0, 'a broken record reads as empty');
   }
 
+  console.log('\nEach hole\'s shape over time, for the 3D view');
+  {
+    const lc = L.emptyLifecycle();
+    const t = Date.UTC(2026, 8, 20, 0);
+    const small = O.encodeOutline(ring(40, 5, 0.3));
+    const large = O.encodeOutline(ring(40, 15, 0.1));
+    L.applyFrame(lc, { atMs: t, holes: [{ ...hole('A', 0, -30, 10), outline: small }] });
+    L.applyFrame(lc, { atMs: t + 2 * HOUR, holes: [{ ...hole('A', 0, -30 + 2 * RATE, 30), outline: large }] });
+    L.applyFrame(lc, { atMs: t + 4 * HOUR, holes: [{ ...hole('A', 0, -30 + 4 * RATE, 30), outline: 'bogus!' }] });
+    const life = lc.lives[0];
+    check(life.sightings[0].outline === small && life.sightings[1].outline === large, 'every sighting keeps its outline');
+    check(life.sightings[2].outline === undefined, 'an invalid outline is dropped, the sighting kept');
+
+    const bare = L.withoutOutlines(lc);
+    check(bare.lives[0].sightings.every((x) => !x.outline) && life.sightings[0].outline === small,
+      'outlines can be left off a copy without touching the record');
+    L.mergeOutlines(bare, lc);
+    check(bare.lives[0].sightings[1].outline === large, 'and put back from another copy');
+
+    const [evo] = Sc.lifecycleEvolutions(lc, t + 5 * HOUR);
+    check(evo.trackId === `CH${life.number}` && evo.openEnded === true, 'the 3D view gets it under its number, still open');
+    const early = Sc.outlineAt(evo, t + 30 * 60000);
+    const later = Sc.outlineAt(evo, t + 3 * HOUR);
+    check(early && early.atMs === t && Math.max(...early.ch.polygon.map((p) => Math.abs(p.lon))) < 8,
+      'scrubbed to its first hours, it has its first, small shape');
+    check(later && later.atMs === t + 2 * HOUR && Math.max(...later.ch.polygon.map((p) => Math.abs(p.lon))) > 12,
+      'later, the bigger shape measured then');
+    check(Sc.outlineAt(evo, t - DAY)?.atMs === t, 'before it opened, the first shape (the view hides it by time)');
+
+    // Closed: no longer open-ended, so the view stops drawing it.
+    L.applyFrame(lc, { atMs: t + 10 * HOUR, holes: [] });
+    L.applyFrame(lc, { atMs: t + 30 * HOUR, holes: [] });
+    const [gone] = Sc.lifecycleEvolutions(lc, t + 30 * HOUR);
+    check(gone.openEnded === false, 'once it has closed, it is not drawn on past its last sighting');
+  }
+
   console.log('\nThe forecast from the record');
   {
     const now = Date.now();
@@ -203,8 +261,9 @@ try {
     globalThis.fetch = async () => new Response('{"snapshots":[]}', { status: 200 });
     const now = Date.now();
     const frames = [];
+    const shape = O.encodeOutline(ring(120, 11, 0.2));
     for (let h = -48; h <= 0; h += 2) {
-      frames.push({ atMs: now + h * HOUR, holes: [hole('CH1', -3, RATE * (h + 30), 22, 0.55), hole('CH2', 75, -20 + RATE * h, 20)] });
+      frames.push({ atMs: now + h * HOUR, holes: [{ ...hole('CH1', -3, RATE * (h + 30), 22, 0.55), outline: shape }, hole('CH2', 75, -20 + RATE * h, 20)] });
     }
     const post = (body) => Wk.default.fetch(new Request('https://w.invalid/ch/observe', {
       method: 'POST', body: typeof body === 'string' ? body : JSON.stringify(body),
@@ -218,11 +277,21 @@ try {
     const rb = await bad.json();
     check(rb.ok && rb.lifecycle.lives.length === 2, 'malformed holes and old frames are dropped');
     check((await post('not json')).status === 400, 'a body that is not JSON is refused');
-    check((await post('x'.repeat(600 * 1024))).status === 413, 'an oversized body is refused');
+    check((await post('x'.repeat(2100 * 1024))).status === 413, 'an oversized body is refused');
 
     const get = await Wk.default.fetch(new Request('https://w.invalid/ch/lifecycle'), env);
     const g = await get.json();
     check(g.ok && g.lifecycle.lives.length === 2, 'the record can be read back');
+    const allSightings = (lc) => lc.lives.flatMap((l) => l.sightings);
+    check(allSightings(g.lifecycle).every((x) => !x.outline), 'without outlines unless asked, so it stays small');
+    check(!/"outline"/.test(store.get('ch:lifecycle:v2') ?? ''), 'the stored record itself carries none');
+    check([...store.keys()].some((k) => k.startsWith('ch:outlines:v2:')), 'they are kept by day beside it');
+    const since = now - 12 * HOUR;
+    const withOutlines = await (await Wk.default.fetch(new Request(`https://w.invalid/ch/lifecycle?outlinesFrom=${since}`), env)).json();
+    const s1 = allSightings(withOutlines.lifecycle);
+    check(s1.filter((x) => x.atMs >= since).every((x) => x.outline === shape || x.lat > 60),
+      'asked for, every sighting since then has its outline back');
+    check(s1.filter((x) => x.atMs < since).every((x) => !x.outline), 'and none before');
     const opt = await Wk.default.fetch(new Request('https://w.invalid/ch/observe', { method: 'OPTIONS' }), env);
     check(/POST/.test(opt.headers.get('Access-Control-Allow-Methods') ?? ''), 'browsers may POST to it');
 

@@ -42,7 +42,9 @@ try {
   const scene = S.holesForScene(S.getChState());
   check(scene && scene.atMs === now, 'anchored at the newest detection');
   const holes = scene?.holes ?? [];
-  check(holes.some((h) => h.id === 'CH_SUVI_0'), 'the hole in the newest frame is drawn');
+  const current = holes.find((h) => Math.abs(h.lat + 10) < 1);
+  check(!!current, 'the hole in the newest frame is drawn');
+  check(current && /^CH\d+$/.test(current.id), `under the tracker's number, so the scene finds its history (${current?.id})`);
   const missed = holes.find((h) => Math.abs(h.lat - 20) < 1);
   check(!!missed, 'the hole the newest frame missed is still drawn', JSON.stringify(holes.map((h) => [h.id, h.lat, h.lon])));
   check(missed && Math.abs(missed.lon - (11.1 + 13.2 * 4 / 24)) < 0.5,

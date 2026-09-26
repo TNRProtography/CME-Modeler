@@ -20,6 +20,7 @@ import {
   type ChDisappearance, type ChTrack, type TrackedHole,
 } from './chTracking';
 import { FIRST_CH_NUMBER } from './chRegistry';
+import { isOutline } from './chOutline';
 
 const HOUR = 3600000;
 const DAY = 24 * HOUR;
@@ -60,6 +61,8 @@ export interface ChSighting {
   darkness: number;
   /** The stream speed its size and darkness give, km/s. */
   speedKms: number;
+  /** Its outline in that frame (utils/chOutline), when the detector drew one. */
+  outline?: string;
 }
 
 export interface ChLife {
@@ -119,6 +122,7 @@ const sightingOf = (atMs: number, h: TrackedHole): ChSighting => ({
   ...(h.heightDeg != null ? { heightDeg: round(h.heightDeg) } : {}),
   darkness: round(h.darkness, 3),
   speedKms: Math.round(estimateHssSpeedFromChWidthAndDarkness(h.widthDeg, h.darkness)),
+  ...(isOutline(h.outline) ? { outline: h.outline } : {}),
 });
 
 const lastOf = (life: ChLife) => life.sightings[life.sightings.length - 1];
@@ -285,6 +289,39 @@ export function pruneLifecycle(lc: ChLifecycle, nowMs: number): ChLifecycle {
   }
   if (lc.startedMs && lc.startedMs < cutoff) lc.startedMs = cutoff;
   return lc;
+}
+
+/** A copy with no outlines on sightings before a moment (all of them, by default). */
+export function withoutOutlines(lc: ChLifecycle, beforeMs = Infinity): ChLifecycle {
+  return {
+    ...lc,
+    lives: lc.lives.map((life) => ({
+      ...life,
+      sightings: life.sightings.map((s) => {
+        if (s.outline === undefined || s.atMs >= beforeMs) return s;
+        const { outline: _dropped, ...rest } = s;
+        return rest;
+      }),
+    })),
+  };
+}
+
+/** Give `target` any outlines `source` has for the same sightings. Mutates target. */
+export function mergeOutlines(target: ChLifecycle, source: ChLifecycle): ChLifecycle {
+  const known = new Map<string, string>();
+  for (const life of source.lives) {
+    for (const s of life.sightings) if (s.outline) known.set(`${life.number}@${s.atMs}`, s.outline);
+  }
+  if (known.size === 0) return target;
+  for (const life of target.lives) {
+    for (const s of life.sightings) {
+      if (!s.outline) {
+        const o = known.get(`${life.number}@${s.atMs}`);
+        if (o) s.outline = o;
+      }
+    }
+  }
+  return target;
 }
 
 /** A stored or received record, checked; an empty one when it will not do. */

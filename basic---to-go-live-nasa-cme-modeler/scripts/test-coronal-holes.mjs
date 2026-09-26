@@ -34,6 +34,7 @@ const C = await load('utils/coronalHoleDynamics.ts');
 const H = await load('utils/coronalHoleHistory.ts');
 const T = await load('utils/chTracking.ts');
 await load('utils/chRegistry.ts');
+await load('utils/chOutline.ts');
 await load('utils/chLifecycle.ts');
 const St = await load('utils/chDetectionStore.ts');
 

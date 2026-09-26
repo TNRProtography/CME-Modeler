@@ -16,7 +16,7 @@
 
 import { longitudeAt } from './solarDisk';
 
-/** Everything a hole needs to be followed. The polygon is not part of it. */
+/** Everything a hole needs to be followed. */
 export interface TrackedHole {
   id: string;
   lat: number;
@@ -24,6 +24,11 @@ export interface TrackedHole {
   widthDeg: number;
   heightDeg?: number;
   darkness: number;
+  /**
+   * The detector's outline, compact (utils/chOutline). Not used for
+   * following; carried so the record can show each hole's shape over time.
+   */
+  outline?: string;
 }
 
 export interface ChFrame<H extends TrackedHole = TrackedHole> {
