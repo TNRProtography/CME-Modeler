@@ -1,6 +1,7 @@
 // --- START OF FILE TimelineControls.tsx ---
 
-import React, { useState } from 'react';
+import React, { useState, useSyncExternalStore } from 'react';
+import { timelineClock } from '../utils/timelineClock';
 import ReactDOM from 'react-dom';
 import PlayIcon from './icons/PlayIcon';
 import PauseIcon from './icons/PauseIcon';
@@ -64,6 +65,11 @@ const TimelineControls: React.FC<TimelineControlsProps> = ({
   const [portalTarget] = useState<Element>(() =>
     document.getElementById('timeline-portal') ?? document.body
   );
+
+  // While playing, the position comes straight from the scene's clock, so
+  // only this bar re-renders as it moves (utils/timelineClock).
+  const livePosition = useSyncExternalStore(timelineClock.subscribe, timelineClock.get);
+  if (isPlaying) scrubberValue = livePosition;
 
   if (!isVisible) return null;
 

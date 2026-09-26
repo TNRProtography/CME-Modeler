@@ -19,44 +19,54 @@ const PlanetLabel: React.FC<PlanetLabelProps> = ({ planetMesh, camera, rendererD
     if (!THREE) return;
     
     const labelEl = labelRef.current;
-    let rafId: number;
-    
+    let rafId = 0;
+
+    // The canvas size, measured when it changes rather than read every frame:
+    // reading it after the last label's write forced a layout per label per
+    // frame.
+    let boxW = rendererDomElement.clientWidth;
+    let boxH = rendererDomElement.clientHeight;
+    const ro = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(([entry]) => { boxW = entry.contentRect.width; boxH = entry.contentRect.height; })
+      : null;
+    ro?.observe(rendererDomElement);
+
+    const planetWorldPos = new THREE.Vector3();
+    const cameraPosition = new THREE.Vector3();
+    const sunWorldPos = new THREE.Vector3();
+    const projectionVector = new THREE.Vector3();
+    // Written only when they change: a font size change means a layout.
+    let lastTransform = '';
+    let lastOpacity = '';
+    let lastFontSize = '';
+
+    // Every frame, in step with the scene, so a label does not trail its
+    // planet while the timeline plays.
     const updatePosition = () => {
-      // Ensure world matrices are up to date
+      rafId = requestAnimationFrame(updatePosition);
       planetMesh.updateWorldMatrix(true, false);
       sunMesh?.updateWorldMatrix(true, false);
-
-      const planetWorldPos = new THREE.Vector3();
       planetMesh.getWorldPosition(planetWorldPos);
-
-      const cameraPosition = new THREE.Vector3();
       camera.getWorldPosition(cameraPosition);
 
       // 1. Occlusion Check (only for planets, not the sun itself)
       let isOccluded = false;
       if (sunMesh && label !== 'Sun') {
-        const sunWorldPos = new THREE.Vector3();
         sunMesh.getWorldPosition(sunWorldPos);
-
         const distToPlanetSq = planetWorldPos.distanceToSquared(cameraPosition);
         const distToSunSq = sunWorldPos.distanceToSquared(cameraPosition);
-
         if (distToPlanetSq > distToSunSq) {
           const vecToPlanet = planetWorldPos.clone().sub(cameraPosition);
           const vecToSun = sunWorldPos.clone().sub(cameraPosition);
-          
           const angle = vecToPlanet.angleTo(vecToSun);
           const sunRadius = sunMesh.geometry.parameters.radius || (0.1 * SCENE_SCALE);
           const sunAngularRadius = Math.atan(sunRadius / Math.sqrt(distToSunSq));
-          
-          if (angle < sunAngularRadius) {
-            isOccluded = true;
-          }
+          if (angle < sunAngularRadius) isOccluded = true;
         }
       }
-      
+
       // 2. Projection and Frustum Culling Check
-      const projectionVector = planetWorldPos.clone().project(camera);
+      projectionVector.copy(planetWorldPos).project(camera);
       const isBehindCamera = projectionVector.z > 1;
 
       // 3. Distance-based Visibility Check
@@ -66,32 +76,25 @@ const PlanetLabel: React.FC<PlanetLabelProps> = ({ planetMesh, camera, rendererD
       const isTooCloseOrFar = dist < minVisibleDist || dist > maxVisibleDist;
 
       const shouldBeVisible = !isOccluded && !isBehindCamera && !isTooCloseOrFar;
+      const opacity = shouldBeVisible ? '1' : '0';
+      if (opacity !== lastOpacity) { labelEl.style.opacity = opacity; lastOpacity = opacity; }
+      if (!shouldBeVisible) return;
 
-      // Batch all DOM writes into a single rAF write phase to avoid forced reflow.
-      // Previously, reading clientWidth/clientHeight and then writing style properties
-      // in the same synchronous call caused layout thrashing on every interval tick.
-      rafId = requestAnimationFrame(() => {
-        if (!labelEl) return;
-        if (shouldBeVisible) {
-          const x = Math.round((projectionVector.x * 0.5 + 0.5) * rendererDomElement.clientWidth);
-          const y = Math.round((-projectionVector.y * 0.5 + 0.5) * rendererDomElement.clientHeight);
-          labelEl.style.transform = `translate(${x}px, ${y}px) translate(15px, -10px)`;
-          labelEl.style.opacity = '1';
-          
-          // 4. Dynamic Font Size
-          const fontSize = THREE.MathUtils.mapLinear(dist, minVisibleDist, maxVisibleDist, 16, 9);
-          labelEl.style.fontSize = `${Math.max(10, fontSize)}px`;
-        } else {
-          labelEl.style.opacity = '0';
-        }
-      });
+      const x = Math.round((projectionVector.x * 0.5 + 0.5) * boxW);
+      const y = Math.round((-projectionVector.y * 0.5 + 0.5) * boxH);
+      const transform = `translate(${x}px, ${y}px) translate(15px, -10px)`;
+      if (transform !== lastTransform) { labelEl.style.transform = transform; lastTransform = transform; }
+
+      // 4. Dynamic Font Size, in whole pixels
+      const fontSize = `${Math.round(Math.max(10, THREE.MathUtils.mapLinear(dist, minVisibleDist, maxVisibleDist, 16, 9)))}px`;
+      if (fontSize !== lastFontSize) { labelEl.style.fontSize = fontSize; lastFontSize = fontSize; }
     };
 
-    const intervalId = setInterval(updatePosition, 32); // ~30fps
+    rafId = requestAnimationFrame(updatePosition);
 
     return () => {
-      clearInterval(intervalId);
       cancelAnimationFrame(rafId);
+      ro?.disconnect();
     };
 
   }, [planetMesh, camera, rendererDomElement, label, sunMesh]);

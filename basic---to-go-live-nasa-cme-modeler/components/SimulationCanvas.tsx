@@ -38,6 +38,8 @@ import {
   CH_PRESENCE_GRACE_MS,
 } from '../utils/coronalHoleHistory';
 import { outlineAt, type LifecycleEvolution } from '../utils/chLifecycleScene';
+import { AdaptivePixelRatio, initialPixelRatio } from '../utils/renderQuality';
+import { timelineClock } from '../utils/timelineClock';
 import { longitudeAt } from '../utils/solarDisk';
 import { streamParcels, unitsPerKmFor, emissionStartMs, type HoleState, type StreamSource } from '../utils/hssParcels';
 import type { RegionInput } from '../utils/regionLabels';
@@ -592,6 +594,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   }>>(new Map());
 
   const timelineValueRef    = useRef(timelineValue);
+  /** The last position this component's loop wrote to the shared clock. */
+  const clockWrittenRef     = useRef(NaN);
   const lastTimeRef         = useRef(0);
   const raycasterRef        = useRef<any>(null);
   const mouseRef            = useRef<any>(null);
@@ -642,7 +646,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       .then(() => { threeLoadedRef.current = true; setThreeReady(true); });
   }, []);
 
-  useEffect(() => { timelineValueRef.current = timelineValue; }, [timelineValue]);
+  useEffect(() => { timelineClock.set(timelineValue); }, [timelineValue]);
 
   /**
    * The moment the CH shapes are drawn for, quantised to the detector's own
@@ -1007,7 +1011,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       if (!id || !body || d < 0) continue;
       const nBody = body.length / 3;
       const nTail = (tail?.userData?._local?.length ?? 0) / 3;
-      const world = new Float32Array((nBody + nTail) * 3);
+      // Kept on the CME between frames: a fresh array per CME per frame was
+      // tens of thousands of floats of garbage a second.
+      const size = (nBody + nTail) * 3;
+      let world: Float32Array = c.userData._simWorld;
+      if (!world || world.length !== size) { world = new Float32Array(size); c.userData._simWorld = world; }
       if (!sim.positionsAt(id, nowMs, world)) { restoreParticles(c); restoreParticles(tail); continue; }
       const glow = sim.glowOf(id);
       writeParticles(THREE, c, world, glow, 0, nBody);
@@ -1068,9 +1076,13 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     }
     cameraRef.current = camera; onCameraReady(camera);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    // No preserveDrawingBuffer: keeping every frame for a screenshot costs a
+    // copy per frame on phone GPUs, and the capture renders a fresh frame
+    // right before it reads the canvas anyway.
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(initialPixelRatio(window.devicePixelRatio, mountRef.current.clientWidth));
     renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    const quality = new AdaptivePixelRatio(renderer.getPixelRatio());
     mountRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer; setRendererDomElement(renderer.domElement);
 
@@ -1426,9 +1438,21 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     renderer.domElement.addEventListener('pointerup', handlePointerUp);
 
     let animationFrameId: number;
-    const animate = () => {
+    let lastFrameAt = -1;
+    const animate = (frameAt?: number) => {
       animationFrameId = requestAnimationFrame(animate);
-      const { currentlyModeledCMEId, timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate, onScrubberChangeByAnim, onTimelineEnd, showFluxRope, bzSouth, showHss } = animPropsRef.current;
+      // Sharpness follows what the device keeps up with (utils/renderQuality).
+      if (typeof frameAt === 'number') {
+        if (lastFrameAt >= 0 && !document.hidden) {
+          const next = quality.frame(frameAt, frameAt - lastFrameAt);
+          if (next != null && rendererRef.current && mountRef.current) {
+            rendererRef.current.setPixelRatio(next);
+            rendererRef.current.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
+          }
+        }
+        lastFrameAt = frameAt;
+      }
+      const { currentlyModeledCMEId, timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate, onTimelineEnd, showFluxRope, bzSouth, showHss } = animPropsRef.current;
       const elapsedTime = getClockElapsedTime();
       const delta = elapsedTime - lastTimeRef.current;
       lastTimeRef.current = elapsedTime;
@@ -1436,17 +1460,30 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       if (starsNearRef.current) starsNearRef.current.rotation.y += 0.00015;
       if (starsFarRef.current)  starsFarRef.current.rotation.y  += 0.00009;
 
+      // The clock is shared with the timeline bar and the App: a position this
+      // loop did not write (a scrub, a CME picked, a step) is taken up here.
+      if (timelineClock.get() !== clockWrittenRef.current) {
+        timelineValueRef.current = timelineClock.get();
+        clockWrittenRef.current = timelineClock.get();
+      }
+
       // ── simulationTimeMs: the authoritative simulation epoch ─────────────
       // Used for planet positions, Earth rotation, Moon, and Sun rotation.
       const simulationTimeMs = (timelineActive && timelineMaxDate > timelineMinDate)
         ? timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000)
         : Date.now();
 
-      // The CH shapes follow the same epoch, at the detector's cadence.
-      const chBucket = Math.floor(simulationTimeMs / CH_SHAPE_QUANTUM_MS);
+      // The CH shapes follow the same epoch, at the detector's cadence - and,
+      // while playing fast, no more than about four times a real second.
+      // Each change re-renders this component and can rebuild every patch,
+      // and at 20x the two-hour cadence would ask for that thirty times a
+      // second, which is most of what made fast playback a slideshow.
+      const playingRate = timelineActive && timelinePlaying ? 3 * timelineSpeed * 3600 * 1000 : 0;
+      const chQuantum = Math.max(1, Math.ceil(playingRate / 4 / CH_SHAPE_QUANTUM_MS)) * CH_SHAPE_QUANTUM_MS;
+      const chBucket = Math.floor(simulationTimeMs / chQuantum) * chQuantum;
       if (chBucket !== chShapeBucketRef.current) {
         chShapeBucketRef.current = chBucket;
-        setChShapeTimeMs(chBucket * CH_SHAPE_QUANTUM_MS);
+        setChShapeTimeMs(chBucket);
       }
 
       // ── Real planet positions from simulationTimeMs ─────────────────────
@@ -1628,7 +1665,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           if (r > 0 && timelineValueRef.current < 1000) {
             const v = timelineValueRef.current + (delta * (3 * timelineSpeed * 3600 * 1000) / r) * 1000;
             if (v >= 1000) { timelineValueRef.current = 1000; onTimelineEnd(); } else { timelineValueRef.current = v; }
-            onScrubberChangeByAnim(timelineValueRef.current);
+            // The one clock: the timeline bar follows it, the App does not
+            // re-render for it (utils/timelineClock).
+            timelineClock.set(timelineValueRef.current);
+            clockWrittenRef.current = timelineClock.get();
           }
         }
         const t = timelineMinDate + (timelineMaxDate - timelineMinDate) * (timelineValueRef.current / 1000);

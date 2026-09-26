@@ -1,6 +1,7 @@
 // --- START OF FILE App.tsx ---
 
 import React, { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
+import { timelineClock } from './utils/timelineClock';
 import type { RegionInput } from './utils/regionLabels';
 import type { SolarDiskGeometry } from './utils/solarDisk';
 
@@ -352,7 +353,13 @@ const App: React.FC = () => {
   const [cmeFilter, setCmeFilter] = useState<CMEFilter>(CMEFilter.ALL);
   const [timelineActive, setTimelineActive] = useState<boolean>(false);
   const [timelinePlaying, setTimelinePlaying] = useState<boolean>(false);
-  const [timelineScrubberValue, setTimelineScrubberValue] = useState<number>(0);
+  const [timelineScrubberValue, setTimelineScrubberState] = useState<number>(0);
+  // Every change to the position goes to the scene's clock as well, so a CME
+  // picked or a range changed mid-playback moves the playing scene too.
+  const setTimelineScrubberValue = useCallback((value: number) => {
+    timelineClock.set(value);
+    setTimelineScrubberState(value);
+  }, []);
   const [timelineSpeed, setTimelineSpeed] = useState<number>(5);
   const [timelineMinDate, setTimelineMinDate] = useState<number>(0);
   const [timelineMaxDate, setTimelineMaxDate] = useState<number>(0);
@@ -1277,6 +1284,7 @@ const App: React.FC = () => {
       setTimelinePlaying(true);
     } else {
       setTimelinePlaying(false);
+      setTimelineScrubberValue(timelineClock.get());
     }
   }, [filteredCmes, cmeData, timelineScrubberValue, timelinePlaying, timelineMaxDate, timelineMinDate, resetClock, getDefaultTimelineRange, activeTimeRange]);
 
@@ -1293,9 +1301,12 @@ const App: React.FC = () => {
     if (timeRange > 0) {
       const oneHourInMillis = 3600_000;
       const oneHourScrubberStep = (oneHourInMillis / timeRange) * 1000;
-      setTimelineScrubberValue((prev: number) => Math.max(0, Math.min(1000, prev + direction * oneHourScrubberStep)));
+      // From where the clock is, which is ahead of state while it plays.
+      const next = Math.max(0, Math.min(1000, timelineClock.get() + direction * oneHourScrubberStep));
+      setTimelineScrubberValue(next);
     } else {
-      setTimelineScrubberValue((prev: number) => Math.max(0, Math.min(1000, prev + direction * 10)));
+      const next = Math.max(0, Math.min(1000, timelineClock.get() + direction * 10));
+      setTimelineScrubberValue(next);
     }
   }, [timelineMinDate, timelineMaxDate]);
 
@@ -1304,40 +1315,12 @@ const App: React.FC = () => {
     if (timelinePlaying) return;
     setTimelineScrubberValue(value);
   }, [timelinePlaying]);
-  const handleTimelineEnd = useCallback(() => setTimelinePlaying(false), []);
-  useEffect(() => {
-    if (!timelineActive || !timelinePlaying) return;
-
-    const timelineRangeMs = timelineMaxDate - timelineMinDate;
-    if (timelineRangeMs <= 0) return;
-
-    let animationFrameId = 0;
-    let lastTickAt = performance.now();
-
-    const tick = (now: number) => {
-      const deltaSeconds = (now - lastTickAt) / 1000;
-      lastTickAt = now;
-
-      setTimelineScrubberValue((prev) => {
-        if (prev >= 1000) {
-          setTimelinePlaying(false);
-          return 1000;
-        }
-
-        const next = prev + (deltaSeconds * (3 * timelineSpeed * 3600 * 1000) / timelineRangeMs) * 1000;
-        if (next >= 1000) {
-          setTimelinePlaying(false);
-          return 1000;
-        }
-        return next;
-      });
-
-      animationFrameId = window.requestAnimationFrame(tick);
-    };
-
-    animationFrameId = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(animationFrameId);
-  }, [timelineActive, timelinePlaying, timelineSpeed, timelineMinDate, timelineMaxDate]);
+  const handleTimelineEnd = useCallback(() => {
+    setTimelinePlaying(false);
+    setTimelineScrubberValue(1000);
+  }, []);
+  // Playback itself runs in the 3D scene's animation loop, the one clock
+  // (utils/timelineClock). The position comes back into state when it stops.
 
   const handleSetPlanetMeshes = useCallback((infos: PlanetLabelInfo[]) => setPlanetLabelInfos(infos), []);
   const sunInfo = planetLabelInfos.find((info: PlanetLabelInfo) => info.name === 'Sun');
