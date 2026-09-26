@@ -761,7 +761,7 @@ function renderAppHtml() {
       <h1 class="title">Coronagraph Scrubber</h1>
       <div class="sub">
         24-hour rolling archive with duplicate filtering and live browser difference imagery.
-        Page loads instantly — full frame history loads per-source on demand.
+        Page loads instantly; full frame history loads per source on demand.
       </div>
     </div>
     <div class="toolbar">
