@@ -1,0 +1,37 @@
+# PUNCH quicklooks into the coronagraph worker.
+#
+# NASA publishes PUNCH's near-real-time mosaic as JPEG2000 only, which a
+# Cloudflare Worker cannot decode, so this converts new frames to JPG and
+# POSTs them to the worker. See basic---to-go-live-nasa-cme-modeler/scripts/punch_quicklook.py.
+#
+# Needs a repository secret PUNCH_INGEST_TOKEN with the same value as the
+# coronagraph worker's PUNCH_INGEST_TOKEN secret.
+name: PUNCH quicklook
+
+on:
+  schedule:
+    # Every two hours. The data is about a day and a half old when it is
+    # published, so running more often would gain nothing.
+    - cron: "17 */2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: punch-quicklook
+  cancel-in-progress: false
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: basic---to-go-live-nasa-cme-modeler/scripts/punch_quicklook.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --quiet "pillow>=10"
+      - run: python basic---to-go-live-nasa-cme-modeler/scripts/punch_quicklook.py
+        env:
+          PUNCH_INGEST_TOKEN: ${{ secrets.PUNCH_INGEST_TOKEN }}

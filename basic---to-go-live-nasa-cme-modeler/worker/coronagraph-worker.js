@@ -3,6 +3,8 @@ const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 // inside the subrequest limit; anything left is picked up by the next run.
 const MAX_NEW_FRAMES_PER_RUN = 12;
 const FETCH_TIMEOUT_MS = 30000;
+// Pushed frames (PUNCH): the largest image /api/ingest accepts.
+const MAX_INGEST_BYTES = 3 * 1024 * 1024;
 
 // Standard browser User-Agent. NOAA/SWPC (and possibly other space-weather
 // image hosts) return HTTP 403 to requests without a recognizable
@@ -46,6 +48,22 @@ const SOURCES = {
     baseUrl: "https://services.swpc.noaa.gov/images/animations/ccor2/",
     namePattern: /href="(\d{8}_\d{4}_ccor2_1024by960\.jpg)"/g,
   },
+  // PUNCH's QuickPUNCH NFI+WFI mosaic, out to about 180 solar radii. NASA
+  // publishes it only as JPEG2000, which a Worker cannot decode, so this worker
+  // never fetches it: a scheduled GitHub Action (scripts/punch_quicklook.py)
+  // converts each new frame to a JPG and POSTs it to /api/ingest.
+  //
+  // It reaches the archive about a day and a half after it is taken, so its
+  // day of frames ends at the newest frame rather than at now (windowEndsAtNewest),
+  // and frames are kept for four days rather than one.
+  punch: {
+    key: "punch",
+    label: "PUNCH NFI+WFI",
+    pushed: true,
+    windowEndsAtNewest: true,
+    keepMs: 4 * TWENTY_FOUR_HOURS_MS,
+    note: "QuickPUNCH mosaic. Reaches NASA's archive about a day and a half after it is taken.",
+  },
 };
 
 export default {
@@ -75,6 +93,7 @@ export default {
           now: new Date().toISOString(),
           bucket_binding: "CORONA_BUCKET",
           bucket_actual_name: "corona-bucket",
+          punch_ingest_configured: !!env.PUNCH_INGEST_TOKEN,
         });
       }
 
@@ -99,7 +118,7 @@ export default {
         if (!source || !SOURCES[source]) {
           return json({ ok: false, error: "Invalid source" }, 400);
         }
-        const frames = await listRecent(env, `raw/${source}/`);
+        const frames = await listRecent(env, `raw/${source}/`, SOURCES[source]);
         return json({ ok: true, source, frames });
       }
 
@@ -117,6 +136,17 @@ export default {
             "access-control-allow-origin": "*",
           },
         });
+      }
+
+      if (url.pathname === "/api/ingest" && request.method === "POST") {
+        return handleIngest(request, env, url);
+      }
+
+      if (url.pathname === "/api/ingest/commit" && request.method === "POST") {
+        const denied = ingestDenied(request, env);
+        if (denied) return denied;
+        await writeStateCache(env);
+        return json({ ok: true });
       }
 
       if (url.pathname === "/api/refresh" && request.method === "POST") {
@@ -155,6 +185,8 @@ async function refreshAll(env, { backfill }) {
   const results = {};
 
   for (const source of Object.values(SOURCES)) {
+    // Pushed sources arrive through /api/ingest; there is nothing to fetch.
+    if (source.pushed) continue;
     try {
       if (backfill) {
         if (source.listingUrl) {
@@ -365,6 +397,56 @@ async function ingestFrameBytes(env, sourceKey, tsIso, bytes, remoteName, hash) 
 }
 
 // ---------------------------------------------------------------------------
+// Pushed frames
+// ---------------------------------------------------------------------------
+
+/** Null when the request carries the ingest token, else the response to send. */
+function ingestDenied(request, env) {
+  const token = env.PUNCH_INGEST_TOKEN;
+  if (!token) return json({ ok: false, error: "PUNCH_INGEST_TOKEN is not set on this worker" }, 503);
+  const header = request.headers.get("authorization") || "";
+  const given = header.startsWith("Bearer ") ? header.slice(7) : "";
+  if (!sameString(given, token)) return json({ ok: false, error: "Unauthorized" }, 401);
+  return null;
+}
+
+/** Compares in time that does not depend on where the strings differ. */
+function sameString(a, b) {
+  const x = new TextEncoder().encode(String(a));
+  const y = new TextEncoder().encode(String(b));
+  let diff = x.length ^ y.length;
+  for (let i = 0; i < Math.max(x.length, y.length); i++) diff |= (x[i] || 0) ^ (y[i] || 0);
+  return diff === 0;
+}
+
+// POST /api/ingest?source=punch&ts=<ISO>&name=<remote file name>, body a JPG.
+async function handleIngest(request, env, url) {
+  const denied = ingestDenied(request, env);
+  if (denied) return denied;
+
+  const source = SOURCES[url.searchParams.get("source") || ""];
+  if (!source?.pushed) return json({ ok: false, error: "Not a pushed source" }, 400);
+
+  const tsMs = Date.parse(url.searchParams.get("ts") || "");
+  if (!Number.isFinite(tsMs)) return json({ ok: false, error: "Missing or bad ts" }, 400);
+  if (tsMs > Date.now() + 10 * 60000) return json({ ok: false, error: "ts is in the future" }, 400);
+  if (tsMs < Date.now() - (source.keepMs || TWENTY_FOUR_HOURS_MS)) {
+    return json({ ok: true, skipped: true, reason: "older_than_kept" });
+  }
+
+  const bytes = await request.arrayBuffer();
+  if (bytes.byteLength > MAX_INGEST_BYTES) return json({ ok: false, error: "Image too large" }, 413);
+  const head = new Uint8Array(bytes, 0, Math.min(3, bytes.byteLength));
+  if (head.length < 3 || head[0] !== 0xff || head[1] !== 0xd8 || head[2] !== 0xff) {
+    return json({ ok: false, error: "Body is not a JPEG" }, 400);
+  }
+
+  const name = (url.searchParams.get("name") || "").slice(0, 200);
+  const out = await ingestFrameBytes(env, source.key, new Date(tsMs).toISOString(), bytes, name, await sha256Hex(bytes));
+  return json(out);
+}
+
+// ---------------------------------------------------------------------------
 // State / listing
 // ---------------------------------------------------------------------------
 
@@ -389,7 +471,7 @@ async function buildState(env) {
   await Promise.all(
     Object.values(SOURCES).map(async (source) => {
       const [frames, latestMeta] = await Promise.all([
-        listRecent(env, `raw/${source.key}/`),
+        listRecent(env, `raw/${source.key}/`, source),
         getLatestSourceMeta(env, source.key),
       ]);
 
@@ -397,6 +479,7 @@ async function buildState(env) {
 
       out.sources[source.key] = {
         label: source.label,
+        note: source.note || null,
         frames,
         latest,
         latest_meta: latestMeta || null,
@@ -412,7 +495,7 @@ async function buildState(env) {
 // list call instead of issuing a separate head() request per object.
 // Before: O(N) head() calls = 10-20s for 200 frames.
 // After:  1 list call (paginated) = <100ms.
-async function listRecent(env, prefix) {
+async function listRecent(env, prefix, source = null) {
   let cursor;
   const all = [];
 
@@ -427,7 +510,17 @@ async function listRecent(env, prefix) {
     cursor = page.truncated ? page.cursor : undefined;
   } while (cursor);
 
-  const cutoff = Date.now() - TWENTY_FOUR_HOURS_MS;
+  // A day of frames: up to now, or for a delayed source, up to its newest.
+  let end = Date.now();
+  if (source?.windowEndsAtNewest) {
+    let newest = -Infinity;
+    for (const o of all) {
+      const ms = Date.parse(compactKeyToIso(o.key) || "");
+      if (ms > newest) newest = ms;
+    }
+    if (Number.isFinite(newest)) end = newest;
+  }
+  const cutoff = end - TWENTY_FOUR_HOURS_MS;
   const out = [];
 
   for (const o of all) {
@@ -472,7 +565,7 @@ async function writeStateCache(env) {
 }
 
 async function pruneOld(env) {
-  const cutoff = Date.now() - TWENTY_FOUR_HOURS_MS;
+  const now = Date.now();
   let cursor;
   const toDelete = [];
 
@@ -481,7 +574,8 @@ async function pruneOld(env) {
     for (const obj of page.objects) {
       if (obj.key.startsWith("meta/")) continue;
       const ts = compactKeyToIso(obj.key);
-      if (ts && Date.parse(ts) < cutoff) toDelete.push(obj.key);
+      const keepMs = SOURCES[sourceKeyFromRawKey(obj.key)]?.keepMs || TWENTY_FOUR_HOURS_MS;
+      if (ts && Date.parse(ts) < now - keepMs) toDelete.push(obj.key);
     }
     cursor = page.truncated ? page.cursor : undefined;
   } while (cursor);
@@ -786,7 +880,7 @@ function renderAppHtml() {
 
 <script>
 const WATERMARK_URL = "/watermark-logo";
-const SOURCE_ORDER = ["ccor2","ccor1","soho_c2","soho_c3","stereo_cor2"];
+const SOURCE_ORDER = ["ccor2","ccor1","punch","soho_c2","soho_c3","stereo_cor2"];
 
 const state = {
   data: null,
@@ -861,6 +955,8 @@ function renderCard(sourceKey, source) {
         </div>
       </div>
     </div>
+
+    \${source.note ? \`<div class="meta">\${source.note}</div>\` : ""}
 
     <div class="viewer">
       \${mode === "raw" && item ? \`<img class="baseimg" src="\${item.url}" alt="">\` : ""}
