@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // The coronagraph worker: CCOR-2 alongside CCOR-1, from NOAA's directory
-// listings, and PUNCH frames pushed to /api/ingest, against a fake R2 bucket
-// and fake remote hosts.
+// listings, against a fake R2 bucket and fake remote hosts.
 //
 //   npm run test:coronagraph
 
@@ -14,7 +13,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = join(HERE, '..', 'worker', 'coronagraph-worker.js');
 const dir = mkdtempSync(join(tmpdir(), 'corona-'));
 const copy = join(dir, 'w.mjs');
-writeFileSync(copy, readFileSync(SRC, 'utf8').replace('export default {', 'const worker = {') + '\nexport default worker;' + '\nexport { refreshAll, buildState, pruneOld, SOURCES, parseListingNameToIso, worker };\n');
+writeFileSync(copy, readFileSync(SRC, 'utf8').replace('export default {', 'const worker = {') + '\nexport default worker;' + '\nexport { refreshAll, buildState, SOURCES, parseListingNameToIso, worker };\n');
 const W = await import(pathToFileURL(copy).href);
 
 let pass = 0, fail = 0;
@@ -91,54 +90,6 @@ console.log('\nA snapshot from before CCOR-2 existed');
   check(body.sources?.ccor2?.frames?.length > 0, '/api/state rebuilds it rather than hiding CCOR-2');
   const saved = JSON.parse(new TextDecoder().decode(objects.get('meta/state_cache.json').bytes));
   check(!!saved.sources?.ccor2, 'and saves the rebuilt one');
-}
-
-console.log('\nPUNCH, pushed rather than fetched');
-{
-  check(W.SOURCES.punch?.pushed === true, 'PUNCH is a pushed source');
-  const before = fetched.length;
-  const run = await W.refreshAll(env, { backfill: true });
-  check(!('punch' in run.results) && !fetched.slice(before).some((u) => u.includes('umbra') || u.includes('punch')),
-        'a refresh never tries to fetch it');
-
-  const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4]);
-  const iso = (hoursAgo) => new Date(Math.floor((Date.now() - hoursAgo * 3600e3) / 1000) * 1000).toISOString();
-  const ingest = (hoursAgo, { token = 'sekret', body = jpeg, e = { ...env, PUNCH_INGEST_TOKEN: 'sekret' } } = {}) =>
-    W.worker.fetch(new Request(`https://w.invalid/api/ingest?source=punch&ts=${encodeURIComponent(iso(hoursAgo))}&name=x.jp2`, {
-      method: 'POST', body, headers: token ? { authorization: `Bearer ${token}` } : {},
-    }), e);
-
-  check((await ingest(36, { e: env })).status === 503, 'refused while the worker has no token set');
-  check((await ingest(36, { token: 'wrong' })).status === 401, 'refused with the wrong token');
-  check((await ingest(36, { token: null })).status === 401, 'refused with no token');
-  check((await ingest(36, { body: new TextEncoder().encode('<html>') })).status === 400, 'refused when the body is not a JPEG');
-  check((await ingest(-2)).status === 400, 'refused when the time is in the future');
-  const ccorIngest = await W.worker.fetch(new Request(`https://w.invalid/api/ingest?source=ccor2&ts=${iso(1)}`, {
-    method: 'POST', body: jpeg, headers: { authorization: 'Bearer sekret' } }), { ...env, PUNCH_INGEST_TOKEN: 'sekret' });
-  check(ccorIngest.status === 400, 'only pushed sources take pushed frames');
-
-  const ok = await (await ingest(36)).json();
-  check(ok.stored === true && objects.has(ok.key), 'a good frame is stored', JSON.stringify(ok));
-  for (const h of [40, 50, 62]) await ingest(h);
-  const old = await (await ingest(100)).json();
-  check(old.skipped === true && old.reason === 'older_than_kept', 'a frame older than four days is not taken');
-
-  const res = await W.worker.fetch(new Request('https://w.invalid/api/frames?source=punch'), env);
-  const frames = (await res.json()).frames;
-  check(frames.length === 3 && frames.at(-1).ts === iso(36) && frames[0].ts === iso(50),
-        'its day of frames ends at its newest frame, not at now', JSON.stringify(frames.map((f) => f.ts)));
-
-  // A frame from five days ago, as if a run had stored it then.
-  await bucket.put(`raw/punch/${iso(120).replace(/[-:]/g, '').replace(/\.\d+Z$/, '')}.jpg`, jpeg);
-  await W.pruneOld(env);
-  const kept = [...objects.keys()].filter((k) => k.startsWith('raw/punch/'));
-  check(kept.length === 4, 'pruning keeps four days of PUNCH', JSON.stringify(kept));
-  check([...objects.keys()].filter((k) => k.startsWith('raw/ccor2/')).length > 0, 'and still keeps the current CCOR-2 day');
-
-  const commit = await W.worker.fetch(new Request('https://w.invalid/api/ingest/commit', { method: 'POST', headers: { authorization: 'Bearer sekret' } }), { ...env, PUNCH_INGEST_TOKEN: 'sekret' });
-  const snap = JSON.parse(new TextDecoder().decode(objects.get('meta/state_cache.json').bytes));
-  check(commit.status === 200 && snap.sources.punch?.frames?.length === 3 && !!snap.sources.punch.note,
-        'committing rewrites the snapshot the app reads, with PUNCH and its note');
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

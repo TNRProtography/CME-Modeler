@@ -102,7 +102,7 @@ interface ActiveSunspotRegion {
   source: string | null;
 }
 
-type CoronagraphSourceKey = 'soho_c2' | 'soho_c3' | 'stereo_cor2' | 'ccor1' | 'ccor2' | 'punch';
+type CoronagraphSourceKey = 'soho_c2' | 'soho_c3' | 'stereo_cor2' | 'ccor1' | 'ccor2';
 type SuviWorkerSourceKey = 'suvi_195_primary' | 'suvi_304_secondary' | 'suvi_131_secondary' | 'suvi_284_primary';
 interface CoronagraphFrame {
   key: string;
@@ -242,13 +242,9 @@ const SUVI_DIFF_WORKER_BASE = 'https://suvi-difference-imagery.thenamesrock.work
 // already runs on a cron and already has the KV namespace to put them in.
 const PUSH_WORKER_BASE = 'https://push-notification-worker.thenamesrock.workers.dev';
 const SOLO_BASE = 'https://solo-worker.thenamesrock.workers.dev';
-// Sources published well after they are taken. Their time window ends at their
-// newest frame rather than at now, or every window would be empty.
-const DELAYED_CORONAGRAPH_SOURCES = new Set<CoronagraphSourceKey>(['punch']);
 const CORONAGRAPH_SOURCES: { key: CoronagraphSourceKey; label: string }[] = [
   { key: 'ccor1', label: 'GOES-19 CCOR-1' },
   { key: 'ccor2', label: 'SWFO-L1 CCOR-2' },
-  { key: 'punch', label: 'PUNCH' },
   { key: 'soho_c2', label: 'SOHO LASCO C2' },
   { key: 'soho_c3', label: 'SOHO LASCO C3' },
   { key: 'stereo_cor2', label: 'STEREO-A COR2' },
@@ -1371,7 +1367,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     ),
     'coronagraphy': buildStatTooltip(
       'Multi-source Coronagraphy',
-      'A rolling stack of coronagraph frames from CCOR-1, CCOR-2, PUNCH, SOHO LASCO, and STEREO-A COR2. PUNCH\'s wide field reaches about 180 solar radii, most of the way to Earth, but its images are published about a day and a half late.',
+      'A 6-hour rolling stack of coronagraph frames from CCOR-1, CCOR-2, SOHO LASCO, and STEREO-A COR2.',
       'Lets you inspect CME fronts and compare viewpoints to assess possible Earth-directed structure.',
       'Difference imagery highlights motion, but off-axis viewpoints (especially STEREO when far from Earth longitude) can mislead halo interpretation.'
     ),
@@ -2947,14 +2943,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const coronagraphFrames = useMemo(() => {
     const all = coronagraphSourceState?.frames ?? [];
     if (coronagraphFrameWindowHours >= 24) return all;
-    let end = Date.now();
-    if (DELAYED_CORONAGRAPH_SOURCES.has(coronagraphSource)) {
-      const newest = Math.max(...all.map((f) => new Date(f.ts).getTime()).filter(Number.isFinite));
-      if (Number.isFinite(newest)) end = newest;
-    }
-    const cutoff = end - coronagraphFrameWindowHours * 3600 * 1000;
+    const cutoff = Date.now() - coronagraphFrameWindowHours * 3600 * 1000;
     return all.filter((f) => f.ts && new Date(f.ts).getTime() >= cutoff);
-  }, [coronagraphSourceState?.frames, coronagraphFrameWindowHours, coronagraphSource]);
+  }, [coronagraphSourceState?.frames, coronagraphFrameWindowHours]);
   const latestCoronagraphFrame = useMemo(() => {
     if (coronagraphFrames.length === 0) return null;
     return coronagraphFrames.reduce((latest, frame) => {
@@ -3253,11 +3244,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     const ageLabel = hours > 0
       ? `${hours}h${minutes > 0 ? ` ${minutes}m` : ''}`
       : `${minutes}m`;
-    if (coronagraphSource === 'punch') {
-      return `Not live: PUNCH images reach NASA's archive about a day and a half after they are taken. The newest frame is ${ageLabel} old. It shows a much wider field than the other coronagraphs, out to about 180 solar radii, so a CME can be followed well on its way towards Earth.`;
-    }
     return `Latest available frame is ${ageLabel} old. Coronagraph feeds commonly have outages or delays for a few hours, and occasionally up to about a day.`;
-  }, [latestCoronagraphAgeMs, coronagraphSource]);
+  }, [latestCoronagraphAgeMs]);
 
   const stereoAlignmentLabel = useMemo(() => {
     if (stereoEarthSeparationDeg == null) return 'STEREO-A alignment unknown right now.';
@@ -5116,7 +5104,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   {activeCoronagraphFrame ? `Frame: ${formatNZTimestamp(activeCoronagraphFrame.ts)} · fetched ${activeCoronagraphFrame.fetched_at ? formatNZTimestamp(activeCoronagraphFrame.fetched_at) : ' - '}` : 'No frame selected'}
                 </div>
                 <div className="text-[11px] text-neutral-500 leading-relaxed">
-                  Imagery credits: NOAA SWPC (GOES-19 CCOR-1, SWFO-L1 CCOR-2), NASA PUNCH (QuickPUNCH mosaic, via the NASA Solar Data Analysis Center), NASA/ESA SOHO LASCO (C2/C3), and NASA STEREO-A SECCHI (COR2). Difference imagery processing and visualization by TNR Protography.
+                  Imagery credits: NOAA SWPC (GOES-19 CCOR-1, SWFO-L1 CCOR-2), NASA/ESA SOHO LASCO (C2/C3), and NASA STEREO-A SECCHI (COR2). Difference imagery processing and visualization by TNR Protography.
                 </div>
               </div>
             </div>
