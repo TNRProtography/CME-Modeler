@@ -597,13 +597,10 @@ async function runScheduledTasks(env) {
     console.log(`[diag] ${name}: ${status}${detail ? ' - ' + detail : ''}`);
   };
 
-  const thresholds = await kv(env).get('CONFIG_THRESHOLDS', 'json');
-  if (!thresholds) {
-    console.error('CRITICAL: Notification thresholds not found in KV.');
-    note('all', 'aborted', 'CONFIG_THRESHOLDS missing from KV');
-    await kv(env).put(DIAG_KEY, JSON.stringify(diag), { expirationTtl: 86400 });
-    return;
-  }
+  // Optional. A missing key used to abort the whole run - every flare, CME,
+  // shock and visibility alert - for a value only the substorm detector read,
+  // and it no longer does.
+  const thresholds = (await kv(env).get('CONFIG_THRESHOLDS', 'json')) || {};
 
   // The daily preference migration used to run from here. It is now
   // maybeRunMigration, called at the end of this function: versioned, sharded
@@ -1752,6 +1749,8 @@ async function checkShockDetection(env, magPoints, plasmaPoints, tempAvailable =
           tmpRatio: haveTmp ? +tmpRatio.toFixed(2) : null,
           btDelta:  +btDelta.toFixed(1),
           bzDelta:  +bzDelta.toFixed(1),
+          // The medians either side of the shock, for the message.
+          spd1, spd2, den1, den2, bt1, bt2, bz1, bz2,
         };
       }
     }
@@ -1780,10 +1779,12 @@ async function checkShockDetection(env, magPoints, plasmaPoints, tempAvailable =
       return;
     }
 
-    const latestP = plasmaPoints[plasmaPoints.length - 1];
-    const prevP   = plasmaPoints[plasmaPoints.length - 2] || latestP;
-    const latestM = magPoints[magPoints.length - 1];
-    const prevM   = magPoints[magPoints.length - 2] || latestM;
+    // Before and after the shock itself, not the last two readings: the
+    // shock is judged 12 to 25 minutes back, so the newest pair showed next
+    // to no change - and a null density or field in either threw here, which
+    // lost the alert entirely.
+    const e = bestEvent;
+    const f = (v, d = 1) => (Number.isFinite(v) ? v.toFixed(d) : '?');
 
     const SHOCK_LABELS = {
       ff:  { title: 'CME Has Hit the Satellites!',   summary: 'A fast forward shock has been detected at the L1 satellites. Speed, density and magnetic field all jumped, which is the classic CME arrival signature.' },
@@ -1797,13 +1798,13 @@ async function checkShockDetection(env, magPoints, plasmaPoints, tempAvailable =
     const title = info.title;
     const bodyLines = [
       info.summary, '',
-      `Speed: ${Math.round(prevP.speed)} → ${Math.round(latestP.speed)} km/s${bestEvent.spdDelta !== 0 ? ` (${bestEvent.spdDelta > 0 ? '+' : ''}${bestEvent.spdDelta})` : ''}`,
-      `Density: ${prevP.density.toFixed(1)} → ${latestP.density.toFixed(1)} p/cm³ (×${bestEvent.denRatio})`,
+      `Speed: ${f(e.spd1, 0)} → ${f(e.spd2, 0)} km/s${e.spdDelta !== 0 ? ` (${e.spdDelta > 0 ? '+' : ''}${e.spdDelta})` : ''}`,
+      `Density: ${f(e.den1)} → ${f(e.den2)} p/cm³ (×${e.denRatio})`,
     ];
     if (bestEvent.tmpRatio != null) bodyLines.push(`Temperature: ×${bestEvent.tmpRatio}`);
     bodyLines.push(
-      `Bt: ${prevM.bt.toFixed(1)} → ${latestM.bt.toFixed(1)} nT (${bestEvent.btDelta > 0 ? '+' : ''}${bestEvent.btDelta})`,
-      `Bz: ${prevM.bz.toFixed(1)} → ${latestM.bz.toFixed(1)} nT`,
+      `Bt: ${f(e.bt1)} → ${f(e.bt2)} nT (${e.btDelta > 0 ? '+' : ''}${e.btDelta})`,
+      `Bz: ${f(e.bz1)} → ${f(e.bz2)} nT`,
     );
     bodyLines.push('', 'L1 satellites sit about 45 to 60 minutes upstream of Earth. This shockwave is likely already reaching us.');
 
@@ -1862,6 +1863,12 @@ async function checkOvernightWatch(env, forecastData, substormData, magPoints = 
       data: { url: '/?page=forecast', category: 'overnight-watch' },
       ts: Date.now(),
     };
+    // Once per evening. Every run inside the window used to queue its own
+    // job; each subscriber's once-a-night marker caught most repeats, but two
+    // shards reading the same record at once could both send.
+    const queuedFor = await kv(env).get('STATE_overnight_queued', 'json').catch(() => null);
+    if (queuedFor?.sunsetDate === sunsetDate) { note('overnight', 'quiet', `already queued for ${sunsetDate}`); return; }
+    await kv(env).put('STATE_overnight_queued', JSON.stringify({ sunsetDate }), { expirationTtl: 2 * 86400 });
     const jobId = await enqueueDelivery(env, {
       kind: 'overnight', topic: 'overnight-watch', payload,
       params: { sunsetDate, auroraScore },
@@ -3469,16 +3476,24 @@ async function decideForSubscriber(env, job, keyName, stored, meter = { ops: 0 }
 
     /** @type {Record<string, string>} */
     const topicForTier = { dslr: 'visibility-dslr', phone: 'visibility-phone', naked: 'visibility-naked' };
-    const topic = newTier ? topicForTier[newTier] : null;
-    if (!topic || prefs[topic] !== true) return null;
+    // The highest level they ticked that this reaches and have not already
+    // been told about. Someone with only "phone" ticked used to hear nothing
+    // when the aurora went straight to naked eye - the exact level was the
+    // only one checked - and, with nothing recorded, kept hearing nothing.
+    const reachable = ['naked', 'phone', 'dslr'].filter(t =>
+      tierRank[t] <= newRank && tierRank[t] > currentRank && prefs[topicForTier[t]] === true);
+    const topic = reachable.length ? topicForTier[reachable[0]] : null;
+    if (!topic) return null;
 
     const cooldownKey = `COOLDOWN_vis_${newTier}_${keyName}`;
     const lastSent = await kv(env).get(cooldownKey);
     count();
     if (lastSent && (Date.now() - Number(lastSent)) < 2 * 60 * 60 * 1000) return null;
 
+    // Tagged with the level they ticked, worded for the level reached.
+    const visPayload = buildVisibilityPayload(newTier, p.statsLine);
     return {
-      payload: buildVisibilityPayload(newTier, p.statsLine),
+      payload: { ...visPayload, tag: topic, data: { ...visPayload.data, category: topic } },
       onSent: async () => {
         await kv(env).put(cooldownKey, Date.now().toString(), { expirationTtl: 2 * 60 * 60 });
         await kv(env).put(keyName, JSON.stringify({ ...stored, visibilityTier: newTier }));

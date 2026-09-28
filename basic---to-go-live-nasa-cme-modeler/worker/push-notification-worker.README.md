@@ -42,12 +42,9 @@ Check afterwards with:
 | `SELF` | **service binding, pointing at this worker** | how the worker calls itself. **Without it nothing is ever delivered** - see below |
 | `SELF_URL` | var | the worker's own origin. Used for building URLs and as a fallback outside Cloudflare |
 
-`CONFIG_THRESHOLDS` must exist in KV as JSON or the scheduled run aborts
-before it does anything. It should carry at least:
-
-```json
-{ "substorm": { "cooldownMinutes": 30 } }
-```
+`CONFIG_THRESHOLDS` in KV is optional. A missing key used to abort every
+scheduled run; nothing reads it now (substorm alerts no longer use a shared
+cooldown), so it can be left as it is or deleted.
 
 ## Other workers: DONKI and SUBSTORM
 

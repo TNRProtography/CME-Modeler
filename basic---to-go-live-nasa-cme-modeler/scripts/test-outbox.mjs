@@ -157,6 +157,11 @@ check(prog.complete && unique.size === wantNightly && delivered.length === uniqu
 console.log('\n2. a second sunset run the same night');
 delivered.length = 0;
 await W.checkOvernightWatch(env, forecast, substorm, mag, plasma, () => {});
+check([...store.keys()].filter(k => k.startsWith('JOB_')).length === 1,
+      'a second run in the same sunset window queues nothing');
+// Even if one were queued, each subscriber's once-a-night marker holds.
+store.delete('STATE_overnight_queued');
+await W.checkOvernightWatch(env, forecast, substorm, mag, plasma, () => {});
 const jobs2 = [...store.keys()].filter(k => k.startsWith('JOB_')).map(k => k.slice(4));
 const job2 = jobs2.find(j => j !== jobId);
 await settle();
@@ -169,10 +174,11 @@ check(prog2.complete && delivered.length === 0,
 console.log('\n3. nightly with 25 dispatches silently lost');
 for (const k of [...store.keys()]) {
   if (k.startsWith('JOB_') || k.startsWith('JOBSHARD_') || k.startsWith('COOLDOWN_')) store.delete(k);
-  else { const v = JSON.parse(store.get(k)); delete v.overnightWatchSentDate; store.set(k, JSON.stringify(v)); }
+  else if (!k.startsWith('STATE_')) { const v = JSON.parse(store.get(k)); delete v.overnightWatchSentDate; store.set(k, JSON.stringify(v)); }
 }
 delivered.length = 0;
 dropDispatches = 25;
+store.delete('STATE_overnight_queued');
 await W.checkOvernightWatch(env, forecast, substorm, mag, plasma, () => {});
 const jobId3 = [...store.keys()].filter(k => k.startsWith('JOB_')).map(k => k.slice(4))[0];
 await settle();
@@ -191,12 +197,13 @@ check(p3.complete && new Set(delivered).size === wantNightly && before < wantNig
 console.log('\n4. a mediocre night only reaches the camera crowd');
 for (const k of [...store.keys()]) {
   if (k.startsWith('JOB_') || k.startsWith('JOBSHARD_') || k.startsWith('COOLDOWN_')) store.delete(k);
-  else { const v = JSON.parse(store.get(k)); delete v.overnightWatchSentDate; store.set(k, JSON.stringify(v)); }
+  else if (!k.startsWith('STATE_')) { const v = JSON.parse(store.get(k)); delete v.overnightWatchSentDate; store.set(k, JSON.stringify(v)); }
 }
 delivered.length = 0;
 const weak = JSON.parse(JSON.stringify(forecast));
 weak.currentForecast.sun.set = sunsetMs;
 weak.currentForecast.spotTheAuroraForecast = 32;
+store.delete('STATE_overnight_queued');
 await W.checkOvernightWatch(env, weak, substorm, mag, plasma, () => {});
 await settle();
 const camWanted = [...store.values()].filter(v => { const s = JSON.parse(v); return s.preferences?.['overnight-watch'] && s.overnight_mode === 'camera'; }).length;
@@ -208,9 +215,10 @@ console.log('\n5. the delivery ledger');
 for (const k of [...store.keys()]) {
   if (k.startsWith('JOB_') || k.startsWith('JOBSHARD_') || k.startsWith('COOLDOWN_') ||
       k.startsWith('SEND_') || k.startsWith('CLK_') || k === 'SENDS') store.delete(k);
-  else { const v = JSON.parse(store.get(k)); delete v.overnightWatchSentDate; store.set(k, JSON.stringify(v)); }
+  else if (!k.startsWith('STATE_')) { const v = JSON.parse(store.get(k)); delete v.overnightWatchSentDate; store.set(k, JSON.stringify(v)); }
 }
 delivered.length = 0;
+store.delete('STATE_overnight_queued');
 await W.checkOvernightWatch(env, forecast, substorm, mag, plasma, () => {});
 await settle();
 // The sweep is what writes the ledger entry, the same as on a real cron tick.
@@ -377,6 +385,7 @@ console.log('\n8. the subscriber stats snapshot');
     }
   }
   delivered.length = 0;
+  store.delete('STATE_overnight_queued');
   await W.checkOvernightWatch(env, forecast, substorm, mag, plasma, () => {});
   await settle();
   await W.sweepJobs(env, () => {});
@@ -849,6 +858,7 @@ console.log('\n17. what went out in the last 24 hours');
         'with nothing sent it reports zeros for every category, hour by hour');
 
   delivered.length = 0;
+  store.delete('STATE_overnight_queued');
   await W.checkOvernightWatch(env, forecast, substorm, mag, plasma, () => {});
   await W.enqueueDelivery(env, { kind: 'topic', topic: 'admin-broadcast',
     payload: { title: 'T', body: 'B', tag: 'admin-broadcast', data: { url: '/' } } });

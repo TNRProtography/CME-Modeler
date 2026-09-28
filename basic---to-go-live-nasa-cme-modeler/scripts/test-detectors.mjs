@@ -317,6 +317,21 @@ console.log('\nA CME hits L1');
   const without = await queuedTopics();
   check(without.includes('shock-ff'),
         'the same shock still fires with no temperature in the feed', without.join(', '));
+
+  // The message quotes the jump itself, and a missing reading at the very end
+  // of the feed must not lose the alert.
+  store.delete('STATE_shock');
+  store.delete('COOLDOWN_shock-ff');
+  const gappy = wind(shock);
+  gappy.plasma.at(-1).density = null;
+  gappy.mag.at(-1).bt = null;
+  await W.checkShockDetection(env, gappy.mag, gappy.plasma, true, () => {});
+  const msg = allPayloads.at(-1);
+  const gapSent = await queuedTopics();
+  check(gapSent.includes('shock-ff'), 'a null reading at the end of the feed does not lose the alert', gapSent.join(', '));
+  const [, v1, v2] = msg?.body?.match(/Speed: (\d+) → (\d+)/) ?? [];
+  check(msg && Number(v1) <= 450 && Number(v2) >= 550,
+        'and the message gives the speed and density either side of the shock', msg?.body?.split('\n').slice(2, 4).join(' | '));
 }
 
 // ── 4. visibility reaches real places ──────────────────────────────────────
@@ -466,6 +481,46 @@ console.log('\nSubstorm alerts follow the visibility levels chosen');
   await queuedTopics();
   Date.now = realNow;
   store.clear();
+}
+
+// ── 5d. visibility alerts reach whoever ticked a level the aurora reaches ──
+// Only the exact level reached used to be checked, so someone with only
+// "phone" ticked heard nothing when the aurora went straight to naked eye.
+console.log('\nVisibility alerts reach anyone whose level is reached');
+{
+  const realNow = Date.now;
+  const at = Date.parse('2026-09-29T10:00:00Z');   // 11pm in New Zealand
+  Date.now = () => at;
+  const boundary = W.AuroraVisibility.computeOvalBoundary(
+    { newell_avg_60m: 16000, newell_avg_30m: 16000, avg_30m_pressure_nPa: 3, by: 0, bz: -10 }, true, new Date(at));
+  const job = { kind: 'visibility', topic: 'visibility', params: { boundary, atMs: at, statsLine: 'Bz -10' } };
+  const dunedin = { latitude: -45.87, longitude: 170.5 };
+  const to = (prefs, visibilityTier = null) => W.decideForSubscriber(env, job, `sub_${Math.random()}`,
+    { preferences: prefs, location: dunedin, visibilityTier });
+
+  const phoneOnly = await to({ 'visibility-phone': true });
+  check(phoneOnly && phoneOnly.payload.tag === 'visibility-phone' && /Naked Eye/.test(phoneOnly.payload.title),
+        'phone only: a naked-eye aurora is sent, under their phone alert, saying naked eye', phoneOnly?.payload?.title);
+  const dslrOnly = await to({ 'visibility-dslr': true });
+  check(dslrOnly && dslrOnly.payload.tag === 'visibility-dslr', 'camera only: sent too');
+  const nakedTicked = await to({ 'visibility-phone': true, 'visibility-naked': true });
+  check(nakedTicked && nakedTicked.payload.tag === 'visibility-naked', 'with naked eye ticked, it is their naked-eye alert');
+  check((await to({ 'visibility-phone': true }, 'phone')) === null,
+        'already told at phone, with only phone ticked: not told again');
+  check((await to({})) === null, 'nothing ticked: nothing sent');
+  Date.now = realNow;
+}
+
+// ── 5e. the nightly outlook is queued once an evening ─────────────────────
+console.log('\nThe nightly outlook');
+{
+  store.clear();
+  const forecast = { currentForecast: { sun: { set: Date.now() - 2 * 60000, rise: Date.now() + 10 * 3600e3 },
+    spotTheAuroraForecast: 20, moon: { illumination: 40 } } };
+  for (let i = 0; i < 5; i++) await W.checkOvernightWatch(env, forecast, null, [], [], () => {});
+  const jobs = [...store.keys()].filter(k => k.startsWith('JOB_')).length;
+  check(jobs === 1, 'several runs in the sunset window queue it once', `${jobs} jobs`);
+  await queuedTopics();
 }
 
 // ── daily region snapshots ────────────────────────────────────────────────
