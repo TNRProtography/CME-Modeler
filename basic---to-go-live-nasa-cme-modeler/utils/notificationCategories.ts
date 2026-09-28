@@ -227,7 +227,7 @@ export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
     icon: '/icons/icon-flare-event.png',
     badge: '/icons/icon-badge-flare.png',
     label: 'Solar flare summary',
-    note: 'Sent once a flare has peaked. Turning off the M/X toggles does not turn this off - it has its own stored preference and no UI. The companion flare-peak notification does have a toggle, so anyone who wants only one notification per flare turns that one off.',
+    note: 'Sent once a flare has peaked, as the same single notification as flare-peak: the worker sends one push to everyone subscribed to either. It has its own stored preference and no UI, so switching off the flare-peak toggle does not stop the peak notification for someone who still has this on.',
   },
   {
     id: 'flare-peak',
@@ -237,7 +237,7 @@ export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
     badge: '/icons/icon-badge-flare.png',
     label: 'Solar flare peaked',
     description: 'When a flare tops out and starts fading.',
-    tooltip: 'Sent once a flare has clearly turned the corner - the X-ray flux has fallen for two readings in a row - and says what class it reached. This arrives alongside the flare summary, so turn it off if one notification per flare is enough.',
+    tooltip: 'Sent once a flare has clearly turned the corner - the X-ray flux has fallen for two readings in a row - and says what class it reached. One notification per flare, however long it takes to fade.',
   },
   {
     id: 'substorm-forecast',

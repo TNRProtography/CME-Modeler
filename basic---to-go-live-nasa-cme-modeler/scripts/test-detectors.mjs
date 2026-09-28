@@ -29,7 +29,7 @@ const copy = join(dir, 'w.mjs');
 writeFileSync(copy, readFileSync(SRC, 'utf8') +
   '\nexport { checkSolarFlares, checkShockDetection, checkSubstormActivity,' +
   ' checkVisibilityNotifications, checkOvernightWatch, geoToGmag,' +
-  ' snapshotSolarRegions, handleRegionsHistory };\n');
+  ' snapshotSolarRegions, handleRegionsHistory, decideForSubscriber };\n');
 const W = await import(pathToFileURL(copy).href);
 
 // ── harness ────────────────────────────────────────────────────────────────
@@ -60,7 +60,9 @@ async function queuedTopics() {
   for (const name of [...store.keys()].filter(k => k.startsWith('JOB_'))) {
     const job = JSON.parse(store.get(name));
     if (job.payload) allPayloads.push({ topic: job.topic ?? job.kind, ...job.payload });
-    out.push(job.topic ?? job.kind);
+    // A flare job covers every threshold it announces; list each.
+    if (job.kind === 'flare') out.push(...job.params.topics);
+    else out.push(job.topic ?? job.kind);
     store.delete(name);
     for (const ch of 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_') {
       store.delete(`JOBSHARD_${name.slice(4)}_${ch}`);
@@ -191,6 +193,88 @@ console.log('\nConfirming a peak needs the flux to actually fall');
   check(ended.includes('flare-peak') && ended.includes('flare-event'),
         'and dropping below M1 still closes the flare out',
         ended.join(', ') || 'nothing');
+}
+
+// ── 1c. one notification per flare stage ──────────────────────────────────
+// A flare that jumps several thresholds in one reading used to send one push
+// per threshold, identical text, to anyone subscribed to more than one; and
+// every peak went out twice, as flare-peak and flare-event.
+console.log('\nOne notification per flare stage');
+{
+  store.clear();
+  store.set('CONFIG_THRESHOLDS', JSON.stringify(CONFIG));
+  await W.checkSolarFlares(env, xray([1e-6, 1e-6, 1.2e-4]), () => {});
+  const jobs = [...store.keys()].filter(k => k.startsWith('JOB_')).map(k => JSON.parse(store.get(k)));
+  check(jobs.length === 1 && same(jobs[0].params.topics, ['flare-M1', 'flare-M5', 'flare-X1']),
+        'a flare that jumps straight to X1 is one notification covering M1, M5 and X1',
+        JSON.stringify(jobs.map(j => j.params)));
+  check(jobs[0].payload.tag === 'flare-X1', 'tagged with the highest level it reached');
+
+  const decide = (prefs) => W.decideForSubscriber(env, jobs[0], 'k', { preferences: prefs });
+  check(!!(await decide({ 'flare-M1': true, 'flare-M5': true, 'flare-X1': true })), 'someone with all three gets it');
+  check(!!(await decide({ 'flare-M1': true })), 'so does someone with only M1');
+  check((await decide({ 'flare-X5': true })) === null, 'someone who only wants X5 does not');
+  await queuedTopics();
+
+  // Close it out: the peak is one job for flare-peak and flare-event together.
+  for (let i = 0; i < 2; i++) await W.checkSolarFlares(env, xray([1.2e-4, 1.0e-4, 8e-5]), () => {});
+  const peakJobs = [...store.keys()].filter(k => k.startsWith('JOB_')).map(k => JSON.parse(store.get(k)));
+  check(peakJobs.length === 1 && same(peakJobs[0].params.topics, ['flare-event', 'flare-peak'])
+        && peakJobs[0].payload.tag === 'flare-peak',
+        'the peak is one notification, not a peaked alert plus a summary', JSON.stringify(peakJobs.map(j => j.params)));
+  const peakTo = (prefs) => W.decideForSubscriber(env, peakJobs[0], 'k', { preferences: prefs });
+  check(!!(await peakTo({ 'flare-peak': true, 'flare-M1': true })),
+        'the peak reaches someone subscribed to peaks and to a level the flare reached');
+  check(!!(await peakTo({ 'flare-event': true, 'flare-X1': true })),
+        'including someone who turned the peaked toggle off (flare-event has no toggle)');
+  check((await peakTo({ 'flare-peak': true, 'flare-X5': true })) === null,
+        'but not someone who only wants X5 flares, for an X1 flare');
+  check((await peakTo({ 'flare-peak': true })) === null,
+        'nor someone with every flare level switched off');
+  await queuedTopics();
+}
+
+// ── 1d. a long flare fading slowly ─────────────────────────────────────────
+// Declaring the flare over at its peak made every tick still above M1 look
+// like a new flare: an X1 with a two hour tail sent "flare detected" again and
+// a new "peaked" every fifteen minutes on the way down - 21 notifications.
+console.log('\nA long-duration flare, peak to tail');
+{
+  store.clear();
+  store.set('CONFIG_THRESHOLDS', JSON.stringify(CONFIG));
+  const realNow = Date.now;
+  let now = realNow();
+  Date.now = () => now;
+  const series = [];
+  const at = (m) => m < 5 ? 5e-7 : m < 15 ? 5e-7 * Math.pow(240, (m - 5) / 10) : Math.max(5e-7, 1.2e-4 * Math.exp(-(m - 15) / 45));
+  const fired = [];
+  const cooled = new Map();
+  for (let m = 0; m < 200; m++) {
+    now += 60000;
+    // Cooldowns expire in real KV; the harness store does not, so expire them here.
+    for (const k of [...store.keys()].filter(k => k.startsWith('COOLDOWN_'))) {
+      if (!cooled.has(k)) cooled.set(k, now);
+      else if (now - cooled.get(k) > 30 * 60000) { store.delete(k); cooled.delete(k); }
+    }
+    series.push({ energy: '0.1-0.8nm', flux: at(m), time_tag: new Date(now).toISOString() });
+    await W.checkSolarFlares(env, series.slice(-30), () => {});
+    fired.push(...(await queuedTopics()).map(t => `${m}:${t}`));
+  }
+  Date.now = realNow;
+  const peaks = fired.filter(f => f.endsWith(':flare-peak'));
+  const detections = fired.filter(f => /flare-(M|X)/.test(f));
+  console.log(`    sent: ${fired.join(', ')}`);
+  check(peaks.length === 1, 'one peak notification for the whole flare', peaks.join(', '));
+  check(detections.every(f => Number(f.split(':')[0]) <= 15),
+        'no "flare detected" on the way down', detections.join(', '));
+  check(JSON.parse(store.get('STATE_flare')).status === 'inactive', 'and the flare closes once the flux is back below M1');
+
+  // A new flare on the tail of a decaying one is its own flare.
+  store.set('STATE_flare', JSON.stringify({ status: 'declining', peakFlux: 1.2e-4, peakTime: Date.now() - 3600e3,
+    notifiedThresholds: ['flare-M1', 'flare-M5', 'flare-X1'], minFlux: 2e-5, stateEnteredAt: Date.now() - 1800e3 }));
+  await W.checkSolarFlares(env, xray([2e-5, 3e-5, 5e-5]), () => {});
+  const tail = await queuedTopics();
+  check(tail.includes('flare-M1'), 'a flare that doubles off the decay is announced as a new one', tail.join(', '));
 }
 
 // ── 2. a quiet sun stays quiet ─────────────────────────────────────────────

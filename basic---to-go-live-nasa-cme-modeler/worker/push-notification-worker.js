@@ -702,6 +702,9 @@ const FLARE_DECLINE_SAMPLES = 2;
 // fires the peak notification with the class it actually reached - so nothing
 // is lost by waiting, only reported a little later.
 const FLARE_STALE_MS   = 4 * 60 * 60 * 1000;
+// After a peak, a flux that doubles off the lowest point of the decay is a new
+// flare rather than noise on the old one.
+const FLARE_RETRIGGER_FACTOR = 2;
 
 /**
  * How many readings at the end of the series each fell below the one before.
@@ -755,8 +758,8 @@ async function checkSolarFlares(env, /** @type {any[]|null} */ allData = null, n
     // FIX 5: the stale guard used to require a truthy stateEnteredAt, so a
     // state saved without one could never be unstuck. Treat a missing value
     // as "unknown age" and reset on it rather than skipping the guard.
-    if (prev.status === 'rising' && (!prev.stateEnteredAt || (now - prev.stateEnteredAt > FLARE_STALE_MS))) {
-      console.warn(`[flare] Resetting stuck 'rising' state (entered ${prev.stateEnteredAt ? Math.round((now - prev.stateEnteredAt) / 3600000) + 'h ago' : 'unknown'})`);
+    if ((prev.status === 'rising' || prev.status === 'declining') && (!prev.stateEnteredAt || (now - prev.stateEnteredAt > FLARE_STALE_MS))) {
+      console.warn(`[flare] Resetting stuck '${prev.status}' state (entered ${prev.stateEnteredAt ? Math.round((now - prev.stateEnteredAt) / 3600000) + 'h ago' : 'unknown'})`);
       await kv(env).put('STATE_flare', JSON.stringify({
         status: 'inactive', peakFlux: 0, peakTime: 0,
         notifiedThresholds: [], declineStart: null, stateEnteredAt: 0,
@@ -768,41 +771,85 @@ async function checkSolarFlares(env, /** @type {any[]|null} */ allData = null, n
     }
 
     const cls = getXrayClass(latest.flux);
+    const flareUrl = { url: '/?page=solar-activity&section=goes-xray-flux-section' };
+    const inactive = () => ({
+      status: 'inactive', peakFlux: 0, peakTime: 0,
+      notifiedThresholds: [], declineStart: null, stateEnteredAt: 0,
+    });
+
+    /**
+     * Every threshold the flux has reached and has not yet been announced,
+     * sent as one notification. Someone subscribed to M1, M5 and X1 gets one
+     * push for a flare that jumps straight to X1, not three identical ones.
+     * Returns the topics sent and the ones a cooldown held back.
+     */
+    const announceThresholds = async (title, body, already) => {
+      const sent = [], blocked = [];
+      for (const th of FLARE_THRESHOLDS) {
+        if (latest.flux < th.value || already.has(th.topic)) continue;
+        if (await checkAndSetCooldown(th.topic, th.cooldownMinutes, env)) sent.push(th.topic);
+        else blocked.push(th.topic);
+      }
+      if (sent.length) await notifyFlare(sent, title, body, env, flareUrl);
+      return { sent, blocked };
+    };
 
     if (prev.status === 'inactive') {
       if (latest.flux >= FLARE_M1_THRESHOLD) {
         console.log(`[flare] New flare detected: ${cls} (flux=${latest.flux.toExponential(2)})`);
-        const notified = [];
-        const blocked = [];
-        for (const th of FLARE_THRESHOLDS) {
-          if (latest.flux >= th.value) {
-            if (await checkAndSetCooldown(th.topic, th.cooldownMinutes, env)) {
-              const title = `${cls} Solar Flare Detected`;
-              const body = `X-ray flux has reached ${cls} class. A solar flare is in progress.`;
-              await notifyTopic(th.topic, title, body, env, {
-                url: '/?page=solar-activity&section=goes-xray-flux-section',
-              });
-              notified.push(th.topic);
-            } else {
-              blocked.push(th.topic);
-            }
-          }
-        }
-        note('flare', notified.length ? 'fired' : 'suppressed',
-             `${cls}; sent ${notified.join(',') || 'none'}${blocked.length ? `; cooldown blocked ${blocked.join(',')}` : ''}`);
-
+        const { sent, blocked } = await announceThresholds(
+          `${cls} Solar Flare Detected`,
+          `X-ray flux has reached ${cls} class. A solar flare is in progress.`,
+          new Set());
+        note('flare', sent.length ? 'fired' : 'suppressed',
+             `${cls}; sent ${sent.join(',') || 'none'}${blocked.length ? `; cooldown blocked ${blocked.join(',')}` : ''}`);
         await kv(env).put('STATE_flare', JSON.stringify({
           status: 'rising', peakFlux: latest.flux, peakTime: latest.t,
-          // FIX: record the cooldown-blocked topics too, otherwise the rising
-          // branch would try them again on the very next tick and they would
-          // stay blocked for the whole flare without ever being retried after
-          // the cooldown lapses. Keeping them out of notifiedThresholds means
-          // they get another chance once the flux makes a new peak.
-          notifiedThresholds: notified,
+          // Cooldown-blocked topics stay out of notifiedThresholds, so they get
+          // another chance once the flux makes a new peak.
+          notifiedThresholds: sent,
           declineStart: null, stateEnteredAt: now,
         }));
       } else {
         note('flare', 'quiet', `flux ${cls}, below M1`);
+      }
+
+    } else if (prev.status === 'declining') {
+      // Past an announced peak and fading. A long-duration flare can take hours
+      // to drop back below M1; treating it as over at the peak made every tick
+      // above M1 look like a new flare, which re-sent "flare detected" and a
+      // fresh "peaked" every fifteen minutes all the way down.
+      const minFlux = Math.min(prev.minFlux ?? latest.flux, latest.flux);
+      if (latest.flux < FLARE_M1_THRESHOLD) {
+        note('flare', 'quiet', `flare over, flux ${cls}`);
+        await kv(env).put('STATE_flare', JSON.stringify(inactive()));
+      } else if (latest.flux > prev.peakFlux) {
+        // The same flare climbing past the peak already announced.
+        const { sent } = await announceThresholds(
+          `Flare Intensifying: Now ${cls}`,
+          `The ongoing solar flare has strengthened to ${cls} class.`,
+          new Set(prev.notifiedThresholds || []));
+        note('flare', 'rising', `${cls}, above the announced peak again`);
+        await kv(env).put('STATE_flare', JSON.stringify({
+          ...prev, status: 'rising', peakFlux: latest.flux, peakTime: latest.t, declineStart: null,
+          notifiedThresholds: [...(prev.notifiedThresholds || []), ...sent], stateEnteredAt: now,
+        }));
+      } else if (latest.flux >= minFlux * FLARE_RETRIGGER_FACTOR) {
+        // Doubled off the low point of the decay: a new flare on the tail of
+        // the old one, announced as its own.
+        console.log(`[flare] New flare on a decaying one: ${cls}`);
+        const { sent } = await announceThresholds(
+          `${cls} Solar Flare Detected`,
+          `X-ray flux has risen again to ${cls} class. A new solar flare is in progress.`,
+          new Set());
+        note('flare', sent.length ? 'fired' : 'suppressed', `${cls}, new flare during a decay`);
+        await kv(env).put('STATE_flare', JSON.stringify({
+          status: 'rising', peakFlux: latest.flux, peakTime: latest.t,
+          notifiedThresholds: sent, declineStart: null, stateEnteredAt: now,
+        }));
+      } else {
+        note('flare', 'quiet', `${cls}, decaying from ${getXrayClass(prev.peakFlux)}`);
+        await kv(env).put('STATE_flare', JSON.stringify({ ...prev, minFlux }));
       }
 
     } else {
@@ -816,20 +863,11 @@ async function checkSolarFlares(env, /** @type {any[]|null} */ allData = null, n
         newState.peakFlux = latest.flux;
         newState.peakTime = latest.t;
         newState.declineStart = null;
-        const alreadyNotified = new Set(prev.notifiedThresholds || []);
-        for (const th of FLARE_THRESHOLDS) {
-          if (latest.flux >= th.value && !alreadyNotified.has(th.topic)) {
-            if (await checkAndSetCooldown(th.topic, th.cooldownMinutes, env)) {
-              const title = `Flare Intensifying: Now ${cls}`;
-              const body = `The ongoing solar flare has strengthened to ${cls} class.`;
-              await notifyTopic(th.topic, title, body, env, {
-                url: '/?page=solar-activity&section=goes-xray-flux-section',
-              });
-              newState.notifiedThresholds = [...(newState.notifiedThresholds || []), th.topic];
-              console.log(`[flare] Fired ${th.topic} (intensifying)`);
-            }
-          }
-        }
+        const { sent } = await announceThresholds(
+          `Flare Intensifying: Now ${cls}`,
+          `The ongoing solar flare has strengthened to ${cls} class.`,
+          new Set(prev.notifiedThresholds || []));
+        newState.notifiedThresholds = [...(newState.notifiedThresholds || []), ...sent];
         note('flare', 'rising', `${cls}, new peak`);
       } else {
         // Off the peak. Confirm it by looking at the feed's own samples rather
@@ -852,23 +890,29 @@ async function checkSolarFlares(env, /** @type {any[]|null} */ allData = null, n
 
       if (peaked) {
         const peakClass = getXrayClass(prev.peakFlux);
-        if (await checkAndSetCooldown('flare-peak', FLARE_PEAK_COOLDOWN_MINUTES, env)) {
-          await notifyTopic('flare-peak',
+        // flare-peak (a toggle) and flare-event (no toggle) used to go out as
+        // two notifications at every peak. One notification now reaches
+        // everyone subscribed to either.
+        // flare-peak last, so the notification carries its tag and icon.
+        const topics = [];
+        if (await checkAndSetCooldown('flare-event', FLARE_PEAK_COOLDOWN_MINUTES, env)) topics.push('flare-event');
+        if (await checkAndSetCooldown('flare-peak', FLARE_PEAK_COOLDOWN_MINUTES, env)) topics.push('flare-peak');
+        // Only to people subscribed to a level this flare actually reached:
+        // someone who asked for X flares only does not want to hear an M2 peaked.
+        const reached = FLARE_THRESHOLDS.filter(th => prev.peakFlux >= th.value).map(th => th.topic);
+        if (topics.length && reached.length) {
+          await notifyFlare(topics,
             `Solar Flare Peaked: ${peakClass}`,
             `A solar flare reached a maximum of ${peakClass} around ${formatNzTime(prev.peakTime)} and is now declining.`,
-            env, { url: '/?page=solar-activity&section=goes-xray-flux-section' });
-        }
-        if (await checkAndSetCooldown('flare-event', 15, env)) {
-          await notifyTopic('flare-event',
-            `${peakClass} Solar Flare`,
-            `A solar flare peaked at ${peakClass} at ${formatNzTime(prev.peakTime)}.`,
-            env, { url: '/?page=solar-activity&section=goes-xray-flux-section' });
+            env, flareUrl, { reached });
         }
         note('flare', 'fired', `peak ${peakClass}`);
-        await kv(env).put('STATE_flare', JSON.stringify({
-          status: 'inactive', peakFlux: 0, peakTime: 0,
-          notifiedThresholds: [], declineStart: null, stateEnteredAt: 0,
-        }));
+        await kv(env).put('STATE_flare', JSON.stringify(
+          latest.flux < FLARE_M1_THRESHOLD ? inactive() : {
+            status: 'declining', peakFlux: prev.peakFlux, peakTime: prev.peakTime,
+            notifiedThresholds: prev.notifiedThresholds || [], declineStart: null,
+            minFlux: latest.flux, stateEnteredAt: now,
+          }));
       } else {
         await kv(env).put('STATE_flare', JSON.stringify(newState));
       }
@@ -3289,6 +3333,14 @@ async function decideForSubscriber(env, job, keyName, stored, meter = { ops: 0 }
     return { payload: job.payload };
   }
 
+  if (job.kind === 'flare') {
+    const topics = Array.isArray(job.params?.topics) ? job.params.topics : [job.topic];
+    if (!topics.some(t => prefs[t] === true)) return null;
+    // A peak also needs the subscriber to want one of the levels the flare reached.
+    if (Array.isArray(job.params?.reached) && !job.params.reached.some(t => prefs[t] === true)) return null;
+    return { payload: job.payload };
+  }
+
   if (job.kind === 'cme') {
     if (prefs['cme-earth-directed'] !== true) return null;
     // The only alert whose threshold belongs to the subscriber rather than to
@@ -4089,6 +4141,21 @@ async function tryFinishCensus(env, censusId) {
 }
 
 /** Every detector still calls this; only what happens underneath changed. */
+/**
+ * One flare notification for several topics at once: it reaches everyone
+ * subscribed to any of them, once. The tag is the highest topic, so it groups
+ * with that flare level's other notifications.
+ */
+async function notifyFlare(topics, title, body, env, data = { url: '/' }, extra = {}) {
+  const topic = topics[topics.length - 1];
+  const payload = { title, body, tag: topic, data: { ...data, category: topic }, ts: Date.now() };
+  for (const t of topics) {
+    await kv(env).put(`LATEST_ALERT_${t}`, JSON.stringify({ ...payload, tag: t, data: { ...payload.data, category: t } }),
+                      { expirationTtl: 3600 });
+  }
+  return enqueueDelivery(env, { kind: 'flare', topic, payload, params: { topics, ...extra } });
+}
+
 async function notifyTopic(topic, title, body, env, data = { url: '/' }) {
   const payload = { title, body, tag: topic, data: { ...data, category: topic }, ts: Date.now() };
   await kv(env).put(`LATEST_ALERT_${topic}`, JSON.stringify(payload), { expirationTtl: 3600 });
