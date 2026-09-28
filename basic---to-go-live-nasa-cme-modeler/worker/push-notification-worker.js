@@ -648,7 +648,7 @@ async function runScheduledTasks(env) {
   const loadingState = await updateTailLoadingState(env, substormData, magPoints, plasmaPoints);
 
   const detectors = [
-    ['substorm',   checkSubstormActivity(env, thresholds.substorm, substormData, loadingState, note)],
+    ['substorm',   checkSubstormActivity(env, thresholds.substorm, substormData, loadingState, note, magPoints, plasmaPoints)],
     ['flare',      checkSolarFlares(env, xrayData, note)],
     ['shock',      checkShockDetection(env, magPoints, plasmaPoints, tempAvailable, note)],
     ['overnight',  checkOvernightWatch(env, forecastData, substormData, magPoints, plasmaPoints, note)],
@@ -1508,7 +1508,7 @@ const SUBSTORM_EARLY_LEVEL_GAP_MIN = 10;
 // IMMINENT_30, ONSET. Subscribers choose which stages they want.
 const SUBSTORM_STAGE_TOPICS = ['substorm-watch', 'substorm-likely', 'substorm-imminent', 'substorm-onset'];
 
-async function checkSubstormActivity(env, substormThresholds, substormData, /** @type {any} */ loadingState = null, note = /** @type {(name?: string, status?: string, detail?: string) => void} */ (() => {})) {
+async function checkSubstormActivity(env, substormThresholds, substormData, /** @type {any} */ loadingState = null, note = /** @type {(name?: string, status?: string, detail?: string) => void} */ (() => {}), magPoints = [], plasmaPoints = []) {
   try {
     if (!substormData?.current) {
       note('substorm', 'skipped', 'substorm worker unavailable');
@@ -1572,8 +1572,16 @@ async function checkSubstormActivity(env, substormThresholds, substormData, /** 
         const loadingLine = tailLoadingSentence(loadingState);
         if (loadingLine) body += `\n\n${loadingLine}`;
       }
+      // The oval as it will be once the substorm erupts - for an eruption under
+      // way, as it is. Each subscriber's shard works out what that means where
+      // they are, and only sends if it reaches a visibility level they chose.
+      const atMs = now;
+      const boundary = realWindOvalBoundary(magPoints, plasmaPoints, true, atMs)
+        ?? ovalBoundary({ ...substormData, current: { ...substormData.current, bay_onset_flag: true } },
+                        avgBy30m(magPoints), null);
       await notifyFlare(stageTopics, title, body, env,
-                        { url: '/?page=forecast&section=unified-forecast-section' }, {}, 'levels');
+                        { url: '/?page=forecast&section=unified-forecast-section' },
+                        { boundary, atMs }, 'levels');
       note('substorm', 'fired', `${prev.status} -> ${currentStatus} (index ${Math.round(score)}), for ${stageTopics.join(',')}`);
       announced = nowLevel;
       sentAt = now;
@@ -3399,6 +3407,7 @@ async function decideForSubscriber(env, job, keyName, stored, meter = { ops: 0 }
     if (topics[0]?.startsWith('substorm-')) {
       if (!isUserInPlausibleZone(stored.location?.latitude)) return null;
       if (isSubscriberInDaylight(stored)) return null;
+      return substormDecision(job, prefs, stored);
     }
     // A peak also needs the subscriber to want one of the levels the flare reached.
     if (Array.isArray(job.params?.reached) && !job.params.reached.some(t => prefs[t] === true)) return null;
@@ -3478,6 +3487,44 @@ async function decideForSubscriber(env, job, keyName, stored, meter = { ops: 0 }
   }
 
   return null;
+}
+
+const VISIBILITY_TIER_RANK = { dslr: 1, phone: 2, naked: 3 };
+const VISIBILITY_TIER_WORDS = {
+  naked: { short: 'naked eye', line: 'Expected from your location: visible to the naked eye.' },
+  phone: { short: 'phone camera', line: 'Expected from your location: bright enough for a phone camera.' },
+  dslr:  { short: 'camera', line: 'Expected from your location: a camera on a tripod, long exposure.' },
+};
+
+/**
+ * A substorm stage, matched against the visibility levels the subscriber
+ * chose. The stage says when; the visibility switches say how bright it has to
+ * be before they want to know. So someone with only "naked eye" on hears about
+ * an eruption only if it should reach naked eye where they are, and every
+ * substorm alert says which level to expect. With no visibility level on, any
+ * visible aurora counts. Without a location there is nothing to judge, so they
+ * get the stage alone.
+ */
+function substormDecision(job, prefs, stored) {
+  const p = job.params || {};
+  const lat = parseFloat(stored.location?.latitude);
+  const lon = parseFloat(stored.location?.longitude);
+  if (!p.boundary || !isFinite(lat) || !isFinite(lon)) return { payload: job.payload };
+
+  const tier = visibilityTierFor(p.boundary, p.atMs ?? Date.now(), lat, lon);
+  if (!tier) return null;
+  const chosen = ['dslr', 'phone', 'naked'].filter(t => prefs[`visibility-${t}`] === true);
+  const lowest = chosen.length ? Math.min(...chosen.map(t => VISIBILITY_TIER_RANK[t])) : 1;
+  if (VISIBILITY_TIER_RANK[tier] < lowest) return null;
+
+  const words = VISIBILITY_TIER_WORDS[tier];
+  return {
+    payload: {
+      ...job.payload,
+      title: `${job.payload.title} (${words.short})`,
+      body: `${words.line}\n\n${job.payload.body}`,
+    },
+  };
 }
 
 function buildVisibilityPayload(tier, statsLine) {

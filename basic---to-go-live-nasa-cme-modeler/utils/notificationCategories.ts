@@ -123,7 +123,8 @@ export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
   // ── Substorm nowcast ─────────────────────────────────────────────────────
   // A second tier under the visibility alerts, one switch per stage of the
   // substorm index, so someone can take all four or only the ones they want.
-  // Each is sent once per substorm, only after dark where the subscriber is.
+  // Each is sent once per substorm, only after dark where the subscriber is,
+  // and only when the aurora is expected at a visibility level they chose.
   {
     id: 'substorm-watch',
     ui: 'toggle', defaultOn: false, group: 'visibility',
@@ -132,7 +133,7 @@ export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
     badge: '/icons/icon-badge-shock.png',
     label: 'Substorm: energy building',
     description: 'The substorm index shows energy loading in the magnetotail.',
-    tooltip: 'The earliest and least certain stage: the index has reached 30. Many of these never become an eruption, so this is off unless you want the longest lead time.',
+    tooltip: 'The earliest and least certain stage: the index has reached 30. Many of these never become an eruption, so this is off unless you want the longest lead time. Only sent when the aurora is expected at one of the visibility levels you have switched on above (any visible level if none are on), and says which to expect.',
   },
   {
     id: 'substorm-likely',
@@ -142,7 +143,7 @@ export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
     badge: '/icons/icon-badge-shock.png',
     label: 'Substorm: eruption likely',
     description: 'An eruption is likely within the hour.',
-    tooltip: 'Sent when the substorm index reaches 50, or 30 with the magnetotail loaded for 45 minutes or more. Time to get ready to go out.',
+    tooltip: 'Sent when the substorm index reaches 50, or 30 with the magnetotail loaded for 45 minutes or more. Time to get ready to go out. Only sent when the aurora is expected at one of the visibility levels you have switched on above (any visible level if none are on), and says which to expect.',
   },
   {
     id: 'substorm-imminent',
@@ -152,7 +153,7 @@ export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
     badge: '/icons/icon-badge-shock.png',
     label: 'Substorm: eruption imminent',
     description: 'An eruption is expected within 30 minutes.',
-    tooltip: 'Sent when the substorm index reaches 70, or 50 with a long-loaded magnetotail. Get to your viewing spot.',
+    tooltip: 'Sent when the substorm index reaches 70, or 50 with a long-loaded magnetotail. Get to your viewing spot. Only sent when the aurora is expected at one of the visibility levels you have switched on above (any visible level if none are on), and says which to expect.',
   },
   {
     id: 'substorm-onset',
@@ -162,7 +163,7 @@ export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
     badge: '/icons/icon-badge-shock.png',
     label: 'Substorm: eruption under way',
     description: 'A substorm onset has been detected. Look now.',
-    tooltip: 'Sent when a substorm onset is detected in the magnetometer data, or the index reaches 85. The aurora can brighten and move fast for the next 15 to 30 minutes.',
+    tooltip: 'Sent when a substorm onset is detected in the magnetometer data, or the index reaches 85. The aurora can brighten and move fast for the next 15 to 30 minutes. Only sent when the aurora is expected at one of the visibility levels you have switched on above (any visible level if none are on), and says which to expect.',
   },
 
   // ── Forecast ─────────────────────────────────────────────────────────────

@@ -942,7 +942,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             {item.id === 'substorm-watch' && (
                               <div className="pt-2 mt-1 mb-2 border-t border-neutral-700/50">
                                 <p className="text-xs font-semibold text-neutral-300">Substorm nowcast</p>
-                                <p className="text-[11px] text-neutral-500">Live substorm stages. Turn on all of them, or only the ones you want.</p>
+                                <p className="text-[11px] text-neutral-500">When a substorm is actually happening. You only get these when the aurora is expected at a visibility level you have ticked above, and each one says which.</p>
                               </div>
                             )}
                             <div className="flex items-center justify-between gap-2">

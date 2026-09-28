@@ -29,7 +29,7 @@ const copy = join(dir, 'w.mjs');
 writeFileSync(copy, readFileSync(SRC, 'utf8') +
   '\nexport { checkSolarFlares, checkShockDetection, checkSubstormActivity,' +
   ' checkVisibilityNotifications, checkOvernightWatch, geoToGmag,' +
-  ' snapshotSolarRegions, handleRegionsHistory, decideForSubscriber };\n');
+  ' snapshotSolarRegions, handleRegionsHistory, decideForSubscriber, AuroraVisibility };\n');
 const W = await import(pathToFileURL(copy).href);
 
 // ── harness ────────────────────────────────────────────────────────────────
@@ -376,7 +376,8 @@ console.log('\nA substorm, stage by stage');
   const tick = async (min, score, onset = false) => {
     now = t0 + min * 60000;
     await W.checkSubstormActivity(env, CONFIG.substorm,
-      { current: { score, bay_onset_flag: onset, summary: '' }, metrics: { solar_wind: {} } }, null, () => {});
+      { current: { score, bay_onset_flag: onset, summary: '' },
+        metrics: { solar_wind: { newell_avg_60m: 16000, newell_avg_30m: 16000 } } }, null, () => {});
     const jobs = [...store.keys()].filter(k => k.startsWith('JOB_')).map(k => JSON.parse(store.get(k)));
     await queuedTopics();
     return jobs;
@@ -417,6 +418,52 @@ console.log('\nA substorm, stage by stage');
   check((await to({ 'substorm-onset': true })) === null, 'nor anyone for whom it is daylight');
   check(!!(await W.decideForSubscriber(env, jump[0], 'k', { preferences: { 'substorm-onset': true } })),
         'a subscriber with no location still gets it, rather than a guess');
+  Date.now = realNow;
+  store.clear();
+}
+
+// ── 5c. a substorm matched to the visibility the subscriber chose ──────────
+// The stage says when; the visibility switches say how bright it must be.
+console.log('\nSubstorm alerts follow the visibility levels chosen');
+{
+  const realNow = Date.now;
+  const at = Date.parse('2026-09-29T10:00:00Z');   // 11pm in New Zealand
+  Date.now = () => at;
+  const boundaryFor = (newell) => W.AuroraVisibility.computeOvalBoundary(
+    { newell_avg_60m: newell, newell_avg_30m: newell, avg_30m_pressure_nPa: 3, by: 0, bz: -10 }, true, new Date(at));
+  const job = (newell) => ({ kind: 'levels', topic: 'substorm-onset',
+    payload: { title: 'Substorm Eruption In Progress!', body: 'A substorm onset has been detected.', tag: 'substorm-onset' },
+    params: { topics: ['substorm-onset'], boundary: boundaryFor(newell), atMs: at } });
+  const dunedin = { latitude: -45.87, longitude: 170.5 };
+  const to = (newell, prefs, location = dunedin) =>
+    W.decideForSubscriber(env, job(newell), 'k', { preferences: { 'substorm-onset': true, ...prefs }, location });
+
+  const eye = await to(16000, { 'visibility-naked': true });
+  check(eye && /naked eye/.test(eye.payload.title) && /visible to the naked eye/.test(eye.payload.body),
+        'naked eye only: an eruption at naked-eye strength is sent, and says so', eye?.payload?.title);
+  check((await to(12000, { 'visibility-naked': true })) === null,
+        'naked eye only: an eruption only a phone would catch is not');
+  const phone = await to(12000, { 'visibility-phone': true, 'visibility-naked': true });
+  check(phone && /phone camera/.test(phone.payload.title),
+        'phone and naked eye on: a phone-strength eruption is sent as phone camera', phone?.payload?.title);
+  const cam = await to(6000, {});
+  check(cam && /\(camera\)/.test(cam.payload.title),
+        'no visibility level on: any visible aurora counts, and it says which', cam?.payload?.title);
+  check((await to(2000, { 'visibility-dslr': true })) === null,
+        'nothing is sent when the aurora will not be visible from there at all');
+  const nowhere = await to(16000, { 'visibility-naked': true }, null);
+  check(nowhere && nowhere.payload.title === 'Substorm Eruption In Progress!',
+        'without a location the stage alone is sent');
+
+  // The detector hands the shards an oval to judge against.
+  store.clear();
+  await W.checkSubstormActivity(env, CONFIG.substorm,
+    { current: { score: 90, bay_onset_flag: true, summary: '' }, metrics: { solar_wind: { newell_avg_60m: 16000, newell_avg_30m: 16000 } } },
+    null, () => {});
+  const queued = [...store.keys()].filter(k => k.startsWith('JOB_')).map(k => JSON.parse(store.get(k)));
+  check(queued.length === 1 && queued[0].params.boundary && queued[0].params.atMs === at,
+        'the substorm job carries the oval for each subscriber to be judged against');
+  await queuedTopics();
   Date.now = realNow;
   store.clear();
 }
