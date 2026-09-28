@@ -46,6 +46,10 @@ const TOPIC_ICONS = {
   'aurora-60percent':  '/icons/icon_aurora.png',
   'aurora-80percent':  '/icons/icon_aurora.png',
   'substorm-forecast': '/icons/icon-substorm.png',
+  'substorm-watch':    '/icons/icon-substorm.png',
+  'substorm-likely':   '/icons/icon-substorm.png',
+  'substorm-imminent': '/icons/icon-substorm.png',
+  'substorm-onset':    '/icons/icon-substorm.png',
   'admin-broadcast':   '/icons/icon-default.png',
 };
 
@@ -71,6 +75,10 @@ const TOPIC_BADGES = {
   'shock-sr':          '/icons/icon-badge-shock.png',
   'shock-imf':         '/icons/icon-badge-shock.png',
   'substorm-forecast': '/icons/icon-badge-shock.png',
+  'substorm-watch':    '/icons/icon-badge-shock.png',
+  'substorm-likely':   '/icons/icon-badge-shock.png',
+  'substorm-imminent': '/icons/icon-badge-shock.png',
+  'substorm-onset':    '/icons/icon-badge-shock.png',
 };
 
 const DEFAULT_ICON  = '/icons/icon-default.png';

@@ -890,12 +890,9 @@ async function checkSolarFlares(env, /** @type {any[]|null} */ allData = null, n
 
       if (peaked) {
         const peakClass = getXrayClass(prev.peakFlux);
-        // flare-peak (a toggle) and flare-event (no toggle) used to go out as
-        // two notifications at every peak. One notification now reaches
-        // everyone subscribed to either.
-        // flare-peak last, so the notification carries its tag and icon.
+        // flare-event used to go out alongside this with the same news; it is
+        // retired, so the flare-peak switch alone decides.
         const topics = [];
-        if (await checkAndSetCooldown('flare-event', FLARE_PEAK_COOLDOWN_MINUTES, env)) topics.push('flare-event');
         if (await checkAndSetCooldown('flare-peak', FLARE_PEAK_COOLDOWN_MINUTES, env)) topics.push('flare-peak');
         // Only to people subscribed to a level this flare actually reached:
         // someone who asked for X flares only does not want to hear an M2 peaked.
@@ -1498,22 +1495,24 @@ function tailLoadingSentence(loadingState) {
   return `The magnetotail has been loading energy for ${mins} minutes.`;
 }
 
-// FIX 3: substormThresholds could be undefined if CONFIG_THRESHOLDS had no
-// `substorm` key. Reading .cooldownMinutes off it threw, the catch below
-// swallowed the error, and substorm alerts silently never sent. Default it.
-const SUBSTORM_DEFAULT_COOLDOWN_MIN = 30;
+// Substorm alerts no longer share a cooldown (see checkSubstormActivity), so
+// CONFIG_THRESHOLDS.substorm.cooldownMinutes is no longer read.
+// An episode is over, and its levels can be announced again, only after the
+// index has sat at QUIET this long. Without it an index hovering on a boundary
+// re-sent the same alert every time the cooldown lapsed.
+const SUBSTORM_EPISODE_RESET_MIN = 60;
+// Watch and Likely are the early, softer levels; two of them minutes apart is
+// noise, so the second waits this long. Imminent and an eruption never wait.
+const SUBSTORM_EARLY_LEVEL_GAP_MIN = 10;
+// The topic for each stage above QUIET, in order: WATCH, LIKELY_60,
+// IMMINENT_30, ONSET. Subscribers choose which stages they want.
+const SUBSTORM_STAGE_TOPICS = ['substorm-watch', 'substorm-likely', 'substorm-imminent', 'substorm-onset'];
 
 async function checkSubstormActivity(env, substormThresholds, substormData, /** @type {any} */ loadingState = null, note = /** @type {(name?: string, status?: string, detail?: string) => void} */ (() => {})) {
   try {
     if (!substormData?.current) {
       note('substorm', 'skipped', 'substorm worker unavailable');
       return;
-    }
-    const cooldownMinutes = Number(substormThresholds?.cooldownMinutes) > 0
-      ? Number(substormThresholds.cooldownMinutes)
-      : SUBSTORM_DEFAULT_COOLDOWN_MIN;
-    if (!substormThresholds?.cooldownMinutes) {
-      console.warn(`[substorm] CONFIG_THRESHOLDS.substorm.cooldownMinutes missing - defaulting to ${SUBSTORM_DEFAULT_COOLDOWN_MIN} min`);
     }
 
     const score    = substormData.current.score ?? 0;
@@ -1534,33 +1533,59 @@ async function checkSubstormActivity(env, substormThresholds, substormData, /** 
 
     const prev = await kv(env).get('STATE_substorm', 'json') || { status: 'QUIET' };
     const statusLevels = { 'QUIET': 0, 'WATCH': 1, 'LIKELY_60': 2, 'IMMINENT_30': 3, 'ONSET': 4 };
-    const prevLevel = statusLevels[prev.status] ?? 0;
-    const nowLevel  = statusLevels[currentStatus] ?? 0;
+    const nowLevel = statusLevels[currentStatus] ?? 0;
+    const now = Date.now();
 
-    if (nowLevel > prevLevel) {
-      const topic = 'substorm-forecast';
-      if (await checkAndSetCooldown(topic, cooldownMinutes, env)) {
-        let title = 'Substorm Forecast Update';
-        let body  = substormData.current.summary || 'Substorm activity detected.';
-        switch (currentStatus) {
-          case 'ONSET':       title = 'Substorm Eruption In Progress!';   body = 'A substorm onset has been detected. Aurora may be visible now, look south.'; break;
-          case 'IMMINENT_30': title = 'Substorm Alert: Eruption Imminent'; body = `Substorm index ${Math.round(score)}, eruption expected within 30 minutes. Get to your viewing site.`; break;
-          case 'LIKELY_60':   title = 'Substorm Watch: Eruption Likely';   body = `Substorm index ${Math.round(score)}, eruption likely within the hour. Prepare to go out.`; break;
-          case 'WATCH':       title = 'Substorm Watch: Energy Building';   body = `Substorm index ${Math.round(score)}, magnetospheric energy is loading. Keep an eye on the forecast.`; break;
-        }
-        if (currentStatus !== 'ONSET') {
-          const loadingLine = tailLoadingSentence(loadingState);
-          if (loadingLine) body += `\n\n${loadingLine}`;
-        }
-        await notifyTopic(topic, title, body, env, { url: '/?page=forecast&section=unified-forecast-section' });
-        note('substorm', 'fired', `${prev.status} -> ${currentStatus} (index ${Math.round(score)})`);
-      } else {
-        note('substorm', 'suppressed', `${currentStatus} but within ${cooldownMinutes} min cooldown`);
+    // The highest level already announced in this episode. Each level is
+    // announced at most once per episode, and a higher one always goes out:
+    // the old shared 30 minute cooldown let a "Watch" alert block the
+    // "Eruption In Progress" that followed it twenty minutes later - and
+    // because the state moved on regardless, it was never sent at all.
+    let announced = Number.isFinite(prev.announcedLevel) ? prev.announcedLevel : (statusLevels[prev.status] ?? 0);
+    let quietSince = prev.quietSince ?? null;
+    if (nowLevel === 0) {
+      quietSince = quietSince ?? now;
+      if (now - quietSince >= SUBSTORM_EPISODE_RESET_MIN * 60000) announced = 0;
+    } else {
+      quietSince = null;
+    }
+
+    const lastSentAt = prev.lastSentAt ?? 0;
+    const early = nowLevel <= statusLevels.LIKELY_60;
+    const tooSoon = early && now - lastSentAt < SUBSTORM_EARLY_LEVEL_GAP_MIN * 60000;
+    let sentAt = lastSentAt;
+
+    if (nowLevel > announced && !tooSoon) {
+      // Every stage reached since the last alert, as one notification to anyone
+      // who has any of them switched on. Someone with only "imminent" on still
+      // hears about a jump straight from quiet to an eruption.
+      const stageTopics = SUBSTORM_STAGE_TOPICS.slice(announced, nowLevel);
+      let title = 'Substorm Forecast Update';
+      let body  = substormData.current.summary || 'Substorm activity detected.';
+      switch (currentStatus) {
+        case 'ONSET':       title = 'Substorm Eruption In Progress!';   body = 'A substorm onset has been detected. Aurora may be visible now, look south.'; break;
+        case 'IMMINENT_30': title = 'Substorm Alert: Eruption Imminent'; body = `Substorm index ${Math.round(score)}, eruption expected within 30 minutes. Get to your viewing site.`; break;
+        case 'LIKELY_60':   title = 'Substorm Watch: Eruption Likely';   body = `Substorm index ${Math.round(score)}, eruption likely within the hour. Prepare to go out.`; break;
+        case 'WATCH':       title = 'Substorm Watch: Energy Building';   body = `Substorm index ${Math.round(score)}, magnetospheric energy is loading. Keep an eye on the forecast.`; break;
       }
+      if (currentStatus !== 'ONSET') {
+        const loadingLine = tailLoadingSentence(loadingState);
+        if (loadingLine) body += `\n\n${loadingLine}`;
+      }
+      await notifyFlare(stageTopics, title, body, env,
+                        { url: '/?page=forecast&section=unified-forecast-section' }, {}, 'levels');
+      note('substorm', 'fired', `${prev.status} -> ${currentStatus} (index ${Math.round(score)}), for ${stageTopics.join(',')}`);
+      announced = nowLevel;
+      sentAt = now;
+    } else if (nowLevel > announced) {
+      note('substorm', 'waiting', `${currentStatus}, held ${SUBSTORM_EARLY_LEVEL_GAP_MIN} min after the last alert`);
     } else {
       note('substorm', 'quiet', `status ${currentStatus} (index ${Math.round(score)}), no escalation from ${prev.status}`);
     }
-    await kv(env).put('STATE_substorm', JSON.stringify({ status: currentStatus, timestamp: Date.now() }));
+    await kv(env).put('STATE_substorm', JSON.stringify({
+      status: currentStatus, timestamp: now,
+      announcedLevel: announced, quietSince, lastSentAt: sentAt,
+    }));
   } catch (e) {
     note('substorm', 'error', e.message);
     reportError(e, env, { handler: 'checkSubstormActivity' });
@@ -2059,6 +2084,8 @@ async function handleCheckSubscription(request, env) {
 const ALL_TOPICS = [
   // visibility
   'visibility-dslr', 'visibility-phone', 'visibility-naked',
+  'substorm-watch', 'substorm-likely', 'substorm-imminent',
+  'substorm-onset',
   // forecast
   'overnight-watch',
   // solar
@@ -2069,7 +2096,7 @@ const ALL_TOPICS = [
   // announcements
   'admin-broadcast',
   // no group - live but not shown in the app
-  'flare-event', 'substorm-forecast', 'shock-imf',
+  'shock-imf',
 ];
 
 // What a subscriber gets for a topic they have never been asked about. This
@@ -2078,10 +2105,11 @@ const ALL_TOPICS = [
 // the switch says one thing and the worker does another.
 const TOPIC_DEFAULT_ON = new Set([
   'visibility-dslr', 'visibility-phone', 'visibility-naked',
+  'substorm-likely', 'substorm-imminent', 'substorm-onset',
   'overnight-watch', 'flare-M1', 'flare-M5',
   'flare-X1', 'flare-X5', 'flare-X10',
   'cme-earth-directed', 'shock-ff', 'admin-broadcast',
-  'flare-event', 'flare-peak', 'substorm-forecast',
+  'flare-peak',
 ]);
 
 // The icon a notification shows, by topic. Sent with the payload rather than
@@ -2091,6 +2119,10 @@ const TOPIC_ICONS = {
   'visibility-dslr': '/icons/icon-visibility-dslr.png',
   'visibility-phone': '/icons/icon-visibility-phone.png',
   'visibility-naked': '/icons/icon-visibility-naked.png',
+  'substorm-watch': '/icons/icon-substorm.png',
+  'substorm-likely': '/icons/icon-substorm.png',
+  'substorm-imminent': '/icons/icon-substorm.png',
+  'substorm-onset': '/icons/icon-substorm.png',
   'overnight-watch': '/icons/icon-overnight-watch.png',
   'flare-M1': '/icons/icon-flare-event.png',
   'flare-M5': '/icons/icon-flare-event.png',
@@ -2100,9 +2132,7 @@ const TOPIC_ICONS = {
   'cme-earth-directed': '/icons/icon-cme-sheath.png',
   'shock-ff': '/icons/icon-shock-detection.png',
   'admin-broadcast': '/icons/icon-default.png',
-  'flare-event': '/icons/icon-flare-event.png',
   'flare-peak': '/icons/icon-flare-peak.png',
-  'substorm-forecast': '/icons/icon-substorm.png',
   'shock-imf': '/icons/icon-shock-detection.png',
   'shock-sf': '/icons/icon-shock-detection.png',
   'shock-fr': '/icons/icon-shock-detection.png',
@@ -2118,6 +2148,10 @@ const TOPIC_BADGES = {
   'visibility-dslr': '/icons/icon-badge-dslr.png',
   'visibility-phone': '/icons/icon-badge-phone.png',
   'visibility-naked': '/icons/icon-badge-naked.png',
+  'substorm-watch': '/icons/icon-badge-shock.png',
+  'substorm-likely': '/icons/icon-badge-shock.png',
+  'substorm-imminent': '/icons/icon-badge-shock.png',
+  'substorm-onset': '/icons/icon-badge-shock.png',
   'overnight-watch': '/icons/icon-badge-moon.png',
   'flare-M1': '/icons/icon-badge-flare.png',
   'flare-M5': '/icons/icon-badge-flare.png',
@@ -2126,9 +2160,7 @@ const TOPIC_BADGES = {
   'flare-X10': '/icons/icon-badge-flare.png',
   'cme-earth-directed': '/icons/icon-badge-shock.png',
   'shock-ff': '/icons/icon-badge-shock.png',
-  'flare-event': '/icons/icon-badge-flare.png',
   'flare-peak': '/icons/icon-badge-flare.png',
-  'substorm-forecast': '/icons/icon-badge-shock.png',
   'shock-imf': '/icons/icon-badge-shock.png',
   'shock-sf': '/icons/icon-badge-shock.png',
   'shock-fr': '/icons/icon-badge-shock.png',
@@ -2162,7 +2194,8 @@ const TOPIC_BADGES = {
 //    the send requires preferences[topic] === true and their record has no
 //    such key at all. The pass only ever fills keys that are undefined, so it
 //    cannot overwrite a choice somebody made.
-const MIGRATION_VERSION = 3;
+// 4: the substorm-* stage topics, which replaced substorm-forecast.
+const MIGRATION_VERSION = 4;
 const MIGRATION_KEY = 'MIGRATION';
 const migrationShardKey = (ch) => `MIGSHARD_${ch}`;
 
@@ -2548,7 +2581,7 @@ function buildTestPayloadByType(type, url, snapshot) {
   }
   if (type === 'flare-event') return t('flare-event', 'Test: M4.7 Solar Flare', 'A solar flare peaked at M4.7.');
   if (type === 'peak')        return t('flare-peak', 'Test: Flare Peaked', 'Simulated flare peak.');
-  if (type === 'substorm')    return t('substorm-forecast', 'Test: Substorm Expected', 'Simulated substorm window.');
+  if (type === 'substorm')    return t('substorm-onset', 'Test: Substorm Eruption In Progress', 'Simulated substorm onset.');
   if (type === 'overnight')   return t('overnight-watch', "Test: Tonight's aurora outlook", 'Simulated nightly outlook.');
   if (type === 'vis-dslr')    return t('visibility-dslr',  'Test: Aurora, DSLR Visible',  'Aurora detectable on a DSLR from your location.');
   if (type === 'vis-phone')   return t('visibility-phone', 'Test: Aurora, Phone Visible', 'Aurora visible on phone camera.');
@@ -2680,7 +2713,19 @@ async function handleTriggerSelfTest(request, env) {
         body  = `${info.summary}\n\n${statsLine}`;
         url   = '/?page=forecast'; break;
       }
-      case 'substorm-forecast':
+      case 'substorm-likely':
+        title = 'Substorm Watch: Eruption Likely';
+        body  = `Substorm index ${Math.round(substormScore)} (${substormLevel}), eruption likely within the hour.\n\n${statsLine}`;
+        url   = '/?page=forecast&section=unified-forecast-section'; break;
+      case 'substorm-imminent':
+        title = 'Substorm Alert: Eruption Imminent';
+        body  = `Substorm index ${Math.round(substormScore)} (${substormLevel}), eruption expected within 30 minutes.\n\n${statsLine}`;
+        url   = '/?page=forecast&section=unified-forecast-section'; break;
+      case 'substorm-onset':
+        title = 'Substorm Eruption In Progress!';
+        body  = `Substorm index ${Math.round(substormScore)} (${substormLevel}). A test of the onset alert.\n\n${statsLine}`;
+        url   = '/?page=forecast&section=unified-forecast-section'; break;
+      case 'substorm-watch':
         title = 'Substorm Watch: Energy Building';
         body  = `Substorm index ${Math.round(substormScore)} (${substormLevel}), magnetospheric energy is loading. Keep an eye on the forecast.\n\n${statsLine}`;
         url   = '/?page=forecast&section=unified-forecast-section'; break;
@@ -2845,6 +2890,18 @@ function geoToGmagLatAdj(latDeg, lonDeg) {
 }
 
 const GREYMOUTH_GMAG = geoToGmagLatAdj(GREYMOUTH_LATITUDE, 171.21);
+
+/** True when the sun is above -6 degrees (civil twilight or brighter) where they are. */
+function isSubscriberInDaylight(stored, atMs = Date.now()) {
+  const lat = parseFloat(stored?.location?.latitude);
+  const lon = parseFloat(stored?.location?.longitude);
+  if (!isFinite(lat) || !isFinite(lon)) return false;
+  try {
+    return AuroraVisibility.skyConditionsAt(atMs, lat, lon).sunAltitude > -6;
+  } catch {
+    return false;
+  }
+}
 
 function isUserInPlausibleZone(latitude) {
   const lat = parseFloat(latitude);
@@ -3330,12 +3387,19 @@ async function decideForSubscriber(env, job, keyName, stored, meter = { ops: 0 }
   if (job.kind === 'topic') {
     if (prefs[job.topic] !== true) return null;
     if (job.topic?.startsWith('substorm-') && !isUserInPlausibleZone(stored.location?.latitude)) return null;
+    // "Look south now" at midday is no use to anyone. Judged at the
+    // subscriber's own location; without one, send rather than guess.
+    if (job.topic?.startsWith('substorm-') && isSubscriberInDaylight(stored)) return null;
     return { payload: job.payload };
   }
 
-  if (job.kind === 'flare') {
+  if (job.kind === 'flare' || job.kind === 'levels') {
     const topics = Array.isArray(job.params?.topics) ? job.params.topics : [job.topic];
     if (!topics.some(t => prefs[t] === true)) return null;
+    if (topics[0]?.startsWith('substorm-')) {
+      if (!isUserInPlausibleZone(stored.location?.latitude)) return null;
+      if (isSubscriberInDaylight(stored)) return null;
+    }
     // A peak also needs the subscriber to want one of the levels the flare reached.
     if (Array.isArray(job.params?.reached) && !job.params.reached.some(t => prefs[t] === true)) return null;
     return { payload: job.payload };
@@ -4146,14 +4210,14 @@ async function tryFinishCensus(env, censusId) {
  * subscribed to any of them, once. The tag is the highest topic, so it groups
  * with that flare level's other notifications.
  */
-async function notifyFlare(topics, title, body, env, data = { url: '/' }, extra = {}) {
+async function notifyFlare(topics, title, body, env, data = { url: '/' }, extra = {}, kind = 'flare') {
   const topic = topics[topics.length - 1];
   const payload = { title, body, tag: topic, data: { ...data, category: topic }, ts: Date.now() };
   for (const t of topics) {
     await kv(env).put(`LATEST_ALERT_${t}`, JSON.stringify({ ...payload, tag: t, data: { ...payload.data, category: t } }),
                       { expirationTtl: 3600 });
   }
-  return enqueueDelivery(env, { kind: 'flare', topic, payload, params: { topics, ...extra } });
+  return enqueueDelivery(env, { kind, topic, payload, params: { topics, ...extra } });
 }
 
 async function notifyTopic(topic, title, body, env, data = { url: '/' }) {

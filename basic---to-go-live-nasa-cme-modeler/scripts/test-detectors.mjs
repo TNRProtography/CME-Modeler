@@ -61,7 +61,7 @@ async function queuedTopics() {
     const job = JSON.parse(store.get(name));
     if (job.payload) allPayloads.push({ topic: job.topic ?? job.kind, ...job.payload });
     // A flare job covers every threshold it announces; list each.
-    if (job.kind === 'flare') out.push(...job.params.topics);
+    if (job.kind === 'flare' || job.kind === 'levels') out.push(...job.params.topics);
     else out.push(job.topic ?? job.kind);
     store.delete(name);
     for (const ch of 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_') {
@@ -129,8 +129,8 @@ console.log('\nAn X5 flare, minute by minute');
     decline.push(...await queuedTopics());
   }
   console.log(`    at the peak: ${decline.join(', ') || 'nothing'}`);
-  check(decline.includes('flare-peak') && decline.includes('flare-event'),
-        'the peak closes the flare out with a summary');
+  check(decline.includes('flare-peak') && !decline.includes('flare-event'),
+        'the peak closes the flare out, with no separate summary');
   check(!decline.some(t => t.startsWith('flare-M') || t.startsWith('flare-X')),
         'no threshold fires a second time on the way down', decline.join(', '));
 }
@@ -174,9 +174,9 @@ console.log('\nConfirming a peak needs the flux to actually fall');
   check(fired.includes('flare-peak'),
         'two falling readings in a row confirms the peak', fired.join(', ') || 'nothing');
 
-  // Still both notifications, one of which the user can now switch off.
-  check(fired.includes('flare-event'),
-        'and the summary still goes out alongside it', fired.join(', '));
+  // The retired summary no longer goes out alongside it.
+  check(!fired.includes('flare-event'),
+        'and no summary goes out alongside it', fired.join(', '));
 
   // No time-based backstop: falling flux is the only thing that confirms a
   // peak, however long the flare sits there.
@@ -190,7 +190,7 @@ console.log('\nConfirming a peak needs the flux to actually fall');
   midFlare(45 * 60 * 1000);
   await W.checkSolarFlares(env, xray([3.0e-4, 3.0e-4, 5.0e-6]), () => {});
   const ended = await queuedTopics();
-  check(ended.includes('flare-peak') && ended.includes('flare-event'),
+  check(ended.includes('flare-peak'),
         'and dropping below M1 still closes the flare out',
         ended.join(', ') || 'nothing');
 }
@@ -219,14 +219,14 @@ console.log('\nOne notification per flare stage');
   // Close it out: the peak is one job for flare-peak and flare-event together.
   for (let i = 0; i < 2; i++) await W.checkSolarFlares(env, xray([1.2e-4, 1.0e-4, 8e-5]), () => {});
   const peakJobs = [...store.keys()].filter(k => k.startsWith('JOB_')).map(k => JSON.parse(store.get(k)));
-  check(peakJobs.length === 1 && same(peakJobs[0].params.topics, ['flare-event', 'flare-peak'])
+  check(peakJobs.length === 1 && same(peakJobs[0].params.topics, ['flare-peak'])
         && peakJobs[0].payload.tag === 'flare-peak',
         'the peak is one notification, not a peaked alert plus a summary', JSON.stringify(peakJobs.map(j => j.params)));
   const peakTo = (prefs) => W.decideForSubscriber(env, peakJobs[0], 'k', { preferences: prefs });
   check(!!(await peakTo({ 'flare-peak': true, 'flare-M1': true })),
         'the peak reaches someone subscribed to peaks and to a level the flare reached');
-  check(!!(await peakTo({ 'flare-event': true, 'flare-X1': true })),
-        'including someone who turned the peaked toggle off (flare-event has no toggle)');
+  check((await peakTo({ 'flare-event': true, 'flare-peak': false, 'flare-X1': true })) === null,
+        'but not someone who switched peaks off, whatever their old hidden summary setting');
   check((await peakTo({ 'flare-peak': true, 'flare-X5': true })) === null,
         'but not someone who only wants X5 flares, for an X1 flare');
   check((await peakTo({ 'flare-peak': true })) === null,
@@ -359,8 +359,66 @@ console.log('\nA half-configured worker');
     { current: { score: 78, bay_onset_flag: false, summary: 'elevated' }, metrics: { solar_wind: {} } },
     null, (n, s, d) => notes.push(`${n}:${s}`));
   const sent = await queuedTopics();
-  check(sent.includes('substorm-forecast'),
+  check(sent.includes('substorm-imminent'),
         'a substorm still fires with the config key missing', notes.join(', '));
+}
+
+// ── 5b. a substorm, stage by stage ─────────────────────────────────────────
+// One shared 30 minute cooldown used to let the first "energy building" alert
+// block every stage after it, the eruption included, and an index hovering on
+// a boundary re-sent the same stage every half hour.
+console.log('\nA substorm, stage by stage');
+{
+  const realNow = Date.now;
+  const t0 = Date.parse('2026-09-29T09:00:00Z');   // 9pm in New Zealand
+  let now = t0;
+  Date.now = () => now;
+  const tick = async (min, score, onset = false) => {
+    now = t0 + min * 60000;
+    await W.checkSubstormActivity(env, CONFIG.substorm,
+      { current: { score, bay_onset_flag: onset, summary: '' }, metrics: { solar_wind: {} } }, null, () => {});
+    const jobs = [...store.keys()].filter(k => k.startsWith('JOB_')).map(k => JSON.parse(store.get(k)));
+    await queuedTopics();
+    return jobs;
+  };
+
+  store.clear();
+  const seen = [];
+  for (const [m, sc, on] of [[0, 10], [5, 35], [15, 55], [25, 75], [30, 90, true], [40, 90, true], [60, 60]]) {
+    for (const j of await tick(m, sc, on)) seen.push(`${m}:${j.params.topics.join('+')}`);
+  }
+  check(same(seen, ['5:substorm-watch', '15:substorm-likely', '25:substorm-imminent', '30:substorm-onset']),
+        'every stage goes out once as it is reached, the eruption included', seen.join(', '));
+
+  // Hovering between WATCH and LIKELY for three hours.
+  store.clear();
+  const hover = [];
+  for (let m = 0; m <= 180; m += 5) for (const j of await tick(m, m % 10 === 0 ? 48 : 52)) hover.push(j.params.topics.join('+'));
+  check(same(hover, ['substorm-watch', 'substorm-likely']),
+        'an index hovering on a boundary sends each stage once, not every half hour', hover.join(', '));
+
+  // Quiet for an hour ends the episode; the next build-up is news again.
+  for (let m = 185; m <= 250; m += 5) await tick(m, 10);
+  const again = await tick(255, 55);
+  check(again.length === 1 && same(again[0].params.topics, ['substorm-watch', 'substorm-likely']),
+        'after an hour of quiet, a new substorm is announced again', JSON.stringify(again.map(j => j.params.topics)));
+
+  // A jump from quiet straight to an eruption is one alert for every stage.
+  store.clear();
+  const jump = await tick(0, 95, true);
+  check(jump.length === 1 && same(jump[0].params.topics, ['substorm-watch', 'substorm-likely', 'substorm-imminent', 'substorm-onset']),
+        'a jump straight to an eruption is one notification', JSON.stringify(jump.map(j => j.params.topics)));
+  const to = (prefs, lat = -45.9, lon = 170.5) =>
+    W.decideForSubscriber(env, jump[0], 'k', { preferences: prefs, location: { latitude: lat, longitude: lon } });
+  check(!!(await to({ 'substorm-onset': true })), 'it reaches someone with only the eruption stage on');
+  check((await to({ 'substorm-watch': false, 'visibility-phone': true })) === null, 'and nobody with every stage off');
+  check((await to({ 'substorm-onset': true }, -20, 150)) === null, 'nor anyone too far from the pole to see it');
+  now = Date.parse('2026-09-29T00:00:00Z');   // midday in New Zealand
+  check((await to({ 'substorm-onset': true })) === null, 'nor anyone for whom it is daylight');
+  check(!!(await W.decideForSubscriber(env, jump[0], 'k', { preferences: { 'substorm-onset': true } })),
+        'a subscriber with no location still gets it, rather than a guess');
+  Date.now = realNow;
+  store.clear();
 }
 
 // ── daily region snapshots ────────────────────────────────────────────────

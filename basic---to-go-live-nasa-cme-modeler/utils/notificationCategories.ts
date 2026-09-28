@@ -120,6 +120,51 @@ export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
     tooltip: 'Sent when aurora should be visible to the naked eye from your location - no camera needed. Go outside, look south, and you should see it directly. This is the strongest visibility threshold and the most exciting alert.',
   },
 
+  // ── Substorm nowcast ─────────────────────────────────────────────────────
+  // A second tier under the visibility alerts, one switch per stage of the
+  // substorm index, so someone can take all four or only the ones they want.
+  // Each is sent once per substorm, only after dark where the subscriber is.
+  {
+    id: 'substorm-watch',
+    ui: 'toggle', defaultOn: false, group: 'visibility',
+    sentBy: 'checkSubstormActivity',
+    icon: '/icons/icon-substorm.png',
+    badge: '/icons/icon-badge-shock.png',
+    label: 'Substorm: energy building',
+    description: 'The substorm index shows energy loading in the magnetotail.',
+    tooltip: 'The earliest and least certain stage: the index has reached 30. Many of these never become an eruption, so this is off unless you want the longest lead time.',
+  },
+  {
+    id: 'substorm-likely',
+    ui: 'toggle', defaultOn: true, group: 'visibility',
+    sentBy: 'checkSubstormActivity',
+    icon: '/icons/icon-substorm.png',
+    badge: '/icons/icon-badge-shock.png',
+    label: 'Substorm: eruption likely',
+    description: 'An eruption is likely within the hour.',
+    tooltip: 'Sent when the substorm index reaches 50, or 30 with the magnetotail loaded for 45 minutes or more. Time to get ready to go out.',
+  },
+  {
+    id: 'substorm-imminent',
+    ui: 'toggle', defaultOn: true, group: 'visibility',
+    sentBy: 'checkSubstormActivity',
+    icon: '/icons/icon-substorm.png',
+    badge: '/icons/icon-badge-shock.png',
+    label: 'Substorm: eruption imminent',
+    description: 'An eruption is expected within 30 minutes.',
+    tooltip: 'Sent when the substorm index reaches 70, or 50 with a long-loaded magnetotail. Get to your viewing spot.',
+  },
+  {
+    id: 'substorm-onset',
+    ui: 'toggle', defaultOn: true, group: 'visibility',
+    sentBy: 'checkSubstormActivity',
+    icon: '/icons/icon-substorm.png',
+    badge: '/icons/icon-badge-shock.png',
+    label: 'Substorm: eruption under way',
+    description: 'A substorm onset has been detected. Look now.',
+    tooltip: 'Sent when a substorm onset is detected in the magnetometer data, or the index reaches 85. The aurora can brighten and move fast for the next 15 to 30 minutes.',
+  },
+
   // ── Forecast ─────────────────────────────────────────────────────────────
   {
     id: 'overnight-watch',
@@ -129,7 +174,7 @@ export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
     badge: '/icons/icon-badge-moon.png',
     label: 'Worth watching tonight',
     description: 'Sent around sunset when solar wind conditions are elevated.',
-    tooltip: 'Sent once per day around sunset (6-9 PM NZST) when solar wind conditions are elevated enough to be worth monitoring tonight. Includes Bz direction, solar wind speed, and moon illumination so you can decide whether to head out. Not sent on quiet nights.',
+    tooltip: 'Sent once per day around sunset (6-9 PM NZST) when solar wind conditions are elevated enough to be worth monitoring tonight. Includes Bz direction, solar wind speed, and moon illumination so you can decide whether to head out. Choose below how strong conditions need to be; "Every night" sends it even when it is quiet.',
   },
 
   // ── Solar events ─────────────────────────────────────────────────────────
@@ -217,18 +262,8 @@ export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
   },
 
   // ── Live, but with no switch ─────────────────────────────────────────────
-  // These three are on for everyone and cannot be turned off from the app.
-  // Left as they are on purpose; declared here so that stays a decision
-  // somebody made rather than something nobody noticed.
-  {
-    id: 'flare-event',
-    ui: 'hidden', defaultOn: true,
-    sentBy: 'checkSolarFlares',
-    icon: '/icons/icon-flare-event.png',
-    badge: '/icons/icon-badge-flare.png',
-    label: 'Solar flare summary',
-    note: 'Sent once a flare has peaked, as the same single notification as flare-peak: the worker sends one push to everyone subscribed to either. It has its own stored preference and no UI, so switching off the flare-peak toggle does not stop the peak notification for someone who still has this on.',
-  },
+  // On for nobody by default and not sent (only shock-ff is); declared here so
+  // that stays a decision somebody made rather than something nobody noticed.
   {
     id: 'flare-peak',
     ui: 'toggle', defaultOn: true, group: 'solar',
@@ -238,15 +273,6 @@ export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
     label: 'Solar flare peaked',
     description: 'When a flare tops out and starts fading.',
     tooltip: 'Sent once a flare has clearly turned the corner - the X-ray flux has fallen for two readings in a row - and says what class it reached. One notification per flare, however long it takes to fade.',
-  },
-  {
-    id: 'substorm-forecast',
-    ui: 'hidden', defaultOn: true,
-    sentBy: 'checkSubstormActivity',
-    icon: '/icons/icon-substorm.png',
-    badge: '/icons/icon-badge-shock.png',
-    label: 'Substorm expected',
-    note: 'Only sent to subscribers whose latitude is in a plausible aurora zone. No toggle.',
   },
   {
     id: 'shock-imf',
@@ -290,6 +316,12 @@ export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
   // ── Retired ──────────────────────────────────────────────────────────────
   // Nothing on the worker sends these. Kept so preferences saved by old app
   // versions still round-trip instead of being dropped on the floor.
+  // The flare summary went out alongside flare-peak with the same news, and,
+  // having no switch, kept the peak coming for anyone who turned flare-peak off.
+  { id: 'flare-event', ui: 'retired', defaultOn: true, sentBy: 'nothing', icon: '/icons/icon-flare-event.png', badge: '/icons/icon-badge-flare.png' },
+  // One substorm alert for every stage, with no switch; split into the four
+  // substorm-* stages above.
+  { id: 'substorm-forecast', ui: 'retired', defaultOn: true, sentBy: 'nothing', icon: '/icons/icon-substorm.png', badge: '/icons/icon-badge-shock.png' },
   { id: 'aurora-40percent', ui: 'retired', defaultOn: true, sentBy: 'nothing', icon: '/icons/icon_aurora.png' },
   { id: 'aurora-50percent', ui: 'retired', defaultOn: true, sentBy: 'nothing', icon: '/icons/icon_aurora.png' },
   { id: 'aurora-60percent', ui: 'retired', defaultOn: true, sentBy: 'nothing', icon: '/icons/icon_aurora.png' },

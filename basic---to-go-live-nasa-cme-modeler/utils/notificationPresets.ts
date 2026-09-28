@@ -40,7 +40,7 @@ export const NOTIFICATION_PRESETS: NotificationPreset[] = [
     tagline: 'The big ones',
     description:
       'Minimal alerts - only when aurora should be visible to the naked eye from your location, plus very strong flares and announcements.',
-    prefs: ['visibility-naked', 'overnight-watch', 'flare-X1', 'flare-X5', 'flare-X10', 'admin-broadcast'],
+    prefs: ['visibility-naked', 'overnight-watch', 'flare-X1', 'flare-X5', 'flare-X10', 'flare-peak', 'cme-earth-directed', 'substorm-imminent', 'substorm-onset', 'admin-broadcast'],
     overnightMode: 'eye',
   },
   {
@@ -50,7 +50,7 @@ export const NOTIFICATION_PRESETS: NotificationPreset[] = [
     tagline: 'A practical middle ground',
     description:
       'Alerts when aurora is bright enough for a phone camera or better, plus meaningful flare activity (M5+) and nightly watch.',
-    prefs: ['visibility-phone', 'visibility-naked', 'overnight-watch', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'admin-broadcast'],
+    prefs: ['visibility-phone', 'visibility-naked', 'overnight-watch', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'flare-peak', 'cme-earth-directed', 'substorm-likely', 'substorm-imminent', 'substorm-onset', 'admin-broadcast'],
     overnightMode: 'phone',
   },
   {
@@ -60,7 +60,7 @@ export const NOTIFICATION_PRESETS: NotificationPreset[] = [
     tagline: 'Maximum lead time',
     description:
       'Catch aurora as soon as it becomes camera-detectable, with broader flare coverage (M1+). Best if you want time to drive somewhere dark.',
-    prefs: ['visibility-dslr', 'visibility-phone', 'visibility-naked', 'overnight-watch', 'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'shock-ff', 'admin-broadcast'],
+    prefs: ['visibility-dslr', 'visibility-phone', 'visibility-naked', 'overnight-watch', 'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'shock-ff', 'flare-peak', 'cme-earth-directed', 'substorm-watch', 'substorm-likely', 'substorm-imminent', 'substorm-onset', 'admin-broadcast'],
     overnightMode: 'camera',
   },
   {
@@ -70,7 +70,7 @@ export const NOTIFICATION_PRESETS: NotificationPreset[] = [
     tagline: 'Full firehose',
     description:
       'Every alert we currently send - all visibility thresholds, all flare classes, CME arrival alerts, and announcements. Best for enthusiasts who want nothing missed.',
-    prefs: ['visibility-dslr', 'visibility-phone', 'visibility-naked', 'overnight-watch', 'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'shock-ff', 'admin-broadcast'],
+    prefs: ['visibility-dslr', 'visibility-phone', 'visibility-naked', 'overnight-watch', 'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'shock-ff', 'flare-peak', 'cme-earth-directed', 'substorm-watch', 'substorm-likely', 'substorm-imminent', 'substorm-onset', 'admin-broadcast'],
     overnightMode: 'camera',
   },
   {

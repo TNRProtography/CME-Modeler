@@ -21,7 +21,8 @@ const ALL_TOPICS = [
   'shock-fr', 'shock-sr',
   'aurora-40percent', 'aurora-50percent', 'aurora-60percent',
   'aurora-80percent', 'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5',
-  'flare-X10', 'flare-peak', 'substorm-forecast', 'admin-broadcast',
+  'flare-X10', 'flare-peak', 'substorm-forecast', 'substorm-watch', 'substorm-likely',
+  'substorm-imminent', 'substorm-onset', 'admin-broadcast',
 ];
 
 interface ServerRecord {

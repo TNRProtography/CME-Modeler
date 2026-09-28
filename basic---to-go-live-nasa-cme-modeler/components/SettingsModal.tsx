@@ -144,6 +144,10 @@ const CATEGORY_EMOJI: Record<string, string> = {
   'flare-peak':        '☀️',
   'shock-ff':          '💥',
   'substorm-forecast': '⚡',
+  'substorm-watch':    '⚡',
+  'substorm-likely':   '⚡',
+  'substorm-imminent': '⚡',
+  'substorm-onset':    '⚡',
   'admin-broadcast':   '📢',
 };
 const AURORA_RE = /^aurora-(\d+)percent$/;
@@ -934,6 +938,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                           const isShock = SHOCK_NOTIFICATION_IDS.has(item.id);
                           return (
                           <div key={item.id}>
+                            {/* The substorm stages are a second tier under the visibility alerts. */}
+                            {item.id === 'substorm-watch' && (
+                              <div className="pt-2 mt-1 mb-2 border-t border-neutral-700/50">
+                                <p className="text-xs font-semibold text-neutral-300">Substorm nowcast</p>
+                                <p className="text-[11px] text-neutral-500">Live substorm stages. Turn on all of them, or only the ones you want.</p>
+                              </div>
+                            )}
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex items-center gap-1.5 flex-1 min-w-0">
                                 <ToggleSwitch
