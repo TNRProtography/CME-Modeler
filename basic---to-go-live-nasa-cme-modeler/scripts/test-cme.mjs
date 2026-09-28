@@ -28,7 +28,7 @@ const copy = join(dir, 'w.mjs');
 writeFileSync(copy, readFileSync(SRC, 'utf8') +
   '\nexport { checkEarthDirectedCMEs, runShard, decideForSubscriber, pickCmeAnalysis,' +
   ' isCmeEarthDirected, cmeSpeedFloorOf, cmeSpeedBand, handleSaveSubscription,' +
-  ' cmeDistanceAU, cmeTransitSeconds, cmeArrivalMs, CME_ARRIVAL_UNCERTAINTY_HOURS, fetchUpstream, upstreamFailure };\n');
+  ' cmeDistanceAU, cmeTransitSeconds, cmeArrivalMs, CME_ARRIVAL_UNCERTAINTY_HOURS, fetchUpstream, upstreamFailure, fetchDonkiCmes };\n');
 const W = await import(pathToFileURL(copy).href);
 
 let pass = 0, fail = 0;
@@ -148,10 +148,24 @@ console.log('\nThe detector picks the right CMEs');
 {
   store.clear();
 
-  // First run must not announce two days of history to everybody.
-  await W.checkEarthDirectedCMEs(env, [cme({ id: 'a', speed: 1200 }), cme({ id: 'b', speed: 900 })], () => {});
+  // First run must not announce days of history to everybody.
+  await W.checkEarthDirectedCMEs(env, [cme({ id: 'a', speed: 1200, hoursAgo: 30 }), cme({ id: 'b', speed: 900, hoursAgo: 40 })], () => {});
   check((await queuedJobs()).length === 0,
-        'the first run adopts what is already there and sends nothing');
+        'the first run adopts older CMEs and sends nothing for them');
+  clearJobs();
+
+  // But one from the last day is still news, even on the first run.
+  store.clear();
+  await W.checkEarthDirectedCMEs(env, [cme({ id: 'old', speed: 1200, hoursAgo: 30 }), cme({ id: 'today', speed: 447, hoursAgo: 5 })], () => {});
+  const firstRun = await queuedJobs();
+  check(firstRun.length === 1 && firstRun[0].params?.id === 'today',
+        'the first run still sends a CME launched in the last day', JSON.stringify(firstRun.map((j) => j.params)));
+  const seen = JSON.parse(store.get('STATE_cme_seen'));
+  check(seen.announced.old === 1200 && seen.announced.today === 447 && seen.primedAt,
+        'and records both as seen', JSON.stringify(seen));
+  clearJobs();
+  store.clear();
+  await W.checkEarthDirectedCMEs(env, [cme({ id: 'a', speed: 1200, hoursAgo: 30 }), cme({ id: 'b', speed: 900, hoursAgo: 30 })], () => {});
   clearJobs();
 
   // A genuinely new one does fire.
@@ -435,6 +449,63 @@ console.log('\nThe DONKI feed through a service binding');
   const why = W.upstreamFailure('donki', 'DONKI');
   check(miss === null && /public url returned 404/.test(why) && /service binding named DONKI/.test(why),
         'without one, a refusal says so and names the binding to add', why);
+}
+
+console.log('\nWithout a working DONKI binding, NASA is read directly');
+{
+  const saved = globalThis.fetch;
+  const hits = { proxy: 0, nasa: 0 };
+  let nasaUp = true;
+  const feed = () => [cme({ id: 'direct-1', speed: 447 })];
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input.url ?? String(input);
+    if (url.includes('nasa-donki-api')) { hits.proxy++; return new Response('error code: 1042', { status: 404 }); }
+    if (url.startsWith('https://api.nasa.gov/DONKI/CME')) {
+      hits.nasa++;
+      return nasaUp ? new Response(JSON.stringify(feed()), { status: 200 }) : new Response('slow down', { status: 429 });
+    }
+    return saved(input, init);
+  };
+  const notes = [];
+  const note = (name, status, detail) => notes.push({ name, status, detail });
+
+  store.clear();
+  await W.checkEarthDirectedCMEs(env, [cme({ id: 'prime', speed: 100 })], () => {});   // prime
+  await W.checkEarthDirectedCMEs(env, null, note);
+  const jobs = await queuedJobs();
+  check(jobs.some((j) => j.kind === 'cme' && j.params?.id === 'direct-1' && j.params?.speed === 447),
+        'with no binding, a 447 km/s Earth-directed CME is still found and queued', JSON.stringify(notes));
+  check(hits.proxy === 0 && hits.nasa === 1,
+        'and the proxy URL, which a worker is refused, is not even tried', JSON.stringify(hits));
+  check(/api_key=DEMO_KEY/.test(JSON.stringify([...store.keys()])) === false, 'the key is never written to KV');
+
+  clearJobs();
+  await W.checkEarthDirectedCMEs(env, null, note);
+  check(hits.nasa === 1 && /copy from/.test(notes.at(-1).detail),
+        'the next run within ten minutes reuses the copy rather than calling NASA again', notes.at(-1).detail);
+
+  // A binding that fails falls back the same way.
+  const broken = { ...env, DONKI: { fetch: async () => new Response('no', { status: 500 }) } };
+  store.set('CACHE_donki_cme_direct', JSON.stringify({ at: Date.now() - 11 * 60000, data: feed() }));
+  await W.checkEarthDirectedCMEs(broken, null, note);
+  check(hits.nasa === 2 && notes.at(-1).detail.includes('via NASA DONKI'),
+        'a failing binding falls back to NASA too', notes.at(-1).detail);
+
+  // NASA down: an hour-old copy still beats no alert.
+  nasaUp = false;
+  store.set('CACHE_donki_cme_direct', JSON.stringify({ at: Date.now() - 60 * 60000, data: feed() }));
+  await W.checkEarthDirectedCMEs(env, null, note);
+  check(/unreachable, using copy/.test(notes.at(-1).detail), 'with NASA down, a recent copy is used', notes.at(-1).detail);
+
+  // Nothing at all: says why, rather than going quiet.
+  store.delete('CACHE_donki_cme_direct');
+  await W.checkEarthDirectedCMEs(env, null, note);
+  const last = notes.at(-1);
+  check(last.status === 'skipped' && /no DONKI binding/.test(last.detail) && /429/.test(last.detail),
+        'and with nothing reachable, the diagnostics say what failed', last.detail);
+
+  globalThis.fetch = saved;
+  clearJobs();
 }
 
 // ── reaching the people who were already subscribed ────────────────────────

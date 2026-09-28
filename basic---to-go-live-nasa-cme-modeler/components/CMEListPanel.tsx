@@ -72,8 +72,8 @@ const CMEListPanel: React.FC<CMEListPanelProps> = ({ cmes, onSelectCME, selected
                 ? `bg-neutral-200 text-neutral-900 border-neutral-200 shadow-lg transform scale-[1.02]` 
                 : `bg-neutral-800/50 border-neutral-700/70 hover:bg-neutral-700/60 hover:border-neutral-600 text-neutral-300`}`}
           >
-            <p className="font-semibold text-inherit">ID: <span className="font-normal">{cme.startTime.toISOString().slice(0,10)} Event ({cme.id.slice(-4)})</span></p>
-            <p className="text-inherit">Time: <span className="font-normal">{cme.startTime.toLocaleTimeString()}</span></p>
+            <p className="font-semibold text-inherit">Launched {formatLaunch(cme.startTime)}</p>
+            <p className="text-inherit">{launchedAgo(cme.startTime)}</p>
             <p className="text-inherit">Speed: <span className="font-normal">{cme.speed} km/s</span></p>
             {cme.isEarthDirected && <p className="font-bold text-green-300 mt-1">Potentially Earth-Directed</p>}
           </div>
@@ -82,5 +82,20 @@ const CMEListPanel: React.FC<CMEListPanelProps> = ({ cmes, onSelectCME, selected
     </div>
   );
 };
+
+// The launch in the viewer's own time zone, date and time together. The list
+// used to pair the UTC date with the local time, so a CME launched in the
+// early hours showed under the wrong day, and labelled every one "(-001)",
+// which is just the tail of NASA's id and almost always the same.
+function formatLaunch(d: Date): string {
+  return d.toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+}
+
+function launchedAgo(d: Date): string {
+  const hours = (Date.now() - d.getTime()) / 3600000;
+  if (hours < 1) return 'Less than an hour ago';
+  if (hours < 48) return `${Math.round(hours)} hours ago`;
+  return `${Math.round(hours / 24)} days ago`;
+}
 
 export default CMEListPanel;

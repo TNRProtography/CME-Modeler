@@ -31,7 +31,8 @@ Check afterwards with:
 | `SUBSCRIPTIONS_KV` | KV namespace | subscribers, cooldowns, detector state |
 | `rtsw` | service binding | the IMAP/RTSW merged solar wind proxy |
 | `FORECAST_SERVICE` | service binding | the Spot The Aurora forecast worker |
-| `DONKI` | **service binding, pointing at `nasa-donki-api`** | the CME catalogue. **Without it the Earth-directed CME alert never sees a CME** - see below |
+| `DONKI` | service binding, pointing at `nasa-donki-api` | the CME catalogue. Without it (or when it fails) the CME alert reads NASA's DONKI directly - see below |
+| `NASA_API_KEY` | secret, optional | a free key from api.nasa.gov, for reading DONKI directly. Without it `DEMO_KEY` is used, which NASA rate limits |
 | `SUBSTORM` | **service binding, pointing at `aurora-index-sta`** | the substorm index. Without it substorm alerts never fire and visibility falls back to its own oval |
 | `TRIGGER_SECRET` | secret | guards every diagnostic and internal route below |
 | `BANNER_AUTH_TOKEN` | secret | also accepted for `/send-broadcast` and `/migrate-preferences` |
@@ -62,7 +63,16 @@ Add two service bindings (Settings -> Bindings -> Add -> Service binding):
 - `SUBSTORM` -> `aurora-index-sta`
 
 The worker uses a binding when it is there and the public URL otherwise, so
-adding them needs no other change. `/diagnose?secret=...` now lists each
+adding them needs no other change.
+
+The CME alert does not depend on the `DONKI` binding any more. When it is
+missing or failing, the worker reads `https://api.nasa.gov/DONKI/CME` itself
+(the proxy's own source, same records), keeps the answer for ten minutes so
+NASA is asked at most six times an hour, and falls back to a copy up to six
+hours old if NASA is down. Set a `NASA_API_KEY` secret so it is not sharing
+NASA's `DEMO_KEY` limit with everyone else. `/diagnostics` says which path the
+last CME check took (`via ...`), and `/diagnose` tests the NASA path as
+`donki-nasa`. `/diagnose?secret=...` now lists each
 upstream with the path it took and what came back, and says which binding to
 add if one is still failing.
 

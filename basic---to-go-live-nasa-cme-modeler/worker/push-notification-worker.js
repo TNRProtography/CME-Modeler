@@ -1015,6 +1015,15 @@ async function handleRegionsHistory(request, env) {
 // CME that produces an alert is a CME the app draws as heading our way.
 // `npm run test:cme` fails if the two definitions drift apart.
 const DONKI_CME_URL = 'https://nasa-donki-api.thenamesrock.workers.dev/CME';
+// NASA's own DONKI, for when the proxy above cannot be reached. It is the
+// proxy's source, so the records are the same shape. NASA_API_KEY is a free key
+// from api.nasa.gov; without one DEMO_KEY is used, which NASA rate limits, so
+// the answer is kept for DONKI_DIRECT_CACHE_MS and reused.
+const DONKI_DIRECT_BASE = 'https://api.nasa.gov/DONKI/CME';
+const DONKI_DIRECT_CACHE_KEY = 'CACHE_donki_cme_direct';
+const DONKI_DIRECT_CACHE_MS = 10 * 60 * 1000;
+// A copy this old is still better than no CME alert at all.
+const DONKI_DIRECT_STALE_MS = 6 * 60 * 60 * 1000;
 
 // Keep in step with EARTH_DIRECTED_MAX_LONGITUDE in utils/cmeAnalysis.ts.
 const CME_EARTH_DIRECTED_MAX_LONGITUDE = 45;
@@ -1028,6 +1037,12 @@ const CME_LOOKBACK_MS = 48 * 60 * 60 * 1000;
 // up to this age: a slow one takes four days, and DONKI can take a day or more
 // to publish the analysis.
 const CME_MAX_AGE_MS = 5 * 24 * 60 * 60 * 1000;
+// On the very first run there is no record of what was already announced, so
+// older CMEs are adopted silently rather than sent in a burst. One launched this
+// recently is still news and is sent: the first run is often the first time the
+// feed was reachable at all, and the CME that prompted somebody to look is
+// exactly the one it would otherwise swallow.
+const CME_FIRST_RUN_RECENT_MS = 24 * 60 * 60 * 1000;
 
 // Ids already notified. Bounded, because this is one KV value and a busy
 // fortnight should not grow it without limit.
@@ -1158,12 +1173,56 @@ function cmePredictedArrival(cme) {
   return isFinite(parsed) ? parsed : null;
 }
 
+/**
+ * The DONKI CME catalogue: through the DONKI service binding when there is one,
+ * else straight from NASA. The proxy's public URL is never tried - one worker
+ * cannot fetch another on the same workers.dev subdomain, and that refusal is
+ * why this alert went silent while the app, fetching the same URL from a
+ * browser, showed the CME.
+ */
+async function fetchDonkiCmes(env) {
+  if (env.DONKI?.fetch) {
+    const res = await fetchUpstream('donki', env.DONKI, DONKI_CME_URL, 2);
+    const data = res ? await res.json().catch(() => null) : null;
+    if (Array.isArray(data)) return { data, via: 'DONKI binding' };
+  }
+
+  const cached = await kv(env).get(DONKI_DIRECT_CACHE_KEY, 'json').catch(() => null);
+  const age = cached?.at ? Date.now() - cached.at : Infinity;
+  if (Array.isArray(cached?.data) && age < DONKI_DIRECT_CACHE_MS) {
+    return { data: cached.data, via: `NASA DONKI (copy from ${Math.round(age / 60000)} min ago)` };
+  }
+
+  const day = (ms) => new Date(ms).toISOString().slice(0, 10);
+  const now = Date.now();
+  const url = `${DONKI_DIRECT_BASE}?startDate=${day(now - 7 * 86400000)}&endDate=${day(now + 86400000)}`
+    + `&api_key=${encodeURIComponent(env.NASA_API_KEY || 'DEMO_KEY')}`;
+  const res = await fetchUpstream('donki-nasa', null, url, 2);
+  const data = res ? await res.json().catch(() => null) : null;
+  if (Array.isArray(data)) {
+    await kv(env).put(DONKI_DIRECT_CACHE_KEY, JSON.stringify({ at: now, data }), { expirationTtl: 86400 });
+    return { data, via: 'NASA DONKI' };
+  }
+
+  if (Array.isArray(cached?.data) && age < DONKI_DIRECT_STALE_MS) {
+    return { data: cached.data, via: `NASA DONKI (unreachable, using copy from ${Math.round(age / 60000)} min ago)` };
+  }
+  return null;
+}
+
 async function checkEarthDirectedCMEs(env, cmeData = null, note = /** @type {(name?: string, status?: string, detail?: string) => void} */ (() => {})) {
+  let via = 'given';
   try {
     if (!cmeData) {
-      const response = await fetchUpstream('donki', env.DONKI, DONKI_CME_URL);
-      if (!response) { note('cme', 'skipped', `DONKI CME feed unreachable: ${upstreamFailure('donki', 'DONKI')}`); return; }
-      cmeData = await response.json().catch(() => null);
+      const got = await fetchDonkiCmes(env);
+      if (!got) {
+        const proxy = env.DONKI?.fetch ? `binding: ${upstreamFailure('donki', 'DONKI')}; ` : 'no DONKI binding; ';
+        const nasa = upstreamNotes['donki-nasa'];
+        note('cme', 'skipped', `DONKI CME feed unreachable (${proxy}NASA direct: ${nasa ? `returned ${nasa.status}` : 'not reached'})`);
+        return;
+      }
+      cmeData = got.data;
+      via = got.via;
     }
     if (!Array.isArray(cmeData)) { note('cme', 'skipped', 'DONKI CME feed unparseable'); return; }
 
@@ -1208,27 +1267,32 @@ async function checkEarthDirectedCMEs(env, cmeData = null, note = /** @type {(na
       else if (speed > Number(announced.get(id))) revised.push({ ...entry, previousSpeed: Number(announced.get(id)) });
     }
 
-    const save = async (extra = {}) => {
+    const primedAt = state ? state.primedAt : now;
+    const save = async () => {
       const entries = [...announced.entries()].slice(-CME_SEEN_MAX);
       await kv(env).put(CME_SEEN_KEY, JSON.stringify({
         announced: Object.fromEntries(entries), updatedAt: Date.now(),
-        ...(state?.primedAt ? { primedAt: state.primedAt } : {}), ...extra,
+        ...(primedAt ? { primedAt } : {}),
       }));
     };
 
-    // First ever run: adopt the current window as already-known rather than
-    // announcing days of history to everybody at once.
+    // First ever run: adopt older CMEs as already-known rather than announcing
+    // days of history to everybody at once. The last day's are still sent.
     if (!state) {
-      for (const c of fresh) announced.set(c.id, c.speed);
-      await save({ primedAt: Date.now() });
-      note('cme', 'skipped',
-           `first run - adopted ${fresh.length} recent Earth-directed CME(s) as already seen`);
-      return;
+      const older = fresh.filter(c => c.startMs < now - CME_FIRST_RUN_RECENT_MS);
+      for (const c of older) announced.set(c.id, c.speed);
+      fresh.splice(0, fresh.length, ...fresh.filter(c => c.startMs >= now - CME_FIRST_RUN_RECENT_MS));
+      if (fresh.length === 0) {
+        await save();
+        note('cme', 'skipped',
+             `first run - adopted ${older.length} older Earth-directed CME(s) as already seen, none from the last day`);
+        return;
+      }
     }
 
     if (fresh.length === 0 && revised.length === 0) {
-      if (legacyIds.size && !state.announced) await save();
-      note('cme', 'quiet', `no new or revised Earth-directed CME still to arrive (${cmeData.length} catalogued)`);
+      if (legacyIds.size && !state?.announced) await save();
+      note('cme', 'quiet', `no new or revised Earth-directed CME still to arrive (${cmeData.length} catalogued, via ${via})`);
       return;
     }
 
@@ -2914,6 +2978,19 @@ async function handleDiagnose(request, env) {
       bindingPresent: !!env[bindingName]?.fetch,
       ...upstreamNotes[name],
       ...(res ? {} : { fix: upstreamFailure(name, bindingName) }),
+    };
+  }
+
+  // The CME alert's fallback when the DONKI binding is missing or failing.
+  {
+    const day = new Date().toISOString().slice(0, 10);
+    const res = await fetchUpstream('donki-nasa', null,
+      `${DONKI_DIRECT_BASE}?startDate=${day}&endDate=${day}&api_key=${encodeURIComponent(env.NASA_API_KEY || 'DEMO_KEY')}`, 1);
+    upstreams['donki-nasa'] = {
+      usedWhen: 'the DONKI binding is missing or failing',
+      apiKey: env.NASA_API_KEY ? 'NASA_API_KEY' : 'DEMO_KEY (rate limited - set NASA_API_KEY)',
+      ...upstreamNotes['donki-nasa'],
+      ok: !!res,
     };
   }
 
