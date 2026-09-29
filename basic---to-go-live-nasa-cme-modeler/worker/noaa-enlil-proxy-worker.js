@@ -8,6 +8,12 @@ let cachedFileList = {
 
 const CACHE_DURATION_SECONDS = 3600; // 1 hour
 
+// Standard browser User-Agent. NOAA/SWPC's bot protection answers HTTP 403 to
+// requests without a recognisable one, which is what Workers send by default.
+const NOAA_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+};
+
 export default {
   async fetch(request) {
     const now = Date.now() / 1000; // Current time in seconds
@@ -17,7 +23,7 @@ export default {
       console.log('Cache expired or empty. Fetching new file list from NOAA.');
       try {
         const noaaDirectoryUrl = 'https://services.swpc.noaa.gov/images/animations/enlil/';
-        const response = await fetch(noaaDirectoryUrl);
+        const response = await fetch(noaaDirectoryUrl, { headers: NOAA_HEADERS });
         if (!response.ok) {
           throw new Error(`Failed to fetch NOAA directory: ${response.statusText}`);
         }
@@ -80,6 +86,7 @@ export default {
     // We use `fetch(targetUrl, { cf: { cacheTtl: 86400 } })` to tell Cloudflare to cache the actual image itself.
     // This reduces hits to the NOAA server even more.
     const imageResponse = await fetch(targetUrl, {
+        headers: NOAA_HEADERS,
         cf: {
             cacheTtl: 86400, // Cache the actual JPG image for a day at the edge
         },
