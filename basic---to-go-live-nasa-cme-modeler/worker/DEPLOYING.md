@@ -16,7 +16,7 @@ and survive deploys.
 | noaa-enlil-proxy | `noaa-enlil-proxy-worker.js` | `wrangler-noaa-enlil-proxy.toml` | none | none | no |
 | banner-api | `banner-api-worker.js` | `wrangler-banner-api.toml` | none | BANNER_AUTH_TOKEN | no |
 | ch-history-worker | `ch-history-worker.js` | `wrangler-ch-history.toml` | every 2 h | none | no |
-| solo-worker | `solo-worker.js` | `wrangler-solo.toml` | every 6 h | none | no |
+| solo-worker | `solo-worker.js` | `wrangler-solo.toml` | hourly | none | no |
 | aurora-sightings | `aurora-sightings-worker.js` | `wrangler-aurora-sightings.toml` | midnight UTC | none | no |
 | aurora-index-sta | `aurora-index-sta-worker.js` | `wrangler-aurora-index-sta.toml` | none | none | no |
 | nasa-donki-api | `nasa-donki-api-worker.js` | `wrangler-nasa-donki-api.toml` | every minute | NASA_API_KEY | no |

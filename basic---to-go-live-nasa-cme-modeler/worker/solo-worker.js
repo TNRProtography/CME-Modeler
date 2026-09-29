@@ -93,7 +93,9 @@ async function shouldRefreshPositions(env) {
   try {
     const ts = await kv.get('SOLO_POSITION_FETCH_TS');
     if (!ts) return true;
-    return (Date.now() - Number(ts)) > 6 * 3600 * 1000;
+    // A little under 6h: the hourly cron does not land to the second, and a
+    // run a few seconds short would otherwise push the refresh out to 7h.
+    return (Date.now() - Number(ts)) > 6 * 3600 * 1000 - 10 * 60 * 1000;
   } catch { return true; }
 }
 

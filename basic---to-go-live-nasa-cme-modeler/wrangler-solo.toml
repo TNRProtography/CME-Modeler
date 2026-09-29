@@ -11,7 +11,8 @@ workers_dev = true
 enabled = true
 
 [triggers]
-crons = ["0 */6 * * *"]
+# Hourly, as the code expects: imagery every run, positions every 6 hours.
+crons = ["0 * * * *"]
 
 [[kv_namespaces]]
 binding = "SOLO_KV"
