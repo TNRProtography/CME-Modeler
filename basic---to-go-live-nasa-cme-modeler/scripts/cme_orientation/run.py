@@ -56,7 +56,7 @@ DIRECTION_USE_MIN = 70           # confidence at which the app uses our directio
 RUN_BUDGET_S = float(os.environ.get("RUN_BUDGET_S", 16 * 60))
 ONLY = os.environ.get("ORIENTATION_ONLY", "").strip()
 # Raised whenever the analysis changes, so every stored result is redone.
-VERSION = 4
+VERSION = 5
 
 
 def main() -> int:
@@ -163,33 +163,38 @@ def analyse(cme: dict, all_cmes: list[dict], flares: list[dict], now: int) -> di
         if obs is None:
             views.append({"source": key, "label": info["label"], "detected": False, "reason": "no position"})
             continue
-        frames, origin = [], ""
+        # Every set of frames there is: the coronagraph worker's store, and
+        # Helioviewer's rendering (known scale and centre, often a better
+        # cadence; the store keeps LASCO only hourly). The CME is looked for in
+        # each and the clearest detection kept.
+        candidates = []
         chosen = S.choose_times(S.stored_frames(key), t0)
         if sum(1 for f in chosen if f["t"] < t0) >= 1 and sum(1 for f in chosen if f["t"] >= t0) >= 3:
-            frames, origin = S.load_frames(chosen), "stored"
-        hint = None
-        if len(frames) < 4 and info["hv"]:
+            stored = S.load_frames(chosen)
+            if len(stored) >= 4:
+                candidates.append(("stored", stored, None))
+        if info["hv"]:
             hv = S.hv_frames(info["hv"], info["scale"], t0)
             if len(hv) >= 4:
-                frames, origin, hint = hv, "helioviewer", (256.0, 256.0)
-        if len(frames) < 4:
+                candidates.append(("helioviewer", hv, (256.0, 256.0)))
+        if not candidates:
             views.append({"source": key, "label": info["label"], "detected": False,
-                          "reason": f"no frames around launch ({len(frames)} found)"})
+                          "reason": "no frames around launch"})
             continue
         prior_pa = obs.pa_of(prior) if prior is not None else None
-        prior_halo = prior is not None and min(angle_between(prior, obs.o), angle_between(prior, -obs.o)) < max(15.0, half - 10)
-        v = detect_view(key, [Frame(t, img) for t, img in frames], t0, prior_pa, prior_halo, half, hint)
-        if ONLY:
-            print(f"    {key} ({origin}, prior PA {prior_pa and round(prior_pa)}, halo {prior_halo}): {v.reason}; "
-                  f"PA {v.pa and round(v.pa)}, width {v.width}, SNR {v.snr:.1f}; {v.debug}")
-            if origin == "stored" and info["hv"]:
-                hv = S.hv_frames(info["hv"], info["scale"], t0)
-                if len(hv) >= 4:
-                    w = detect_view(key, [Frame(t, img) for t, img in hv], t0, prior_pa, prior_halo, half, (256.0, 256.0))
-                    print(f"    {key} (helioviewer, for comparison): {w.reason}; PA {w.pa and round(w.pa)}, "
-                          f"width {w.width}, SNR {w.snr:.1f}; {w.debug}")
-                else:
-                    print(f"    {key} (helioviewer, for comparison): {len(hv)} frames")
+        # A full halo only when DONKI's cone is close to this line of sight:
+        # at 33 degrees off it with a 45-degree half-width, the 14:36 CME of
+        # 2026-09-28 was a partial halo off the north-west limb, and treating it
+        # as a halo let the search take the other side of the Sun.
+        prior_halo = prior is not None and min(angle_between(prior, obs.o), angle_between(prior, -obs.o)) < max(15.0, half - 20)
+        tried = []
+        for origin, frames, hint in candidates:
+            v = detect_view(key, [Frame(t, img) for t, img in frames], t0, prior_pa, prior_halo, half, hint)
+            tried.append((origin, v))
+            if ONLY:
+                print(f"    {key} ({origin}, prior PA {prior_pa and round(prior_pa)}, halo {prior_halo}): {v.reason}; "
+                      f"PA {v.pa and round(v.pa)}, width {v.width}, SNR {v.snr:.1f}; {v.debug}")
+        origin, v = max(tried, key=lambda ov: (ov[1].detected, ov[1].snr))
         j = v.to_json()
         j.update({"label": info["label"], "origin": origin, "observerLon": round(obs.lon, 1)})
         views.append(j)

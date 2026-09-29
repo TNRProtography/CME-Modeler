@@ -242,7 +242,13 @@ _HV_KNOWN = {
     ("SOHO", "LASCO", "C2", "white-light"): 4,
     ("SOHO", "LASCO", "C3", "white-light"): 5,
     ("SDO", "HMI", "magnetogram"): 19,
+    ("STEREO_A", "SECCHI", "COR2", "white-light"): 29,
 }
+
+
+def _norm(name: str) -> str:
+    """'STEREO_A' and 'STEREO-A', 'white-light' and 'white light' alike."""
+    return re.sub(r"[^a-z0-9]", "", name.lower())
 
 
 def _hv_leaves(node, path=()):
@@ -274,15 +280,21 @@ def hv_source_id(path: list[str]) -> int | None:
         except Exception as e:
             print(f"Helioviewer data sources unavailable: {e}")
             _hv_tree = {}
-    want = [p.lower() for i, p in enumerate(path) if i == 0 or p.lower() != path[i - 1].lower()]
+    want = [_norm(p) for i, p in enumerate(path) if i == 0 or _norm(p) != _norm(path[i - 1])]
     found = None
-    for leaf_path, sid in _hv_leaves(_hv_tree):
-        names = [n.lower() for n in leaf_path]
-        it = iter(names)
-        if all(any(w == n for n in it) for w in want):
-            found = int(sid)
+    leaves = list(_hv_leaves(_hv_tree))
+    # Exact names first; then each name as the start of one ('COR2' in 'COR2-A').
+    for exact in (True, False):
+        for leaf_path, sid in leaves:
+            it = iter([_norm(n) for n in leaf_path])
+            if all(any((w == n) if exact else n.startswith(w) for n in it) for w in want):
+                found = int(sid)
+                break
+        if found is not None:
             break
     if found is None:
+        near = [" / ".join(lp) for lp, _ in leaves if _norm(lp[0]) == want[0]] if leaves else []
+        print(f"Helioviewer has no {key}; entries under {path[0]}: {near[:12]}")
         found = _HV_KNOWN.get(tuple(p for i, p in enumerate(path) if i == 0 or p != path[i - 1]))
     print(f"Helioviewer source {key}: {found}")
     _hv_ids[key] = found

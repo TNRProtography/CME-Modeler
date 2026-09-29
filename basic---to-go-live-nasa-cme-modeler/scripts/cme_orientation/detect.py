@@ -274,14 +274,18 @@ def detect_view(
     if not arcs:
         res.reason = "no brightening above the noise near the expected position"
         return res
-    # The arc carrying the most signal, preferring the one at the prior.
+    # The arc carrying the most signal, preferring the one at the prior. A
+    # possible halo still leans that way, more gently: a partial halo is
+    # brightest on the side it is heading, and another CME or a streamer
+    # elsewhere in the ring must not be taken for it.
     def score(arc):
         i0, n = arc
         idx = [(i0 + j) % N_PA for j in range(n)]
         w = float(s[idx].sum())
-        if prior_pa is not None and not prior_halo:
+        if prior_pa is not None:
             c = _circ_mean_idx(idx, s[idx])
-            w *= 1.0 / (1.0 + (abs((c - prior_pa + 180) % 360 - 180) / 60.0) ** 2)
+            scale = 120.0 if prior_halo else 60.0
+            w *= 1.0 / (1.0 + (abs((c - prior_pa + 180) % 360 - 180) / scale) ** 2)
         return w
     i0, n = max(arcs, key=score)
     i0, n = _refine_arc(s, i0, n, allowed)
