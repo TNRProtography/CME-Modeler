@@ -2323,8 +2323,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const [spotPlaying, setSpotPlaying] = useState(false);
   const [spotSpeed, setSpotSpeed] = useState(1);
   const [sharpHistory, setSharpHistory] = useState<SharpHistory>({ byRegion: new Map(), fromMs: Infinity });
-  const [archiveGeometry, setArchiveGeometry] =
-    useState<{ width: number; height: number; cx: number; cy: number; radius: number } | null>(null);
+  // Keyed by product: saved live frames and SDO archive frames can share one
+  // scrubber, and are framed differently.
+  const [archiveGeometries, setArchiveGeometries] =
+    useState<Record<string, { width: number; height: number; cx: number; cy: number; radius: number }>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -2348,14 +2350,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   // Every archive frame of one product shares SDO's framing, which is not
   // necessarily JSOC's live framing - so it is measured once per product,
   // not once per frame, which would stall playback.
-  useEffect(() => { setArchiveGeometry(null); }, [sunspotImageryMode]);
+  useEffect(() => { setArchiveGeometries({}); }, [sunspotImageryMode]);
 
   const spotFrames = useMemo(() => [
     ...spotArchive.map((f) => ({
       atMs: f.atMs, url: f.url as string | null, preview: f.preview, detail: f.detail, live: false,
+      product: f.product ?? 'archive',
     })),
     { atMs: Date.now(), url: null as string | null, preview: undefined as string | undefined,
-      detail: undefined as string | undefined, live: true },
+      detail: undefined as string | undefined, live: true, product: 'live' },
   ], [spotArchive]);
 
   // Archive frames never change, so they are asked for with a week's cache
@@ -2471,6 +2474,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     return () => { cancelled = true; };
   }, [spotIndex, spotFrames, spotPlaying, spotSpeed, playbackUrlOf, warmSpotImage]);
 
+  const spotProduct = spotFrame.product;
+  const archiveGeometry = archiveGeometries[spotProduct] ?? null;
   useEffect(() => {
     if (spotIsLive || archiveGeometry || !spotDisplayUrl) return;
     let cancelled = false;
@@ -2480,14 +2485,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       if (cancelled) return;
       const w = img.naturalWidth || HMI_IMAGE_SIZE;
       const h = img.naturalHeight || HMI_IMAGE_SIZE;
-      setArchiveGeometry(measureDiskFromImage(img, w, h) ?? fallbackDiskGeometry(w, h));
+      const g = measureDiskFromImage(img, w, h) ?? fallbackDiskGeometry(w, h);
+      setArchiveGeometries((prev) => ({ ...prev, [spotProduct]: g }));
     };
     img.onerror = () => {
-      if (!cancelled) setArchiveGeometry(fallbackDiskGeometry(HMI_IMAGE_SIZE, HMI_IMAGE_SIZE));
+      if (cancelled) return;
+      const g = fallbackDiskGeometry(HMI_IMAGE_SIZE, HMI_IMAGE_SIZE);
+      setArchiveGeometries((prev) => ({ ...prev, [spotProduct]: g }));
     };
     img.src = spotDisplayUrl;
     return () => { cancelled = true; };
-  }, [spotIsLive, archiveGeometry, spotDisplayUrl]);
+  }, [spotIsLive, archiveGeometry, spotDisplayUrl, spotProduct]);
 
   const spotGeometry = spotIsLive ? overviewGeometry : (archiveGeometry ?? overviewGeometry);
 
@@ -4441,7 +4449,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                           ? `${spotFrames.length} frames`
                           : spotArchiveLoading
                             ? 'Loading history...'
-                            : 'SDO does not archive this view - try another'}
+                            : 'No past frames for this view yet - try another'}
                       </span>
                     </div>
                     <FrameScrubber

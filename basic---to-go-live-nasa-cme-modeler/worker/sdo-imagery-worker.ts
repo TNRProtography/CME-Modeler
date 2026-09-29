@@ -19,6 +19,12 @@
  *                                      (colorized, magnetogram, intensity)
  *   GET /api/status                    what is stored and how the last run went
  *
+ * SDO's browse archive can run days behind (it did in September 2026, stopping
+ * four days short of now while JSOC's live images kept updating). So the live
+ * 1024 px image of each view is also saved as it changes, as its own product
+ * (HMILBC, HMILB, HMILIF). Recent hours come from those; the archive fills in
+ * everything before them.
+ *
  * A new store fills itself: each run downloads the newest missing frames first
  * and works backwards, so a week is there within about a day. Until then,
  * /api/frames fills the part of a window it does not hold yet from SDO's own
@@ -83,6 +89,27 @@ export const LATEST_SOURCES: Record<HmiMode, string[]> = {
 export const LATEST_CHECK_MS = 10 * MINUTE;
 const latestKey = (mode: HmiMode) => `latest/${mode}_4096`;
 
+/** The live 1024 px image of each view, saved as it changes. */
+export const LIVE_SOURCES: Record<HmiMode, { product: string; url: string }> = {
+  colorized: { product: 'HMILBC', url: `${JSOC_LATEST}/HMI_latest_color_Mag_1024x1024.jpg` },
+  magnetogram: { product: 'HMILB', url: `${JSOC_LATEST}/HMI_latest_Mag_1024x1024.gif` },
+  intensity: { product: 'HMILIF', url: `${JSOC_LATEST}/HMI_latest_colInt_1024x1024.jpg` },
+};
+const LIVE_PRODUCTS = new Set(Object.values(LIVE_SOURCES).map((s) => s.product));
+export const isLiveProduct = (product: string) => LIVE_PRODUCTS.has(product);
+
+/**
+ * A past day is only closed once each view has close to a full day of
+ * archive frames (96 quarter-hours). A day SDO has not posted yet has none,
+ * and must be looked at again, not written off.
+ */
+export const FULL_DAY_FRAMES = 80;
+/** How often a past day that is not yet complete is listed again. */
+const DAY_RECHECK_MS = HOUR;
+
+interface DayCheck { atMs: number; missing: number; found: Record<string, number> }
+interface LiveInfo { lastModified?: string; etag?: string; checkedAtMs: number }
+
 interface LatestInfo {
   source: string;
   checkedAtMs: number;
@@ -94,7 +121,7 @@ interface LatestInfo {
 }
 
 /** One stored moment of one product. */
-interface Entry { t: number; stem: string; sizes: number[] }
+interface Entry { t: number; stem: string; sizes: number[]; ext?: 'gif' }
 
 export interface Manifest {
   version: 1;
@@ -104,7 +131,11 @@ export interface Manifest {
   completeDays: string[];
   /** The newest 4096 px image of each view. */
   latest?: Partial<Record<HmiMode, LatestInfo>>;
-  lastRun?: { atMs: number; downloaded: number; latestDownloaded: number; pruned: number; listings: number; errors: string[] };
+  /** The live 1024 px source of each view, for conditional requests. */
+  live?: Partial<Record<HmiMode, LiveInfo>>;
+  /** When each incomplete day was last listed, and what it held. */
+  dayChecks?: Record<string, DayCheck>;
+  lastRun?: { atMs: number; downloaded: number; latestDownloaded: number; liveSaved: number; pruned: number; listings: number; errors: string[] };
 }
 
 const emptyManifest = (): Manifest => ({ version: 1, products: {}, completeDays: [] });
@@ -114,7 +145,11 @@ const dayKey = (ms: number) => {
   const d = new Date(ms);
   return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}`;
 };
-const objectKey = (product: string, stem: string, size: number) => `hmi/${product}/${stem}_${size}.jpg`;
+const objectKey = (product: string, stem: string, size: number, ext = 'jpg') => `hmi/${product}/${stem}_${size}.${ext}`;
+const stemOf = (ms: number) => {
+  const d = new Date(ms);
+  return `${dayKey(ms)}_${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}`;
+};
 
 // ── Listings ────────────────────────────────────────────────────────────────
 
@@ -245,14 +280,29 @@ export function pruneManifest(m: Manifest, nowMs: number): string[] {
     const keep: Entry[] = [];
     for (const e of list) {
       if (e.t >= cutoff) keep.push(e);
-      else for (const s of e.sizes) keys.push(objectKey(product, e.stem, s));
+      else for (const s of e.sizes) keys.push(objectKey(product, e.stem, s, e.ext));
     }
     if (keep.length) m.products[product] = keep;
     else delete m.products[product];
   }
   const oldestDay = dayKey(cutoff);
   m.completeDays = m.completeDays.filter((d) => d >= oldestDay);
+  for (const d of Object.keys(m.dayChecks ?? {})) if (d < oldestDay) delete m.dayChecks![d];
   return keys;
+}
+
+/**
+ * Whether the store holds a full day of archive frames for every view.
+ * Also repairs stores written before this rule, which closed days SDO had
+ * not posted yet.
+ */
+export function dayIsFull(m: Manifest, key: string): boolean {
+  let views = 0;
+  for (const mode of HMI_MODES) {
+    const counts = productsFor(mode).map((p) => (m.products[p] ?? []).filter((e) => e.stem.startsWith(key)).length);
+    if (Math.max(0, ...counts) >= FULL_DAY_FRAMES) views++;
+  }
+  return views === HMI_MODES.length;
 }
 
 // ── The newest 4K images ────────────────────────────────────────────────────
@@ -306,6 +356,49 @@ export async function refreshLatest(env: Env, manifest: Manifest, nowMs: number,
   return downloaded;
 }
 
+// ── The live 1024 px images, saved as history ───────────────────────────────
+
+/**
+ * Saves each view's live image when it has changed since the last run.
+ * Stamped with the file's Last-Modified time, which JSOC sets when it posts
+ * the image, falling back to now. Returns how many were saved.
+ */
+export async function saveLive(env: Env, manifest: Manifest, nowMs: number, errors: string[]): Promise<number> {
+  const live = (manifest.live ??= {});
+  let saved = 0;
+  for (const mode of HMI_MODES) {
+    const { product, url } = LIVE_SOURCES[mode];
+    const have = live[mode];
+    const headers: Record<string, string> = { 'User-Agent': BROWSER_UA };
+    if (have?.etag) headers['If-None-Match'] = have.etag;
+    if (have?.lastModified) headers['If-Modified-Since'] = have.lastModified;
+    try {
+      const res = await fetchWithTimeout(url, { headers });
+      if (res.status === 304) { if (have) have.checkedAtMs = nowMs; continue; }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const contentType = res.headers.get('content-type') ?? '';
+      if (!contentType.startsWith('image/')) throw new Error(`got ${contentType || 'nothing'}`);
+      const lastModified = res.headers.get('last-modified') ?? undefined;
+      live[mode] = { lastModified, etag: res.headers.get('etag') ?? undefined, checkedAtMs: nowMs };
+      // A host that ignores If-Modified-Since sends the same file again.
+      if (have?.lastModified && lastModified === have.lastModified) continue;
+      const stamped = lastModified ? Date.parse(lastModified) : NaN;
+      const t = Number.isFinite(stamped) && stamped <= nowMs + MINUTE ? stamped : nowMs;
+      const stem = stemOf(t);
+      if (manifest.products[product]?.some((e) => e.stem === stem)) continue;
+      const bytes = await res.arrayBuffer();
+      if (bytes.byteLength < 20_000) throw new Error(`only ${bytes.byteLength} bytes`);
+      const ext = contentType.includes('gif') ? 'gif' : undefined;
+      await env.SDO_BUCKET.put(objectKey(product, stem, 1024, ext), bytes, { httpMetadata: { contentType } });
+      addEntry(manifest, product, { t, stem, sizes: [1024], ...(ext ? { ext } : {}) });
+      saved++;
+    } catch (e) {
+      errors.push(`live ${mode}: ${(e as Error).message}`);
+    }
+  }
+  return saved;
+}
+
 // ── The scheduled run ───────────────────────────────────────────────────────
 
 interface Job { product: string; moment: ListedMoment; dayMs: number }
@@ -316,6 +409,7 @@ export async function runOnce(env: Env, nowMs = Date.now()) {
 
   // The live 4K images first: they are what the tracker shows right now.
   const latestDownloaded = await refreshLatest(env, manifest, nowMs, errors);
+  const liveSaved = await saveLive(env, manifest, nowMs, errors);
 
   const toDelete = pruneManifest(manifest, nowMs);
   for (let i = 0; i < toDelete.length; i += 1000) {
@@ -324,7 +418,8 @@ export async function runOnce(env: Env, nowMs = Date.now()) {
 
   // Newest day first, so today is always served before any backfill.
   const days = daysCovering(nowMs - RETENTION_MS, nowMs).reverse();
-  const complete = new Set(manifest.completeDays);
+  const complete = new Set(manifest.completeDays.filter((d) => dayIsFull(manifest, d)));
+  const dayChecks = (manifest.dayChecks ??= {});
   const stored = new Map<string, Set<string>>();
   for (const [p, list] of Object.entries(manifest.products)) stored.set(p, new Set(list.map((e) => e.stem)));
 
@@ -334,9 +429,18 @@ export async function runOnce(env: Env, nowMs = Date.now()) {
     const key = dayKey(dayMs);
     if (complete.has(key)) continue;
     if (jobs.length >= DOWNLOADS_PER_RUN) break;
+    // A past day with nothing left to fetch is looked at hourly, in case SDO
+    // has posted more; today and yesterday every run.
+    const check = dayChecks[key];
+    const recent = nowMs - dayMs < 2 * DAY;
+    if (!recent && check && check.missing === 0 && nowMs - check.atMs < DAY_RECHECK_MS) continue;
     const html = await fetchListing(dayMs, nowMs - dayMs < 2 * DAY);
     listings++;
-    if (!html) { errors.push(`listing ${key} unavailable`); continue; }
+    if (!html) {
+      dayChecks[key] = { atMs: nowMs, missing: 0, found: {} };
+      errors.push(`listing ${key} has no HMI frames`);
+      continue;
+    }
     const listed = parseListing(html);
     const missing: Job[] = [];
     for (const product of productsToStore(listed)) {
@@ -346,9 +450,15 @@ export async function runOnce(env: Env, nowMs = Date.now()) {
         if (!have.has(moment.stem)) missing.push({ product, moment, dayMs });
       }
     }
+    const found: Record<string, number> = {};
+    for (const [p, list] of listed) found[p] = wantedMoments(list).length;
+    dayChecks[key] = { atMs: nowMs, missing: missing.length, found };
     const settled = dayMs + DAY + DAY_SETTLE_MS < nowMs;
     if (!missing.length && settled) {
-      complete.add(key);
+      if (dayIsFull(manifest, key)) {
+        complete.add(key);
+        delete dayChecks[key];
+      }
       continue;
     }
     // Newest first, alternating products, so each view fills at the same pace.
@@ -385,7 +495,7 @@ export async function runOnce(env: Env, nowMs = Date.now()) {
   }
 
   manifest.completeDays = [...complete].sort();
-  manifest.lastRun = { atMs: nowMs, downloaded, latestDownloaded, pruned: toDelete.length, listings, errors: errors.slice(0, 20) };
+  manifest.lastRun = { atMs: nowMs, downloaded, latestDownloaded, liveSaved, pruned: toDelete.length, listings, errors: errors.slice(0, 20) };
   await writeManifest(env, manifest);
   return manifest.lastRun;
 }
@@ -422,13 +532,14 @@ export async function framesFor(
 ): Promise<{ product: string | null; frames: HmiFrame[]; storedFromMs: number | null }> {
   const manifest = await cachedManifest(env);
   const product = productsFor(mode).find((p) => manifest.products[p]?.length) ?? null;
+  // productsFor only names archive products; the live one is merged below.
   const list = product ? manifest.products[product] : [];
   const storedFrom = list.length ? list[0].t : null;
 
   const stored: HmiFrame[] = list
     .filter((e) => e.t >= from && e.t <= to)
     .map((e) => {
-      const f: HmiFrame = { atMs: e.t, url: `${origin}/img/${product}/${e.stem}_1024.jpg` };
+      const f: HmiFrame = { atMs: e.t, url: `${origin}/img/${product}/${e.stem}_1024.jpg`, product: product! };
       if (e.sizes.includes(512)) f.preview = `${origin}/img/${product}/${e.stem}_512.jpg`;
       if (e.sizes.includes(2048)) f.detail = `${origin}/img/${product}/${e.stem}_2048.jpg`;
       return f;
@@ -448,25 +559,33 @@ export async function framesFor(
     // Mixed only when both sides are the same product, so a scrub never
     // flips between a colour frame and a grey one.
     if (!product || res.product === product) {
-      older = res.frames;
+      older = res.frames.map((f) => ({ ...f, product: res.product ?? undefined }));
       olderProduct = res.product;
     }
   }
 
-  const frames = thinFrames([...older, ...stored].sort((a, b) => a.atMs - b.atMs), intervalForWindow(to - from));
-  return { product: product ?? olderProduct, frames, storedFromMs: storedFrom };
+  // The live images, for whatever the archive does not reach yet.
+  const archive = [...older, ...stored];
+  const archiveEnd = archive.reduce((m, f) => Math.max(m, f.atMs), -Infinity);
+  const liveProduct = LIVE_SOURCES[mode].product;
+  const live: HmiFrame[] = (manifest.products[liveProduct] ?? [])
+    .filter((e) => e.t >= from && e.t <= to && e.t > archiveEnd + STEP_MS / 2)
+    .map((e) => ({ atMs: e.t, url: `${origin}/img/${liveProduct}/${e.stem}_1024.${e.ext ?? 'jpg'}`, product: liveProduct }));
+
+  const frames = thinFrames([...archive, ...live].sort((a, b) => a.atMs - b.atMs), intervalForWindow(to - from));
+  return { product: product ?? olderProduct ?? (live.length ? liveProduct : null), frames, storedFromMs: storedFrom };
 }
 
 async function serveImage(env: Env, path: string): Promise<Response> {
   // /img/<product>/<stem>_<size>.jpg, nothing else.
-  const m = path.match(/^\/img\/(HMI[A-Z]+)\/(\d{8}_\d{6}_(?:512|1024|2048)\.jpg)$/);
+  const m = path.match(/^\/img\/(HMI[A-Z]+)\/(\d{8}_\d{6}_(?:512|1024|2048)\.(?:jpg|gif))$/);
   if (!m) return new Response('Not found', { status: 404, headers: CORS });
   const obj = await env.SDO_BUCKET.get(`hmi/${m[1]}/${m[2]}`);
   if (!obj) return new Response('Not found', { status: 404, headers: { ...CORS, 'Cache-Control': 'no-store' } });
   return new Response(obj.body, {
     headers: {
       ...CORS,
-      'Content-Type': 'image/jpeg',
+      'Content-Type': obj.httpMetadata?.contentType ?? (m[2].endsWith('.gif') ? 'image/gif' : 'image/jpeg'),
       // A stored frame never changes.
       'Cache-Control': 'public, max-age=604800, immutable',
       ETag: obj.httpEtag,
@@ -504,9 +623,14 @@ function status(m: Manifest, nowMs = Date.now()) {
     ok: true,
     products,
     completeDays: m.completeDays,
+    // Days still waiting on SDO: when last looked at, and the frames it had.
+    waitingOnSdo: Object.fromEntries(Object.entries(m.dayChecks ?? {}).sort().map(([d, c]) => [d, {
+      checked: new Date(c.atMs).toISOString(), missing: c.missing, found: c.found,
+    }])),
     latest: Object.fromEntries(Object.entries(m.latest ?? {}).map(([mode, l]) => [mode, l && {
       source: l.source,
       bytes: l.bytes,
+      lastModified: l.lastModified ?? null,
       stored: new Date(l.storedAtMs).toISOString(),
       checked: new Date(l.checkedAtMs).toISOString(),
     }])),

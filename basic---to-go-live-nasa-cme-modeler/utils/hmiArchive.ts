@@ -62,6 +62,12 @@ export interface HmiFrame {
   preview?: string;
   /** The 2048px copy, for the region close-up, which zooms hard. */
   detail?: string;
+  /**
+   * Which product the frame is, when a list mixes them. The sdo-imagery
+   * worker fills the hours SDO's archive has not reached with saved live
+   * images, which are framed differently, so the disk is measured per product.
+   */
+  product?: string;
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
