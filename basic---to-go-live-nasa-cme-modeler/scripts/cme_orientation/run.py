@@ -56,7 +56,7 @@ DIRECTION_USE_MIN = 70           # confidence at which the app uses our directio
 RUN_BUDGET_S = float(os.environ.get("RUN_BUDGET_S", 16 * 60))
 ONLY = os.environ.get("ORIENTATION_ONLY", "").strip()
 # Raised whenever the analysis changes, so every stored result is redone.
-VERSION = 5
+VERSION = 6
 
 
 def main() -> int:

@@ -314,7 +314,41 @@ def detect_view(
     if not res.reason:
         res.reason = "halo" if res.halo else "detected"
     res.shape, res.shape_frames = _shape_map(hits, hs, g)
+    if res.shape is not None and not res.halo:
+        res.shape = _only_this_cme(res.shape, res.pa_start, res.width)
     return res
+
+
+SHAPE_MARGIN = 60.0              # degrees either side of the arc the fit sees
+
+
+def _only_this_cme(shape: np.ndarray, pa_start: float, width: float) -> np.ndarray:
+    """
+    The shape map cut down to this CME. Real frames brighten elsewhere too
+    (another CME, a streamer shifting, a planet), and scored over the whole
+    ring that clutter swamps the CME's own outline: in the 2026-09-28 14:36
+    CME, every tilt scored within 0.004 of every other. So only the bright
+    region joined to the CME's arc is kept; other bright patches within the
+    margin count as empty (a candidate rope spilling there is marked down),
+    and nothing beyond the margin is scored. The CME's faint flanks, outside
+    the arc as detected but joined to it, stay.
+    """
+    n = shape.shape[0]
+    centre = int(round(((pa_start + width / 2) % 360) / PA_STEP))
+    shift = n // 2 - centre                   # the arc in the middle: no wrap
+    s = np.roll(shape, shift, axis=0)
+    pa = (np.arange(n) - n // 2) * PA_STEP    # degrees from the arc's centre
+    half = width / 2
+    inside = np.abs(pa) <= half
+    near = np.abs(pa) <= half + SHAPE_MARGIN
+    bright = np.where(np.isfinite(s), s, 0.0) > 0.3
+    lab, _ = ndimage.label(bright & near[:, None], structure=np.ones((3, 3)))
+    keep_labels = np.unique(lab[inside][bright[inside]])
+    keep = np.isin(lab, keep_labels[keep_labels > 0])
+    out = np.full_like(s, np.nan)
+    rows = near[:, None] & np.isfinite(s)
+    out[rows] = np.where(keep, s, np.where(bright, 0.0, s))[rows]
+    return np.roll(out, -shift, axis=0)
 
 
 def _shape_map(hits: list[np.ndarray], fronts: list[float], g: Geometry):
