@@ -34,7 +34,9 @@ function corsResponse(status = 204) {
 async function scrapeSuviFrameUrls() {
   try {
     const resp = await fetch(SWPC_ANIM_DIR, {
-      headers: { 'User-Agent': 'cme-modeler-ch-history/1.0' },
+      // A browser User-Agent: NOAA/SWPC's bot protection answers 403 to
+      // anything it does not recognise.
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36' },
     });
     if (!resp.ok) return [];
     const html = await resp.text();
@@ -121,8 +123,9 @@ async function getAllSnapshots(kv) {
   const cutoff = Date.now() - MAX_HISTORY_HOURS * 3600 * 1000;
   const snapshots = [];
 
-  for (const key of index) {
-    const raw = await kv.get(key);
+  // Read together rather than one after another: up to 144 of them.
+  const raws = await Promise.all(index.map((key) => kv.get(key)));
+  for (const raw of raws) {
     if (!raw) continue;
     try {
       const record = JSON.parse(raw);
@@ -165,16 +168,20 @@ async function handlePostSnapshot(request, env) {
 
 async function handleGetFrames(env) {
   const cached = await env.CH_HISTORY.get('suvi-frame-urls');
+  let previous = null;
   if (cached) {
     try {
-      const parsed = JSON.parse(cached);
-      if (parsed._cachedAt && Date.now() - parsed._cachedAt < 30 * 60 * 1000) {
-        return jsonResponse(parsed);
+      previous = JSON.parse(cached);
+      if (previous._cachedAt && Date.now() - previous._cachedAt < 30 * 60 * 1000) {
+        return jsonResponse(previous);
       }
     } catch { /* fall through */ }
   }
 
   const allFrames = await scrapeSuviFrameUrls();
+  // NOAA unreachable: the last list is better than an empty one, and must
+  // not be overwritten by it.
+  if (allFrames.length === 0 && previous?.frames?.length) return jsonResponse(previous);
   const picked = pickFramesEvery2Hours(allFrames);
 
   const result = {
@@ -212,6 +219,10 @@ async function handleCron(env) {
   console.log('[CH Worker] Cron triggered - refreshing SUVI frame index');
   try {
     const allFrames = await scrapeSuviFrameUrls();
+    if (allFrames.length === 0) {
+      console.warn('[CH Worker] No SUVI frames listed - keeping the previous index');
+      return;
+    }
     const picked = pickFramesEvery2Hours(allFrames);
     const result = {
       frames: picked,
@@ -219,7 +230,9 @@ async function handleCron(env) {
       pickedCount: picked.length,
       _cachedAt: Date.now(),
     };
-    await env.CH_HISTORY.put('suvi-frame-urls', JSON.stringify(result), { expirationTtl: 3600 });
+    // Kept past the next run (every 2 hours), so a failed run leaves the
+    // last good list in place rather than letting it expire.
+    await env.CH_HISTORY.put('suvi-frame-urls', JSON.stringify(result), { expirationTtl: 6 * 3600 });
     console.log(`[CH Worker] Indexed ${picked.length} frames (${allFrames.length} total)`);
   } catch (err) {
     console.error('[CH Worker] Cron failed:', err);
