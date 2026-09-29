@@ -31,6 +31,9 @@ const fetched = [];
 let jsocDown = false;
 // SDO's archive posts nothing after this, as it did in September 2026.
 let archiveEnd = Infinity;
+// Helioviewer: HMI every 3 minutes at 40 s past, posted 2 minutes late.
+let hvUp = false;
+const hvFetched = () => fetched.filter((u) => u.includes('helioviewer'));
 globalThis.fetch = async (url, opts) => {
   url = String(url);
   fetched.push(url);
@@ -58,6 +61,22 @@ globalThis.fetch = async (url, opts) => {
     if (opts?.headers?.['If-Modified-Since'] === 'Mon, 29 Sep 2026 10:00:00 GMT') return new Response(null, { status: 304 });
     const type = url.endsWith('.gif') ? 'image/gif' : 'image/jpeg';
     return new Response(new Uint8Array(300_000), { headers: { 'Content-Type': type, 'Last-Modified': 'Mon, 29 Sep 2026 10:00:00 GMT' } });
+  }
+  if (url.includes('helioviewer')) {
+    if (!hvUp) return new Response('down', { status: 503 });
+    const q = new URL(url).searchParams;
+    const at = Date.parse(q.get('date'));
+    if (url.includes('getClosestImage')) {
+      const step = 3 * MIN;
+      let t = Math.round((at - 40000) / step) * step + 40000;
+      while (t > now - 2 * MIN) t -= step;
+      const iso = new Date(t).toISOString().slice(0, 19).replace('T', ' ');
+      return new Response(JSON.stringify({ id: String(t), date: iso, sourceId: q.get('sourceId') }), { headers: { 'Content-Type': 'application/json' } });
+    }
+    if (url.includes('takeScreenshot')) {
+      const ok = q.get('imageScale') === '2.016' && q.get('width') === '1024' && q.get('display') === 'true';
+      return ok ? new Response(new Uint8Array(30_000), { headers: { 'Content-Type': 'image/png' } }) : new Response('bad', { status: 400 });
+    }
   }
   if (/_HMI[A-Z]+\.jpg$/.test(url)) return new Response(new Uint8Array([0xff, 0xd8, 1, 2]), { headers: { 'Content-Type': 'image/jpeg' } });
   return new Response('nope', { status: 404 });
@@ -215,6 +234,45 @@ try {
     const lastArchive = Math.max(...week.frames.filter((f) => f.product === 'HMIB').map((f) => f.atMs));
     const firstLive = Math.min(...week.frames.filter((f) => f.product === 'HMILB').map((f) => f.atMs));
     check(firstLive > lastArchive, 'live frames only where the archive stops');
+    check(manifest().lastRun.hvSaved === 0 && manifest().lastRun.errors.some((e) => e.startsWith('helioviewer')),
+      'Helioviewer down: nothing saved, the error recorded, the rest unaffected');
+
+    console.log('\nHelioviewer fills the quarter-hours the archive lacks');
+    hvUp = true;
+    fetched.length = 0;
+    now += 5 * MIN;
+    const first = await w.runOnce(env, now);
+    check(hvFetched().length <= 2 * w.HV_FRAMES_PER_RUN, `at most ${w.HV_FRAMES_PER_RUN} frames a run, two requests each (${hvFetched().length})`);
+    check(first.hvSaved > 0 && manifest().products.HMIHVB?.length > 0 && manifest().products.HMIHVI?.length > 0,
+      `magnetogram and intensity both start filling (${first.hvSaved})`);
+    check(!hvFetched().some((u) => /sourceId=(?!1[89])/.test(u)), 'and nothing is asked for colorized, which Helioviewer lacks');
+    for (let i = 0; i < 120; i++) { now += 5 * MIN; await w.runOnce(env, now); }
+    const hm = manifest();
+    const hvSlots = new Set(hm.products.HMIHVB.map((e) => Math.floor(e.t / (15 * MIN))));
+    const archSlots = new Set(hm.products.HMIB.map((e) => Math.floor(e.t / (15 * MIN))));
+    check([...hvSlots].every((n) => !archSlots.has(n)), 'never a quarter-hour the archive already holds');
+    const lagSpan = (now - 10 * MIN - Math.max(...hm.products.HMIB.map((e) => e.t))) / (15 * MIN);
+    check(hvSlots.size >= lagSpan - 2, `every quarter-hour since the archive stops (${hvSlots.size} of ${Math.floor(lagSpan)})`);
+    check(hm.products.HMIHVB.every((e) => e.ext === 'png'), 'kept as the PNG Helioviewer sends');
+    const rec = await (await w.default.fetch(new Request(`https://s.dev/api/frames?mode=magnetogram&from=${now - 12 * HOUR}&to=${now}`), env)).json();
+    const gaps = rec.frames.slice(1).map((f, i) => f.atMs - rec.frames[i].atMs);
+    check(rec.frames.length >= 46 && Math.max(...gaps) <= 20 * MIN, `the last 12 hours: a frame every quarter-hour (${rec.frames.length}, largest gap ${Math.round(Math.max(...gaps) / MIN)} min)`);
+    check(rec.frames.every((f) => f.product === 'HMIHVB'), 'from Helioviewer, tagged so the app measures its disk separately');
+    check(now - rec.frames[rec.frames.length - 1].atMs < 25 * MIN, 'up to the latest quarter-hour Helioviewer has');
+    const png = await w.default.fetch(new Request(rec.frames[0].url), env);
+    check(png.status === 200 && png.headers.get('content-type') === 'image/png', 'and served as a PNG');
+    const col = await (await w.default.fetch(new Request(`https://s.dev/api/frames?mode=colorized&from=${now - 12 * HOUR}&to=${now}`), env)).json();
+    check(col.frames.every((f) => f.product === 'HMILBC'), 'colorized still comes from the live images');
+    const wk = await (await w.default.fetch(new Request(`https://s.dev/api/frames?mode=intensity&from=${now - 7 * DAY}&to=${now}`), env)).json();
+    const wkKinds = new Set(wk.frames.map((f) => f.product));
+    check(wkKinds.has('HMII') && wkKinds.has('HMIHVI'), 'a week of intensity: the archive, then Helioviewer');
+    fetched.length = 0;
+    now += 5 * MIN;
+    const steady = await w.runOnce(env, now);
+    check(hvFetched().length <= 6, `once filled, a run asks Helioviewer only for what is new (${hvFetched().length} requests)`);
+    check(imageKeys().length === Object.values(manifest().products).flat().reduce((n, e) => n + e.sizes.length, 0),
+      'R2 holds exactly what the manifest lists');
+    void steady;
 
     // A store written before the fix had days like this marked complete.
     const bad = manifest(); bad.completeDays.push(lagDay); store.set('manifest.json', JSON.stringify(bad));
@@ -223,6 +281,7 @@ try {
 
     console.log('\nSDO catches up');
     archiveEnd = Infinity;
+    hvUp = false;
     for (let i = 0; i < 400; i++) { now += 5 * MIN; await w.runOnce(env, now); }
     const after = manifest();
     const caughtUp = after.products.HMIB.filter((e) => e.stem.startsWith(lagDay)).length;

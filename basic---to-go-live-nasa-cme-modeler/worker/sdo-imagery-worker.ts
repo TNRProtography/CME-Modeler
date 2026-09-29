@@ -25,6 +25,13 @@
  * (HMILBC, HMILB, HMILIF). Recent hours come from those; the archive fills in
  * everything before them.
  *
+ * The live images only change when JSOC posts, which in September 2026 was
+ * about every hour and a half, and they cannot fill the days before the store
+ * began. So for the two views Helioviewer carries (magnetogram, intensity),
+ * each quarter-hour the archive does not cover is filled from Helioviewer's
+ * HMI images, rendered at the same scale as SDO's 1024 px frames (HMIHVB,
+ * HMIHVI). Colorized has no Helioviewer equivalent.
+ *
  * A new store fills itself: each run downloads the newest missing frames first
  * and works backwards, so a week is there within about a day. Until then,
  * /api/frames fills the part of a window it does not hold yet from SDO's own
@@ -96,6 +103,28 @@ export const LIVE_SOURCES: Record<HmiMode, { product: string; url: string }> = {
   intensity: { product: 'HMILIF', url: `${JSOC_LATEST}/HMI_latest_colInt_1024x1024.jpg` },
 };
 const LIVE_PRODUCTS = new Set(Object.values(LIVE_SOURCES).map((s) => s.product));
+
+/**
+ * Helioviewer's HMI images, for the quarter-hours SDO's browse archive does
+ * not hold. It is current when that archive lags, and posts every few
+ * minutes. Rendered full-disk at 2.016"/px (HMI's native 0.504"/px, four to a
+ * pixel), the scale of SDO's 1024 px browse frames, so the disk is the same
+ * size; the app still measures each product's disk itself.
+ */
+const HV_API = 'https://api.helioviewer.org/v2';
+export const HV_SCALE = 2.016;
+export const HV_SOURCES: Partial<Record<HmiMode, { product: string; sourceId: number; layers: string[] }>> = {
+  magnetogram: { product: 'HMIHVB', sourceId: 19, layers: ['[SDO,HMI,HMI,magnetogram,1,100]', '[19,1,100]'] },
+  intensity: { product: 'HMIHVI', sourceId: 18, layers: ['[SDO,HMI,HMI,continuum,1,100]', '[18,1,100]'] },
+};
+/**
+ * Helioviewer frames one run may fetch, two requests each: a week's gap
+ * fills in a few hours. Up to 48 more requests a run, which needs the Workers
+ * paid plan (the free plan allows 50 in all).
+ */
+export const HV_FRAMES_PER_RUN = 24;
+/** A quarter-hour with no Helioviewer image this long after it ended is written off. */
+const HV_GIVE_UP_MS = 3 * HOUR;
 export const isLiveProduct = (product: string) => LIVE_PRODUCTS.has(product);
 
 /**
@@ -121,7 +150,7 @@ interface LatestInfo {
 }
 
 /** One stored moment of one product. */
-interface Entry { t: number; stem: string; sizes: number[]; ext?: 'gif' }
+interface Entry { t: number; stem: string; sizes: number[]; ext?: 'gif' | 'png' }
 
 export interface Manifest {
   version: 1;
@@ -135,7 +164,9 @@ export interface Manifest {
   live?: Partial<Record<HmiMode, LiveInfo>>;
   /** When each incomplete day was last listed, and what it held. */
   dayChecks?: Record<string, DayCheck>;
-  lastRun?: { atMs: number; downloaded: number; latestDownloaded: number; liveSaved: number; pruned: number; listings: number; errors: string[] };
+  /** Per Helioviewer product, quarter-hours (slot numbers) Helioviewer had nothing for. */
+  hvEmpty?: Record<string, number[]>;
+  lastRun?: { atMs: number; downloaded: number; latestDownloaded: number; liveSaved: number; hvSaved?: number; pruned: number; listings: number; errors: string[] };
 }
 
 const emptyManifest = (): Manifest => ({ version: 1, products: {}, completeDays: [] });
@@ -288,6 +319,8 @@ export function pruneManifest(m: Manifest, nowMs: number): string[] {
   const oldestDay = dayKey(cutoff);
   m.completeDays = m.completeDays.filter((d) => d >= oldestDay);
   for (const d of Object.keys(m.dayChecks ?? {})) if (d < oldestDay) delete m.dayChecks![d];
+  const oldestSlot = Math.floor(cutoff / STEP_MS);
+  for (const [p, slots] of Object.entries(m.hvEmpty ?? {})) m.hvEmpty![p] = slots.filter((n) => n >= oldestSlot);
   return keys;
 }
 
@@ -494,8 +527,10 @@ export async function runOnce(env: Env, nowMs = Date.now()) {
     if (sizes.includes(1024)) addEntry(manifest, job.product, { t: job.moment.t, stem: job.moment.stem, sizes });
   }
 
+  const hvSaved = await saveHelioviewer(env, manifest, nowMs, errors);
+
   manifest.completeDays = [...complete].sort();
-  manifest.lastRun = { atMs: nowMs, downloaded, latestDownloaded, liveSaved, pruned: toDelete.length, listings, errors: errors.slice(0, 20) };
+  manifest.lastRun = { atMs: nowMs, downloaded, latestDownloaded, liveSaved, hvSaved, pruned: toDelete.length, listings, errors: errors.slice(0, 20) };
   await writeManifest(env, manifest);
   return manifest.lastRun;
 }
@@ -516,6 +551,111 @@ const json = (body: unknown, status = 200, maxAge = 60) => new Response(JSON.str
     'Cache-Control': status === 200 ? `public, max-age=${maxAge}` : 'no-store',
   },
 });
+
+// ── Helioviewer, for the quarter-hours the archive does not hold ───────────
+
+/** Quarter-hours (slot numbers) that archive frames of a view already cover. */
+function archiveSlots(m: Manifest, mode: HmiMode): Set<number> {
+  const slots = new Set<number>();
+  for (const p of productsFor(mode)) for (const e of m.products[p] ?? []) slots.add(Math.floor(e.t / STEP_MS));
+  return slots;
+}
+
+/**
+ * The quarter-hours a Helioviewer product should fill, newest first: within
+ * retention, begun at least five minutes ago (the image kept is the one
+ * nearest the quarter-hour, and Helioviewer lags HMI a little), not held by
+ * the archive or already stored, and not written off. One Helioviewer has not
+ * reached yet is asked again next run.
+ */
+export function hvSlotsWanted(m: Manifest, mode: HmiMode, nowMs: number): number[] {
+  const hv = HV_SOURCES[mode];
+  if (!hv) return [];
+  const have = archiveSlots(m, mode);
+  for (const e of m.products[hv.product] ?? []) have.add(Math.floor(e.t / STEP_MS));
+  for (const n of m.hvEmpty?.[hv.product] ?? []) have.add(n);
+  const out: number[] = [];
+  const first = Math.ceil((nowMs - RETENTION_MS) / STEP_MS);
+  for (let n = Math.floor((nowMs - 5 * MINUTE) / STEP_MS); n >= first; n--) {
+    if (!have.has(n)) out.push(n);
+  }
+  return out;
+}
+
+const hvIso = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
+
+/** Helioviewer's image nearest a moment: its time, or null. */
+async function hvClosest(sourceId: number, atMs: number): Promise<number | null> {
+  const res = await fetchWithTimeout(`${HV_API}/getClosestImage/?date=${hvIso(atMs)}&sourceId=${sourceId}`,
+    { headers: { 'User-Agent': BROWSER_UA } });
+  if (!res.ok) throw new Error(`getClosestImage HTTP ${res.status}`);
+  const body = await res.json() as { date?: string };
+  const t = body?.date ? Date.parse(body.date.replace(' ', 'T').replace(/Z?$/, 'Z')) : NaN;
+  return Number.isFinite(t) ? t : null;
+}
+
+/** A full-disk 1024 px render of one Helioviewer image, as its layer names allow. */
+async function hvRender(layers: string[], atMs: number): Promise<{ bytes: ArrayBuffer; contentType: string }> {
+  let last = '';
+  for (const layer of layers) {
+    const q = `date=${hvIso(atMs)}&imageScale=${HV_SCALE}&layers=${encodeURIComponent(layer)}`
+      + '&x0=0&y0=0&width=1024&height=1024&display=true&watermark=false';
+    try {
+      const res = await fetchWithTimeout(`${HV_API}/takeScreenshot/?${q}`, { headers: { 'User-Agent': BROWSER_UA } });
+      const contentType = res.headers.get('content-type') ?? '';
+      if (!res.ok) { last = `HTTP ${res.status}`; continue; }
+      if (!contentType.startsWith('image/')) { last = `got ${contentType || 'nothing'}`; continue; }
+      const bytes = await res.arrayBuffer();
+      if (bytes.byteLength < 20_000) { last = `only ${bytes.byteLength} bytes`; continue; }
+      return { bytes, contentType };
+    } catch (e) {
+      last = (e as Error).message;
+    }
+  }
+  throw new Error(`takeScreenshot: ${last}`);
+}
+
+/**
+ * Fills the quarter-hours the archive does not hold, for the views
+ * Helioviewer carries, newest first and the views in turn. A quarter-hour
+ * Helioviewer has nothing in is written off once it is a few hours old.
+ * Returns how many frames were saved.
+ */
+export async function saveHelioviewer(env: Env, manifest: Manifest, nowMs: number, errors: string[]): Promise<number> {
+  const queues = HMI_MODES
+    .filter((mode) => HV_SOURCES[mode])
+    .map((mode) => ({ mode, slots: hvSlotsWanted(manifest, mode, nowMs) }));
+  let saved = 0, tried = 0, failures = 0;
+  for (let i = 0; tried < HV_FRAMES_PER_RUN && failures < 3; i++) {
+    const q = queues.filter((x) => x.slots.length);
+    if (!q.length) break;
+    const { mode, slots } = q[i % q.length];
+    const n = slots.shift()!;
+    const hv = HV_SOURCES[mode]!;
+    tried++;
+    try {
+      const start = n * STEP_MS;
+      // Nearest the quarter-hour itself, as the archive keeps the first frame
+      // in each: evenly spaced, so thinning to 15 minutes drops none.
+      const t = await hvClosest(hv.sourceId, start);
+      if (t == null || Math.floor(t / STEP_MS) !== n) {
+        // Nothing in this quarter-hour. Older than a few hours, it never will be.
+        if (nowMs - (start + STEP_MS) > HV_GIVE_UP_MS) ((manifest.hvEmpty ??= {})[hv.product] ??= []).push(n);
+        continue;
+      }
+      const { bytes, contentType } = await hvRender(hv.layers, t);
+      const ext = contentType.includes('png') ? 'png' : contentType.includes('gif') ? 'gif' : undefined;
+      const stem = stemOf(t);
+      await env.SDO_BUCKET.put(objectKey(hv.product, stem, 1024, ext), bytes, { httpMetadata: { contentType } });
+      addEntry(manifest, hv.product, { t, stem, sizes: [1024], ...(ext ? { ext } : {}) });
+      saved++;
+    } catch (e) {
+      failures++;
+      errors.push(`helioviewer ${mode}: ${(e as Error).message}`);
+    }
+  }
+  return saved;
+}
 
 /** Manifests are read on every frame-list request; one per isolate per minute is plenty. */
 let manifestCache: { atMs: number; m: Manifest } | null = null;
@@ -564,28 +704,36 @@ export async function framesFor(
     }
   }
 
-  // The live images, for whatever the archive does not reach yet.
+  // Helioviewer, for the quarter-hours the archive does not hold; then the
+  // live images, for whatever neither reaches yet.
   const archive = [...older, ...stored];
   const archiveEnd = archive.reduce((m, f) => Math.max(m, f.atMs), -Infinity);
+  const taken = new Set(archive.map((f) => Math.floor(f.atMs / STEP_MS)));
+  const hv = HV_SOURCES[mode];
+  const hvFrames: HmiFrame[] = hv ? (manifest.products[hv.product] ?? [])
+    .filter((e) => e.t >= from && e.t <= to && !taken.has(Math.floor(e.t / STEP_MS)))
+    .map((e) => ({ atMs: e.t, url: `${origin}/img/${hv.product}/${e.stem}_1024.${e.ext ?? 'jpg'}`, product: hv.product })) : [];
+  for (const f of hvFrames) taken.add(Math.floor(f.atMs / STEP_MS));
   const liveProduct = LIVE_SOURCES[mode].product;
   const live: HmiFrame[] = (manifest.products[liveProduct] ?? [])
-    .filter((e) => e.t >= from && e.t <= to && e.t > archiveEnd + STEP_MS / 2)
+    .filter((e) => e.t >= from && e.t <= to && e.t > archiveEnd + STEP_MS / 2 && !taken.has(Math.floor(e.t / STEP_MS)))
     .map((e) => ({ atMs: e.t, url: `${origin}/img/${liveProduct}/${e.stem}_1024.${e.ext ?? 'jpg'}`, product: liveProduct }));
 
-  const frames = thinFrames([...archive, ...live].sort((a, b) => a.atMs - b.atMs), intervalForWindow(to - from));
-  return { product: product ?? olderProduct ?? (live.length ? liveProduct : null), frames, storedFromMs: storedFrom };
+  const frames = thinFrames([...archive, ...hvFrames, ...live].sort((a, b) => a.atMs - b.atMs), intervalForWindow(to - from));
+  return { product: product ?? olderProduct ?? (hvFrames.length ? hv!.product : live.length ? liveProduct : null), frames, storedFromMs: storedFrom };
 }
 
 async function serveImage(env: Env, path: string): Promise<Response> {
   // /img/<product>/<stem>_<size>.jpg, nothing else.
-  const m = path.match(/^\/img\/(HMI[A-Z]+)\/(\d{8}_\d{6}_(?:512|1024|2048)\.(?:jpg|gif))$/);
+  const m = path.match(/^\/img\/(HMI[A-Z]+)\/(\d{8}_\d{6}_(?:512|1024|2048)\.(?:jpg|gif|png))$/);
   if (!m) return new Response('Not found', { status: 404, headers: CORS });
   const obj = await env.SDO_BUCKET.get(`hmi/${m[1]}/${m[2]}`);
   if (!obj) return new Response('Not found', { status: 404, headers: { ...CORS, 'Cache-Control': 'no-store' } });
   return new Response(obj.body, {
     headers: {
       ...CORS,
-      'Content-Type': obj.httpMetadata?.contentType ?? (m[2].endsWith('.gif') ? 'image/gif' : 'image/jpeg'),
+      'Content-Type': obj.httpMetadata?.contentType
+        ?? (m[2].endsWith('.gif') ? 'image/gif' : m[2].endsWith('.png') ? 'image/png' : 'image/jpeg'),
       // A stored frame never changes.
       'Cache-Control': 'public, max-age=604800, immutable',
       ETag: obj.httpEtag,
@@ -623,6 +771,8 @@ function status(m: Manifest, nowMs = Date.now()) {
     ok: true,
     products,
     completeDays: m.completeDays,
+    // Quarter-hours Helioviewer had nothing for, per product.
+    helioviewerEmpty: Object.fromEntries(Object.entries(m.hvEmpty ?? {}).map(([p, s]) => [p, s.length])),
     // Days still waiting on SDO: when last looked at, and the frames it had.
     waitingOnSdo: Object.fromEntries(Object.entries(m.dayChecks ?? {}).sort().map(([d, c]) => [d, {
       checked: new Date(c.atMs).toISOString(), missing: c.missing, found: c.found,
