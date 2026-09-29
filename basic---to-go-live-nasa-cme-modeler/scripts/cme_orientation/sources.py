@@ -234,23 +234,75 @@ def load_frames(chosen: list[dict]) -> list[tuple[int, np.ndarray]]:
 # Sun, so the geometry is known exactly.
 
 _hv_ids: dict = {}
+_hv_tree: dict | None = None
+
+# Known Helioviewer source IDs, used only if the data-source listing cannot be
+# read or searched. These have been stable for years.
+_HV_KNOWN = {
+    ("SOHO", "LASCO", "C2", "white-light"): 4,
+    ("SOHO", "LASCO", "C3", "white-light"): 5,
+    ("SDO", "HMI", "magnetogram"): 19,
+}
+
+
+def _hv_leaves(node, path=()):
+    """Every (path, sourceId) in Helioviewer's nested data-source listing."""
+    if isinstance(node, dict):
+        if "sourceId" in node:
+            yield path, node["sourceId"]
+            return
+        for k, v in node.items():
+            yield from _hv_leaves(v, path + (str(k),))
 
 
 def hv_source_id(path: list[str]) -> int | None:
+    """
+    Helioviewer's source ID for an instrument, found by name.
+
+    The listing does not nest the same way for every instrument (HMI has no
+    separate detector level; LASCO does), so the names are matched as an
+    ordered subsequence of each entry's path, case-insensitively, rather than
+    walked level by level.
+    """
+    global _hv_tree
     key = "/".join(path)
     if key in _hv_ids:
         return _hv_ids[key]
-    if "__all" not in _hv_ids:
+    if _hv_tree is None:
         try:
-            _hv_ids["__all"] = get_json(f"{HV}/getDataSources/", {"verbose": "true", "enable": "[STEREO_A,SOHO,SDO]"})
-        except Exception:
-            _hv_ids["__all"] = {}
-    node = _hv_ids["__all"]
-    for p in path:
-        node = node.get(p, {}) if isinstance(node, dict) else {}
-    sid = node.get("sourceId") if isinstance(node, dict) else None
-    _hv_ids[key] = int(sid) if sid is not None else None
-    return _hv_ids[key]
+            _hv_tree = get_json(f"{HV}/getDataSources/", {"verbose": "true"})
+        except Exception as e:
+            print(f"Helioviewer data sources unavailable: {e}")
+            _hv_tree = {}
+    want = [p.lower() for i, p in enumerate(path) if i == 0 or p.lower() != path[i - 1].lower()]
+    found = None
+    for leaf_path, sid in _hv_leaves(_hv_tree):
+        names = [n.lower() for n in leaf_path]
+        it = iter(names)
+        if all(any(w == n for n in it) for w in want):
+            found = int(sid)
+            break
+    if found is None:
+        found = _HV_KNOWN.get(tuple(p for i, p in enumerate(path) if i == 0 or p != path[i - 1]))
+    print(f"Helioviewer source {key}: {found}")
+    _hv_ids[key] = found
+    return found
+
+
+def hv_screenshot(path: list[str], sid: int, params: dict) -> bytes:
+    """A Helioviewer screenshot, naming the layer by instrument and, if that
+    is refused, by source ID: both forms are documented for the API."""
+    last = None
+    for layer in ("[" + ",".join(path) + ",1,100]", f"[{sid},1,100]"):
+        try:
+            r = get(f"{HV}/takeScreenshot/", {**params, "layers": layer, "display": "true", "watermark": "false"},
+                    timeout=90, tries=2)
+            if r.headers.get("content-type", "").startswith("image/"):
+                return r.content
+            last = f"not an image ({r.headers.get('content-type')}): {r.text[:120]!r}"
+        except Exception as e:
+            last = str(e)
+    raise RuntimeError(f"Helioviewer screenshot failed: {last}")
 
 
 def hv_frames(path: list[str], scale: float, t0: int, size: int = 512) -> list[tuple[int, np.ndarray]]:
@@ -268,15 +320,13 @@ def hv_frames(path: list[str], scale: float, t0: int, size: int = 512) -> list[t
         if not t or info.get("id") in seen or abs(t - w) > 45 * 60000:
             continue
         seen.add(info.get("id"))
-        layer = "[" + ",".join(path) + ",1,100]"
         try:
-            png = get(f"{HV}/takeScreenshot/", {
-                "date": iso(t), "imageScale": scale, "layers": layer,
-                "x0": 0, "y0": 0, "width": size, "height": size,
-                "display": "true", "watermark": "false",
-            }, timeout=90).content
+            png = hv_screenshot(path, sid, {"date": iso(t), "imageScale": scale,
+                                            "x0": 0, "y0": 0, "width": size, "height": size})
             out.append((t, to_gray(png)))
-        except Exception:
+        except Exception as e:
+            if not out:
+                print(f"  Helioviewer {'/'.join(path)} at {iso(t)}: {e}")
             continue
     return out
 
@@ -292,19 +342,17 @@ def rsun_arcsec(t_ms: int) -> float:
 
 def hv_magnetogram_cutout(t_ms: int, x_arcsec: float, y_arcsec: float, scale: float = 0.6, size: int = 480):
     """HMI magnetogram centred on a point, at a stated scale."""
-    path = ["SDO", "HMI", "HMI", "magnetogram"]
-    sid = hv_source_id(path)
+    sid = hv_source_id(["SDO", "HMI", "magnetogram"])
     if sid is None:
         raise RuntimeError("Helioviewer has no HMI magnetogram source")
     info = get_json(f"{HV}/getClosestImage/", {"date": iso(t_ms), "sourceId": sid})
     t = parse_ms(info.get("date"))
     if not t or abs(t - t_ms) > 3 * 3600000:
         raise RuntimeError("no HMI magnetogram within 3 hours")
-    png = get(f"{HV}/takeScreenshot/", {
-        "date": iso(t), "imageScale": scale, "layers": "[SDO,HMI,HMI,magnetogram,1,100]",
+    png = hv_screenshot(["SDO", "HMI", "HMI", "magnetogram"], sid, {
+        "date": iso(t), "imageScale": scale,
         "x0": round(x_arcsec, 1), "y0": round(y_arcsec, 1), "width": size, "height": size,
-        "display": "true", "watermark": "false",
-    }, timeout=90).content
+    })
     return t, to_gray(png)
 
 

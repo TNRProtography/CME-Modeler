@@ -52,7 +52,8 @@ FINAL_AFTER_MS = 36 * 3600000
 AGREE_DEG = 30.0
 DIRECTION_USE_MIN = 70           # confidence at which the app uses our direction
 RUN_BUDGET_S = float(os.environ.get("RUN_BUDGET_S", 16 * 60))
-VERSION = 1
+# Raised whenever the analysis changes, so every stored result is redone.
+VERSION = 2
 
 
 def main() -> int:
@@ -95,6 +96,8 @@ def main() -> int:
             print("  {}: {} tilt {} conf {} | dir {} | {}".format(
                 cid, r["status"], r["tilt"], r["confidence"],
                 d and (d["lon"], d["lat"], d["confidence"]), "; ".join(r["notes"][:3])))
+            for v in r["views"]:
+                print("      {:<12} {:<11} {}".format(v["source"], v.get("origin") or "-", v.get("reason", "")))
         except Exception as e:
             errors.append({"id": cid, "error": str(e)})
             print(f"  {cid}: FAILED {e}")
@@ -188,7 +191,11 @@ def analyse(cme: dict, all_cmes: list[dict], flares: list[dict], now: int) -> di
         elif tf:
             notes.append("coronagraph arcs fit a round cone as well as an oval: tilt not constrained by them")
     else:
-        notes.append("the CME was not found in any coronagraph")
+        looked = [v for v in views if "no frames" not in v.get("reason", "") and v.get("reason") != "no position"]
+        if looked:
+            notes.append(f"the CME was not found in {len(looked)} coronagraph view(s) that had frames")
+        else:
+            notes.append("no coronagraph frames were available around the launch")
     if others and direction_fit:
         direction_fit["confidence"] = max(0, direction_fit["confidence"] - 15)
 
