@@ -49,6 +49,12 @@ const NOAA_STEREO_URL      = 'https://services.swpc.noaa.gov/json/stereo/stereo_
 
 // ─── SWPC HAPI (lowercase L in "tlv") ────────────────────────────────────────
 const HAPI_BASE = 'https://tlv-swpc.woc.noaa.gov/hapi';
+
+// Every fetch here goes to NOAA, whose bot protection answers HTTP 403 to
+// requests without a recognisable User-Agent (a Worker sends none).
+const NOAA_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+};
 const HAPI_PARAMETERS = 'p1,p2,p3,p4,p5,p6,p7,p8,de1,de2,de3,de4,quality,source,quality_flags,active';
 
 // Per-source storage + labelling. `active` deliberately reuses the legacy
@@ -301,7 +307,7 @@ async function fetchHapiWindow(cfg, timeMinMs, timeMaxMs) {
             `&time.min=${encodeURIComponent(toHapiTime(timeMinMs))}` +
             `&time.max=${encodeURIComponent(toHapiTime(timeMaxMs))}` +
             `&format=csv`;
-  const res = await fetch(u, { cf: { cacheTtl: HAPI_CACHE_TTL, cacheEverything: false } });
+  const res = await fetch(u, { headers: NOAA_HEADERS, cf: { cacheTtl: HAPI_CACHE_TTL, cacheEverything: false } });
   if (!res.ok) throw new Error(`[${cfg.id}] HAPI HTTP ${res.status}`);
 
   const contentType = (res.headers.get('Content-Type') || '').toLowerCase();
@@ -603,7 +609,7 @@ async function getSourcePoints(env, sourceKey) {
 
 /** Legacy NOAA ACE EPAM 5-minute JSON — last-resort fallback only. */
 async function fetchLegacyAcePoints() {
-  const res = await fetch(NOAA_EPAM_URL, { cf: { cacheTtl: CACHE_TTL_S, cacheEverything: false } });
+  const res = await fetch(NOAA_EPAM_URL, { headers: NOAA_HEADERS, cf: { cacheTtl: CACHE_TTL_S, cacheEverything: false } });
   if (!res.ok) throw new Error(`[legacy ACE EPAM] HTTP ${res.status}`);
   const raw = await res.json();
   if (!Array.isArray(raw) || raw.length === 0) throw new Error('[legacy ACE EPAM] empty response');
@@ -681,7 +687,7 @@ function validSourceParam(url) {
 async function runGoesFetch(env) {
   const kv = env.EPAM_KV;
   if (!kv) return;
-  const res = await fetch(NOAA_GOES_PROTON_URL, { cf: { cacheTtl: CACHE_TTL_S, cacheEverything: false } });
+  const res = await fetch(NOAA_GOES_PROTON_URL, { headers: NOAA_HEADERS, cf: { cacheTtl: CACHE_TTL_S, cacheEverything: false } });
   if (!res.ok) { console.error('[GOES] fetch failed:', res.status); return; }
   const raw = await res.json();
   if (!Array.isArray(raw)) { console.warn('[GOES] unexpected format'); return; }
@@ -744,7 +750,7 @@ async function runStereoFetch(env) {
   const TAIL_BYTES = 400 * 1024;
   let recent = [];
   try {
-    const res = await fetch(NOAA_STEREO_URL, { cf: { cacheTtl: CACHE_TTL_S, cacheEverything: false } });
+    const res = await fetch(NOAA_STEREO_URL, { headers: NOAA_HEADERS, cf: { cacheTtl: CACHE_TTL_S, cacheEverything: false } });
     if (!res.ok) { console.error('[STEREO] fetch failed:', res.status); return; }
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -1189,7 +1195,7 @@ async function handleHealth(env) {
 // ─── Optional debug endpoints (additive) ─────────────────────────────────────
 async function handleDebugCatalog() {
   try {
-    const res = await fetch(`${HAPI_BASE}/catalog`, { cf: { cacheTtl: 300 } });
+    const res = await fetch(`${HAPI_BASE}/catalog`, { headers: NOAA_HEADERS, cf: { cacheTtl: 300 } });
     if (!res.ok) return json({ ok: false, error: `HAPI catalog HTTP ${res.status}` });
     return json({ ok: true, catalog: await res.json() });
   } catch (e) {
@@ -1202,7 +1208,7 @@ async function handleDebugInfo(url) {
   const cfg = HAPI_SOURCE_CONFIG[key];
   if (!cfg) return json({ ok: false, error: `Unknown source '${key}'`, available_sources: Object.keys(HAPI_SOURCE_CONFIG) });
   try {
-    const res = await fetch(`${HAPI_BASE}/info?id=${encodeURIComponent(cfg.id)}`, { cf: { cacheTtl: 300 } });
+    const res = await fetch(`${HAPI_BASE}/info?id=${encodeURIComponent(cfg.id)}`, { headers: NOAA_HEADERS, cf: { cacheTtl: 300 } });
     if (!res.ok) return json({ ok: false, error: `HAPI info HTTP ${res.status}`, dataset: cfg.id });
     return json({ ok: true, dataset: cfg.id, info: await res.json() });
   } catch (e) {
