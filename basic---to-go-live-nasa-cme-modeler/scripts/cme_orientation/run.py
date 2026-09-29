@@ -40,7 +40,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import sources as S  # noqa: E402
 from detect import Frame, detect_view  # noqa: E402
-from fit import Measurement, fit_direction, fit_tilt  # noqa: E402
+from fit import Measurement, fit_direction, fit_shape, fit_tilt  # noqa: E402
 from geometry import (  # noqa: E402
     Observer, angle_between, axial_diff, axial_mean, direction, to_signed_tilt,
 )
@@ -53,7 +53,7 @@ AGREE_DEG = 30.0
 DIRECTION_USE_MIN = 70           # confidence at which the app uses our direction
 RUN_BUDGET_S = float(os.environ.get("RUN_BUDGET_S", 16 * 60))
 # Raised whenever the analysis changes, so every stored result is redone.
-VERSION = 2
+VERSION = 3
 
 
 def main() -> int:
@@ -146,7 +146,7 @@ def analyse(cme: dict, all_cmes: list[dict], flares: list[dict], now: int) -> di
         notes.append(f"{len(others)} other CME(s) within 3 hours may overlap in the coronagraphs")
 
     # ── 1. Coronagraphs ────────────────────────────────────────────────────
-    views, meas = [], []
+    views, meas, shapes = [], [], []
     stereo = None
     try:
         lon, lat = S.stereo_a_position(t0)
@@ -179,17 +179,33 @@ def analyse(cme: dict, all_cmes: list[dict], flares: list[dict], now: int) -> di
         views.append(j)
         if v.detected:
             meas.append(Measurement(obs, v.halo, v.pa, v.pa_start, v.width, v.snr))
+            if v.shape is not None:
+                shapes.append((obs, v.shape, float(min(v.shape_frames, 6))))
 
     direction_fit = None
     cor_tilt = None
     if meas:
         direction_fit = fit_direction(meas, prior)
-        tf = fit_tilt(meas, direction_fit["vector"], half)
-        if tf and tf["constrained"]:
-            cor_tilt = {"tilt": tf["tilt"], "uncertainty": tf["uncertainty"], "confidence": tf["confidence"],
-                        "halfWidths": [tf["halfFace"], tf["halfEdge"]]}
-        elif tf:
-            notes.append("coronagraph arcs fit a round cone as well as an oval: tilt not constrained by them")
+        # Tilt from the CME's shape in every view, each projected from that
+        # spacecraft's own position: widths alone cannot tell a tilt from its
+        # mirror image. Direction is refined in the same fit.
+        sf = fit_shape(shapes, direction_fit["vector"], half) if shapes else None
+        if sf and sf["constrained"]:
+            cor_tilt = {"tilt": sf["tilt"], "uncertainty": sf["uncertainty"], "confidence": sf["confidence"],
+                        "halfWidths": [sf["halfFace"], sf["halfEdge"]], "method": "shape",
+                        "overlap": sf["overlap"], "mirrorMargin": sf["mirrorMargin"]}
+            direction_fit["lon"], direction_fit["lat"] = (round(x, 1) for x in sf["direction"])
+            direction_fit["vector"] = direction(*sf["direction"])
+        elif sf:
+            notes.append("the CME's shape in the coronagraphs fits several tilts about equally: tilt not constrained by them")
+        else:
+            tf = fit_tilt(meas, direction_fit["vector"], half)
+            if tf and tf["constrained"]:
+                cor_tilt = {"tilt": tf["tilt"], "uncertainty": tf["uncertainty"],
+                            "confidence": min(40, tf["confidence"]), "halfWidths": [tf["halfFace"], tf["halfEdge"]],
+                            "method": "widths"}
+            elif tf:
+                notes.append("coronagraph arcs fit a round cone as well as an oval: tilt not constrained by them")
     else:
         looked = [v for v in views if "no frames" not in v.get("reason", "") and v.get("reason") != "no position"]
         if looked:

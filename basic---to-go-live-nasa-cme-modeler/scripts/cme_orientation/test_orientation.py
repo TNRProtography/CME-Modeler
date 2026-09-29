@@ -16,6 +16,7 @@ import json
 import math
 import os
 import sys
+import time
 
 import numpy as np
 
@@ -23,7 +24,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from geometry import Observer, angle_between, axial_diff, direction, local_axes  # noqa: E402
 from detect import Frame, detect_view, find_occulter  # noqa: E402
-from fit import Measurement, fit_direction, fit_tilt  # noqa: E402
+from fit import Measurement, fit_direction, fit_shape, fit_tilt  # noqa: E402
 from pil import disk_position, measure_pil  # noqa: E402
 
 PASS = FAIL = 0
@@ -132,6 +133,46 @@ run_case("A CME toward the east, low tilt",
          {"lon": -50, "lat": 18, "tilt": 15, "face": 50, "edge": 20, "t0": t0}, [earth, stereo])
 run_case("The screenshot's CME: 29 W, 15 N",
          {"lon": 29, "lat": 15, "tilt": 40, "face": 40, "edge": 18, "t0": t0}, [earth, stereo])
+
+
+def run_shape_case(name: str, cme: dict, observers: list[Observer]) -> None:
+    """The shape fit: each view's brightened region against projected ropes."""
+    print(f"\n{name}")
+    truth = direction(cme["lon"], cme["lat"])
+    meas, shapes = [], []
+    for obs in observers:
+        frames = [Frame(T0 + k * 20 * 60000, render_frame(obs, T0 + k * 20 * 60000, cme)) for k in range(-4, 22)]
+        v = detect_view(obs.name, frames, cme["t0"], obs.pa_of(truth), False)
+        if v.detected:
+            meas.append(Measurement(obs, v.halo, v.pa, v.pa_start, v.width, v.snr))
+            shapes.append((obs, v.shape, float(min(v.shape_frames, 6))))
+    check(len(shapes) == len(observers), f"a shape from every view ({len(shapes)}/{len(observers)})")
+    dfit = fit_direction(meas, direction(cme["lon"] + 10, cme["lat"] - 8))
+    started = time.time()
+    sf = fit_shape(shapes, dfit["vector"], None)
+    got = (f"true {cme['tilt']}, got {sf and sf['tilt']} +/-{sf and sf['uncertainty']}, confidence "
+           f"{sf and sf['confidence']}, mirror margin {sf and sf['mirrorMargin']}, "
+           f"{'constrained' if sf and sf['constrained'] else 'unconstrained'}, {time.time() - started:.0f}s")
+    wrong = sf is not None and sf["constrained"] and sf["confidence"] >= 40 and axial_diff(sf["tilt"], cme["tilt"]) > 30
+    check(not wrong, f"no confident wrong tilt ({got})")
+    if cme.get("expect_tilt"):
+        ok = sf is not None and sf["constrained"] and axial_diff(sf["tilt"], cme["tilt"]) <= 30
+        check(ok, f"the shape pins this tilt down ({got})")
+
+
+# The CME of 2026-09-28 14:36: 29 W 15 N, a near-upright rope in the images,
+# which the widths alone put at -40 (its mirror side). The shape must get it,
+# and must not be confidently wrong about the tilts either side of it.
+run_shape_case("Shape: 29 W 15 N, near upright",
+               {"lon": 29, "lat": 15, "tilt": 80, "face": 40, "edge": 18, "t0": t0, "expect_tilt": True}, [earth, stereo])
+run_shape_case("Shape: 29 W 15 N, leaning west-down (-40)",
+               {"lon": 29, "lat": 15, "tilt": 140, "face": 40, "edge": 18, "t0": t0}, [earth, stereo])
+run_shape_case("Shape: 29 W 15 N, leaning west-up (+40)",
+               {"lon": 29, "lat": 15, "tilt": 40, "face": 40, "edge": 18, "t0": t0}, [earth, stereo])
+run_shape_case("Shape: west limb, steep",
+               {"lon": 55, "lat": -12, "tilt": 70, "face": 45, "edge": 18, "t0": t0}, [earth, stereo])
+run_shape_case("Shape: east, low tilt",
+               {"lon": -50, "lat": 18, "tilt": 15, "face": 50, "edge": 20, "t0": t0}, [earth, stereo])
 
 print("\nNothing but a streamer and noise")
 frames = [Frame(T0 + k * 20 * 60000, render_frame(earth, T0 + k * 20 * 60000, None)) for k in range(-4, 22)]
