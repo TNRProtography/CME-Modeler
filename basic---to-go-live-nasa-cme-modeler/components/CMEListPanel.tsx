@@ -1,6 +1,65 @@
 import React from 'react';
 import { ProcessedCME } from '../types';
 import CloseIcon from './icons/CloseIcon';
+import { CmeOrientation, orientationSummary } from '../utils/cmeOrientation';
+
+const STATUS_STYLE: Record<string, { label: string; cls: string }> = {
+  confirmed: { label: 'Confirmed', cls: 'text-green-400 border-green-500/40 bg-green-500/10' },
+  estimated: { label: 'Estimated', cls: 'text-amber-300 border-amber-400/40 bg-amber-400/10' },
+  unknown: { label: 'Not determined', cls: 'text-neutral-400 border-neutral-600 bg-neutral-800/60' },
+};
+
+const SOURCE_NAMES: Record<string, string> = {
+  coronagraph: 'Coronagraphs',
+  sourceRegion: 'Source region',
+  nasa: "NASA's analysis",
+};
+
+/**
+ * Our orientation analysis for the selected CME: how the flux rope is tilted,
+ * whether that is confirmed (two independent methods agree) or estimated, how
+ * confident, which direction the 3D model draws, and why.
+ */
+const OrientationInfo: React.FC<{ cme: ProcessedCME }> = ({ cme }) => {
+  const o: CmeOrientation | null | undefined = cme.orientation;
+  if (!o) {
+    return <p><strong>Orientation:</strong> <span className="italic">not analysed yet (runs every 30 minutes)</span></p>;
+  }
+  const style = STATUS_STYLE[o.status] ?? STATUS_STYLE.unknown;
+  const d = o.direction;
+  const estimates = Object.entries(o.estimates ?? {});
+  return (
+    <div className="mt-1 mb-1 p-2 rounded border border-neutral-700/60 bg-neutral-950/40 space-y-1">
+      <p className="flex flex-wrap items-center gap-1.5">
+        <strong>Orientation:</strong> {orientationSummary(o)}
+        <span className={`px-1.5 py-0.5 rounded border text-[10px] font-semibold ${style.cls}`}>{style.label}</span>
+        {o.status !== 'unknown' && <span className="text-neutral-500">{o.confidence}% confidence</span>}
+      </p>
+      {estimates.length > 0 && (
+        <p className="text-neutral-500">
+          {estimates.map(([k, e]) => `${SOURCE_NAMES[k] ?? k}: ${Math.round(e!.tilt)}° (${e!.confidence}%)`).join(' · ')}
+        </p>
+      )}
+      {o.field && (
+        <p>
+          <strong>Expected field:</strong> {o.field.leadingField === 'south' ? 'southward at the front (Bz negative first)' : 'northward at the front (Bz positive first)'}, rope type {o.field.ropeType}
+          <span className="text-neutral-500"> (from the source region and the hemisphere rule)</span>
+        </p>
+      )}
+      {d && (
+        <p>
+          <strong>Direction drawn:</strong>{' '}
+          {d.useInModel
+            ? <>ours, {d.lon.toFixed(0)}° / {d.lat.toFixed(0)}° ({d.confidence}%, {d.basis})</>
+            : <>NASA's. Ours ({d.lon.toFixed(0)}° / {d.lat.toFixed(0)}°, {d.confidence}%) is not confident enough to use</>}
+        </p>
+      )}
+      {o.notes && o.notes.length > 0 && (
+        <p className="text-neutral-500 italic">{o.notes.slice(0, 3).join('. ')}.</p>
+      )}
+    </div>
+  );
+};
 
 interface CMEListPanelProps {
   cmes: ProcessedCME[];
@@ -28,6 +87,7 @@ const CMEListPanel: React.FC<CMEListPanelProps> = ({ cmes, onSelectCME, selected
             <p><strong>Start Time:</strong> {selectedCMEForInfo.startTime.toLocaleString()}</p>
             <p><strong>Speed:</strong> {selectedCMEForInfo.speed} km/s</p>
             <p><strong>Direction (Lon/Lat):</strong> {selectedCMEForInfo.longitude.toFixed(1)}° / {selectedCMEForInfo.latitude.toFixed(1)}°</p>
+            <OrientationInfo cme={selectedCMEForInfo} />
             <p><strong>Source:</strong> {selectedCMEForInfo.sourceLocation}</p>
             <p><strong>Instruments:</strong> {selectedCMEForInfo.instruments}</p>
             <p><strong>Earth Directed:</strong> <span className={selectedCMEForInfo.isEarthDirected ? 'text-green-400 font-bold' : 'text-orange-400'}>{selectedCMEForInfo.isEarthDirected ? 'Yes' : 'No'}</span></p>

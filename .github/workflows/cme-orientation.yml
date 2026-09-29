@@ -1,0 +1,47 @@
+# CME orientation: every 30 minutes, analyse the CMEs in DONKI's 7-day list
+# from every coronagraph viewpoint and the source-region magnetogram, and
+# upload the results to the cme-orientation worker, which the app reads.
+# See basic---to-go-live-nasa-cme-modeler/scripts/cme_orientation/run.py.
+#
+# Needs the repository secret ORIENTATION_TOKEN (Settings > Secrets and
+# variables > Actions), equal to the worker's INGEST_TOKEN secret. Without it
+# the run analyses and reports but uploads nothing.
+name: CME orientation
+
+on:
+  schedule:
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cme-orientation
+  cancel-in-progress: false
+
+jobs:
+  analyse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: basic---to-go-live-nasa-cme-modeler
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: basic---to-go-live-nasa-cme-modeler/scripts/cme_orientation
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: basic---to-go-live-nasa-cme-modeler/scripts/cme_orientation/requirements.txt
+      - name: Install
+        run: pip install -r scripts/cme_orientation/requirements.txt
+      - name: Self-test on synthetic data
+        run: python scripts/cme_orientation/test_orientation.py
+      - name: Analyse and upload
+        env:
+          ORIENTATION_TOKEN: ${{ secrets.ORIENTATION_TOKEN }}
+          RUN_BUDGET_S: "1080"
+        run: python scripts/cme_orientation/run.py

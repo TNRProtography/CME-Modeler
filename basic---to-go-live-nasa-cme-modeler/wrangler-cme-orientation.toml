@@ -1,0 +1,18 @@
+# Deployed by Cloudflare Workers Builds from this repo. See worker/DEPLOYING.md.
+# Stores the CME orientation results the GitHub Action uploads
+# (.github/workflows/cme-orientation.yml) and serves them to the app.
+name = "cme-orientation"
+main = "worker/cme-orientation-worker.js"
+compatibility_date = "2026-03-04"
+workers_dev = true
+
+[observability]
+enabled = true
+
+# Secret (set in the dashboard): INGEST_TOKEN, the same value as the GitHub
+# repository secret ORIENTATION_TOKEN.
+
+# Create a KV namespace called CME_ORIENTATION and paste its ID here.
+[[kv_namespaces]]
+binding = "ORIENTATION_KV"
+id = "REPLACE_WITH_CME_ORIENTATION_KV_ID"

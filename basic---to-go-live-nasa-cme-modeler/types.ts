@@ -77,6 +77,8 @@ export interface ProcessedCME {
   instruments: string;
   sourceLocation: string;
   halfAngle: number;
+  /** Our orientation analysis, when there is one (utils/cmeOrientation). Drawing only. */
+  orientation?: import('./utils/cmeOrientation').CmeOrientation | null;
 }
 
 export enum ViewMode {

@@ -1,5 +1,6 @@
 // --- START OF FILE SimulationCanvas.tsx ---
 
+import { modelDirection, modelTilt, tiltRotationAngle } from '../utils/cmeOrientation';
 import { cmeDistanceAU } from '../utils/cmePropagation';
 import React, { useRef, useEffect, useCallback, useImperativeHandle, useState, useMemo } from 'react';
 import {
@@ -775,8 +776,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         dist: sunRadius + radialDist,
         speed: cme.speed ?? 400,
         halfAngle: cme.halfAngle ?? 30,
-        latitude: Number.isFinite(cme.latitude) ? cme.latitude : 0,
-        longitude: Number.isFinite(cme.longitude) ? cme.longitude : 0,
+        latitude: modelDirection(cme).lat,
+        longitude: modelDirection(cme).lon,
         scale: cmeObject.scale.clone(),
       });
     }
@@ -1910,14 +1911,26 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       // Stonyhurst longitude 0° = toward Earth at eruption time.
       // Offset by Earth's true ecliptic longitude so the CME points
       // in the correct absolute direction in the scene.
+      // Our triangulated direction when the analysis is confident, else
+      // DONKI's (utils/cmeOrientation).
+      const aim = modelDirection(cme);
       const earthLonAtEruption = computeEclipticLongitude('EARTH', cme.startTime.getTime());
       const dir = new THREE.Vector3();
       dir.setFromSphericalCoords(
         1,
-        THREE.MathUtils.degToRad(90 - cme.latitude),
-        earthLonAtEruption + THREE.MathUtils.degToRad(cme.longitude)
+        THREE.MathUtils.degToRad(90 - aim.lat),
+        earthLonAtEruption + THREE.MathUtils.degToRad(aim.lon)
       );
       system.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      // The arc lies along the model's local x. Turning the CME about its own
+      // direction lays it at the analysed tilt; without one it stays as the
+      // shortest rotation left it, as before.
+      const tilt = modelTilt(cme.orientation);
+      if (tilt != null) {
+        const arcNow = new THREE.Vector3(1, 0, 0).applyQuaternion(system.quaternion);
+        const angle = tiltRotationAngle([dir.x, dir.y, dir.z], [arcNow.x, arcNow.y, arcNow.z], tilt);
+        system.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(dir, angle));
+      }
       tailSystem.quaternion.copy(system.quaternion);
       cmeGroupRef.current.add(system);
       cmeGroupRef.current.add(tailSystem);

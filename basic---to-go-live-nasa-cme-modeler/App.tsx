@@ -83,6 +83,7 @@ const LoadingOverlay = retryLazyLoad(() => import('./components/LoadingOverlay')
 // so lazy-loading it is safe and removes it from the critical path.
 const MediaViewerModal = retryLazyLoad(() => import('./components/MediaViewerModal'));
 import { fetchCMEData } from './services/nasaService';
+import { fetchCmeOrientations } from './utils/cmeOrientation';
 import { refreshLocationOnServer } from './utils/notifications';
 import { ProcessedCME, ViewMode, FocusTarget, TimeRange, PlanetLabelInfo, CMEFilter, SimulationCanvasHandle, InteractionMode, SubstormActivity, InterplanetaryShock } from './types';
 
@@ -961,7 +962,16 @@ const App: React.FC = () => {
     setFetchError(null);
     setDataVersion((v: number) => v + 1);
     try {
-      const data = await fetchCMEData(days, apiKey);
+      // Orientations load alongside and come back empty on any failure. The
+      // CMEs wait at most 1.5 s past their own load for them, so a slow or
+      // missing orientation worker cannot hold up the modeler.
+      const orientationsPromise = fetchCmeOrientations();
+      const cmes = await fetchCMEData(days, apiKey);
+      const orientations = await Promise.race([
+        orientationsPromise,
+        new Promise<Record<string, never>>((resolve) => setTimeout(() => resolve({}), 1500)),
+      ]);
+      const data = cmes.map((c) => (orientations[c.id] ? { ...c, orientation: orientations[c.id] } : c));
       setCmeData(data);
       const { minDate, maxDate } = getTimelineRangeFromData(data, days);
       setTimelineMinDate(minDate);

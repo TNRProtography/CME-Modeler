@@ -24,6 +24,7 @@ and survive deploys.
 | suvi-difference-imagery | `suvi-difference-worker.js` | `wrangler-suvi.toml` | every 2 min | none |
 | epam | `epam-worker.js` | `wrangler-epam.toml` | every 3 min | none |
 | sdo-imagery | `sdo-imagery-worker.ts` | `wrangler-sdo-imagery.toml` | every 5 min | none |
+| cme-orientation | `cme-orientation-worker.js` | `wrangler-cme-orientation.toml` | none (GitHub Action uploads) | INGEST_TOKEN |
 | coronagraphy-processing | `coronagraph-worker.js` | `wrangler-coronagraph.toml` | every 5 min | none |
 | push-notification-worker | `push-notification-worker.js` | `wrangler-push.toml` | every minute | VAPID_PRIVATE_KEY, TRIGGER_SECRET, BANNER_AUTH_TOKEN |
 | spot-the-aurora-forecast-worker | `forecast-entry.js` | `wrangler-forecast.toml` | hourly at :07 | none |
@@ -44,3 +45,23 @@ In the dashboard: the worker, then **Settings, Build**, then **Connect** to
 
 After the first deploy, check the worker's Settings page still shows the
 same bindings, variables, secrets and cron as before.
+
+## CME orientation (GitHub Action + cme-orientation worker)
+
+The analysis runs in GitHub Actions (`.github/workflows/cme-orientation.yml`,
+every 30 minutes, code in `scripts/cme_orientation/`) and uploads to the
+`cme-orientation` worker, which the app reads. One-time setup:
+
+1. Create a KV namespace called `CME_ORIENTATION` and paste its ID into
+   `wrangler-cme-orientation.toml`.
+2. Make up a long random token. Add it as:
+   - the worker secret `INGEST_TOKEN` (on `cme-orientation`), and
+   - the GitHub repository secret `ORIENTATION_TOKEN`
+     (Settings, Secrets and variables, Actions).
+3. Create the worker from this repo like the others, deploy command
+   `npx wrangler deploy -c wrangler-cme-orientation.toml`.
+4. In GitHub, Actions, "CME orientation", run it once by hand
+   (Run workflow). Its summary lists every CME with its status.
+
+Checks: `https://cme-orientation.thenamesrock.workers.dev/api/status`.
+Until it has results, the app draws CMEs exactly as before.
