@@ -1,7 +1,7 @@
 /**
  * Spot The Aurora — Browser Service Worker
  * Handles Web Push notifications and notification click events.
- * @version 2.4.0
+ * @version 2.5.0
  *
  * The icon now comes from the push payload when the worker sends one, so the
  * category manifest in the app is the single place an icon is chosen. The map
@@ -20,7 +20,7 @@
 // /sw.js is what actually triggers an update, so this is not load-bearing - it
 // exists so a device can be asked what it is running, and so a version stuck in
 // the field is a fact somebody can read rather than a theory.
-const SW_VERSION = '2.4.0';
+const SW_VERSION = '2.5.0';
 
 // Maps notification topic/tag to a specific icon
 const TOPIC_ICONS = {
