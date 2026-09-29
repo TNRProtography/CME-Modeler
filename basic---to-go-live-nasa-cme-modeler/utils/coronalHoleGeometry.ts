@@ -870,6 +870,12 @@ const GROW_FRAG = FRAG
     float alpha = uOpacity * fadeIn * edgeFade * tipFade * (0.32 + 0.68 * pulse)
       * smoothstep(0.0, 0.08, vEnds) * (1.0 + glow * 0.5);`);
 
+/**
+ * How fat a stream is drawn, over the width its hole gives it. The CME
+ * barrier is cut from the same tube, so it widens with it.
+ */
+export const HSS_STREAM_WIDTH_SCALE = 1.6;
+
 /** Parcels laid along a growing stream; the tube has this many rings. */
 export const GROWING_STREAM_RINGS = 160;
 
@@ -1048,7 +1054,7 @@ export function updateGrowingStreamMesh(
     const tubeR0 = Math.max(sunRadius * Math.sin(halfAngle), sunRadius * 0.07);
     const widthFactor = THREE.MathUtils.clamp(s.width / 30, 0.6, 1.8);
     const tE = Math.pow(flow, 0.7);
-    const rTube = Math.min(limit[i], tubeR0 * (1 + tE * 4 * widthFactor) * (1 + tE));
+    const rTube = Math.min(limit[i], HSS_STREAM_WIDTH_SCALE * tubeR0 * (1 + tE * 4 * widthFactor) * (1 + tE));
     // 0 at either end of the stream, 1 inside it.
     const ends = Math.min(i, rings - 1 - i) / (rings - 1) * 2;
 
