@@ -271,9 +271,17 @@ def fit_shape(views: list[tuple[Observer, np.ndarray, float]], d0: np.ndarray, p
     if not obs_masks:
         return None
 
+    # Two scores from the same projections. What a view records is occupancy
+    # (bright or not, frame by frame), so the outline carries most of it:
+    #   main:  outline of wherever the rope puts any material along the line
+    #          of sight, plus a little of the brightness overlap (Ruzicka);
+    #   check: the same outline averaged with that of the rope's dense core.
+    # Each is fooled on its own by some geometries (in the self-test, the main
+    # score by a CME heading away from STEREO-A, the check by a near-upright
+    # one), but not the same ones: the tilt counts only where they agree.
     lon0, lat0 = lon_lat(d0)
-    best = (-1.0, None)
-    per_tilt: dict = {}
+    best = {"main": (-1.0, None), "check": (-1.0, None)}
+    per_tilt: dict = {"main": {}, "check": {}}
     for dlo, dla in SHAPE_DIR_STEPS:
         d = direction(lon0 + dlo, lat0 + dla)
         for tilt in SHAPE_TILTS:
@@ -281,35 +289,39 @@ def fit_shape(views: list[tuple[Observer, np.ndarray, float]], d0: np.ndarray, p
                 for ratio in SHAPE_RATIOS:
                     edge = max(8.0, face * ratio)
                     cloud = _rope_cloud(d, tilt, face, edge)
-                    score, wsum = 0.0, 0.0
+                    main = check = wsum = 0.0
                     for obs, valid, seen, weight in obs_masks:
                         pred = np.where(valid, _project(obs, cloud), 0.0)
-                        # Outline: plain overlap of where each is bright.
-                        pb, sb = pred > 0.2, seen > 0.3
-                        u1 = (pb | sb).sum()
-                        outline = (pb & sb).sum() / u1 if u1 else 0.0
-                        # Brightness: weighted overlap (Ruzicka), 1 when identical.
-                        u2 = np.maximum(pred, seen).sum()
-                        bright = np.minimum(pred, seen).sum() / u2 if u2 else 0.0
-                        score += weight * 0.5 * (outline + bright)
+                        sb = seen > 0.3
+                        wide, core = pred > 0.05, pred > 0.2
+                        u = (wide | sb).sum()
+                        outline = (wide & sb).sum() / u if u else 0.0
+                        u = (core | sb).sum()
+                        outline_core = (core & sb).sum() / u if u else 0.0
+                        u = np.maximum(pred, seen).sum()
+                        bright = np.minimum(pred, seen).sum() / u if u else 0.0
+                        main += weight * (0.7 * outline + 0.3 * bright)
+                        check += weight * 0.5 * (outline + outline_core)
                         wsum += weight
-                    score /= wsum
-                    if prior_half:
-                        score -= 0.02 * abs(max(face, edge) - prior_half) / 20.0
-                    per_tilt[tilt] = max(per_tilt.get(tilt, -1.0), score)
-                    if score > best[0]:
-                        best = (score, (tilt, face, edge, ratio, dlo, dla))
-    score, params = best
+                    penalty = 0.02 * abs(max(face, edge) - prior_half) / 20.0 if prior_half else 0.0
+                    for name, s in (("main", main / wsum - penalty), ("check", check / wsum - penalty)):
+                        per_tilt[name][tilt] = max(per_tilt[name].get(tilt, -1.0), s)
+                        if s > best[name][0]:
+                            best[name] = (s, (tilt, face, edge, ratio, dlo, dla))
+    score, params = best["main"]
     if params is None:
         return None
     tilt, face, edge, ratio, dlo, dla = params
+    check_tilt = best["check"][1][0]
+    disagree = abs(((check_tilt - tilt) + 90) % 180 - 90)
+    scores = per_tilt["main"]
     mirror = (180.0 - tilt) % 180.0
-    mirror_score = per_tilt.get(min(SHAPE_TILTS, key=lambda x: abs(((x - mirror + 90) % 180) - 90)), score)
-    close = [t for t, s in per_tilt.items() if s >= score - 0.012]
-    spread = max(15.0, _axial_spread(close, tilt))
+    mirror_score = scores.get(min(SHAPE_TILTS, key=lambda x: abs(((x - mirror + 90) % 180) - 90)), score)
+    close = [t for t, s in scores.items() if s >= score - 0.012]
+    spread = max(15.0, _axial_spread(close, tilt), disagree)
     viewpoints = _distinct_viewpoints([o for o, *_ in obs_masks])
     margin = score - mirror_score
-    constrained = ratio < 0.95 and spread < 60 and score > 0.25
+    constrained = ratio < 0.95 and spread < 60 and score > 0.25 and disagree <= 30
     conf = 0
     if constrained:
         conf = 85 - 1.0 * spread - (25 if len(viewpoints) < 2 else 0) + min(10, 200 * margin)
@@ -318,5 +330,6 @@ def fit_shape(views: list[tuple[Observer, np.ndarray, float]], d0: np.ndarray, p
         "tilt": float(tilt), "halfFace": float(face), "halfEdge": float(edge),
         "uncertainty": round(spread, 1), "constrained": bool(constrained), "confidence": conf,
         "overlap": round(float(score), 3), "mirrorMargin": round(float(margin), 3),
+        "checkTilt": float(check_tilt),
         "viewpoints": len(viewpoints), "direction": lon_lat(direction(lon0 + dlo, lat0 + dla)),
     }
