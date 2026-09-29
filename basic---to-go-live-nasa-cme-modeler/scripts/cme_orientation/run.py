@@ -195,6 +195,15 @@ def analyse(cme: dict, all_cmes: list[dict], flares: list[dict], now: int) -> di
                 print(f"    {key} ({origin}, prior PA {prior_pa and round(prior_pa)}, halo {prior_halo}): {v.reason}; "
                       f"PA {v.pa and round(v.pa)}, width {v.width}, SNR {v.snr:.1f}; {v.debug}")
         origin, v = max(tried, key=lambda ov: (ov[1].detected, ov[1].snr))
+        if ONLY and v.detected and v.shape is not None:
+            print(f"    {key} shape map ({origin}, {v.shape_frames} frame(s)); rows PA, columns distance 0-1.2 of the front, "
+                  f"0-9 how often bright, blank behind the occulter:")
+            for i in range(0, v.shape.shape[0]):
+                pa = i * 2.0
+                if abs((pa - v.pa + 180) % 360 - 180) > (v.width or 60) / 2 + 30:
+                    continue
+                row = "".join(" " if not np.isfinite(x) else str(min(9, int(x * 10))) for x in v.shape[i])
+                print(f"      {pa:5.0f} |{row}|")
         j = v.to_json()
         j.update({"label": info["label"], "origin": origin, "observerLon": round(obs.lon, 1)})
         views.append(j)

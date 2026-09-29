@@ -331,5 +331,7 @@ def fit_shape(views: list[tuple[Observer, np.ndarray, float]], d0: np.ndarray, p
         "uncertainty": round(spread, 1), "constrained": bool(constrained), "confidence": conf,
         "overlap": round(float(score), 3), "mirrorMargin": round(float(margin), 3),
         "checkTilt": float(check_tilt),
+        "profile": {int(t): round(float(v), 3) for t, v in sorted(scores.items())},
+        "checkProfile": {int(t): round(float(v), 3) for t, v in sorted(per_tilt["check"].items())},
         "viewpoints": len(viewpoints), "direction": lon_lat(direction(lon0 + dlo, lat0 + dla)),
     }
