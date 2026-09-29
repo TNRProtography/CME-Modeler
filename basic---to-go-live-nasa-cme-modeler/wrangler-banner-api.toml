@@ -16,3 +16,9 @@ enabled = true
 [[kv_namespaces]]
 binding = "BANNER_DATA"
 id = "01017cfbac334e1586232601b5d70a27"
+
+# /admin/send-broadcast calls the push worker through this. By URL it is
+# blocked: one workers.dev worker cannot fetch another (error 1042).
+[[services]]
+binding = "PUSH"
+service = "push-notification-worker"

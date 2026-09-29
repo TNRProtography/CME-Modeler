@@ -4,9 +4,13 @@
 const ALLOWED_ORIGINS = [
   'https://cme-modeler.pages.dev',
   'https://spottheaurora.co.nz',
+  'https://www.spottheaurora.co.nz',
   'https://banner-control.pages.dev',
   'https://banner-api.thenamesrock.workers.dev'
 ];
+// Preview copies of the Pages projects, e.g. https://abc123.cme-modeler.pages.dev
+const ALLOWED_ORIGIN_RE = /^https:\/\/[a-z0-9-]+\.(cme-modeler|banner-control)\.pages\.dev$/;
+const isAllowedOrigin = (o) => ALLOWED_ORIGINS.includes(o) || ALLOWED_ORIGIN_RE.test(o);
 
 export default {
   async fetch(request, env) {
@@ -21,8 +25,12 @@ export default {
     };
 
     const origin = request.headers.get('Origin');
-    if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    if (path === '/banner') {
+      // Public: the banner is shown to everyone, so any site may read it.
+      baseCorsHeaders['Access-Control-Allow-Origin'] = '*';
+    } else if (origin && isAllowedOrigin(origin)) {
       baseCorsHeaders['Access-Control-Allow-Origin'] = origin;
+      baseCorsHeaders['Vary'] = 'Origin';
     }
 
     if (method === 'OPTIONS') {
@@ -108,7 +116,7 @@ export default {
         const pushWorkerUrl = env.PUSH_WORKER_URL || 'https://push-notification-worker.thenamesrock.workers.dev';
         // Use BANNER_AUTH_TOKEN as the push secret — same value added to push worker
         const pushSecret = env.BANNER_AUTH_TOKEN;
-        console.log('[send-broadcast] pushSecret set:', !!pushSecret, 'pushWorkerUrl:', pushWorkerUrl);
+        console.log('[send-broadcast] pushSecret set:', !!pushSecret, 'via:', env.PUSH ? 'PUSH binding' : pushWorkerUrl);
 
         if (!pushSecret) return json({ error: 'BANNER_AUTH_TOKEN not configured' }, 500);
 
@@ -116,13 +124,19 @@ export default {
         let pushResult = { success: false, error: 'Not attempted' };
         try {
           console.log('[send-broadcast] calling push worker...');
-          const pushResp = await fetch(`${pushWorkerUrl}/send-broadcast`, {
+          const init = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ secret: pushSecret, title, body, url: targetUrl || '/' }),
-          });
+          };
+          // Through the PUSH service binding: a worker cannot fetch another
+          // worker on the same workers.dev subdomain by URL (Cloudflare
+          // error 1042), so the URL is only a fallback.
+          const pushResp = env.PUSH
+            ? await env.PUSH.fetch(new Request('https://push-notification-worker/send-broadcast', init))
+            : await fetch(`${pushWorkerUrl}/send-broadcast`, init);
           console.log('[send-broadcast] push worker response status:', pushResp.status);
-          pushResult = await pushResp.json();
+          pushResult = await pushResp.json().catch(() => ({ success: false, error: `push worker answered HTTP ${pushResp.status}` }));
           console.log('[send-broadcast] push result:', JSON.stringify(pushResult));
         } catch (e) {
           console.error('[send-broadcast] fetch error:', e.message);
