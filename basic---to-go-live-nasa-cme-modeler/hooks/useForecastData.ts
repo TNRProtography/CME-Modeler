@@ -133,7 +133,8 @@ const SUBSTORM_RISK_URL = 'https://aurora-index-sta.thenamesrock.workers.dev/api
 const SOLAR_WIND_IMF_URL = 'https://imap-solar-data-test.thenamesrock.workers.dev/rtsw/merged-24h';
 const NOAA_GOES18_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/primary/magnetometers-1-day.json';
 const NOAA_GOES19_MAG_URL = 'https://services.swpc.noaa.gov/json/goes/secondary/magnetometers-1-day.json';
-const NASA_IPS_URL = 'https://spottheaurora.thenamesrock.workers.dev/ips';
+// Interplanetary shocks at Earth, newest first, from NASA DONKI.
+const NASA_IPS_URL = 'https://nasa-donki-api.thenamesrock.workers.dev/ips';
 const GEONET_API_URL = 'https://tilde.geonet.org.nz/v4/data';
 const GREYMOUTH_LATITUDE = -42.45;
 

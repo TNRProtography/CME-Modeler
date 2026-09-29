@@ -2,7 +2,7 @@
 const CACHE_KEY = 'nasa_donki_data';
 
 // All known categories (uppercase, matching KV keys)
-const CATEGORIES = ["CME", "GST", "FLR", "SEP", "MPC", "RBE", "HSS", "WSAENLILSIMULATIONS", "NOTIFICATIONS"];
+const CATEGORIES = ["CME", "GST", "FLR", "SEP", "MPC", "RBE", "HSS", "WSAENLILSIMULATIONS", "NOTIFICATIONS", "IPS"];
 
 export default {
   /**
@@ -13,26 +13,33 @@ export default {
     console.log("Cron Triggered: Starting scheduled NASA data update...");
 
     try {
-      const allData = await fetchAllDonkiData(env);
+      const fetched = await fetchAllDonkiData(env);
 
-      // --- BLANK WRITE PROTECTION ---
-      // Only overwrite the cache if at least one category returned real data.
-      // This protects against NASA API blips, rate limits, or network errors
-      // returning all-empty arrays and wiping out a good cached result.
-      const hasRealData = CATEGORIES.some(
-        cat => Array.isArray(allData[cat]) && allData[cat].length > 0
-      );
-
-      if (!hasRealData) {
-        console.warn("Skipping cache write: all categories returned empty. Existing cache preserved.");
+      // --- PER-CATEGORY FAILURE PROTECTION ---
+      // A category whose fetch failed (HTTP error, rate limit, bad shape) comes
+      // back null and keeps its last good data. It used to come back as an
+      // empty list and was saved as one, blanking e.g. the CME list until the
+      // next good fetch. An empty list NASA actually returned is kept as is:
+      // it means no events.
+      const failed = CATEGORIES.filter(cat => fetched[cat] == null);
+      if (failed.length === CATEGORIES.length) {
+        console.warn("Skipping cache write: every category failed. Existing cache preserved.");
         return;
       }
+      let previous = {};
+      if (failed.length) {
+        try { previous = JSON.parse(await env.NASA_DONKI_CACHE.get(CACHE_KEY)) || {}; } catch { previous = {}; }
+        console.warn(`Kept previous data for: ${failed.join(', ')}`);
+      }
+      const allData = {};
+      for (const cat of CATEGORIES) allData[cat] = fetched[cat] ?? previous[cat] ?? [];
 
       // Add metadata only when we have real data worth caching
       allData._metadata = {
         last_updated: new Date().toISOString(),
         source: "NASA DONKI API",
-        status: "fresh"
+        status: failed.length ? "partial" : "fresh",
+        kept_previous: failed
       };
 
       // Write to KV (expires in 24h as a safety net if cron stops running)
@@ -121,7 +128,7 @@ function processRequestWithData(data, request, corsHeaders) {
 
 function generateDashboardHtml(allData) {
   // Explicit order for consistent display
-  const categories = ["CME", "GST", "FLR", "SEP", "MPC", "RBE", "HSS", "WSAEnlilSimulations", "Notifications"];
+  const categories = ["CME", "GST", "FLR", "SEP", "MPC", "RBE", "HSS", "WSAEnlilSimulations", "Notifications", "IPS"];
 
   let summaryRows = '';
   let detailsHtml = '';
@@ -258,7 +265,10 @@ async function fetchAllDonkiData(env) {
     { name: "RBE",                  url: `https://api.nasa.gov/DONKI/RBE?startDate=${apiStartDate}&endDate=${apiEndDate}&api_key=${apiKey}` },
     { name: "HSS",                  url: `https://api.nasa.gov/DONKI/HSS?startDate=${apiStartDate}&endDate=${apiEndDate}&api_key=${apiKey}` },
     { name: "WSAEnlilSimulations",  url: `https://api.nasa.gov/DONKI/WSAEnlilSimulations?startDate=${apiStartDate}&endDate=${apiEndDate}&api_key=${apiKey}` },
-    { name: "Notifications",        url: `https://api.nasa.gov/DONKI/notifications?startDate=${apiStartDate}&endDate=${apiEndDate}&type=all&api_key=${apiKey}` }
+    { name: "Notifications",        url: `https://api.nasa.gov/DONKI/notifications?startDate=${apiStartDate}&endDate=${apiEndDate}&type=all&api_key=${apiKey}` },
+    // Interplanetary shocks at Earth only: the app announces the newest as
+    // "arrived", which a shock at STEREO-A has not.
+    { name: "IPS",                  url: `https://api.nasa.gov/DONKI/IPS?startDate=${apiStartDate}&endDate=${apiEndDate}&location=Earth&catalog=ALL&api_key=${apiKey}` }
   ];
 
   const fetchAndProcessData = async ({ name, url }) => {
@@ -267,7 +277,7 @@ async function fetchAllDonkiData(env) {
       const response = await fetch(url);
       if (!response.ok) {
         console.error(`Error fetching ${name}: HTTP ${response.status}`);
-        return { [upperName]: [] };
+        return { [upperName]: null };
       }
       let data = await response.json();
       if (Array.isArray(data)) {
@@ -275,12 +285,14 @@ async function fetchAllDonkiData(env) {
       } else {
         // Unexpected response shape — treat as empty rather than caching garbage
         console.warn(`Unexpected response shape for ${name}:`, typeof data);
-        return { [upperName]: [] };
+        return { [upperName]: null };
       }
+      // Newest first for shocks: the app reads the first as the latest.
+      if (upperName === "IPS") data.sort((a, b) => String(b.eventTime).localeCompare(String(a.eventTime)));
       return { [upperName]: data };
     } catch (err) {
       console.error(`Exception fetching ${name}:`, err);
-      return { [upperName]: [] };
+      return { [upperName]: null };
     }
   };
 
