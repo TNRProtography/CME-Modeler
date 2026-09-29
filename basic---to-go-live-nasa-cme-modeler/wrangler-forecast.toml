@@ -30,28 +30,3 @@ service = "imap-solar-data-test"
 
 [observability]
 enabled = true
-
-# ---------------------------------------------------------------------------
-# Dev copy: dev-spot-the-aurora-forecast-worker.  Deploy with  --env dev
-# Bindings are not inherited by an env, so they are repeated. Its own KV keeps
-# dev forecasts and scoring apart from live.
-# ---------------------------------------------------------------------------
-[env.dev]
-name = "dev-spot-the-aurora-forecast-worker"
-workers_dev = true
-
-[env.dev.triggers]
-crons = ["7 * * * *"]
-
-# Create a new KV namespace called dev-FORECAST_KV and paste its ID here.
-[[env.dev.kv_namespaces]]
-binding = "FORECAST_KV"
-id = "REPLACE_WITH_DEV_FORECAST_KV_ID"
-
-[[env.dev.services]]
-binding = "CH_HISTORY"
-service = "ch-history-worker"
-
-[[env.dev.services]]
-binding = "RTSW"
-service = "imap-solar-data-test"
