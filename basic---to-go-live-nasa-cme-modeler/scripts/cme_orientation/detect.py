@@ -28,6 +28,8 @@ import numpy as np
 from scipy import ndimage
 
 PA_STEP = 2.0                     # degrees per position-angle bin
+RN_STEP = 0.05                    # shape map: distance as a fraction of the front
+N_RN = 24                         # 0 .. 1.2 of the front
 N_PA = int(360 / PA_STEP)
 N_R = 48                          # radial samples between occulter and edge
 
@@ -62,6 +64,10 @@ class ViewResult:
     base_frames: int = 0
     heights: list = field(default_factory=list)   # (t_ms, leading edge in r_in units)
     reason: str = ""
+    # The CME's shape: [N_PA, N_RN] fraction of frames in which each position
+    # angle x (distance / front distance) was bright; NaN behind the occulter.
+    shape: np.ndarray | None = None
+    shape_frames: int = 0
 
     def to_json(self) -> dict:
         return {
@@ -292,7 +298,39 @@ def detect_view(
     res.detected = True
     if not res.reason:
         res.reason = "halo" if res.halo else "detected"
+    res.shape, res.shape_frames = _shape_map(hits, hs, g)
     return res
+
+
+def _shape_map(hits: list[np.ndarray], fronts: list[float], g: Geometry):
+    """
+    The CME's shape across frames, with distance measured as a fraction of
+    its front in each frame. A CME grows roughly self-similarly, so every frame
+    with the front well inside the field of view adds to the same picture, and
+    the image scale (unknown for display images) drops out.
+    """
+    r0, r1 = g.r_in * 1.15, g.r_out
+    radii = np.linspace(r0, r1, N_R)
+    rn_axis = (np.arange(N_RN) + 0.5) * RN_STEP
+    maps = []
+    for hit, h in zip(hits, fronts):
+        if h < 0.25 * N_R or h > 0.95 * N_R:
+            continue
+        front = r0 + h * (r1 - r0) / (N_R - 1)
+        rn = radii / front
+        m = np.full((N_PA, N_RN), np.nan)
+        for j, q in enumerate(rn_axis):
+            if q * front < r0 or q * front > r1:
+                continue
+            i = int(round((q * front - r0) / (r1 - r0) * (N_R - 1)))
+            m[:, j] = hit[:, min(max(i, 0), N_R - 1)]
+        maps.append(m)
+    if not maps:
+        return None, 0
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)   # columns behind the occulter in every frame
+        return np.nanmean(np.stack(maps), axis=0), len(maps)
 
 
 def _leading_edge(hit_core: np.ndarray) -> float:
