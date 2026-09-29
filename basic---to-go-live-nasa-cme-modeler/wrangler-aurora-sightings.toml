@@ -1,0 +1,19 @@
+# Deployed by Cloudflare Workers Builds from this repo. Mirrors the dashboard
+# settings: a deploy replaces bindings, variables and crons with exactly what
+# this file lists. Secrets are never in here (the repo is public); they stay
+# as Cloudflare secrets and survive deploys. See worker/DEPLOYING.md.
+name = "aurora-sightings"
+main = "worker/aurora-sightings-worker.js"
+compatibility_date = "2026-03-04"
+workers_dev = true
+
+[observability]
+enabled = true
+
+# Midnight UTC: clears the day's sightings.
+[triggers]
+crons = ["0 0 * * *"]
+
+[[kv_namespaces]]
+binding = "SIGHTINGS_KV"
+id = "940c2267496a4f76824341ef461bd08a"

@@ -1,0 +1,15 @@
+# Deployed by Cloudflare Workers Builds from this repo. Mirrors the dashboard
+# settings: a deploy replaces bindings, variables and crons with exactly what
+# this file lists. Secrets are never in here (the repo is public); they stay
+# as Cloudflare secrets and survive deploys. See worker/DEPLOYING.md.
+name = "aurora-index-sta"
+main = "worker/aurora-index-sta-worker.js"
+compatibility_date = "2026-03-04"
+workers_dev = true
+
+[observability]
+enabled = true
+
+[[services]]
+binding = "RTSW_DATA"
+service = "imap-solar-data-test"

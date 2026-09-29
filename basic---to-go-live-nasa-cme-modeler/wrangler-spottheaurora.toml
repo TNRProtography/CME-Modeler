@@ -1,0 +1,24 @@
+# Deployed by Cloudflare Workers Builds from this repo. Mirrors the dashboard
+# settings: a deploy replaces bindings, variables and crons with exactly what
+# this file lists. Secrets are never in here (the repo is public); they stay
+# as Cloudflare secrets and survive deploys. See worker/DEPLOYING.md.
+name = "spottheaurora"
+main = "worker/spottheaurora-worker.js"
+compatibility_date = "2026-03-04"
+workers_dev = true
+
+[observability]
+enabled = true
+
+# Secret (set in the dashboard): OWM_API_KEY
+
+[vars]
+LATITUDE = "-42.4504"
+LONGITUDE = "171.2083"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[[kv_namespaces]]
+binding = "AURORA_DATA"
+id = "613a3cc19acb4bca91a4906e9048a71a"

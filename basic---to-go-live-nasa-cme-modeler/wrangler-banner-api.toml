@@ -1,0 +1,18 @@
+# Deployed by Cloudflare Workers Builds from this repo. Mirrors the dashboard
+# settings: a deploy replaces bindings, variables and crons with exactly what
+# this file lists. Secrets are never in here (the repo is public); they stay
+# as Cloudflare secrets and survive deploys. See worker/DEPLOYING.md.
+name = "banner-api"
+main = "worker/banner-api-worker.js"
+compatibility_date = "2026-03-04"
+workers_dev = true
+
+[observability]
+enabled = true
+
+# Secret (set in the dashboard): BANNER_AUTH_TOKEN
+# PUSH_WORKER_URL is not set; the code falls back to the live push worker.
+
+[[kv_namespaces]]
+binding = "BANNER_DATA"
+id = "01017cfbac334e1586232601b5d70a27"
