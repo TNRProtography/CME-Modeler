@@ -12,6 +12,49 @@ const NZ_MAG_URL =
 
 const L1_PROPAGATION_MINUTES = 45;
 
+// The push worker asks every minute and the app on top of that, and every
+// answer used to re-fetch GeoNet and the solar wind and recompute. Inputs
+// change once a minute, so a result is reused for a minute. If GeoNet or the
+// solar wind feed fails, the last good result is served for a while, marked
+// stale, instead of an error that blanks the app and stops substorm alerts.
+const RESULT_CACHE_MS = 60 * 1000;
+const STALE_LIMIT_MS = 15 * 60 * 1000;
+const UPSTREAM_TIMEOUT_MS = 15 * 1000;
+const results = new Map(); // resolution -> { atMs, promise }
+const lastGood = new Map(); // resolution -> { atMs, result }
+
+function substormRisk(resolution, env) {
+  const hit = results.get(resolution);
+  if (hit && Date.now() - hit.atMs < RESULT_CACHE_MS) return hit.promise;
+  const promise = buildSubstormRisk(resolution, env).then(
+    (result) => {
+      lastGood.set(resolution, { atMs: Date.now(), result });
+      return result;
+    },
+    (err) => {
+      results.delete(resolution);
+      const good = lastGood.get(resolution);
+      if (good && Date.now() - good.atMs < STALE_LIMIT_MS) {
+        return {
+          ...good.result,
+          stale: true,
+          stale_age_s: Math.round((Date.now() - good.atMs) / 1000),
+          stale_reason: err instanceof Error ? err.message : String(err),
+        };
+      }
+      throw err;
+    },
+  );
+  results.set(resolution, { atMs: Date.now(), promise });
+  return promise;
+}
+
+function fetchWithTimeout(fetcher, url, init) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), UPSTREAM_TIMEOUT_MS);
+  return fetcher.fetch(url, { ...init, signal: ac.signal }).finally(() => clearTimeout(timer));
+}
+
 function expectedProtonTemp(speed) {
   const term = 0.031 * speed - 4.39;
   return term > 0 ? term * term * 1000 : 0;
@@ -50,7 +93,7 @@ export default {
 
       if (url.pathname === "/api/substorm") {
         const resolution = normaliseResolution(url.searchParams.get("resolution") || "5m");
-        const result = await buildSubstormRisk(resolution, env);
+        const result = await substormRisk(resolution, env);
         return jsonResponse(result, 200, {
           "Cache-Control": "public, max-age=60, s-maxage=60"
         });
@@ -72,8 +115,8 @@ async function buildSubstormRisk(resolution = "5m", env) {
   const rtswFetcher = env.RTSW_DATA ? env.RTSW_DATA : globalThis;
 
   const [geoRes, rtswRes] = await Promise.all([
-    fetch(NZ_MAG_URL,   { headers: { Accept: "application/json" } }),
-    rtswFetcher.fetch(RTSW_MERGED_URL, { headers: { Accept: "application/json" } })
+    fetchWithTimeout(globalThis, NZ_MAG_URL, { headers: { Accept: "application/json" } }),
+    fetchWithTimeout(rtswFetcher, RTSW_MERGED_URL, { headers: { Accept: "application/json" } })
   ]);
 
   if (!geoRes.ok)  throw new Error(`GeoNet dH error ${geoRes.status}`);
