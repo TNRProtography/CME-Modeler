@@ -13,7 +13,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = join(HERE, '..', 'worker', 'coronagraph-worker.js');
 const dir = mkdtempSync(join(tmpdir(), 'corona-'));
 const copy = join(dir, 'w.mjs');
-writeFileSync(copy, readFileSync(SRC, 'utf8').replace('export default {', 'const worker = {') + '\nexport default worker;' + '\nexport { refreshAll, buildState, SOURCES, parseListingNameToIso, worker };\n');
+writeFileSync(copy, readFileSync(SRC, 'utf8').replace('export default {', 'const worker = {') + '\nexport default worker;' + '\nexport { refreshAll, buildState, SOURCES, parseListingNameToIso, worker, pruneOld, backfillStereoCor2 };\n');
 const W = await import(pathToFileURL(copy).href);
 
 let pass = 0, fail = 0;
@@ -92,5 +92,47 @@ console.log('\nA snapshot from before CCOR-2 existed');
   check(!!saved.sources?.ccor2, 'and saves the rebuilt one');
 }
 
+
+console.log('\nA week of frames');
+{
+  const iso = (ms) => new Date(ms).toISOString();
+  const compact = (ms) => iso(ms).replace(/[-:]/g, '').replace(/\.\d{3}Z$/, '');
+  const put = (src, ms) => bucket.put(`raw/${src}/${compact(ms)}.jpg`, 'x', { customMetadata: { ts: iso(ms), source: src } });
+  const DAY = 86400000;
+  await put('soho_c2', Date.now() - 3 * DAY);
+  await put('soho_c2', Date.now() - 8 * DAY);
+  const framesRes = await W.worker.fetch(new Request('https://w.dev/api/frames?source=soho_c2'), env, { waitUntil() {} });
+  const frames = (await framesRes.json()).frames.map((f) => Date.now() - Date.parse(f.ts));
+  check(frames.some((a) => a > 2.9 * DAY && a < 3.1 * DAY), '/api/frames reaches back three days');
+  check(!frames.some((a) => a > 7 * DAY), 'but not past the week');
+  const state = await W.buildState(env);
+  check(!state.sources.soho_c2.frames.some((f) => Date.now() - Date.parse(f.ts) > DAY), '/api/state still summarises one day');
+  await W.pruneOld(env);
+  check([...objects.keys()].some((k) => k.startsWith('raw/soho_c2/') && k.includes(compact(Date.now() - 3 * DAY).slice(0, 8))), 'pruning keeps a three-day-old frame');
+  check(![...objects.keys()].some((k) => k.includes(compact(Date.now() - 8 * DAY).slice(0, 13))), 'and removes an eight-day-old one');
+
+  // STEREO-A: frames days behind the latest one are filled in, newest first.
+  const realFetch = globalThis.fetch;
+  const stereoName = (ms) => { const d = new Date(ms); const p = (n) => String(n).padStart(2, '0');
+    return `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}_${p(d.getUTCHours())}${p(d.getUTCMinutes())}00_n7c2A.jpg`; };
+  globalThis.fetch = async (url) => {
+    url = String(url);
+    const m = url.match(/browse\/(\d{4})\/(\d{2})\/(\d{2})\/ahead\/cor2\/512\/$/);
+    if (m) {
+      const day = Date.UTC(+m[1], +m[2] - 1, +m[3]);
+      const names = [];
+      for (let t = day; t < day + DAY && t <= Date.now(); t += 2 * 3600000) names.push(stereoName(t));
+      return new Response(names.map((n) => `<a href="${n}">${n}</a>`).join('\n'));
+    }
+    if (url.endsWith('c2A.jpg')) return new Response(new TextEncoder().encode('jpeg ' + url));
+    return realFetch(url);
+  };
+  let r;
+  for (let i = 0; i < 20; i++) r = await W.backfillStereoCor2(env, W.SOURCES.stereo_cor2, { maxNew: 12 });
+  const stereo = [...objects.keys()].filter((k) => k.startsWith('raw/stereo_cor2/'));
+  const oldest = Math.min(...stereo.map((k) => Date.parse(k.slice(16, 20) + '-' + k.slice(20, 22) + '-' + k.slice(22, 24) + 'T' + k.slice(25, 27) + ':' + k.slice(27, 29) + ':00Z')));
+  check(r.stillMissing === 0 && Date.now() - oldest > 6.5 * DAY, `STEREO-A fills its whole week (${stereo.length} frames, ${((Date.now() - oldest) / DAY).toFixed(1)} days)`);
+  globalThis.fetch = realFetch;
+}
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

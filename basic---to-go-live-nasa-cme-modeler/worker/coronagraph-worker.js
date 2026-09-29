@@ -1,4 +1,10 @@
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+// Frames are kept for a week: the CME orientation analysis goes back through
+// several hours of every coronagraph around each CME in the 7-day list, and
+// the viewer's full history reaches back as far. What /api/state summarises
+// stays at a day, so what every client downloads on load does not grow.
+const RETENTION_MS = 7 * TWENTY_FOUR_HOURS_MS;
+const STATE_WINDOW_MS = TWENTY_FOUR_HOURS_MS;
 // New frames one scheduled run may fetch per listing source. Keeps a run well
 // inside the subrequest limit; anything left is picked up by the next run.
 const MAX_NEW_FRAMES_PER_RUN = 12;
@@ -99,7 +105,7 @@ export default {
         if (!source || !SOURCES[source]) {
           return json({ ok: false, error: "Invalid source" }, 400);
         }
-        const frames = await listRecent(env, `raw/${source}/`);
+        const frames = await listRecent(env, `raw/${source}/`, RETENTION_MS);
         return json({ ok: true, source, frames });
       }
 
@@ -166,8 +172,15 @@ async function refreshAll(env, { backfill }) {
         }
       } else if (source.listingUrl) {
         // Every run fills whatever is missing from the listing, newest first,
-        // so a run that is skipped or late leaves no gap in the 24 hours.
+        // so a run that is skipped or late leaves no gap in the week.
         results[source.key] = await backfillFromListing(env, source, { maxNew: MAX_NEW_FRAMES_PER_RUN });
+      } else if (source.key === "stereo_cor2") {
+        // The same for STEREO-A, from its daily browse folders. The latest
+        // image is still taken if the folders have nothing recent yet.
+        const filled = await backfillStereoCor2(env, source, { maxNew: MAX_NEW_FRAMES_PER_RUN });
+        results[source.key] = filled.recent
+          ? filled
+          : { ...filled, latest: await ingestLatestForSource(env, source) };
       } else {
         results[source.key] = await ingestLatestForSource(env, source);
       }
@@ -229,7 +242,7 @@ async function ingestLatestForSource(env, source) {
 // left a hole for good.
 async function backfillFromListing(env, source, { maxNew = Infinity } = {}) {
   const htmlText = await fetchText(source.listingUrl);
-  const cutoff = Date.now() - TWENTY_FOUR_HOURS_MS;
+  const cutoff = Date.now() - RETENTION_MS;
 
   const items = listingNames(source, htmlText)
     .map(name => ({ name, ts: parseListingNameToIso(name) }))
@@ -265,11 +278,16 @@ async function backfillFromListing(env, source, { maxNew = Infinity } = {}) {
   return { ok: true, listed: items.length, stored, skipped, failed, stillMissing: missing - stored };
 }
 
-async function backfillStereoCor2(env, source) {
+// STEREO-A COR2 from its daily browse folders, a week back.
+//
+// Fetches only what is not stored yet, newest first, and stores it directly:
+// the old path went through ingestRemoteFrame, which skips anything older than
+// the newest frame stored, so a backfill behind the latest image added nothing.
+async function backfillStereoCor2(env, source, { maxNew = Infinity } = {}) {
   const now = new Date();
-  const days = uniqueUtcDateStringsForLastHours(now, 25);
-  const cutoff = Date.now() - TWENTY_FOUR_HOURS_MS;
-  const candidates = [];
+  const days = uniqueUtcDateStringsForLastHours(now, RETENTION_MS / 3600000 + 1);
+  const cutoff = Date.now() - RETENTION_MS;
+  const candidates = new Map();
 
   for (const day of days) {
     const [yyyy, mm, dd] = day.split("-");
@@ -280,23 +298,42 @@ async function backfillStereoCor2(env, source) {
       for (const name of names) {
         const ts = parseStereoNameToIso(name);
         const ms = ts ? Date.parse(ts) : NaN;
-        if (ts && ms >= cutoff) candidates.push({ name, ts, ms, url: dirUrl + name });
+        if (ts && ms >= cutoff) candidates.set(name, { name, ts, ms, url: dirUrl + name });
       }
     } catch (_) {}
   }
 
-  candidates.sort((a, b) => a.ms - b.ms);
-  const dedup = new Map();
-  for (const item of candidates) dedup.set(item.name, item);
+  const have = new Set();
+  let cursor;
+  do {
+    const page = await env.CORONA_BUCKET.list({ prefix: `raw/${source.key}/`, cursor, limit: 1000 });
+    for (const o of page.objects) have.add(o.key);
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
 
-  let stored = 0, skipped = 0;
-  for (const item of dedup.values()) {
-    const out = await ingestRemoteFrame(env, source.key, item.url, item.ts, item.name);
-    if (out.stored) stored++;
-    if (out.skipped) skipped++;
+  const items = [...candidates.values()].sort((a, b) => b.ms - a.ms);   // newest first
+  // Whether the folders hold anything from the last two hours; if not, the
+  // caller also takes the latest image so the viewer does not go stale.
+  const recent = items.some(x => Date.now() - x.ms < 2 * 3600000);
+
+  let stored = 0, skipped = 0, failed = 0, missing = 0;
+  for (const item of items) {
+    const key = `raw/${source.key}/${isoToCompact(item.ts)}.jpg`;
+    if (have.has(key)) { skipped++; continue; }
+    missing++;
+    if (stored >= maxNew) continue;
+    try {
+      const res = await fetchWithTimeout(item.url);
+      if (!res.ok) { failed++; continue; }
+      const bytes = await res.arrayBuffer();
+      const out = await ingestFrameBytes(env, source.key, item.ts, bytes, item.name, await sha256Hex(bytes));
+      if (out.stored) stored++;
+    } catch (_) {
+      failed++;
+    }
   }
 
-  return { ok: true, attempted: dedup.size, stored, skipped };
+  return { ok: true, listed: items.length, stored, skipped, failed, stillMissing: missing - stored, recent };
 }
 
 async function ingestRemoteFrame(env, sourceKey, remoteUrl, tsIso, remoteName) {
@@ -364,10 +401,6 @@ async function ingestFrameBytes(env, sourceKey, tsIso, bytes, remoteName, hash) 
   return { ok: true, stored: true, key: rawKey, ts: tsIso, fetched_at: fetchedAt, hash };
 }
 
-// ---------------------------------------------------------------------------
-// State / listing
-// ---------------------------------------------------------------------------
-
 async function getLatestSourceMeta(env, sourceKey) {
   const obj = await env.CORONA_BUCKET.get(`meta/${sourceKey}/latest.json`);
   if (!obj) return null;
@@ -389,7 +422,7 @@ async function buildState(env) {
   await Promise.all(
     Object.values(SOURCES).map(async (source) => {
       const [frames, latestMeta] = await Promise.all([
-        listRecent(env, `raw/${source.key}/`),
+        listRecent(env, `raw/${source.key}/`, STATE_WINDOW_MS),
         getLatestSourceMeta(env, source.key),
       ]);
 
@@ -412,7 +445,7 @@ async function buildState(env) {
 // list call instead of issuing a separate head() request per object.
 // Before: O(N) head() calls = 10-20s for 200 frames.
 // After:  1 list call (paginated) = <100ms.
-async function listRecent(env, prefix) {
+async function listRecent(env, prefix, windowMs = STATE_WINDOW_MS) {
   let cursor;
   const all = [];
 
@@ -427,7 +460,7 @@ async function listRecent(env, prefix) {
     cursor = page.truncated ? page.cursor : undefined;
   } while (cursor);
 
-  const cutoff = Date.now() - TWENTY_FOUR_HOURS_MS;
+  const cutoff = Date.now() - windowMs;
   const out = [];
 
   for (const o of all) {
@@ -472,7 +505,7 @@ async function writeStateCache(env) {
 }
 
 async function pruneOld(env) {
-  const cutoff = Date.now() - TWENTY_FOUR_HOURS_MS;
+  const cutoff = Date.now() - RETENTION_MS;
   let cursor;
   const toDelete = [];
 
@@ -769,14 +802,14 @@ function renderAppHtml() {
     <div>
       <h1 class="title">Coronagraph Scrubber</h1>
       <div class="sub">
-        24-hour rolling archive with duplicate filtering and live browser difference imagery.
+        7-day rolling archive with duplicate filtering and live browser difference imagery.
         Page loads instantly; full frame history loads per source on demand.
       </div>
     </div>
     <div class="toolbar">
       <button class="primary" id="refreshUi">Refresh UI</button>
       <button id="refreshNow">Refresh sources now</button>
-      <button id="backfillNow">Backfill last 24 hours</button>
+      <button id="backfillNow">Backfill last 7 days</button>
     </div>
   </div>
 
@@ -881,7 +914,7 @@ function renderCard(sourceKey, source) {
     <div class="scrubber">
       <div class="button-row">
         <button data-load-frames="\${sourceKey}" \${loading ? "disabled" : ""}>
-          \${loaded ? "Reload 24h frames" : (loading ? "Loading…" : "Load full 24h frames")}
+          \${loaded ? "Reload 7 days of frames" : (loading ? "Loading…" : "Load full 7 days")}
         </button>
       </div>
       <div class="row">
@@ -1174,7 +1207,7 @@ document.getElementById("refreshNow").addEventListener("click", async () => {
 });
 
 document.getElementById("backfillNow").addEventListener("click", async () => {
-  setStatus("Backfilling last 24 hours…");
+  setStatus("Backfilling last 7 days…");
   try {
     await fetch("/api/backfill", { method: "POST" });
     await load();
