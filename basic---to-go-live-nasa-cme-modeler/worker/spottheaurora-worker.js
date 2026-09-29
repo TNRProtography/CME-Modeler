@@ -52,12 +52,32 @@
 const NOAA_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
 
+let memo = null; // { atMs, body }: see fetch()
+
 export default {
   /**
    * This function is triggered by a GET request to the worker's URL.
    * IT IS NOW HIGHLY EFFICIENT AND CACHED.
    */
   async fetch(request, env, ctx) {
+    // /ips never had a handler: it answered with the forecast, which the app
+    // then discarded as not a list of shocks. It answers an empty list until
+    // the app reads interplanetary shocks from nasa-donki-api instead.
+    if (new URL(request.url).pathname === '/ips') {
+      return new Response('[]', {
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=3600' },
+      });
+    }
+
+    // The edge cache below does nothing on workers.dev, so the payload is
+    // also held in memory for a minute: one KV read per minute per isolate
+    // rather than per request. It changes every 5 minutes.
+    if (memo && Date.now() - memo.atMs < 60 * 1000) {
+      return new Response(memo.body, {
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=240' },
+      });
+    }
+
     const cache = caches.default;
     const cacheUrl = new URL(request.url);
     const cacheKey = new Request(cacheUrl.origin, request);
@@ -78,7 +98,9 @@ export default {
         });
       }
 
-      response = new Response(JSON.stringify(apiPayload, null, 2), {
+      const body = JSON.stringify(apiPayload, null, 2);
+      memo = { atMs: Date.now(), body };
+      response = new Response(body, {
         headers: {
           'Content-Type': 'application/json',
           'Access-Control-Allow-Origin': '*',
