@@ -157,7 +157,7 @@ async function runImageryFetch(env) {
     await kv.put('SOLO_IMAGERY_FETCH_TS', Date.now().toString());
     console.log(`[SOLO-IMG] stored ${results.length} channels`);
   } else {
-    console.warn('[SOLO-IMG] no imagery fetched — preserving existing KV data');
+    console.warn('[SOLO-IMG] no imagery fetched - preserving existing KV data');
   }
 }
 
@@ -211,7 +211,7 @@ async function runPositionFetch(env) {
   }
 
   if (Object.keys(positions).length === 0) {
-    console.warn('[SOLO-POS] no positions fetched — preserving existing KV data');
+    console.warn('[SOLO-POS] no positions fetched - preserving existing KV data');
     return;
   }
 
@@ -235,8 +235,8 @@ async function runPositionFetch(env) {
                               : 'off-axis',
       solo_warning_lead_hours:  sep < 15 ? estimateLeadTime(positions.solo.r_au) : null,
       note: sep < 15
-        ? `SolO is within ${sep.toFixed(1)}° of the Sun-Earth line — magnetic field data may provide ${estimateLeadTime(positions.solo.r_au)}h advance warning of conditions at Earth.`
-        : `SolO is ${sep.toFixed(1)}° off the Sun-Earth line — in-situ data not directly predictive for Earth conditions at this separation.`,
+        ? `SolO is within ${sep.toFixed(1)}° of the Sun-Earth line - magnetic field data may provide ${estimateLeadTime(positions.solo.r_au)}h advance warning of conditions at Earth.`
+        : `SolO is ${sep.toFixed(1)}° off the Sun-Earth line - in-situ data not directly predictive for Earth conditions at this separation.`,
     };
   }
 
@@ -367,7 +367,7 @@ async function handleImagery(env) {
   if (!raw) {
     return json({
       ok: false,
-      error: 'No imagery data yet — check back after first cron run.',
+      error: 'No imagery data yet - check back after first cron run.',
       note: 'SolO EUI imagery is not real-time. Images may be hours to days old depending on ground contact schedule.',
     });
   }
@@ -390,7 +390,7 @@ async function handleTile(request, env) {
   const zoom = url.searchParams.get('zoom') ?? '10';
 
   if (!id || !/^\d+$/.test(id)) {
-    return new Response('Invalid tile request — id required', { status: 400 });
+    return new Response('Invalid tile request - id required', { status: 400 });
   }
 
   const kv = env.SOLO_KV;
@@ -444,7 +444,7 @@ async function handlePosition(env) {
   if (!raw) {
     return json({
       ok: false,
-      error: 'No position data yet — check back after first cron run.',
+      error: 'No position data yet - check back after first cron run.',
     });
   }
 

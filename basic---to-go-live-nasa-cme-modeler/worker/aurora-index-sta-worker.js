@@ -498,7 +498,7 @@ function confidenceToText(confidence) {
 }
 
 function buildSummary({ score, level, confidence, increasing, bayOnset, cmeSheath }) {
-  if (score < 30) return "Quiet — unlikely for noteworthy activity";
+  if (score < 30) return "Quiet - unlikely for noteworthy activity";
   let text = `${level} conditions`;
   if (confidence !== null) text += ` · ${confidence}% confidence of substorm`;
   if (bayOnset)            text += " · Negative bay detected (possible onset)";

@@ -1,0 +1,19 @@
+# Deployed by Cloudflare Workers Builds from this repo. Mirrors the dashboard
+# settings: a deploy replaces bindings, variables and crons with exactly what
+# this file lists. See worker/DEPLOYING.md.
+name = "sdo-imagery"
+main = "worker/sdo-imagery-worker.ts"
+compatibility_date = "2026-03-04"
+workers_dev = true
+
+[observability]
+enabled = true
+
+# Every 5 minutes: new frames as SDO posts them, and while the store is new,
+# 30 older ones per run until the week is full (about a day).
+[triggers]
+crons = ["*/5 * * * *"]
+
+[[r2_buckets]]
+binding = "SDO_BUCKET"
+bucket_name = "sdo-imagery"

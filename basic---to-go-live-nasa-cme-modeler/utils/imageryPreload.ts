@@ -19,7 +19,7 @@
 // Each image is requested exactly as its panel requests it - the same
 // address and the same CORS mode - or the browser would not reuse it.
 
-import { fetchHmiFrames, type HmiFrame } from './hmiArchive';
+import { fetchHmiFrames, isStoredFrame, type HmiFrame } from './hmiArchive';
 import { proxyImageUrl } from './imagePixels';
 
 const CORONAGRAPHY_WORKER_BASE = 'https://coronagraphy-processing.thenamesrock.workers.dev';
@@ -101,10 +101,20 @@ function workerJobs(base: string, frames: WorkerFrame[] | undefined, sinceMs = -
     .map((f) => ({ url: resolve(base, f.url as string), cors: true }));
 }
 
+/**
+ * Where the browser loads an archive frame from. Frames the sdo-imagery
+ * worker stores come straight from it, with CORS; anything still on SDO goes
+ * through the image proxy, since SDO sends no CORS headers.
+ */
+export const archiveFrameSrc = (url: string): string =>
+  (isStoredFrame(url) ? url : proxyImageUrl(url, ARCHIVE_IMAGE_TTL_S));
+
+const spotJob = (url: string): Job => ({ url: archiveFrameSrc(url), cors: isStoredFrame(url) });
+
 const spotJobs = (frames: HmiFrame[], previews: boolean): Job[] =>
   [...frames].reverse().flatMap((f) => [
-    { url: proxyImageUrl(f.url, ARCHIVE_IMAGE_TTL_S), cors: false },
-    ...(previews && f.preview ? [{ url: proxyImageUrl(f.preview, ARCHIVE_IMAGE_TTL_S), cors: false }] : []),
+    spotJob(f.url),
+    ...(previews && f.preview ? [spotJob(f.preview)] : []),
   ]);
 
 /** Takes one frame from each list in turn, so no channel waits on another. */

@@ -37,8 +37,7 @@ import {
   fetchSharpByRegion, withSharpPosition, fetchSharpHistory, smoothedPositionAt, trackedBy,
   regionKey as sharpRegionKey, type SharpHistory,
 } from '../utils/sharpPositions';
-import { fetchHmiFrames, type HmiFrame } from '../utils/hmiArchive';
-import { proxyImageUrl } from '../utils/imagePixels';
+import { fetchHmiFrames, SDO_IMAGERY_WORKER_BASE, type HmiFrame } from '../utils/hmiArchive';
 import FrameScrubber from './FrameScrubber';
 import RegionMagneticHistory from './RegionMagneticHistory';
 import { spotCountChanges, type SpotCountChange } from '../hooks/useSunspotRegions';
@@ -47,7 +46,7 @@ import { hasDecodedImage, loadDecodedImage, prefetchImage } from '../utils/decod
 import SunspotCloseupCanvas from './SunspotCloseupCanvas';
 // Cache lifetime asked of the proxy for SDO archive frames, which never change;
 // shared with the background preload so both ask for the same address.
-import { ARCHIVE_IMAGE_TTL_S, preloadedImageUrls } from '../utils/imageryPreload';
+import { archiveFrameSrc, preloadedImageUrls } from '../utils/imageryPreload';
 import { useAppReady, whenAppIdle } from '../utils/appReady';
 import { sharedFetchJson, sharedFetchText } from '../utils/sharedFetch';
 import { SOLAR_BOOT_URLS } from '../utils/solarBoot';
@@ -257,17 +256,19 @@ const NASA_SDO_BASE = 'https://sdo.gsfc.nasa.gov/assets/img/latest';
 const SDO_HMI_BC_1024_URL = `${JSOC_HMI_BASE}/HMI_latest_color_Mag_1024x1024.jpg`;
 const SDO_HMI_B_1024_URL  = `${JSOC_HMI_BASE}/HMI_latest_Mag_1024x1024.gif`;
 const SDO_HMI_IF_1024_URL = `${JSOC_HMI_BASE}/HMI_latest_colInt_1024x1024.jpg`;
-const SDO_HMI_BC_4096_URL = `${JSOC_HMI_BASE}/HMI_latest_color_Mag_4096x4096.jpg`;
-const SDO_HMI_B_4096_URL  = `${JSOC_HMI_BASE}/HMI_latest_Mag_4096x4096.gif`;
-const SDO_HMI_IF_4096_URL = `${JSOC_HMI_BASE}/HMI_latest_colInt_4096x4096.jpg`;
+// The 4096px images come from the sdo-imagery worker, which keeps the newest
+// of each in R2 and serves them with CORS. JSOC is the fallback.
+const SDO_HMI_BC_4096_URL = `${SDO_IMAGERY_WORKER_BASE}/latest/colorized_4096`;
+const SDO_HMI_B_4096_URL  = `${SDO_IMAGERY_WORKER_BASE}/latest/magnetogram_4096`;
+const SDO_HMI_IF_4096_URL = `${SDO_IMAGERY_WORKER_BASE}/latest/intensity_4096`;
 
 // Fallback URLs (NASA SDO direct - old version source that worked)
 const SDO_HMI_BC_1024_FALLBACK = `${NASA_SDO_BASE}/latest_1024_HMIBC.jpg`;
 const SDO_HMI_B_1024_FALLBACK  = `${NASA_SDO_BASE}/latest_1024_HMIB.jpg`;
 const SDO_HMI_IF_1024_FALLBACK = `${NASA_SDO_BASE}/latest_1024_HMII.jpg`;
-const SDO_HMI_BC_4096_FALLBACK = `${NASA_SDO_BASE}/latest_4096_HMIBC.jpg`;
-const SDO_HMI_B_4096_FALLBACK  = `${NASA_SDO_BASE}/latest_4096_HMIB.jpg`;
-const SDO_HMI_IF_4096_FALLBACK = `${NASA_SDO_BASE}/latest_4096_HMII.jpg`;
+const SDO_HMI_BC_4096_FALLBACK = `${JSOC_HMI_BASE}/HMI_latest_color_Mag_4096x4096.jpg`;
+const SDO_HMI_B_4096_FALLBACK  = `${JSOC_HMI_BASE}/HMI_latest_Mag_4096x4096.gif`;
+const SDO_HMI_IF_4096_FALLBACK = `${JSOC_HMI_BASE}/HMI_latest_colInt_4096x4096.jpg`;
 
 // Load directly - no Worker dependency, no domain-matching issues.
 const resolveSdoImageUrl = (rawUrl: string, _forceDirect?: boolean) => rawUrl;
@@ -417,7 +418,10 @@ const isLikelySameOriginOrProxy = (url: string): boolean => {
   try {
     const parsed = new URL(url, window.location.origin);
     return parsed.origin === window.location.origin
-      || parsed.pathname.startsWith('/api/proxy/');
+      || parsed.pathname.startsWith('/api/proxy/')
+      // Sends CORS, and fetching it checks the image exists, so a store not
+      // filled yet falls back rather than showing a broken image.
+      || parsed.origin === SDO_IMAGERY_WORKER_BASE;
   } catch {
     return false;
   }
@@ -2357,7 +2361,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   // Archive frames never change, so they are asked for with a week's cache
   // rather than five minutes: a replay, or the same window tomorrow, is then
   // served from the browser instead of downloaded again.
-  const archiveImageUrl = useCallback((url: string) => proxyImageUrl(url, ARCHIVE_IMAGE_TTL_S), []);
+  const archiveImageUrl = useCallback((url: string) => archiveFrameSrc(url), []);
 
   // Which frame images are downloaded and decoded (utils/decodedImages).
   // Playback steps only onto a frame that is ready, so a first run through

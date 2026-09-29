@@ -23,6 +23,7 @@ and survive deploys.
 | imap-solar-data-test | `imap-solar-data-worker.js` | `wrangler-imap-solar-data.toml` | none | none | no |
 | suvi-difference-imagery | `suvi-difference-worker.js` | `wrangler-suvi.toml` | every 2 min | none | no |
 | epam | `epam-worker.js` | `wrangler-epam.toml` | every 3 min | none | no |
+| sdo-imagery | `sdo-imagery-worker.ts` | `wrangler-sdo-imagery.toml` | every 5 min | none | no |
 | coronagraphy-processing | `coronagraph-worker.js` | `wrangler-coronagraph.toml` | every 5 min | none | no |
 | push-notification-worker | `push-notification-worker.js` | `wrangler-push.toml` | every minute | VAPID_PRIVATE_KEY, TRIGGER_SECRET, BANNER_AUTH_TOKEN | **yes** |
 | spot-the-aurora-forecast-worker | `forecast-entry.js` | `wrangler-forecast.toml` | hourly at :07 | none | **yes** |

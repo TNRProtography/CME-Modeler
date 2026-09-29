@@ -40,6 +40,16 @@ export const HMI_MODES: HmiMode[] = ['colorized', 'magnetogram', 'intensity'];
 
 const BROWSE = 'https://sdo.gsfc.nasa.gov/assets/img/browse';
 
+/**
+ * The sdo-imagery worker (worker/sdo-imagery-worker.ts), which keeps a week
+ * of these frames in R2 and serves them with CORS. Asked first; SDO itself
+ * is the fallback.
+ */
+export const SDO_IMAGERY_WORKER_BASE = 'https://sdo-imagery.thenamesrock.workers.dev';
+
+/** A frame the worker serves itself, which needs no image proxy. */
+export const isStoredFrame = (url: string): boolean => url.startsWith(`${SDO_IMAGERY_WORKER_BASE}/`);
+
 export interface HmiFrame {
   atMs: number;
   /** The 1024px file - what a settled frame shows. */
@@ -205,8 +215,9 @@ async function framesInBrowser(mode: HmiMode, fromMs: number, toMs: number): Pro
 /**
  * The archive frames covering a window, thinned, oldest first.
  *
- * Asks the edge route first, which reads the megabyte listings next to SDO
- * and returns a few kilobytes of frames. Never throws: an unreachable archive
+ * Asks the sdo-imagery worker first, which serves a week of frames from its
+ * own store. Then the edge route, which reads the megabyte listings next to
+ * SDO and returns a few kilobytes of frames. Never throws: an unreachable archive
  * is an empty list, and the tracker then shows only the live frame.
  */
 export async function fetchHmiFrames(mode: HmiMode, fromMs: number, toMs: number): Promise<HmiFrame[]> {
@@ -215,9 +226,14 @@ export async function fetchHmiFrames(mode: HmiMode, fromMs: number, toMs: number
   const q = 15 * 60000;
   const to = Math.floor(toMs / q) * q;
   const from = Math.floor(fromMs / q) * q;
-  for (const base of ['', 'https://spottheaurora.co.nz']) {
+  const routes = [
+    `${SDO_IMAGERY_WORKER_BASE}/api/frames`,
+    '/api/hmi-frames',
+    'https://spottheaurora.co.nz/api/hmi-frames',
+  ];
+  for (const route of routes) {
     try {
-      const res = await fetch(`${base}/api/hmi-frames?mode=${mode}&from=${from}&to=${to}`);
+      const res = await fetch(`${route}?mode=${mode}&from=${from}&to=${to}`);
       if (!res.ok) continue;
       const text = await res.text();
       if (!text.trimStart().startsWith('{')) continue;   // the SPA, not the route

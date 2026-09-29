@@ -209,7 +209,7 @@ async function handleGetStatus(env) {
 }
 
 async function handleCron(env) {
-  console.log('[CH Worker] Cron triggered — refreshing SUVI frame index');
+  console.log('[CH Worker] Cron triggered - refreshing SUVI frame index');
   try {
     const allFrames = await scrapeSuviFrameUrls();
     const picked = pickFramesEvery2Hours(allFrames);
