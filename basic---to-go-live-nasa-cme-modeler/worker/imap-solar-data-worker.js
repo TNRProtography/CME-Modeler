@@ -1,6 +1,6 @@
 // =====================================================
 // RTSW 24h worker - rtsw_wind_1m.json + rtsw_mag_1m.json
-// Stateless: fetches both files live on each request.
+// Fetches both files from NOAA at most once a minute (see fetchJson).
 //
 // NEW: Ballistic L1 -> Earth propagation. Each row now carries
 //   lag_minutes     - travel time from L1 to the magnetopause at this
@@ -205,7 +205,7 @@ export default {
               arriving_now_utc: arrivingNowUtc,
             },
             notes: [
-              "Data comes from SWPC rtsw_wind_1m.json and rtsw_mag_1m.json only, fetched live on each request.",
+              "Data comes from SWPC rtsw_wind_1m.json and rtsw_mag_1m.json only, fetched at most once a minute.",
               "Per minute and per field, the satellite flagged active=true is preferred; if it has no value, any other satellite reporting that minute is used in priority order SOLAR1 > IMAP > ACE > DSCOVR.",
               "src reflects, per field, which satellite supplied the value.",
               "lag_minutes/time_earth_utc give ballistic L1->magnetopause propagation at each row's measured speed. Data measured at time_utc affects Earth at time_earth_utc.",
@@ -459,7 +459,27 @@ function deriveClockSrc(srcBy, srcBz) {
 // without a recognizable User-Agent (which is what Cloudflare
 // Workers send by default). This resolves the 403s.
 // =====================================================
-async function fetchJson(url) {
+// NOAA's files update once a minute, but this worker is asked far more often:
+// the app, the push worker every minute, the forecast worker and
+// aurora-index-sta all call it, and a workers.dev response is not cached at
+// the edge whatever its Cache-Control says. So each file is kept in memory
+// for a minute, and requests that arrive while one is being fetched share
+// it. A failed fetch is not kept, so the next request tries again.
+const SOURCE_CACHE_MS = 60 * 1000;
+const sourceCache = new Map(); // url -> { atMs, promise }
+
+function fetchJson(url) {
+  const hit = sourceCache.get(url);
+  if (hit && Date.now() - hit.atMs < SOURCE_CACHE_MS) return hit.promise;
+  const promise = fetchJsonFromNoaa(url);
+  sourceCache.set(url, { atMs: Date.now(), promise });
+  promise.catch(() => {
+    if (sourceCache.get(url)?.promise === promise) sourceCache.delete(url);
+  });
+  return promise;
+}
+
+async function fetchJsonFromNoaa(url) {
   const resp = await fetch(url, {
     headers: {
       Accept: "application/json",
