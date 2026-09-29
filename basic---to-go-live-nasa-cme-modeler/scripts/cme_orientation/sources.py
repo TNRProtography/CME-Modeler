@@ -16,6 +16,7 @@ from __future__ import annotations
 import io
 import json
 import math
+import os
 import re
 import time
 from datetime import datetime, timedelta, timezone
@@ -84,14 +85,47 @@ def to_gray(data: bytes) -> np.ndarray:
 
 # ── DONKI ───────────────────────────────────────────────────────────────────
 
-def donki_cmes() -> list[dict]:
-    data = get_json(f"{DONKI}/cme")
-    return data if isinstance(data, list) else []
+NASA_DONKI = "https://api.nasa.gov/DONKI"
+
+
+def donki_cmes(days: int = 7) -> list[dict]:
+    """
+    DONKI's CMEs for the last week: from our nasa-donki-api worker, which the
+    app reads too, or straight from NASA if the worker's answer is not a list.
+    What came back is printed either way, so a run log always shows why.
+    """
+    try:
+        r = get(f"{DONKI}/CME")
+        ctype = r.headers.get("content-type", "")
+        try:
+            data = r.json()
+        except ValueError:
+            data = None
+        shape = f"list of {len(data)}" if isinstance(data, list) else type(data).__name__
+        print(f"nasa-donki-api /CME: HTTP {r.status_code}, {ctype}, {len(r.content)} bytes, {shape}")
+        if isinstance(data, list) and data:
+            return data
+        if not isinstance(data, list):
+            print(f"  starts: {r.text[:200]!r}")
+    except Exception as e:
+        print(f"nasa-donki-api /CME failed: {e}")
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=days)
+    try:
+        data = get_json(f"{NASA_DONKI}/CME", {
+            "startDate": start.strftime("%Y-%m-%d"), "endDate": end.strftime("%Y-%m-%d"),
+            "api_key": os.environ.get("NASA_API_KEY") or "DEMO_KEY",
+        })
+        print(f"NASA DONKI directly: {len(data) if isinstance(data, list) else type(data).__name__}")
+        return data if isinstance(data, list) else []
+    except Exception as e:
+        print(f"NASA DONKI directly failed: {e}")
+        return []
 
 
 def donki_flares() -> list[dict]:
     try:
-        data = get_json(f"{DONKI}/flr")
+        data = get_json(f"{DONKI}/FLR")
         return data if isinstance(data, list) else []
     except Exception:
         return []
