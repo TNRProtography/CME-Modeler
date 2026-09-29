@@ -122,7 +122,12 @@ def measure_pil(
     mu = _mu(lat, lon)
     strength = float(np.clip((np.abs(sm) > thr).mean() * 6, 0, 1))
     clarity = float(np.clip(elong, 0, 1))
-    conf = 70 * clarity * min(1.0, mu / 0.5) * (0.6 + 0.4 * strength)
+    # Away from disk centre the line is foreshortened (a small error in the
+    # image becomes a large one on the surface) and the magnetogram sees the
+    # field side-on: full weight only near the centre (mu 0.85, about 30
+    # degrees out), falling to none by mu 0.3 (about 70 degrees).
+    limb = float(np.clip((mu - 0.3) / 0.55, 0, 1))
+    conf = 70 * clarity * limb * (0.6 + 0.4 * strength)
     return {
         "tilt": round(tilt, 1),
         "clarity": round(clarity, 2),

@@ -3,6 +3,8 @@ CME orientation: one run over every CME in DONKI's 7-day list.
 
     python3 scripts/cme_orientation/run.py            # analyse and upload
     python3 scripts/cme_orientation/run.py --dry-run  # analyse, print, no upload
+    ORIENTATION_ONLY=<activityID> ... run.py          # one CME, every view's
+                                                      # working numbers, no upload
 
 For each CME:
   1. Coronagraphs. Every source with frames around the launch, from the
@@ -52,12 +54,13 @@ FINAL_AFTER_MS = 36 * 3600000
 AGREE_DEG = 30.0
 DIRECTION_USE_MIN = 70           # confidence at which the app uses our direction
 RUN_BUDGET_S = float(os.environ.get("RUN_BUDGET_S", 16 * 60))
+ONLY = os.environ.get("ORIENTATION_ONLY", "").strip()
 # Raised whenever the analysis changes, so every stored result is redone.
-VERSION = 3
+VERSION = 4
 
 
 def main() -> int:
-    dry = "--dry-run" in sys.argv
+    dry = "--dry-run" in sys.argv or bool(ONLY)
     started = time.time()
     now = int(time.time() * 1000)
     previous = {}
@@ -76,8 +79,10 @@ def main() -> int:
         t0 = S.parse_ms(cme.get("startTime"))
         if not cid or not t0 or not S.pick_analysis(cme):
             continue
+        if ONLY and cid != ONLY:
+            continue
         prev = previous.get(cid)
-        if prev and prev.get("final") and prev.get("version") == VERSION:
+        if not ONLY and prev and prev.get("final") and prev.get("version") == VERSION:
             continue
         todo.append((t0, cme))
     todo.sort(key=lambda x: -x[0])      # newest first: they change most
@@ -174,6 +179,17 @@ def analyse(cme: dict, all_cmes: list[dict], flares: list[dict], now: int) -> di
         prior_pa = obs.pa_of(prior) if prior is not None else None
         prior_halo = prior is not None and min(angle_between(prior, obs.o), angle_between(prior, -obs.o)) < max(15.0, half - 10)
         v = detect_view(key, [Frame(t, img) for t, img in frames], t0, prior_pa, prior_halo, half, hint)
+        if ONLY:
+            print(f"    {key} ({origin}, prior PA {prior_pa and round(prior_pa)}, halo {prior_halo}): {v.reason}; "
+                  f"PA {v.pa and round(v.pa)}, width {v.width}, SNR {v.snr:.1f}; {v.debug}")
+            if origin == "stored" and info["hv"]:
+                hv = S.hv_frames(info["hv"], info["scale"], t0)
+                if len(hv) >= 4:
+                    w = detect_view(key, [Frame(t, img) for t, img in hv], t0, prior_pa, prior_halo, half, (256.0, 256.0))
+                    print(f"    {key} (helioviewer, for comparison): {w.reason}; PA {w.pa and round(w.pa)}, "
+                          f"width {w.width}, SNR {w.snr:.1f}; {w.debug}")
+                else:
+                    print(f"    {key} (helioviewer, for comparison): {len(hv)} frames")
         j = v.to_json()
         j.update({"label": info["label"], "origin": origin, "observerLon": round(obs.lon, 1)})
         views.append(j)
@@ -190,6 +206,9 @@ def analyse(cme: dict, all_cmes: list[dict], flares: list[dict], now: int) -> di
         # spacecraft's own position: widths alone cannot tell a tilt from its
         # mirror image. Direction is refined in the same fit.
         sf = fit_shape(shapes, direction_fit["vector"], half) if shapes else None
+        if ONLY:
+            print(f"    direction fit: {({k: v for k, v in direction_fit.items() if k != 'vector'})}")
+            print(f"    shape fit ({len(shapes)} view(s)): {sf}")
         if sf and sf["constrained"]:
             cor_tilt = {"tilt": sf["tilt"], "uncertainty": sf["uncertainty"], "confidence": sf["confidence"],
                         "halfWidths": [sf["halfFace"], sf["halfEdge"]], "method": "shape",

@@ -12,6 +12,11 @@ on:
   schedule:
     - cron: "7,37 * * * *"
   workflow_dispatch:
+    inputs:
+      only:
+        description: "Diagnose one CME (activityID): every view's working numbers, nothing uploaded"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -44,4 +49,5 @@ jobs:
         env:
           ORIENTATION_TOKEN: ${{ secrets.ORIENTATION_TOKEN }}
           RUN_BUDGET_S: "1080"
+          ORIENTATION_ONLY: ${{ inputs.only }}
         run: python scripts/cme_orientation/run.py

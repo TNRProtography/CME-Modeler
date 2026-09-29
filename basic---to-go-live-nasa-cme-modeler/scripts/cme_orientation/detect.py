@@ -68,6 +68,8 @@ class ViewResult:
     # angle x (distance / front distance) was bright; NaN behind the occulter.
     shape: np.ndarray | None = None
     shape_frames: int = 0
+    # Working numbers, for diagnosing a view from the run's log.
+    debug: dict = field(default_factory=dict)
 
     def to_json(self) -> dict:
         return {
@@ -222,6 +224,11 @@ def detect_view(
 
     base_img = np.median(np.stack([f.img for f in base]), axis=0)
     g = find_occulter(base_img, geometry_hint)
+    res.debug.update({
+        "size": list(shape), "base": [round((f.t_ms - t_start_ms) / 60000) for f in base],
+        "after": [round((f.t_ms - t_start_ms) / 60000) for f in after],
+        "occulter": [round(g.cx), round(g.cy), round(g.r_in), round(g.r_out), g.ok, g.note],
+    })
     if not g.ok and geometry_hint is None:
         res.reason = f"occulter: {g.note}"
         # Still usable with the centred fallback; the reason is recorded.
@@ -259,6 +266,9 @@ def detect_view(
     bg_sd = float(1.4826 * np.median(np.abs(background - bg_med))) + 0.01
     thr = max(0.12, bg_med + 4 * bg_sd)
     mask = (s > thr) & allowed
+    res.debug.update({"bg": round(bg_med, 3), "bgSd": round(bg_sd, 3), "thr": round(thr, 3),
+                      "peak": round(float(s[allowed].max()) if allowed.any() else 0.0, 3),
+                      "peakPa": float(np.argmax(np.where(allowed, s, -1)) * PA_STEP)})
 
     arcs = _circular_runs(mask)
     if not arcs:
@@ -288,6 +298,7 @@ def detect_view(
     hs = [_leading_edge(hh[core]) for hh in hits]
     res.heights = [(t, round(h / N_R, 3)) for t, h in zip(times, hs)]
     res.growing = _increases(hs)
+    res.debug["fronts"] = [round(h / N_R, 2) for h in hs]
 
     if res.snr < 3:
         res.reason = f"signal too weak (SNR {res.snr:.1f})"
