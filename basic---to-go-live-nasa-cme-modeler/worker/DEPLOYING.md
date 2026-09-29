@@ -52,8 +52,8 @@ The analysis runs in GitHub Actions (`.github/workflows/cme-orientation.yml`,
 every 30 minutes, code in `scripts/cme_orientation/`) and uploads to the
 `cme-orientation` worker, which the app reads. One-time setup:
 
-1. Create a KV namespace called `CME_ORIENTATION` and paste its ID into
-   `wrangler-cme-orientation.toml`.
+1. KV namespace `CME_ORIENTATION` (its ID is in
+   `wrangler-cme-orientation.toml`).
 2. Make up a long random token. Add it as:
    - the worker secret `INGEST_TOKEN` (on `cme-orientation`), and
    - the GitHub repository secret `ORIENTATION_TOKEN`

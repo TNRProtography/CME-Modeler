@@ -12,7 +12,7 @@ enabled = true
 # Secret (set in the dashboard): INGEST_TOKEN, the same value as the GitHub
 # repository secret ORIENTATION_TOKEN.
 
-# Create a KV namespace called CME_ORIENTATION and paste its ID here.
+# KV namespace CME_ORIENTATION.
 [[kv_namespaces]]
 binding = "ORIENTATION_KV"
-id = "REPLACE_WITH_CME_ORIENTATION_KV_ID"
+id = "d9f0cb3b7a054292b23d3ebf6630e8d1"
