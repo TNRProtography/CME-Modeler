@@ -714,7 +714,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       propagationEngineRef.current = null;
       return;
     }
-    const cmeInputs = cmeData.map(cme => processedCMEToCMEInput(cme));
+    // A CME with no measured longitude is drawn at a placeholder direction,
+    // which must not stand in for a real one in the propagation model.
+    const cmeInputs = cmeData.filter(cme => cme.longitudeMeasured !== false).map(cme => processedCMEToCMEInput(cme));
     const hssInputs = coronalHoles.map(ch => coronalHoleToHSSInput(ch));
     propagationEngineRef.current = createPropagationEngine(cmeInputs, hssInputs, measuredWindSpeedKms);
   }, [cmeData, coronalHoles, measuredWindSpeedKms]);
@@ -2427,6 +2429,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         if (co.userData?._isTail) return;
         const cme = co.userData as ProcessedCME;
         if (!cme?.startTime || !cme.speed) return;
+        if (cme.longitudeMeasured === false) return; // direction unknown: no arrival
 
         // Binary search: find tSec when dist(tSec) = earthDistScene
         let lo = 0, hi = 14 * 24 * 3600; // search up to 14 days

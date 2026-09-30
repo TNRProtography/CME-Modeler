@@ -165,7 +165,15 @@ const getPredictedArrivalTime = (cme: CMEData): Date | null => {
   return null;
 };
 
-const processCMEData = (data: CMEData[]): ProcessedCME[] => {
+/** "N27W50" -> 50, "S14E30" -> -30 (DONKI's west-positive); null if none. */
+export const sourceLongitude = (loc: string | null | undefined): number | null => {
+  const m = /^\s*[NS]\d{1,2}([EW])(\d{1,3})\s*$/i.exec(loc ?? '');
+  if (!m) return null;
+  const v = Number(m[2]);
+  return m[1].toUpperCase() === 'W' ? v : -v;
+};
+
+export const processCMEData = (data: CMEData[]): ProcessedCME[] => {
   const modelableCMEs: ProcessedCME[] = [];
   data.forEach(cme => {
     if (cme.cmeAnalyses && cme.cmeAnalyses.length > 0) {
@@ -187,7 +195,28 @@ const processCMEData = (data: CMEData[]): ProcessedCME[] => {
           link: cme.link,
           instruments: cme.instruments?.map(inst => inst.displayName).join(', ') || 'N/A',
           sourceLocation: cme.sourceLocation || 'N/A',
-          halfAngle: analysis.halfAngle || 30
+          halfAngle: analysis.halfAngle || 30,
+          longitudeMeasured: true,
+        });
+      } else if (analysis && analysis.speed != null && analysis.latitude != null && analysis.longitude == null) {
+        // A plane-of-sky measurement from one coronagraph: speed and
+        // latitude, no longitude. Listed and drawn - at its source region's
+        // longitude when DONKI gives one, else toward Earth's side as a
+        // placeholder - but never Earth-directed, so no alert and no arrival.
+        modelableCMEs.push({
+          id: cme.activityID,
+          startTime: new Date(cme.startTime),
+          speed: analysis.speed,
+          longitude: sourceLongitude(cme.sourceLocation) ?? 0,
+          latitude: analysis.latitude,
+          isEarthDirected: false,
+          note: cme.note || 'No additional details.',
+          predictedArrivalTime: getPredictedArrivalTime(cme),
+          link: cme.link,
+          instruments: cme.instruments?.map(inst => inst.displayName).join(', ') || 'N/A',
+          sourceLocation: cme.sourceLocation || 'N/A',
+          halfAngle: analysis.halfAngle || 30,
+          longitudeMeasured: false,
         });
       }
     }

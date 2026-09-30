@@ -86,7 +86,12 @@ const CMEListPanel: React.FC<CMEListPanelProps> = ({ cmes, onSelectCME, selected
             <p><strong>ID:</strong> <a href={selectedCMEForInfo.link} target="_blank" rel="noopener noreferrer" className={`text-neutral-400 hover:underline`}>{selectedCMEForInfo.id}</a></p>
             <p><strong>Start Time:</strong> {selectedCMEForInfo.startTime.toLocaleString()}</p>
             <p><strong>Speed:</strong> {selectedCMEForInfo.speed} km/s</p>
-            <p><strong>Direction (Lon/Lat):</strong> {selectedCMEForInfo.longitude.toFixed(1)}° / {selectedCMEForInfo.latitude.toFixed(1)}°</p>
+            {selectedCMEForInfo.longitudeMeasured === false ? (
+              <p><strong>Direction (Lon/Lat):</strong> not measured / {selectedCMEForInfo.latitude.toFixed(1)}°{' '}
+                <span className="text-neutral-500">(NASA measured it in one coronagraph's view only, so its longitude is unknown; drawn at {selectedCMEForInfo.sourceLocation !== 'N/A' && selectedCMEForInfo.sourceLocation ? `its source region's, ${selectedCMEForInfo.longitude.toFixed(0)}°` : "0° as a placeholder"})</span></p>
+            ) : (
+              <p><strong>Direction (Lon/Lat):</strong> {selectedCMEForInfo.longitude.toFixed(1)}° / {selectedCMEForInfo.latitude.toFixed(1)}°</p>
+            )}
             <OrientationInfo cme={selectedCMEForInfo} />
             <p><strong>Source:</strong> {selectedCMEForInfo.sourceLocation}</p>
             <p><strong>Instruments:</strong> {selectedCMEForInfo.instruments}</p>
@@ -136,6 +141,7 @@ const CMEListPanel: React.FC<CMEListPanelProps> = ({ cmes, onSelectCME, selected
             <p className="text-inherit">{launchedAgo(cme.startTime)}</p>
             <p className="text-inherit">Speed: <span className="font-normal">{cme.speed} km/s</span></p>
             {cme.isEarthDirected && <p className="font-bold text-green-300 mt-1">Potentially Earth-Directed</p>}
+            {cme.longitudeMeasured === false && <p className="text-neutral-500 mt-1">Direction not measured</p>}
           </div>
         ))}
       </div>

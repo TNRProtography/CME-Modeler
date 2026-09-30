@@ -77,6 +77,13 @@ export interface ProcessedCME {
   instruments: string;
   sourceLocation: string;
   halfAngle: number;
+  /**
+   * False when NASA's analysis gave no longitude (a plane-of-sky measurement
+   * from one coronagraph): `longitude` is then only where it is drawn (its
+   * source region's, or 0), and it is never treated as Earth-directed or
+   * counted as arriving anywhere.
+   */
+  longitudeMeasured?: boolean;
   /** Our orientation analysis, when there is one (utils/cmeOrientation). Drawing only. */
   orientation?: import('./utils/cmeOrientation').CmeOrientation | null;
 }

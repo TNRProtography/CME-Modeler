@@ -67,7 +67,9 @@ const toRad = (d: number) => d * Math.PI / 180;
 const toDeg = (r: number) => r * 180 / Math.PI;
 
 /** When and whether the visualization's CME touches Earth. Null if it never does. */
-export function cmeEarthArrival(cme: Pick<ProcessedCME, 'id' | 'startTime' | 'speed' | 'longitude' | 'latitude' | 'halfAngle'>): CmeEarthArrival | null {
+export function cmeEarthArrival(cme: Pick<ProcessedCME, 'id' | 'startTime' | 'speed' | 'longitude' | 'latitude' | 'halfAngle' | 'longitudeMeasured'>): CmeEarthArrival | null {
+  // No measured longitude: where it is drawn is a placeholder, not a direction.
+  if (cme.longitudeMeasured === false) return null;
   const launchMs = cme.startTime.getTime();
   if (!Number.isFinite(launchMs) || !(cme.speed > 0)) return null;
   const transitSec = cmeTransitSeconds(cme.speed, 1);
