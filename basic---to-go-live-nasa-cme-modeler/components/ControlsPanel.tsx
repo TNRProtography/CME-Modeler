@@ -326,6 +326,11 @@ const ControlsPanel: React.FC<ControlsPanelProps> = ({
                   Fast solar wind from coronal holes (dark patches). Spiral arms rotate with the Sun.
                   Darker/wider holes produce faster source streams (800-1400 km/s).
                 </p>
+                <div className="space-y-0.5 pt-1">
+                  <p className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: '#a852ff' }} />Compression (CIR) - leading edge, fast wind piling into slow wind</p>
+                  <p className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: 'linear-gradient(90deg,#3ddc84,#ffb020)' }} />Fast wind (HSS) - coloured by speed</p>
+                  <p className="flex items-center gap-2"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: '#4785d9' }} />Rarefaction - trailing edge, wind thinning out</p>
+                </div>
               </div>
             )}
             {onExperimentalInteractionsChange && (

@@ -116,6 +116,16 @@ console.log('\nThe shape of a stream at Earth');
   check(spans.length >= 2, `${spans.length} disturbance spans found`);
   check(spans[0].kind === 'SIR', 'the first span is the compression', spans[0].kind);
   check(spans.every(s => s.endMs >= s.startMs), 'and every span is the right way round');
+
+  // The chart's three bands: compression, then fast wind, then the decline.
+  const phases = F.streamPhaseSpans(timeline);
+  const order = phases.map(s => s.kind).join(',');
+  check(order === 'compression,fast,declining', `the stream's phases come in order (${order})`, order);
+  check(phases.every((s, i) => i === 0 || s.startMs > phases[i - 1].endMs), 'without overlapping');
+  const fast = phases.find(s => s.kind === 'fast');
+  const inFast = timeline.filter(p => p.atMs >= fast.startMs && p.atMs <= fast.endMs);
+  const peakSpeed = Math.max(...timeline.map(p => p.speedKms));
+  check(inFast.some(p => p.speedKms === peakSpeed), 'and the fast wind band holds the peak speed');
 }
 
 // ── observation always wins ────────────────────────────────────────────────

@@ -16,7 +16,8 @@ import CloseIcon from './icons/CloseIcon';
 import { useForecast } from '../hooks/useForecast';
 import { nightlyOutlook } from '../utils/auroraOutlook';
 import { resolveViewerLocation, locationLabel } from '../utils/viewerLocation';
-import type { L1State } from '../utils/forecastTimeline';
+import { streamPhaseSpans } from '../utils/forecastTimeline';
+import type { L1State, StreamPhaseKind, StreamPhaseSpan } from '../utils/forecastTimeline';
 
 interface ImpactGraphModalProps {
   isOpen: boolean;
@@ -33,6 +34,24 @@ const fmtNz = (ms: number, withDate = true): string =>
 const fmtDay = (ms: number): string =>
   new Date(ms).toLocaleDateString('en-NZ', { timeZone: 'Pacific/Auckland', weekday: 'long', day: 'numeric', month: 'short' });
 
+// The parts of a coronal hole stream, coloured as the stream is in the 3D view.
+const PHASE_STYLE: Record<StreamPhaseKind, { label: string; colour: string }> = {
+  compression: { label: 'Compression (CIR)', colour: '#a855f7' },
+  fast: { label: 'Fast wind (HSS)', colour: '#22c55e' },
+  declining: { label: 'Declining', colour: '#3b82f6' },
+};
+
+const fmtShortDay = (ms: number): string =>
+  new Date(ms).toLocaleDateString('en-NZ', { timeZone: 'Pacific/Auckland', day: 'numeric', month: 'short' });
+
+/** "2 Oct", or "3-4 Oct" / "30 Sep - 2 Oct" across days. */
+const fmtDayRange = (startMs: number, endMs: number): string => {
+  const a = fmtShortDay(startMs), b = fmtShortDay(endMs);
+  if (a === b) return a;
+  const [da, ma] = a.split(' '), [db, mb] = b.split(' ');
+  return ma === mb ? `${da}-${db} ${mb}` : `${a} - ${b}`;
+};
+
 /** A small line chart. Enough for a shape, without a chart library. */
 const Trace: React.FC<{
   points: L1State[];
@@ -42,7 +61,8 @@ const Trace: React.FC<{
   label: string;
   unit: string;
   nowMs: number;
-}> = ({ points, valueOf, bandOf, colour, label, unit, nowMs }) => {
+  phases?: StreamPhaseSpan[];
+}> = ({ points, valueOf, bandOf, colour, label, unit, nowMs, phases = [] }) => {
   if (points.length < 2) return null;
 
   const W = 720, H = 90, PAD = 4;
@@ -69,6 +89,11 @@ const Trace: React.FC<{
         <span className="text-neutral-500 font-mono">{lo.toFixed(0)} to {hi.toFixed(0)} {unit}</span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-20" preserveAspectRatio="none" role="img" aria-label={label}>
+        {phases.map((ph) => (
+          <rect key={`${ph.id}-${ph.kind}-${ph.startMs}`} x={x(ph.startMs)} y={0}
+                width={Math.max(1, x(ph.endMs + 3600_000) - x(ph.startMs))} height={H}
+                fill={PHASE_STYLE[ph.kind].colour} fillOpacity={0.14} />
+        ))}
         {band && <path d={band} fill={`${colour}22`} />}
         {/* Where observation stops and model begins. */}
         <line x1={x(nowMs)} y1={0} x2={x(nowMs)} y2={H} stroke="#a3a3a3" strokeWidth="1"
@@ -101,6 +126,7 @@ const ImpactGraphModal: React.FC<ImpactGraphModalProps> = ({ isOpen, onClose }) 
 
   const nowMs = Date.now();
   const future = forecast.timeline.filter((p) => p.atMs >= nowMs);
+  const phases = streamPhaseSpans(forecast.timeline);
 
   return (
     <div className="fixed inset-0 bg-black/80 z-[1200] flex items-center justify-center p-3" onClick={onClose}>
@@ -177,18 +203,33 @@ const ImpactGraphModal: React.FC<ImpactGraphModalProps> = ({ isOpen, onClose }) 
           {future.length > 1 && (
             <div className="mb-4">
               <h3 className="text-sm font-semibold text-neutral-200 mb-2">The wind at Earth</h3>
+              {phases.length > 0 && (
+                <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2 text-[11px]">
+                  {phases.map((ph) => (
+                    <span key={`${ph.id}-${ph.kind}-${ph.startMs}`} className="flex items-center gap-1.5 text-neutral-300">
+                      <span className="inline-block w-2.5 h-2.5 rounded-sm"
+                            style={{ background: PHASE_STYLE[ph.kind].colour, opacity: 0.8 }} />
+                      <span className="font-semibold">{PHASE_STYLE[ph.kind].label}</span>
+                      <span className="text-neutral-500">{fmtDayRange(ph.startMs, ph.endMs)} (estimated)</span>
+                    </span>
+                  ))}
+                </div>
+              )}
               <Trace points={forecast.timeline} valueOf={(p) => p.speedKms}
-                     colour="#38bdf8" label="Speed" unit="km/s" nowMs={nowMs} />
+                     colour="#38bdf8" phases={phases} label="Speed" unit="km/s" nowMs={nowMs} />
               <Trace points={forecast.timeline} valueOf={(p) => p.densityCm3}
-                     colour="#a78bfa" label="Density" unit="cm⁻³" nowMs={nowMs} />
+                     colour="#a78bfa" phases={phases} label="Density" unit="cm⁻³" nowMs={nowMs} />
               <Trace points={forecast.timeline} valueOf={(p) => p.btNt}
-                     colour="#fbbf24" label="Field strength (Bt)" unit="nT" nowMs={nowMs} />
+                     colour="#fbbf24" phases={phases} label="Field strength (Bt)" unit="nT" nowMs={nowMs} />
               <Trace points={forecast.timeline} valueOf={(p) => p.bzFromSectorNt}
                      bandOf={(p) => [p.bzFromSectorNt - p.bzFluctuationNt, p.bzFromSectorNt + p.bzFluctuationNt]}
-                     colour="#fb7185" label="Southward field (Bz)" unit="nT" nowMs={nowMs} />
+                     colour="#fb7185" phases={phases} label="Southward field (Bz)" unit="nT" nowMs={nowMs} />
               <p className="text-[11px] text-neutral-600">
                 The dashed line is now: left of it is measured, right of it is modelled. Density is the one that
                 surprises people - it <em>drops</em> inside a fast stream and spikes in the compression ahead of it.
+                {phases.length > 0 && <> The shaded bands are a coronal hole stream's three parts: the compression
+                (CIR) where fast wind piles into the slow wind ahead - dense, strong field, often the most active
+                part - then the fast wind itself, then the long decline back to slow wind.</>}
               </p>
               <p className="text-[11px] text-neutral-600 mt-1">
                 The Bz line is only the part the sector geometry guarantees, which is computable. The shaded band is

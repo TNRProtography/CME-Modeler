@@ -836,12 +836,14 @@ const GROW_VERT = /* glsl */`
   attribute float aSpeed;
   attribute float aGlow;
   attribute float aEnds;
+  attribute float aSide;
 
   varying float vFlow;
   varying float vEdge;
   varying float vSpeed;
   varying float vGlow;
   varying float vEnds;
+  varying float vSide;
 
   void main() {
     vFlow = aFlow;
@@ -849,6 +851,7 @@ const GROW_VERT = /* glsl */`
     vSpeed = aSpeed;
     vGlow = aGlow;
     vEnds = aEnds;
+    vSide = aSide;
     float angle = uChLon + uSunAngle;
     float cosA = cos(angle);
     float sinA = sin(angle);
@@ -861,14 +864,25 @@ const GROW_VERT = /* glsl */`
 
 // The arm's own fragment shader, with each parcel's speed in place of the
 // hole's, soft ends wherever the stream actually ends, and the pile-up glow.
+//
+// Across the tube, the stream's three parts: the side facing the way the Sun
+// turns runs into the slow wind ahead of it and is compressed (the CIR,
+// purple); the middle is the fast wind itself (its speed colour); the side
+// behind outruns the slow wind following it and thins out (rarefaction,
+// blue). vSide is +1 on the leading side, -1 on the trailing side.
 const GROW_FRAG = FRAG
-  .replace('varying float vFlow;', 'varying float vFlow;\n  varying float vSpeed;\n  varying float vGlow;\n  varying float vEnds;')
+  .replace('varying float vFlow;', 'varying float vFlow;\n  varying float vSpeed;\n  varying float vGlow;\n  varying float vEnds;\n  varying float vSide;')
   .replace('deceleratedSpeed(uSourceSpeed, vFlow)', 'deceleratedSpeed(max(vSpeed, 300.0), vFlow)')
   .replace('float alpha = uOpacity * fadeIn * edgeFade * tipFade * (0.32 + 0.68 * pulse);',
     `float glow = smoothstep(0.2, 1.0, vGlow);   // a pile-up glows, denser wind does not
+    // The CIR builds up with distance: none at the Sun, clear by ~0.3 AU.
+    float cir = smoothstep(0.3, 0.8, vSide) * smoothstep(0.06, 0.3, vFlow);
+    float rare = smoothstep(0.3, 0.8, -vSide) * smoothstep(0.04, 0.25, vFlow);
+    col = mix(col, vec3(0.66, 0.32, 1.0), cir * 0.75);
+    col = mix(col, vec3(0.28, 0.52, 0.85), rare * 0.65);
     col = mix(col, vec3(1.0, 0.97, 0.9), glow * 0.45);
     float alpha = uOpacity * fadeIn * edgeFade * tipFade * (0.32 + 0.68 * pulse)
-      * smoothstep(0.0, 0.08, vEnds) * (1.0 + glow * 0.5);`);
+      * smoothstep(0.0, 0.08, vEnds) * (1.0 + glow * 0.5 + cir * 0.35) * (1.0 - rare * 0.25);`);
 
 /**
  * How fat a stream is drawn, over the width its hole gives it. The CME
@@ -886,7 +900,7 @@ export function createGrowingStreamMesh(THREE: any, id: string, opacity: number)
   const n = rings * sides;
   const geom = new THREE.BufferGeometry();
   geom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(n * 3), 3));
-  for (const name of ['aFlow', 'aEdge', 'aSpeed', 'aGlow', 'aEnds']) {
+  for (const name of ['aFlow', 'aEdge', 'aSpeed', 'aGlow', 'aEnds', 'aSide']) {
     geom.setAttribute(name, new THREE.Float32BufferAttribute(new Float32Array(n), 1));
   }
   const edge = geom.getAttribute('aEdge');
@@ -1032,7 +1046,11 @@ export function updateGrowingStreamMesh(
   const aSpeed = geom.getAttribute('aSpeed');
   const aGlow = geom.getAttribute('aGlow');
   const aEnds = geom.getAttribute('aEnds');
+  const aSide = geom.getAttribute('aSide');
   const up = new THREE.Vector3(0, 1, 0);
+  // Which way the Sun turns, from the spiral itself: the arm trails behind
+  // the rotation, so its azimuth runs the other way with distance.
+  const turn = Math.sign(samples[0].az - samples[rings - 1].az) || 1;
   const tang = new THREE.Vector3(), right = new THREE.Vector3(), up2 = new THREE.Vector3();
   const flat: number[] = [];
 
@@ -1046,6 +1064,10 @@ export function updateGrowingStreamMesh(
     if (right.lengthSq() < 1e-8) right.set(1, 0, 0);
     right.normalize();
     up2.crossVectors(right, tang).normalize();
+    // `right` lies across the stream in the ecliptic; which end of it faces
+    // the way the Sun turns here, (cos az, 0, -sin az)?
+    const along = Math.atan2(curr.x, curr.z);
+    const lead = turn * Math.sign(right.x * Math.cos(along) - right.z * Math.sin(along) || 1);
 
     // The arm's tube radius, by distance rather than by place along the arm,
     // so a young stream is as narrow as the old arm was at the same distance.
@@ -1071,9 +1093,10 @@ export function updateGrowingStreamMesh(
       aSpeed.setX(v, s.speed);
       aGlow.setX(v, s.glow);
       aEnds.setX(v, ends);
+      aSide.setX(v, lead * cr);
     }
   }
-  for (const a of [pos, aFlow, aSpeed, aGlow, aEnds]) a.needsUpdate = true;
+  for (const a of [pos, aFlow, aSpeed, aGlow, aEnds, aSide]) a.needsUpdate = true;
   geom.computeVertexNormals();
   mesh.visible = true;
   mesh.userData.barrier = hssCutProfile(mesh.userData.coronalHoleId, backbone, flat, 0);

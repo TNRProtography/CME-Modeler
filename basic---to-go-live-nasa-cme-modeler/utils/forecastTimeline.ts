@@ -319,6 +319,65 @@ export function disturbanceSpans(timeline: L1State[]): DisturbanceSpan[] {
   return spans;
 }
 
+/**
+ * The three parts of a coronal hole stream as they pass Earth, as the
+ * textbook chart draws them: the compression (CIR) that rides ahead of it,
+ * the fast wind itself, and the long decline back to slow wind behind it.
+ *
+ * Read off the timeline rather than the streams, so the bands line up with
+ * the lines they are drawn over whatever computed them (worker or device).
+ * The fast wind lasts while the speed stays within 40% of its peak rise;
+ * after that it is declining.
+ */
+export type StreamPhaseKind = 'compression' | 'fast' | 'declining';
+
+export interface StreamPhaseSpan {
+  kind: StreamPhaseKind;
+  id?: string;
+  startMs: number;
+  endMs: number;
+}
+
+export function streamPhaseSpans(timeline: L1State[]): StreamPhaseSpan[] {
+  const spans: StreamPhaseSpan[] = [];
+  const ids = new Set<string | undefined>();
+  for (const p of timeline) {
+    if (p.source === 'modelled' && (p.disturbance === 'SIR' || p.disturbance === 'HSS')) ids.add(p.disturbanceId);
+  }
+  for (const id of ids) {
+    const pts = timeline.filter((p) => p.source === 'modelled' && p.disturbanceId === id
+      && (p.disturbance === 'SIR' || p.disturbance === 'HSS'));
+    if (pts.length === 0) continue;
+    // The wind it rose from: just before the first point of the stream.
+    const first = timeline.indexOf(pts[0]);
+    const before = first > 0 ? timeline[first - 1].speedKms : pts[0].speedKms;
+    const peak = Math.max(...pts.map((p) => p.speedKms));
+    const fastFloor = before + 0.6 * Math.max(0, peak - before);
+    let peaked = false;
+    const kindOf = (p: L1State): StreamPhaseKind => {
+      if (p.disturbance === 'SIR') return 'compression';
+      if (p.speedKms >= fastFloor) { peaked = true; return 'fast'; }
+      return peaked ? 'declining' : 'fast';
+    };
+    let open: StreamPhaseSpan | null = null;
+    let lastMs = -Infinity;
+    for (const p of pts) {
+      const kind = kindOf(p);
+      // A gap (another stream won those hours) closes the span.
+      const gap = p.atMs - lastMs > 3 * 3600_000;
+      if (open && open.kind === kind && !gap) {
+        open.endMs = p.atMs;
+      } else {
+        if (open) spans.push(open);
+        open = { kind, id, startMs: p.atMs, endMs: p.atMs };
+      }
+      lastMs = p.atMs;
+    }
+    if (open) spans.push(open);
+  }
+  return spans.sort((a, b) => a.startMs - b.startMs);
+}
+
 // ── What the forecast says is coming ────────────────────────────────────────
 
 /**
