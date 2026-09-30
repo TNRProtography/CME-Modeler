@@ -5,6 +5,7 @@ CME orientation: one run over every CME in DONKI's 7-day list.
     python3 scripts/cme_orientation/run.py --dry-run  # analyse, print, no upload
     ORIENTATION_ONLY=<activityID> ... run.py          # one CME, every view's
                                                       # working numbers, no upload
+    ORIENTATION_ONLY=list ... run.py                  # every CME's DONKI analysis
 
 For each CME:
   1. Coronagraphs. Every source with frames around the launch, from the
@@ -70,6 +71,15 @@ def main() -> int:
         print(f"No previous results ({e}); analysing everything.")
 
     cmes = S.donki_cmes()
+    if ONLY == "list":
+        # Every CME's DONKI analysis, for reproducing the app's scene; nothing
+        # analysed or uploaded.
+        for cme in sorted(cmes, key=lambda c: c.get("startTime") or ""):
+            an = S.pick_analysis(cme) or {}
+            print("CME {} lon {} lat {} half {} speed {} type {}".format(
+                cme.get("activityID"), an.get("longitude"), an.get("latitude"), an.get("halfAngle"),
+                an.get("speed"), an.get("type")))
+        return 0
     flares = S.donki_flares()
     print(f"{len(cmes)} CMEs from DONKI, {len(previous)} previous results")
 
