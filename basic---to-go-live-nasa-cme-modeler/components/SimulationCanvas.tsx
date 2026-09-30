@@ -534,11 +534,15 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   // toggle change; and the stream walls it has asked for, by the hour.
   const particleSimRef = useRef<CmeParticleSim | null>(null);
   const particleSimDirtyRef = useRef(true);
+  // TEMPORARY debug: when the physics table was last logged.
+  const physicsLogAtRef = useRef(0);
   const wallCacheRef = useRef<Map<number, WallSet | null>>(new Map());
   const wallScratchRef = useRef<Map<string, any>>(new Map());
   const [barrierNotes, setBarrierNotes] = useState<string[]>([]);
   useEffect(() => {
     particleSimDirtyRef.current = true;
+    // TEMPORARY debug.
+    console.log(`[CME physics] experimental interactions ${experimentalInteractions ? 'ON' : 'OFF'}`);
     if (!experimentalInteractions) {
       barrierNotesRef.current.clear();
       setBarrierNotes([]);
@@ -1031,6 +1035,50 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       const span = Math.max(1, nowMs - sim.startMs);
       const done = Math.max(0, Math.min(99, Math.round(((sim.timeMs - sim.startMs) / span) * 100)));
       barrierNotesRef.current.set('__sim', `Working out interactions… ${done}%`);
+    }
+
+    // TEMPORARY debug: what the physics is doing to each CME, every 2 s.
+    if (performance.now() - physicsLogAtRef.current > 2000) {
+      physicsLogAtRef.current = performance.now();
+      const AU = SCENE_SCALE;
+      const rows: Record<string, unknown>[] = [];
+      for (const [c, d] of placed) {
+        const id = c.userData?.id;
+        const body: Float32Array | undefined = c.userData?._local;
+        const world: Float32Array | undefined = c.userData?._simWorld;
+        if (!id || !body || d < 0) continue;
+        const dirV = new THREE.Vector3(0, 1, 0).applyQuaternion(c.quaternion);
+        const front = Math.min(c.userData._frontCount ?? body.length / 3, body.length / 3);
+        c.updateMatrixWorld(true);
+        const m = c.matrixWorld.elements;
+        let drawn = -Infinity, simFront = -Infinity, simBack = Infinity, drawnBack = Infinity;
+        for (let i = 0; i < front; i++) {
+          const o = i * 3, x = body[o], y = body[o + 1], z = body[o + 2];
+          const wx = m[0] * x + m[4] * y + m[8] * z + m[12];
+          const wy = m[1] * x + m[5] * y + m[9] * z + m[13];
+          const wz = m[2] * x + m[6] * y + m[10] * z + m[14];
+          const pd = wx * dirV.x + wy * dirV.y + wz * dirV.z;
+          drawn = Math.max(drawn, pd); drawnBack = Math.min(drawnBack, pd);
+          if (world) {
+            const ps = world[o] * dirV.x + world[o + 1] * dirV.y + world[o + 2] * dirV.z;
+            simFront = Math.max(simFront, ps); simBack = Math.min(simBack, ps);
+          }
+        }
+        const touching = Array.from(simFront === -Infinity ? [] : (particleSimRef.current?.touchingOf(id) ?? new Map()).entries())
+          .map(([who, how]) => `${how} ${shortCmeLabel(who)}`).join(', ');
+        rows.push({
+          cme: shortCmeLabel(id),
+          speed: c.userData.speed,
+          'drawn front AU': +(drawn / AU).toFixed(3),
+          'physics front AU': simFront === -Infinity ? null : +(simFront / AU).toFixed(3),
+          'front moved %': simFront === -Infinity ? null : +(100 * (simFront / drawn - 1)).toFixed(1),
+          'back moved %': simFront === -Infinity ? null : +(100 * (simBack / drawnBack - 1)).toFixed(1),
+          touching: touching || '-',
+        });
+      }
+      const lagMin = Math.round((nowMs - sim.timeMs) / 60000);
+      console.log(`[CME physics] at ${new Date(nowMs).toISOString()}, physics clock ${lagMin} min behind${caughtUp ? '' : ' (catching up)'}`);
+      console.table(rows);
     }
   }, [experimentalInteractions, updateCMEShape, buildParticleSim, restoreParticles, writeParticles]);
   // The animation loop is set up once, when the scene is built, so it would
