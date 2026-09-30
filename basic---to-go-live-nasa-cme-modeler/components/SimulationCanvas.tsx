@@ -927,6 +927,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
         dir: nominal.dir,
         local,
         bodyCount: body.length / 3,
+        frontCount: c.userData._frontCount,
         nominalAt: nominal.nominalAt,
       });
     }
@@ -1868,7 +1869,10 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       // and the particles as built, so the physics can always be undone.
       geom.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(pos.length).fill(1), 3));
       mat.vertexColors = true;
-      const system = new THREE.Points(geom, mat); system.userData = { ...cme, _local: Float32Array.from(pos) };
+      // The arc particles come first: the thick front, which holds its ground
+      // against another CME in the particle physics; the depth behind it and
+      // the tail compress.
+      const system = new THREE.Points(geom, mat); system.userData = { ...cme, _local: Float32Array.from(pos), _frontCount: mainCount };
 
       // ── TAIL PARTICLE SYSTEM ─────────────────────────────────────────────
       // Particles distributed from Y=0 (back, near sun) to Y=1 (front, near CME head).

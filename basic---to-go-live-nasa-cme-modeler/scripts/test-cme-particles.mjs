@@ -116,6 +116,49 @@ try {
       `the chaser's front is pressed, the leader from behind (${sim.touchingOf('C').get('L')}, ${sim.touchingOf('L').get('C')})`);
   }
 
+  console.log('\nA chaser never gets past the leader: the tail compresses, the body holds');
+  {
+    // Same direction and width; the leader has a thick body (y 0.8-1) and a
+    // thin tail behind it (y 0.3-0.8). The chaser is three times as fast and
+    // would overtake by 34 h left alone.
+    const withTail = (id, speed, startH, nb = 1200, nt = 800) => {
+      const c = cme(id, 0, speed, 25, startH, nb + nt);
+      for (let i = 0; i < nb + nt; i++) {
+        const body = i < nb;
+        const y = body ? 0.8 + 0.2 * rnd() : 0.3 + 0.5 * rnd();
+        const rr = Math.sqrt(rnd()) * y * Math.tan(deg(25)) * (body ? 1 : 0.6), ph = rnd() * Math.PI * 2;
+        c.local[i * 3] = rr * Math.cos(ph); c.local[i * 3 + 1] = y; c.local[i * 3 + 2] = rr * Math.sin(ph);
+      }
+      const bodyOnly = c.nominalAt;
+      c.bodyCount = nb;
+      c.nominalAt = (ms) => { const n = bodyOnly(ms); return n && { body: n.body, tail: n.body }; };
+      return c;
+    };
+    const lead = withTail('L', 400, 0), chase = withTail('C', 1300, 20);
+    const sim = new CmeParticleSim([lead, chase], opts);
+    let worst = -Infinity, tailBehind = 0, heldBack = true;
+    for (let h = 22; h <= 60; h += 2) {
+      const t = T0 + h * H;
+      sim.advanceTo(t);
+      const pl = pts(sim, 'L', t), pc = pts(sim, 'C', t);
+      let leadFront = -Infinity, leadBack = Infinity, chaseFront = -Infinity;
+      for (let i = 0; i < 1200; i++) { leadFront = Math.max(leadFront, pl[i * 3 + 2]); leadBack = Math.min(leadBack, pl[i * 3 + 2]); }
+      for (let i = 0; i < pc.length / 3; i++) chaseFront = Math.max(chaseFront, pc[i * 3 + 2]);
+      worst = Math.max(worst, chaseFront - leadFront);
+      // The chaser's middle, level with the leader: held at the back of its body.
+      let mid = -Infinity;
+      for (let i = 0; i < pc.length / 3; i++) if (Math.abs(pc[i * 3]) < 0.02 && Math.abs(pc[i * 3 + 1]) < 0.02) mid = Math.max(mid, pc[i * 3 + 2]);
+      if (mid > leadBack + 1e-3) heldBack = false;
+      if (h >= 34) for (let i = 1200; i < pl.length / 3; i++) if (pl[i * 3 + 2] < mid - 1e-3 && Math.abs(pl[i * 3]) < 0.02) tailBehind++;
+    }
+    check(worst <= 1e-3, `no part of the chaser ever gets past the leader's front (worst ${worst.toFixed(4)})`);
+    check(heldBack, 'its middle stops at the back of the leader\'s body, not inside it');
+    check(tailBehind === 0, `the leader's tail is pressed ahead of the chaser, not run over (${tailBehind} left behind)`);
+    const t = T0 + 60 * H;
+    check(meanR(pts(sim, 'C', t)) < meanR(nominalPts(chase, t)) * 0.8, 'the chaser has slowed down behind it');
+    check(sim.touchingOf('C').get('L') === 'front' && sim.touchingOf('L').get('C') === 'behind', 'and each knows it');
+  }
+
   console.log('\nStream edges are walls');
   {
     // A stream straddling az 25°-45° at all distances.
