@@ -882,7 +882,7 @@ const GROW_FRAG = FRAG
     col = mix(col, vec3(0.28, 0.52, 0.85), rare * 0.65);
     col = mix(col, vec3(1.0, 0.97, 0.9), glow * 0.45);
     float alpha = uOpacity * fadeIn * edgeFade * tipFade * (0.32 + 0.68 * pulse)
-      * smoothstep(0.0, 0.08, vEnds) * (1.0 + glow * 0.5 + cir * 0.35) * (1.0 - rare * 0.25);`);
+      * smoothstep(0.0, 0.15, vEnds) * (1.0 + glow * 0.5 + cir * 0.35) * (1.0 - rare * 0.25);`);
 
 /**
  * How fat a stream is drawn, over the width its hole gives it. The CME
@@ -1022,6 +1022,24 @@ export function updateGrowingStreamMesh(
     ));
   }
 
+  // Smooth the path. Where fast wind piles into slower wind, and where a
+  // young stream's front is still bunched up, neighbouring parcels can sit
+  // at almost the same distance but different angles, and a tube laid
+  // straight through them kinks by tens of degrees from one ring to the next
+  // and crumples. The pile-up still shows (as its glow and the spiral
+  // tightening); the tube just follows it smoothly. Both ends stay put.
+  for (let pass = 0; pass < 24; pass++) {
+    let prev = backbone[0].clone();
+    for (let i = 1; i < rings - 1; i++) {
+      const here = backbone[i].clone();
+      backbone[i].multiplyScalar(0.5).addScaledVector(prev, 0.25).addScaledVector(backbone[i + 1], 0.25);
+      prev = here;
+    }
+  }
+  const along: number[] = [0];
+  for (let i = 1; i < rings; i++) along.push(along[i - 1] + backbone[i].distanceTo(backbone[i - 1]));
+  const length = along[rings - 1] || 1;
+
   // How tightly the stream bends at each ring: the radius of the circle
   // through its neighbours a few rings either side. A tube fatter than the
   // bend it follows folds over itself into fins, so the tube is kept inside
@@ -1054,6 +1072,47 @@ export function updateGrowingStreamMesh(
   const tang = new THREE.Vector3(), right = new THREE.Vector3(), up2 = new THREE.Vector3();
   const flat: number[] = [];
 
+  // The arm's tube radius, by distance rather than by place along the arm,
+  // so a young stream is as narrow as the old arm was at the same distance.
+  const radius = samples.map((s, i) => {
+    const flow = THREE.MathUtils.clamp((s.r - r0) / span, 0, 1);
+    const halfAngle = (s.width / 2) * DEG_TO_RAD;
+    const tubeR0 = Math.max(sunRadius * Math.sin(halfAngle), sunRadius * 0.07);
+    const widthFactor = THREE.MathUtils.clamp(s.width / 30, 0.6, 1.8);
+    const tE = Math.pow(flow, 0.7);
+    return Math.min(limit[i], HSS_STREAM_WIDTH_SCALE * tubeR0 * (1 + tE * 4 * widthFactor) * (1 + tE));
+  });
+  // Where the bend limit cuts in, it cuts in hard, and the tube pinched from
+  // one ring to the next looks crumpled. Let the radius change only so fast
+  // along the stream (both ways, so it narrows into a pinch and widens out of
+  // it gradually), then soften what is left.
+  const MAX_FLARE = 0.6;
+  for (let i = 1; i < rings; i++) radius[i] = Math.min(radius[i], radius[i - 1] + MAX_FLARE * (along[i] - along[i - 1]));
+  for (let i = rings - 2; i >= 0; i--) radius[i] = Math.min(radius[i], radius[i + 1] + MAX_FLARE * (along[i + 1] - along[i]));
+  for (let pass = 0; pass < 4; pass++) {
+    let prev = radius[0];
+    for (let i = 1; i < rings - 1; i++) {
+      const here = radius[i];
+      radius[i] = Math.min(limit[i], 0.5 * here + 0.25 * (prev + radius[i + 1]));
+      prev = here;
+    }
+  }
+  // Rounded ends wherever the stream really ends: its front while it is
+  // still growing out, and its back once the hole has closed and the last
+  // wind has left the Sun. A tube cut off at full width reads as a slab.
+  // (Where it runs off the edge of the scene, it just fades.)
+  const frontEnds = samples[rings - 1].r < maxReach * 0.98;
+  const backEnds = samples[0].r > r0 * 1.05;
+  for (let i = 0; i < rings; i++) {
+    const cap = (d: number) => {
+      const L = Math.min(length * 0.2, Math.max(1e-6, radius[i] * 1.5));
+      const f = Math.min(1, d / L);
+      return 0.25 + 0.75 * Math.sqrt(1 - (1 - f) * (1 - f));
+    };
+    if (frontEnds) radius[i] *= cap(length - along[i]);
+    if (backEnds) radius[i] *= cap(along[i]);
+  }
+
   for (let i = 0; i < rings; i++) {
     const s = samples[i];
     const curr = backbone[i];
@@ -1066,19 +1125,13 @@ export function updateGrowingStreamMesh(
     up2.crossVectors(right, tang).normalize();
     // `right` lies across the stream in the ecliptic; which end of it faces
     // the way the Sun turns here, (cos az, 0, -sin az)?
-    const along = Math.atan2(curr.x, curr.z);
-    const lead = turn * Math.sign(right.x * Math.cos(along) - right.z * Math.sin(along) || 1);
+    const azHere = Math.atan2(curr.x, curr.z);
+    const lead = turn * Math.sign(right.x * Math.cos(azHere) - right.z * Math.sin(azHere) || 1);
 
-    // The arm's tube radius, by distance rather than by place along the arm,
-    // so a young stream is as narrow as the old arm was at the same distance.
     const flow = THREE.MathUtils.clamp((s.r - r0) / span, 0, 1);
-    const halfAngle = (s.width / 2) * DEG_TO_RAD;
-    const tubeR0 = Math.max(sunRadius * Math.sin(halfAngle), sunRadius * 0.07);
-    const widthFactor = THREE.MathUtils.clamp(s.width / 30, 0.6, 1.8);
-    const tE = Math.pow(flow, 0.7);
-    const rTube = Math.min(limit[i], HSS_STREAM_WIDTH_SCALE * tubeR0 * (1 + tE * 4 * widthFactor) * (1 + tE));
+    const rTube = radius[i];
     // 0 at either end of the stream, 1 inside it.
-    const ends = Math.min(i, rings - 1 - i) / (rings - 1) * 2;
+    const ends = Math.min(along[i], length - along[i]) / length * 2;
 
     for (let k = 0; k < sides; k++) {
       const ang = (k / sides) * Math.PI * 2;
