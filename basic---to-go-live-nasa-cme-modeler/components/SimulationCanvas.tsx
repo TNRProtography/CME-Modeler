@@ -1007,7 +1007,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       if (d >= 0 && tSec > 0) { nowMs = c.userData.startTime.getTime() + tSec * 1000; break; }
     }
     if (!Number.isFinite(nowMs)) return;
-    const caughtUp = sim.advanceTo(nowMs, 8);
+    // A little more of each frame while it is catching up (after the toggle,
+    // or a scrub), so it gets there sooner.
+    const caughtUp = sim.advanceTo(nowMs, 12);
 
     const ids = new Set<string>(placed.map(([c]) => c.userData?.id).filter(Boolean));
     for (const [c, d] of placed) {
@@ -1020,6 +1022,11 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       // Kept on the CME between frames: a fresh array per CME per frame was
       // tens of thousands of floats of garbage a second.
       const size = (nBody + nTail) * 3;
+      // Still working its way to now: nothing half-worked-out is drawn. Each
+      // CME keeps the last settled shape it had (as it is carried along its
+      // path), or its own shape if it has none yet, and changes once, when
+      // the physics arrives - not a wiggle every frame on the way.
+      if (!caughtUp) continue;
       let world: Float32Array = c.userData._simWorld;
       if (!world || world.length !== size) { world = new Float32Array(size); c.userData._simWorld = world; }
       if (!sim.positionsAt(id, nowMs, world)) { restoreParticles(c); restoreParticles(tail); continue; }

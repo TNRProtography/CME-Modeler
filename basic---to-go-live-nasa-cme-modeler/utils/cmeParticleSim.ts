@@ -107,7 +107,8 @@ export const QUEUE_GAP = 0.04;
 const COHESION = 0.12;
 /** How fast the glow of being pushed fades, per step. */
 const GLOW_DECAY = 0.8;
-const CHECKPOINT_EVERY = 24;
+/** A checkpoint every 6 hours of steps: a scrub back replays at most that. */
+const CHECKPOINT_EVERY = 12;
 /** Cohesion for a CME nothing is holding back. */
 const FREE_COHESION = 0.35;
 /** How much of its lag a CME nothing is holding makes up per step. */
