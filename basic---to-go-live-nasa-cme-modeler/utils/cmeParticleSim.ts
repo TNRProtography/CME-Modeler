@@ -18,10 +18,12 @@
 //     stronger CME (faster, wider) gives less ground. Only a CME's body (its
 //     thick front) resists; its tail is swept aside and compresses as much
 //     as it has to. A leader shoved from behind is carried forward at most
-//     PUSH_LIMIT beyond where it would have been - a 5-10% speed-up - and a
-//     chaser can never get past the back of the leader's body: it presses
-//     up against it, compressing the leader's tail ahead of it, and falls
-//     behind its own path, which is it slowing down.
+//     PUSH_LIMIT beyond where it would have been - a 5-10% speed-up - but
+//     is never slowed by what is behind it. A chaser can never get past the
+//     leader's thick front: it is held a little way behind it (QUEUE_GAP, so
+//     the two stay two CMEs), compressing the leader's tail ahead of it, and
+//     falls behind its own path, which is it slowing down. A queue of any
+//     length settles front to back, each CME held behind the one before.
 //   - STAYING A CME. Each step every particle is drawn part of the way back
 //     to its place in the CME's shape, shifted by however far the CME as a
 //     whole has been held back along its path. A pushed particle holds its
@@ -87,6 +89,12 @@ export interface SimOptions {
 
 /** At most this fraction further out than its own path can a CME be shoved. */
 export const PUSH_LIMIT = 0.075;
+/**
+ * The gap a chaser is held behind the leader's front at, as a fraction of the
+ * leader's distance from the Sun (0.04 AU at 1 AU): enough to see two CMEs,
+ * not one merged blob. Never less than the contact size.
+ */
+export const QUEUE_GAP = 0.04;
 /** How much of the way back to its place in the CME a particle goes per step. */
 const COHESION = 0.12;
 /** How fast the glow of being pushed fades, per step. */
@@ -406,8 +414,10 @@ export class CmeParticleSim {
         // A lies on the + side of n, B on the - side.
         let nx: number, ny: number, nz: number;
         if (queued) {
-          [nx, ny, nz] = A.input.dir;
-          this.queues.push({ lead: A, chase: B, n: [nx, ny, nz] });
+          // Settled after the step, following the leader's shape; one flat
+          // boundary would hold a chaser at the tips of a croissant's legs.
+          this.queues.push({ lead: A, chase: B, n: [...A.input.dir] as [number, number, number] });
+          continue;
         } else {
           const ca = centre.get(A)!, cb = centre.get(B)!;
           nx = ca[0] - cb[0]; ny = ca[1] - cb[1]; nz = ca[2] - cb[2];
@@ -498,71 +508,128 @@ export class CmeParticleSim {
   }
 
   /**
-   * No CME gets past the one in front of it. Where one is behind another,
-   * every particle of the chaser behind the leader is held at the back of
-   * the leader's body, any wider flank beside it at the leader's front, and
-   * the leader's tail is pressed forward ahead of the chaser: the tail
-   * compresses as far as it has to, the body does not give way. Runs after
-   * the limits, so a leader held to its own path still cannot be run
-   * through.
+   * No CME gets past the one in front of it. Seen from behind, across the
+   * leader's path, each part of the chaser is held a gap short of the part
+   * of the leader's front directly ahead of it (behind the nose in the
+   * middle, the legs at the sides), and a gap short of the leader's
+   * foremost point where there is no front ahead of it (beside the leader,
+   * between its legs). The leader's tail and the depth behind its front are
+   * pressed forward ahead of the chaser and compress as far as they have to;
+   * the front itself never moves, so the leader is never slowed by what is
+   * behind it. Runs after the limits, so a leader held to its own path
+   * still cannot be run through.
    */
   private applyNoOvertaking(): void {
     const margin = this.options.contactSize;
-    for (const { lead, chase, n } of this.queues) {
+    // Front to back: in a queue of three, the middle one is settled behind
+    // the first before the last is settled behind it.
+    const queues = [...this.queues].sort((x, y) =>
+      x.lead.input.startMs - y.lead.input.startMs || x.chase.input.startMs - y.chase.input.startMs);
+    for (const { lead, chase, n } of queues) {
       const [nx, ny, nz] = n;
-      const proj = (p: Float32Array, o: number) => p[o] * nx + p[o + 1] * ny + p[o + 2] * nz;
       const bodyEnd = lead.front * 3;
       if (!bodyEnd) continue;
-      let back = Infinity, ahead = -Infinity;
-      const c = [0, 0, 0];
+      // Two directions across the leader's path, for a grid seen from behind.
+      let ux = -nz, uy = 0, uz = nx;
+      if (Math.hypot(ux, uy, uz) < 1e-6) { ux = 1; uy = 0; uz = 0; }
+      const ul = Math.hypot(ux, uy, uz); ux /= ul; uy /= ul; uz /= ul;
+      const wx = ny * uz - nz * uy, wy = nz * ux - nx * uz, wz = nx * uy - ny * ux;
+      const proj = (p: Float32Array, o: number) => p[o] * nx + p[o + 1] * ny + p[o + 2] * nz;
+
+      // The leader's front, seen from behind: in each cell across its path,
+      // how far back its front reaches there (a croissant's nose is far
+      // ahead of its legs), and overall how far forward it goes.
+      let ahead = -Infinity;
+      let uMin = Infinity, uMax = -Infinity, wMin = Infinity, wMax = -Infinity;
       for (let o = 0; o < bodyEnd; o += 3) {
-        back = Math.min(back, proj(lead.pos, o));
         ahead = Math.max(ahead, proj(lead.pos, o));
-        c[0] += lead.pos[o]; c[1] += lead.pos[o + 1]; c[2] += lead.pos[o + 2];
+        const u = lead.pos[o] * ux + lead.pos[o + 1] * uy + lead.pos[o + 2] * uz;
+        const w = lead.pos[o] * wx + lead.pos[o + 1] * wy + lead.pos[o + 2] * wz;
+        if (u < uMin) uMin = u; if (u > uMax) uMax = u;
+        if (w < wMin) wMin = w; if (w > wMax) wMax = w;
       }
-      const nb = bodyEnd / 3;
-      c[0] /= nb; c[1] /= nb; c[2] /= nb;
-      // Squared distance across the line from the leader's body axis.
-      const across2 = (p: Float32Array, o: number) => {
-        const dx = p[o] - c[0], dy = p[o + 1] - c[1], dz = p[o + 2] - c[2];
-        const a = dx * nx + dy * ny + dz * nz;
-        return dx * dx + dy * dy + dz * dz - a * a;
+      const gap = Math.max(margin, QUEUE_GAP * Math.max(0, ahead));
+      const G = 14;
+      const cellU = Math.max(margin, (uMax - uMin) / G), cellW = Math.max(margin, (wMax - wMin) / G);
+      const nu = Math.ceil((uMax - uMin) / cellU) + 1, nw = Math.ceil((wMax - wMin) / cellW) + 1;
+      const backOf = new Float32Array(nu * nw).fill(Infinity);
+      const cellOf = (p: Float32Array, o: number) => {
+        const iu = Math.floor((p[o] * ux + p[o + 1] * uy + p[o + 2] * uz - uMin) / cellU);
+        const iw = Math.floor((p[o] * wx + p[o + 1] * wy + p[o + 2] * wz - wMin) / cellW);
+        return iu < 0 || iw < 0 || iu >= nu || iw >= nw ? -1 : iu * nw + iw;
       };
-      let reach2 = 0;
-      for (let o = 0; o < bodyEnd; o += 3) reach2 = Math.max(reach2, across2(lead.pos, o));
-      const reach = Math.sqrt(reach2) + margin;
-      reach2 = reach * reach;
+      for (let o = 0; o < bodyEnd; o += 3) {
+        const k = cellOf(lead.pos, o);
+        if (k >= 0) backOf[k] = Math.min(backOf[k], proj(lead.pos, o));
+      }
+      // A cell the particles happen to miss, with front material on both
+      // sides of it, is front too: its neighbours' back, so the chaser does
+      // not leak through the gaps between particles.
+      for (let pass = 0; pass < 2; pass++) {
+        const src = backOf.slice();
+        for (let iu = 0; iu < nu; iu++) for (let iw = 0; iw < nw; iw++) {
+          const k = iu * nw + iw;
+          if (src[k] < Infinity) continue;
+          const at = (a: number, b: number) => (a >= 0 && b >= 0 && a < nu && b < nw ? src[a * nw + b] : Infinity);
+          const pairs: [number, number][] = [
+            [at(iu - 1, iw), at(iu + 1, iw)], [at(iu, iw - 1), at(iu, iw + 1)],
+            [at(iu - 1, iw - 1), at(iu + 1, iw + 1)], [at(iu - 1, iw + 1), at(iu + 1, iw - 1)],
+          ];
+          let fill = Infinity;
+          for (const [x, y] of pairs) if (x < Infinity && y < Infinity) fill = Math.min(fill, x, y);
+          if (fill < Infinity) backOf[k] = fill;
+        }
+      }
+      // Where the chaser may reach in each cell: a gap short of the leader's
+      // front there and in the cells around it (so nothing slips in at a
+      // cell's edge), or of its foremost point where there is no front
+      // nearby (beside it, or between its legs).
+      const reachOf = new Float32Array(nu * nw);
+      for (let iu = 0; iu < nu; iu++) for (let iw = 0; iw < nw; iw++) {
+        let m = Infinity;
+        for (let du = -1; du <= 1; du++) for (let dw = -1; dw <= 1; dw++) {
+          const a = iu + du, b = iw + dw;
+          if (a >= 0 && b >= 0 && a < nu && b < nw) m = Math.min(m, backOf[a * nw + b]);
+        }
+        reachOf[iu * nw + iw] = (m < Infinity ? m : ahead) - gap;
+      }
+      const limitOf = (k: number) => (k >= 0 ? reachOf[k] : ahead - gap);
 
       // Not touching yet: the chaser is all still behind the leader's tail.
-      let chaseMax = -Infinity, tailMin = back;
+      let chaseMax = -Infinity, tailMin = Infinity;
       for (let o = 0; o < chase.pos.length; o += 3) chaseMax = Math.max(chaseMax, proj(chase.pos, o));
-      for (let o = bodyEnd; o < lead.pos.length; o += 3) tailMin = Math.min(tailMin, proj(lead.pos, o));
-      if (chaseMax <= tailMin) continue;
+      for (let o = 0; o < lead.pos.length; o += 3) tailMin = Math.min(tailMin, proj(lead.pos, o));
+      if (chaseMax <= tailMin - gap) continue;
 
-      // The chaser, held behind the leader's body; a flank wider than the
-      // leader, beside it rather than behind it, gets no further than the
-      // leader's front.
-      let front = -Infinity, held = 0;
+      // The chaser, held behind the leader cell by cell; how far forward it
+      // then reaches in each.
+      const frontOf = new Float32Array(nu * nw).fill(-Infinity);
+      let held = 0;
       for (let o = 0, k = 0; o < chase.pos.length; o += 3, k++) {
         const p = proj(chase.pos, o);
-        if (p <= tailMin) continue;
-        const behind = across2(chase.pos, o) <= reach2;
-        const limit = behind ? back : ahead;
+        if (p <= tailMin - gap) continue;
+        const cell = cellOf(chase.pos, o);
+        const limit = limitOf(cell);
+        let q = p;
         if (p > limit) {
           const d = p - limit;
           chase.pos[o] -= nx * d; chase.pos[o + 1] -= ny * d; chase.pos[o + 2] -= nz * d;
           chase.glow[k] = Math.min(1, chase.glow[k] + 0.6);
           held++;
+          q = limit;
         }
-        if (behind) front = Math.max(front, Math.min(p, limit));
+        if (cell >= 0 && q > frontOf[cell]) frontOf[cell] = q;
       }
-      if (!Number.isFinite(front)) continue;
 
-      // The leader's tail, pressed ahead of the chaser's front.
+      // The leader's tail and the depth behind its front, pressed ahead of
+      // the chaser where they share a cell; the front itself never moves.
       for (let o = bodyEnd, k = lead.front; o < lead.pos.length; o += 3, k++) {
+        const cell = cellOf(lead.pos, o);
+        if (cell < 0 || frontOf[cell] === -Infinity) continue;
         const p = proj(lead.pos, o);
-        if (p >= front || across2(lead.pos, o) > reach2) continue;
-        const d = front - p;
+        const to = Math.min(frontOf[cell] + gap * 0.5, backOf[cell] < Infinity ? backOf[cell] : ahead);
+        if (p >= to) continue;
+        const d = to - p;
         lead.pos[o] += nx * d; lead.pos[o + 1] += ny * d; lead.pos[o + 2] += nz * d;
         lead.glow[k] = Math.min(1, lead.glow[k] + 0.6);
       }

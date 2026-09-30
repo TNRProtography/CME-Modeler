@@ -20,7 +20,7 @@ try {
   execFileSync('npx', ['esbuild', join(root, 'utils/cmeParticleSim.ts'),
     '--bundle', '--format=esm', `--outfile=${join(out, 's.mjs')}`, '--log-level=error'],
     { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
-  const { CmeParticleSim, PUSH_LIMIT } = await import(pathToFileURL(join(out, 's.mjs')).href);
+  const { CmeParticleSim, PUSH_LIMIT, QUEUE_GAP } = await import(pathToFileURL(join(out, 's.mjs')).href);
 
   const H = 3600000, T0 = Date.UTC(2026, 8, 20);
   const SUN = 0.1;
@@ -116,11 +116,11 @@ try {
       `the chaser's front is pressed, the leader from behind (${sim.touchingOf('C').get('L')}, ${sim.touchingOf('L').get('C')})`);
   }
 
-  console.log('\nA chaser never gets past the leader: the tail compresses, the body holds');
+  console.log('\nA chaser never gets past the leader: the tail compresses, the front holds, a gap stays');
   {
-    // Same direction and width; the leader has a thick body (y 0.8-1) and a
-    // thin tail behind it (y 0.3-0.8). The chaser is three times as fast and
-    // would overtake by 34 h left alone.
+    // Same direction and width; each has a thick front (y 0.8-1) and a thin
+    // tail behind it (y 0.3-0.8). Each chaser is faster than the one ahead
+    // and would overtake it within a day and a half left alone.
     const withTail = (id, speed, startH, nb = 1200, nt = 800) => {
       const c = cme(id, 0, speed, 25, startH, nb + nt);
       for (let i = 0; i < nb + nt; i++) {
@@ -134,29 +134,56 @@ try {
       c.nominalAt = (ms) => { const n = bodyOnly(ms); return n && { body: n.body, tail: n.body }; };
       return c;
     };
-    const lead = withTail('L', 400, 0), chase = withTail('C', 1300, 20);
-    const sim = new CmeParticleSim([lead, chase], opts);
-    let worst = -Infinity, tailBehind = 0, heldBack = true;
-    for (let h = 22; h <= 60; h += 2) {
+    const front = (p, from, to) => { let m = -Infinity; for (let i = from; i < to; i++) m = Math.max(m, p[i * 3 + 2]); return m; };
+    const back = (p, from, to) => { let m = Infinity; for (let i = from; i < to; i++) m = Math.min(m, p[i * 3 + 2]); return m; };
+    const nearAxis = (p, i) => Math.abs(p[i * 3]) < 0.02 && Math.abs(p[i * 3 + 1]) < 0.02;
+    const middle = (p) => { let m = -Infinity; for (let i = 0; i < p.length / 3; i++) if (nearAxis(p, i)) m = Math.max(m, p[i * 3 + 2]); return m; };
+    const middleBack = (p) => { let m = Infinity; for (let i = 0; i < 1200; i++) if (nearAxis(p, i)) m = Math.min(m, p[i * 3 + 2]); return m; };
+
+    // Three in a row: the queue settles front to back.
+    const a = withTail('A', 400, 0), b = withTail('B', 900, 12), c = withTail('C', 1500, 22);
+    const sim = new CmeParticleSim([a, b, c], opts);
+    let past = -Infinity, gapShort = Infinity, leaderBehind = 0, tailRunOver = 0, contactSeen = false, inside = 0;
+    // Chaser particles inside or past the leader's thick front: level with
+    // (within 0.03 across) a front particle, and ahead of it.
+    const intoFront = (lead, chase) => {
+      let n = 0;
+      for (let j = 0; j < chase.length / 3; j++) {
+        const x = chase[j * 3], y = chase[j * 3 + 1], z = chase[j * 3 + 2];
+        for (let i = 0; i < 1200; i++) {
+          if (Math.abs(lead[i * 3] - x) < 0.03 && Math.abs(lead[i * 3 + 1] - y) < 0.03 && z > lead[i * 3 + 2]) { n++; break; }
+        }
+      }
+      return n;
+    };
+    for (let h = 24; h <= 70; h += 2) {
       const t = T0 + h * H;
       sim.advanceTo(t);
-      const pl = pts(sim, 'L', t), pc = pts(sim, 'C', t);
-      let leadFront = -Infinity, leadBack = Infinity, chaseFront = -Infinity;
-      for (let i = 0; i < 1200; i++) { leadFront = Math.max(leadFront, pl[i * 3 + 2]); leadBack = Math.min(leadBack, pl[i * 3 + 2]); }
-      for (let i = 0; i < pc.length / 3; i++) chaseFront = Math.max(chaseFront, pc[i * 3 + 2]);
-      worst = Math.max(worst, chaseFront - leadFront);
-      // The chaser's middle, level with the leader: held at the back of its body.
-      let mid = -Infinity;
-      for (let i = 0; i < pc.length / 3; i++) if (Math.abs(pc[i * 3]) < 0.02 && Math.abs(pc[i * 3 + 1]) < 0.02) mid = Math.max(mid, pc[i * 3 + 2]);
-      if (mid > leadBack + 1e-3) heldBack = false;
-      if (h >= 34) for (let i = 1200; i < pl.length / 3; i++) if (pl[i * 3 + 2] < mid - 1e-3 && Math.abs(pl[i * 3]) < 0.02) tailBehind++;
+      const pa = pts(sim, 'A', t), pb = pts(sim, 'B', t), pc = pts(sim, 'C', t);
+      for (const [lead, chase] of [[pa, pb], [pb, pc]]) {
+        // Down the middle: the leader's front there, and the chaser's reach.
+        const lf = front(lead, 0, 1200), lb = middleBack(lead), mid = middle(chase);
+        past = Math.max(past, front(chase, 0, chase.length / 3) - lf);
+        if (h % 6 === 0) inside += intoFront(lead, chase);
+        // Close enough to be held: how far short of the leader's front it stops.
+        if (mid > lb - 3 * QUEUE_GAP * lf) { contactSeen = true; gapShort = Math.min(gapShort, lb - mid); }
+        for (let i = 1200; i < lead.length / 3; i++) if (h >= 40 && nearAxis(lead, i) && lead[i * 3 + 2] < mid - 1e-3) tailRunOver++;
+      }
+      // The first never falls behind its own path: nothing ahead of it.
+      const na = nominalPts(a, t);
+      for (let i = 0; i < 1200; i++) if (pa[i * 3 + 2] < na[i * 3 + 2] - 1e-4) leaderBehind++;
     }
-    check(worst <= 1e-3, `no part of the chaser ever gets past the leader's front (worst ${worst.toFixed(4)})`);
-    check(heldBack, 'its middle stops at the back of the leader\'s body, not inside it');
-    check(tailBehind === 0, `the leader's tail is pressed ahead of the chaser, not run over (${tailBehind} left behind)`);
-    const t = T0 + 60 * H;
-    check(meanR(pts(sim, 'C', t)) < meanR(nominalPts(chase, t)) * 0.8, 'the chaser has slowed down behind it');
-    check(sim.touchingOf('C').get('L') === 'front' && sim.touchingOf('L').get('C') === 'behind', 'and each knows it');
+    const t = T0 + 70 * H;
+    check(contactSeen, 'they do catch up');
+    check(past < 0, `no CME ever gets past the front of the one ahead (closest ${past.toFixed(3)} short of it)`);
+    check(inside === 0, `no chaser particle ever inside the thick front ahead of it (${inside})`);
+    check(gapShort > 0.01, `down the middle, a gap between them (at least ${gapShort.toFixed(3)})`);
+    check(leaderBehind === 0, `the leading CME is never slowed by those behind (${leaderBehind} particles behind its path)`);
+    check(tailRunOver === 0, `a leader's tail is pressed ahead of its chaser, not run over (${tailRunOver})`);
+    check(meanR(pts(sim, 'C', t)) < meanR(nominalPts(c, t)) * 0.8 && meanR(pts(sim, 'B', t)) < meanR(nominalPts(b, t)),
+      'the chasers slow down behind the one ahead');
+    check(sim.touchingOf('C').get('B') === 'front' && sim.touchingOf('B').get('A') === 'front' && sim.touchingOf('A').get('B') === 'behind',
+      'and each knows who it is held by');
   }
 
   console.log('\nStream edges are walls');
