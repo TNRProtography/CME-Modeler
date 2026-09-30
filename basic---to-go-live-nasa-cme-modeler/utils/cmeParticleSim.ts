@@ -13,23 +13,31 @@
 //     is outside of, and cannot leave one its CME was launched inside. At a
 //     wall it stops going sideways and slides along it, so a flank piles up
 //     against the stream edge.
-//   - OTHER CMEs. Where particles of two CMEs come to share space they push
-//     each other apart, along the line between the two CMEs' bodies, and the
-//     stronger CME (faster, wider) gives less ground. Only a CME's body (its
-//     thick front) resists; its tail is swept aside and compresses as much
-//     as it has to. A leader shoved from behind is carried forward at most
-//     PUSH_LIMIT beyond where it would have been - a 5-10% speed-up - but
-//     is never slowed by what is behind it. A chaser can never get past the
-//     leader's thick front: it is held a little way behind it (QUEUE_GAP, so
-//     the two stay two CMEs), compressing the leader's tail ahead of it, and
-//     falls behind its own path, which is it slowing down. A queue of any
-//     length settles front to back, each CME held behind the one before.
+//   - OTHER CMEs. Side by side, where particles of two CMEs come to share
+//     space they push each other apart, along the line between the two
+//     CMEs' fronts, and the stronger CME (faster, wider) gives less ground.
+//     One behind the other (heading within 30 degrees of each other), the
+//     front CME is whichever one's own path is further out at the moment, and
+//     it is never slowed by the one behind: its thick front stays on its
+//     path, and only its tail and the depth behind its front are pressed
+//     forward, compressing as far as they have to. The one behind can never
+//     get into the front CME's thick front: seen from behind, each part of it
+//     is held a little way (QUEUE_GAP, so the two stay two CMEs) behind the
+//     part of the front CME ahead of it, and it falls behind its own path,
+//     which is it slowing down. A fast CME catching a slow one is held
+//     behind it until its own path goes past; from then on it is the front
+//     CME, back on its path within a couple of hours, and the slow one it
+//     passed is held behind it instead. A queue of any length settles from
+//     the front back.
 //   - STAYING A CME. Each step every particle is drawn part of the way back
-//     to its place in the CME's shape, shifted by however far the CME as a
-//     whole has been held back along its path. A pushed particle holds its
-//     position while it is being pushed, and the CME closes up again once it
-//     is free - it never scatters. The CME's overall lag is only ever along
-//     its own direction: it slows down, it does not drift sideways.
+//     to its place in the CME's shape, shifted by however far the CME's thick
+//     front as a whole has been held back along its path. A pushed particle
+//     holds its position while it is being pushed, and the CME closes up
+//     again once it is free - it never scatters. A CME keeps the ground it
+//     has lost only while it is held, and ground it has gained only while it
+//     is pressed on; free of both, it settles back onto its own path within a
+//     couple of hours (LAG_RECOVERY). The lag is only ever along its own
+//     direction: it slows down, it does not drift sideways.
 //
 // Particles glow where they are being pushed: compression made visible.
 //
@@ -100,6 +108,10 @@ const COHESION = 0.12;
 /** How fast the glow of being pushed fades, per step. */
 const GLOW_DECAY = 0.8;
 const CHECKPOINT_EVERY = 24;
+/** Cohesion for a CME nothing is holding back. */
+const FREE_COHESION = 0.35;
+/** How much of its lag a CME nothing is holding makes up per step. */
+const LAG_RECOVERY = 0.5;
 
 interface CmeState {
   input: SimCmeInput;
@@ -111,6 +123,10 @@ interface CmeState {
   active: boolean;
   /** What is holding it, for the note. */
   touching: Map<string, string>;
+  /** Held behind another CME last step (so it keeps its lag). */
+  held: boolean;
+  /** Pressed on from behind last step (so it keeps its lead). */
+  pressed: boolean;
 }
 
 interface Checkpoint {
@@ -118,6 +134,8 @@ interface Checkpoint {
   pos: Map<string, Float32Array>;
   glow: Map<string, Float32Array>;
   active: Map<string, boolean>;
+  held: Map<string, boolean>;
+  pressed: Map<string, boolean>;
 }
 
 const apply = (a: Affine, x: number, y: number, z: number, out: number[] | Float32Array, o: number) => {
@@ -136,6 +154,8 @@ export class CmeParticleSim {
   private stepCount = 0;
   /** One CME behind another this step: n is the leader's direction. */
   private queues: { lead: CmeState; chase: CmeState; n: [number, number, number] }[] = [];
+  /** Where each CME's front would be on its own path this step. */
+  private pathFronts = new Map<CmeState, number>();
 
   constructor(inputs: SimCmeInput[], options: SimOptions) {
     this.options = options;
@@ -147,6 +167,8 @@ export class CmeParticleSim {
       glow: new Float32Array(input.local.length / 3),
       active: false,
       touching: new Map(),
+      held: false,
+      pressed: false,
     }));
     const first = inputs.length ? Math.min(...inputs.map((c) => c.startMs)) : 0;
     this.originMs = Math.floor(first / options.stepMs) * options.stepMs;
@@ -263,26 +285,46 @@ export class CmeParticleSim {
       }
 
       // Staying a CME: back toward the shape, carried along by however far
-      // the CME as a whole has fallen behind along its own direction.
+      // the CME as a whole has fallen behind along its own direction. That is
+      // measured on its thick front alone: a tail pressed forward from behind
+      // is compressed, it does not carry the CME forward.
       const [dx, dy, dz] = c.input.dir;
       let lag = 0;
-      for (let i = 0; i < count; i++) {
+      const lagOver = Math.max(1, c.front);
+      for (let i = 0; i < lagOver; i++) {
         const o = i * 3;
         lag += (c.pos[o] - nom[o]) * dx + (c.pos[o + 1] - nom[o + 1]) * dy + (c.pos[o + 2] - nom[o + 2]) * dz;
       }
-      lag /= Math.max(1, count);
+      lag /= lagOver;
+      // Nothing held it back or pressed on it last step: it settles back
+      // onto its own path, quickly. A CME held behind another keeps its lag
+      // only while it is held, and one shoved forward keeps its lead only
+      // while it is pressed; once clear (or once its own path takes it past
+      // the other), it is back on its path within a couple of hours.
+      const free = !c.held;
+      if ((lag < 0 && !c.held) || (lag > 0 && !c.pressed)) {
+        const settle = -lag * LAG_RECOVERY;
+        for (let o = 0; o < c.pos.length; o += 3) {
+          c.pos[o] += dx * settle; c.pos[o + 1] += dy * settle; c.pos[o + 2] += dz * settle;
+        }
+        lag += settle;
+      }
+      c.held = false;
+      c.pressed = false;
+      // Not held back by another CME, it takes its own shape back faster.
+      const k = free ? FREE_COHESION : COHESION;
       for (let i = 0; i < count; i++) {
         const o = i * 3;
-        c.pos[o] += COHESION * (nom[o] + lag * dx - c.pos[o]);
-        c.pos[o + 1] += COHESION * (nom[o + 1] + lag * dy - c.pos[o + 1]);
-        c.pos[o + 2] += COHESION * (nom[o + 2] + lag * dz - c.pos[o + 2]);
+        c.pos[o] += k * (nom[o] + lag * dx - c.pos[o]);
+        c.pos[o + 1] += k * (nom[o + 1] + lag * dy - c.pos[o + 1]);
+        c.pos[o + 2] += k * (nom[o + 2] + lag * dz - c.pos[o + 2]);
       }
       for (let i = 0; i < c.glow.length; i++) c.glow[i] *= GLOW_DECAY;
     }
 
     const walls = this.options.wallsAt?.(t1) ?? null;
     if (walls && walls.streams.length) this.applyWalls(walls);
-    this.applyContacts();
+    this.applyContacts(nominal);
     this.applyLimits(nominal);
     this.applyNoOvertaking();
 
@@ -365,11 +407,23 @@ export class CmeParticleSim {
    * behind a front and the tail do not hold their ground, they are simply
    * pressed back onto the boundary.
    */
-  private applyContacts(): void {
+  private applyContacts(nominal: Map<CmeState, Float32Array>): void {
     this.queues = [];
     const active = this.cmes.filter((c) => c.active);
     if (active.length < 2) return;
     const margin = this.options.contactSize;
+
+    // How far out each CME's front would be on its own path now: which of
+    // two is ahead, whatever order they launched in.
+    const pathFront = this.pathFronts;
+    pathFront.clear();
+    for (const c of active) {
+      const nom = nominal.get(c);
+      const [dx, dy, dz] = c.input.dir;
+      let f = -Infinity;
+      if (nom) for (let o = 0; o < c.front * 3; o += 3) f = Math.max(f, nom[o] * dx + nom[o + 1] * dy + nom[o + 2] * dz);
+      pathFront.set(c, f);
+    }
 
     const box = new Map<CmeState, number[]>();
     const centre = new Map<CmeState, number[]>();
@@ -401,14 +455,20 @@ export class CmeParticleSim {
           || box.get(A)![2] > box.get(B)![5] + margin || box.get(B)![2] > box.get(A)![5] + margin) continue;
 
         // Heading the same way (within 30 degrees; further apart they meet
-        // flank to flank), one launched after the other: the first is
-        // the leader, its body a wall the later one cannot pass (checked once
-        // the step is done), and they meet across the leader's direction.
-        // Decided by launch, not by where their middles are, so a chaser that
-        // has pushed deep in never becomes the leader and slips through.
+        // flank to flank): the leader is the one whose own path is further
+        // out now, and its front is a wall the other cannot pass (checked
+        // once the step is done). Decided by where each would be on its own,
+        // not by where the physics has put them, so a CME held back never
+        // becomes the leader and slips through; and not by launch, so a fast
+        // CME that has caught up and gone past a slow one is the front CME
+        // from then on, never slowed by the one it passed, which is held
+        // behind it instead.
         const dA = A.input.dir, dB = B.input.dir;
-        const queued = dA[0] * dB[0] + dA[1] * dB[1] + dA[2] * dB[2] > Math.cos(Math.PI / 6) && A.input.startMs !== B.input.startMs;
-        if (queued && B.input.startMs < A.input.startMs) [A, B] = [B, A];
+        const queued = dA[0] * dB[0] + dA[1] * dB[1] + dA[2] * dB[2] > Math.cos(Math.PI / 6);
+        if (queued) {
+          const fa = pathFront.get(A)!, fb = pathFront.get(B)!;
+          if (fb > fa || (fb === fa && B.input.startMs < A.input.startMs)) [A, B] = [B, A];
+        }
         const ba = box.get(A)!, bb = box.get(B)!;
 
         // A lies on the + side of n, B on the - side.
@@ -468,6 +528,8 @@ export class CmeParticleSim {
           movedB++;
         }
         if (!movedA && !movedB) continue;
+        if (movedA) A.pressed = true;
+        if (movedB) B.pressed = true;
 
         // What it is to each: pressed from ahead, from behind, or on a flank.
         const how = (C: CmeState, other: CmeState, sign: number) => {
@@ -524,7 +586,8 @@ export class CmeParticleSim {
     // Front to back: in a queue of three, the middle one is settled behind
     // the first before the last is settled behind it.
     const queues = [...this.queues].sort((x, y) =>
-      x.lead.input.startMs - y.lead.input.startMs || x.chase.input.startMs - y.chase.input.startMs);
+      (this.pathFronts.get(y.lead) ?? 0) - (this.pathFronts.get(x.lead) ?? 0)
+      || (this.pathFronts.get(y.chase) ?? 0) - (this.pathFronts.get(x.chase) ?? 0));
     for (const { lead, chase, n } of queues) {
       const [nx, ny, nz] = n;
       const bodyEnd = lead.front * 3;
@@ -632,8 +695,10 @@ export class CmeParticleSim {
         const d = to - p;
         lead.pos[o] += nx * d; lead.pos[o + 1] += ny * d; lead.pos[o + 2] += nz * d;
         lead.glow[k] = Math.min(1, lead.glow[k] + 0.6);
+        lead.pressed = true;
       }
       if (held) {
+        chase.held = true;
         chase.touching.set(lead.input.id, 'front');
         lead.touching.set(chase.input.id, 'behind');
       }
@@ -643,9 +708,11 @@ export class CmeParticleSim {
   // ── Checkpoints ──────────────────────────────────────────────────────────
 
   private saveCheckpoint(): void {
-    const cp: Checkpoint = { atMs: this.clockMs, pos: new Map(), glow: new Map(), active: new Map() };
+    const cp: Checkpoint = { atMs: this.clockMs, pos: new Map(), glow: new Map(), active: new Map(), held: new Map(), pressed: new Map() };
     for (const c of this.cmes) {
       cp.active.set(c.input.id, c.active);
+      cp.held.set(c.input.id, c.held);
+      cp.pressed.set(c.input.id, c.pressed);
       if (c.active) {
         cp.pos.set(c.input.id, c.pos.slice());
         cp.glow.set(c.input.id, c.glow.slice());
@@ -660,6 +727,8 @@ export class CmeParticleSim {
     this.checkpoints = this.checkpoints.filter((x) => x.atMs <= cp.atMs);
     for (const c of this.cmes) {
       c.active = cp.active.get(c.input.id) ?? false;
+      c.held = cp.held.get(c.input.id) ?? false;
+      c.pressed = cp.pressed.get(c.input.id) ?? false;
       const p = cp.pos.get(c.input.id);
       const g = cp.glow.get(c.input.id);
       if (p) c.pos.set(p);
