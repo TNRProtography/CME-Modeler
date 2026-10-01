@@ -197,6 +197,37 @@ try {
   check(!ids(D0 + DAY - 23 * H, sharpMap).includes('4540') && ids(D0 + DAY - 20 * H, sharpMap).includes('4540'),
         'with HMI history, a region appears within the hour HMI first saw it');
 
+  console.log('\nCharts: colour bands, series and trend');
+  execFileSync('npx', ['esbuild', join(root, 'utils/regionHistorySeries.ts'),
+    '--bundle', '--format=esm', `--outfile=${join(out, 's.mjs')}`, '--log-level=error'],
+    { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
+  const S = await import(pathToFileURL(join(out, 's.mjs')).href);
+  const lv = (v, k) => S.levelOf(v, S.SCALES[k]);
+  check([99, 75, 60, 59].map(v => lv(v, 'c')).join() === 'red,orange,yellow,green', 'C: 99 red, 75 orange, 60 yellow, below green');
+  check([90, 70, 50, 30, 29].map(v => lv(v, 'm')).join() === 'purple,red,orange,yellow,green', 'M: 90 purple, 70 red, 50 orange, 30 yellow, below green');
+  check([70, 40, 25, 10, 9].map(v => lv(v, 'x')).join() === 'purple,red,orange,yellow,green', 'X: 70 purple, 40 red, 25 orange, 10 yellow, below green');
+  check([90, 70, 50, 30, 29].map(v => lv(v, 'proton')).join() === 'purple,red,orange,yellow,green', 'Protons: as M');
+  const rec = (await api('/api/region/4538')).region;
+  const areaS = S.noaaSeries(rec, 'areaMsh', D0 + 2 * DAY);
+  check(areaS.map(p => p.value).join() === '60,120,250,310,310', `area steps at each change, held to the end (${areaS.map(p => p.value).join(', ')})`);
+  const tr = S.regionTrend(rec);
+  check(tr.label === 'Growing' && tr.areaDelta === 60 && tr.spotDelta === 6, `trend from area and spots over the last day (${JSON.stringify(tr)})`);
+  check(S.valueAt(areaS, Date.UTC(2026, 8, 18, 12)) === 120, 'the value at a moment is the report in force then');
+
+  console.log('\nA column read from the wrong place is not recorded');
+  const shifted = U.parseSrs(':Issued: 2026 Oct 01 0030 UTC\n4257 N11W57   210  0060 6  06   06 Beta-Gamma');
+  check(shifted.regions.get('4257')?.mcintosh === null && shifted.regions.get('4257')?.spotCount === 6, 'an impossible McIntosh class is left empty, the rest kept');
+  const dirty = U.emptyState();
+  dirty.regions['4257'] = { id: '4257', firstSeenMs: D0, lastSeenMs: D0 + DAY, active: true, sharp: [], fluxRefMx: null,
+    current: { ...shifted.regions.get('4257'), mcintosh: '6' },
+    events: [
+      { kind: 'appeared', atMs: D0, seenAtMs: D0, source: 'noaa-json', location: 'N11W50', changes: { mcintosh: [null, 'Dao'], spotCount: [null, 6] } },
+      { kind: 'changed', atMs: D0 + DAY, seenAtMs: D0 + DAY, source: 'srs', location: 'N11W57', changes: { mcintosh: ['Dao', '6'] } },
+    ] };
+  U.prune(dirty, D0 + DAY + H);
+  const clean = dirty.regions['4257'];
+  check(clean.events.length === 1 && clean.current.mcintosh === null, 'one already stored is cleaned up on the next run');
+
   console.log('\nAfter two weeks it is forgotten');
   await W.run(env, D0 + 17 * DAY);
   check(!(await api('/api/regions')).regions.some(x => x.id === '4538'), 'a region last seen over two weeks ago is dropped');

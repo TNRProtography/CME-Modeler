@@ -39,9 +39,9 @@ import {
 import { fetchHmiFrames, SDO_IMAGERY_WORKER_BASE, type HmiFrame } from '../utils/hmiArchive';
 import FrameScrubber from './FrameScrubber';
 import RegionMagneticHistory from './RegionMagneticHistory';
-import RegionChangeLog from './RegionChangeLog';
 import { fetchSunspotHistory, growthPoints, type RegionRecord } from '../utils/sunspotHistory';
 import { regionsAtFrame } from '../utils/regionsAtTime';
+import { regionTrend } from '../utils/regionHistorySeries';
 import { spotCountChanges, type SpotCountChange } from '../hooks/useSunspotRegions';
 import { fetchGoesProtons, fetchGoesXrays } from '../utils/goesSeries';
 import { hasDecodedImage, loadDecodedImage, prefetchImage } from '../utils/decodedImages';
@@ -4636,7 +4636,18 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                             </span>
                           );
                         })()}</span></div>
-                        <div className="flex justify-between"><span className="text-neutral-500">Trend</span><span className="text-neutral-100 font-semibold">{selectedSunspotRegion.trend}</span></div>
+                        <div className="flex justify-between"><span className="text-neutral-500">Trend</span><span className="text-neutral-100 font-semibold">{(() => {
+                          // Area and spot count over the last day, from the
+                          // sunspot-history worker; NOAA's own two files otherwise.
+                          const rec = sunspotHistory?.[selectedSunspotRegion.region];
+                          const t = rec ? regionTrend(rec) : null;
+                          if (!t) return selectedSunspotRegion.trend;
+                          const bits = [
+                            t.areaDelta != null && t.areaDelta !== 0 ? `${t.areaDelta > 0 ? '+' : ''}${t.areaDelta} MSH` : null,
+                            t.spotDelta != null && t.spotDelta !== 0 ? `${t.spotDelta > 0 ? '+' : ''}${t.spotDelta} spots` : null,
+                          ].filter(Boolean);
+                          return <>{t.label}{bits.length > 0 && <span className="ml-1.5 font-normal text-neutral-400">({bits.join(', ')} in 24h)</span>}</>;
+                        })()}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">M-flare probability</span><span className="text-orange-300 font-semibold">{selectedSunspotRegion.mFlareProbability != null ? `${selectedSunspotRegion.mFlareProbability}%` : ' - '}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">X-flare probability</span><span className="text-red-300 font-semibold">{selectedSunspotRegion.xFlareProbability != null ? `${selectedSunspotRegion.xFlareProbability}%` : ' - '}</span></div>
                         <div className="flex justify-between"><span className="text-neutral-500">Proton probability</span><span className="text-fuchsia-300 font-semibold">{selectedSunspotRegion.protonProbability != null ? `${selectedSunspotRegion.protonProbability}%` : ' - '}</span></div>
@@ -4792,12 +4803,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                               )}
                             </div>
 
-                            {/* Every change, timestamped, from the sunspot-history worker. */}
-                            <RegionChangeLog record={selectedRegionInsight.record} />
-
                             {/* Hourly, from the same instrument as the image. */}
                             <RegionMagneticHistory
                               region={selectedSunspotRegion.region}
+                              record={selectedRegionInsight.record}
                               markerMs={spotIsLive ? null : spotFrameMs}
                             />
 

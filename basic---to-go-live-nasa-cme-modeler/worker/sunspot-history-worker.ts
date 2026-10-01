@@ -117,6 +117,8 @@ export async function run(env: Env, nowMs = Date.now()) {
     regions: Object.keys(state.regions).length,
     active: Object.values(state.regions).filter((r) => r.active).length,
     srsValidAt: state.srsValidMs ? new Date(state.srsValidMs).toISOString() : null,
+    // NOAA's region rows as they came, so the columns can be checked by eye.
+    srsRows: srs ? srs.split(/\r?\n/).filter((l) => /^\s*\d{4,5}\s/.test(l)).slice(0, 15) : null,
     // How many regions today's bulletin listed; if none, what it looked like.
     srsRegions: srs ? parseSrs(srs, nowMs).regions.size : null,
     ...(srs && parseSrs(srs, nowMs).regions.size === 0 ? { srsSample: srs.split(/\r?\n/).slice(0, 14) } : {}),

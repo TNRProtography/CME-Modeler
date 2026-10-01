@@ -160,6 +160,13 @@ export const parseLocation = (loc: unknown): { latitude: number; longitude: numb
   };
 };
 
+/**
+ * A McIntosh class is three letters: the group (A-H, no G), the largest
+ * spot's penumbra, and how compact the group is. Anything else is a column
+ * read from the wrong place, and is not recorded.
+ */
+export const isMcIntosh = (v: unknown): boolean => /^[ABCDEFH][XRSAHK][XOIC]$/i.test(String(v ?? ''));
+
 const blank = (): RegionSnapshot => ({
   location: null, latitude: null, longitude: null, carringtonLon: null, areaMsh: null,
   mcintosh: null, extentDeg: null, spotCount: null, magClass: null,
@@ -200,7 +207,7 @@ export function parseSrs(text: string, nowMs = Date.now()): { validMs: number; r
       longitude: pos.longitude,
       carringtonLon: num(p[2]),
       areaMsh: num(p[3]),
-      mcintosh: p[4] || null,
+      mcintosh: isMcIntosh(p[4]) ? p[4] : null,
       extentDeg: num(p[5]),
       spotCount: num(p[6]),
       magClass: magClassName(p.slice(7).join('-')),
@@ -340,7 +347,7 @@ export function backfillFromRegionJson(state: SunspotHistoryState, rows: unknown
       longitude: pos?.longitude ?? null,
       carringtonLon: num(row?.carrington_longitude),
       areaMsh: num(row?.area),
-      mcintosh: row?.spot_class ? String(row.spot_class) : null,
+      mcintosh: isMcIntosh(row?.spot_class) ? String(row.spot_class) : null,
       extentDeg: num(row?.extent),
       spotCount: num(row?.number_spots),
       magClass: magClassName(row?.mag_class),
@@ -450,6 +457,19 @@ export function prune(state: SunspotHistoryState, nowMs = Date.now()): void {
       continue;
     }
     rec.events.sort((a, b) => a.atMs - b.atMs || a.seenAtMs - b.seenAtMs);
+    // Anything recorded before the McIntosh check: drop impossible classes,
+    // and work those states out again.
+    rec.events = rec.events.filter((e) => {
+      const mc = e.changes?.mcintosh;
+      if (mc && !isMcIntosh(mc[1])) {
+        delete e.changes!.mcintosh;
+        delete e.state;
+        if (e.kind === 'changed' && Object.keys(e.changes!).length === 0) return false;
+      }
+      if (e.state && e.state.mcintosh != null && !isMcIntosh(e.state.mcintosh)) delete e.state;
+      return true;
+    });
+    if (rec.current.mcintosh != null && !isMcIntosh(rec.current.mcintosh)) rec.current = { ...rec.current, mcintosh: null };
     // Every event carries the region's whole state just after it, worked
     // out from the start of the record (before anything old is dropped).
     const states = replayStates(rec);
