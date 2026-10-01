@@ -74,7 +74,7 @@ const NasaOfflineBadge: React.FC<{
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-xl text-[10px] sm:text-xs font-semibold text-amber-200 bg-amber-900/40 border border-amber-500/40 hover:bg-amber-900/60 transition-colors"
+        className="flex items-center gap-1.5 whitespace-nowrap px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-xl text-[10px] sm:text-xs font-semibold text-amber-200 bg-amber-900/40 border border-amber-500/40 hover:bg-amber-900/60 transition-colors"
         title="NASA's DONKI service is offline"
         aria-label="NASA offline - tap for details"
         aria-expanded={open}

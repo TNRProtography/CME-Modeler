@@ -104,6 +104,7 @@ const UnifiedDashboardMode = retryLazyLoad(() => import('./components/UnifiedDas
 import GlobalBanner from './components/GlobalBanner';
 import { shouldShowWhatsNew } from './utils/whatsNew';
 import InitialLoadingScreen from './components/InitialLoadingScreen';
+import NasaOfflineBadge from './components/NasaOfflineBadge';
 
 // Modal Imports - also lazy to keep the initial bundle lean
 const SettingsModal = retryLazyLoad(() => import('./components/SettingsModal'));
@@ -1701,7 +1702,8 @@ const App: React.FC = () => {
                       />
                     )}
                     <div className="absolute top-0 left-0 right-0 z-40 flex items-start justify-between p-4 pointer-events-none">
-                        <div className="flex items-start text-center space-x-3 pointer-events-auto">
+                        <div className="flex flex-col items-start gap-2 pointer-events-auto">
+                        <div className="flex items-start text-center space-x-3">
                             <div className="flex flex-col items-center w-16 lg:hidden">
                                 <button
                                   id="mobile-controls-button"
@@ -1735,6 +1737,11 @@ const App: React.FC = () => {
                                 </button>
                                 <span className="text-xs text-neutral-200/80 mt-1 lg:hidden">Forecast Models</span>
                             </div>
+                        </div>
+                        {/* Just under the buttons, so it is seen on a phone without
+                            opening the CME list - a row of its own, since a phone
+                            has no room for it beside them. Shown while NASA is down. */}
+                        <NasaOfflineBadge failed={!!fetchError && /503|unavailable|DONKI|downtime/i.test(fetchError)} align="left" />
                         </div>
                         <div className="flex items-start text-center space-x-3 pointer-events-auto">
                             <div className="flex flex-col items-center w-16 lg:hidden">

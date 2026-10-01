@@ -2,8 +2,6 @@ import React from 'react';
 import { ProcessedCME } from '../types';
 import CloseIcon from './icons/CloseIcon';
 import { CmeOrientation, orientationSummary } from '../utils/cmeOrientation';
-import NasaOfflineBadge from './NasaOfflineBadge';
-
 /** NASA's DONKI service down (503 / unavailable), as opposed to any other failure. */
 const isNasaOutage = (msg: string) => /503|unavailable|DONKI|downtime/i.test(msg);
 
@@ -115,8 +113,6 @@ const CMEListPanel: React.FC<CMEListPanelProps> = ({ cmes, onSelectCME, selected
         )}
       </div>
       
-      {/* Shown here as well while NASA is down but older CMEs are listed. */}
-      {!fetchError && <div className="flex justify-end -mt-1 mb-2 empty:hidden"><NasaOfflineBadge /></div>}
       <button
         onClick={() => onSelectCME(null)} // Clicking "Show All" deselects any specific CME
         className={`w-full mb-3 text-sm px-3 py-2 rounded-md border transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-neutral-950 focus:ring-neutral-400 ${
@@ -130,10 +126,10 @@ const CMEListPanel: React.FC<CMEListPanelProps> = ({ cmes, onSelectCME, selected
 
       <div className="flex-grow overflow-y-auto styled-scrollbar pr-2">
         {isLoading && !fetchError && <p className={`italic text-neutral-400`}>Loading CMEs...</p>}
-        {/* NASA down: the badge says so (and how old any data is) rather
-            than an error. Anything else is still an error worth reading. */}
+        {/* NASA down: the NASA offline badge by the view's buttons says so,
+            rather than an error. Anything else is still an error worth reading. */}
         {fetchError && (isNasaOutage(fetchError)
-          ? <div className="flex justify-center py-6"><NasaOfflineBadge failed align="center" /></div>
+          ? <p className="italic text-neutral-500">CMEs will appear here once NASA is back.</p>
           : <p className="text-red-400">Error: {fetchError}</p>)}
         {!isLoading && !fetchError && cmes.length === 0 && (
           <p className={`italic text-neutral-400`}>No modelable CMEs found for this period.</p>
