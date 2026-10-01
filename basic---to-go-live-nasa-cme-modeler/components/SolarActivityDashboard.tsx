@@ -34,14 +34,14 @@ import DriftingMoon from './DriftingMoon';
 import { encodeGif, type GifFrame } from '../utils/gifEncoder';
 import { parseSrsValidTime, latestSrsEpoch } from '../utils/srsTime';
 import {
-  fetchSharpByRegion, withSharpPosition, fetchSharpHistory, smoothedPositionAt, trackedBy,
-  regionKey as sharpRegionKey, type SharpHistory,
+  fetchSharpByRegion, withSharpPosition, fetchSharpHistory, type SharpHistory,
 } from '../utils/sharpPositions';
 import { fetchHmiFrames, SDO_IMAGERY_WORKER_BASE, type HmiFrame } from '../utils/hmiArchive';
 import FrameScrubber from './FrameScrubber';
 import RegionMagneticHistory from './RegionMagneticHistory';
 import RegionChangeLog from './RegionChangeLog';
 import { fetchSunspotHistory, growthPoints, type RegionRecord } from '../utils/sunspotHistory';
+import { regionsAtFrame } from '../utils/regionsAtTime';
 import { spotCountChanges, type SpotCountChange } from '../hooks/useSunspotRegions';
 import { fetchGoesProtons, fetchGoesXrays } from '../utils/goesSeries';
 import { hasDecodedImage, loadDecodedImage, prefetchImage } from '../utils/decodedImages';
@@ -2526,39 +2526,44 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   const spotGeometry = spotIsLive ? overviewGeometry : (archiveGeometry ?? overviewGeometry);
 
+  // Two weeks of every change in every region, from the sunspot-history
+  // worker. Where it has a region, its record is the history; where it is
+  // unreachable, the snapshots above still are.
+  const [sunspotHistory, setSunspotHistory] = useState<Record<string, RegionRecord> | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchSunspotHistory().then((h) => { if (!cancelled && h) setSunspotHistory(h); });
+    return () => { cancelled = true; };
+  }, [refreshSignal]);
+
   /**
    * The regions as they were at the frame's moment.
    *
-   * HMI's positions, smoothed and interpolated between its hourly samples so
-   * the labels glide rather than step (see smoothedPositionAt); today's
-   * position carried back for rotation where HMI has nothing.
-   *
-   * A region HMI only started tracking after the frame is left off the disk -
-   * NOAA's list is today's, and it should not appear before it emerged -
-   * EXCEPT the selected one. That stays, grey, pinned to the patch of surface
-   * it would emerge from, so its close-up can watch it form.
+   * Every region that existed then - including ones that have since rotated
+   * away or faded, from the sunspot-history worker - with its class, spots
+   * and area as they were then. Placed by HMI's smoothed hourly positions,
+   * or NOAA's reported position carried for rotation where HMI has nothing.
+   * A region appears on the frame where it formed and goes on the frame
+   * after it was last seen; the selected one stays, grey, before it formed,
+   * so its close-up can watch it form. See utils/regionsAtTime.
    */
   const { spotRegionInputs, spotPlacedFromHmi, selectedPreEmergence } = useMemo(() => {
     if (spotIsLive) return { spotRegionInputs: regionInputs, spotPlacedFromHmi: 0, selectedPreEmergence: false };
-    let placed = 0;
-    let preEmergence = false;
-    const selectedId = selectedSunspotRegion?.region ?? null;
-    const inputs = regionInputs.flatMap((r) => {
-      const points = sharpHistory.byRegion.get(sharpRegionKey(r.id));
-      const emerged = trackedBy(points, spotFrameMs, sharpHistory.fromMs);
-      if (!emerged && r.id !== selectedId) return [];
-
-      const pos = points ? smoothedPositionAt(points, spotFrameMs) : null;
-      if (!pos) return [r];
-      if (!emerged) {
-        preEmergence = true;
-        return [{ ...r, latitude: pos.latitude, longitude: pos.longitude, observedAtMs: pos.atMs, color: '#a3a3a3' }];
-      }
-      placed++;
-      return [{ ...r, latitude: pos.latitude, longitude: pos.longitude, observedAtMs: pos.atMs }];
+    // Every region that was on the Sun at the frame's moment - including ones
+    // that have since rotated away or faded - as it was then. See
+    // utils/regionsAtTime.
+    const { inputs, placedFromHmi, selectedPreEmergence: preEmergence } = regionsAtFrame({
+      records: sunspotHistory,
+      current: regionInputs,
+      sharp: sharpHistory.byRegion,
+      coverageFromMs: sharpHistory.fromMs,
+      atMs: spotFrameMs,
+      selectedId: selectedSunspotRegion?.region ?? null,
+      colourOf: (magneticClass, mFlareProbability, xFlareProbability) =>
+        getSunspotRiskBand({ magneticClass, mFlareProbability, xFlareProbability } as ActiveSunspotRegion).color,
     });
-    return { spotRegionInputs: inputs, spotPlacedFromHmi: placed, selectedPreEmergence: preEmergence };
-  }, [spotIsLive, regionInputs, sharpHistory, spotFrameMs, selectedSunspotRegion]);
+    return { spotRegionInputs: inputs, spotPlacedFromHmi: placedFromHmi, selectedPreEmergence: preEmergence };
+  }, [spotIsLive, regionInputs, sharpHistory, sunspotHistory, spotFrameMs, selectedSunspotRegion]);
 
   // The sunspot tracker's own overview, for whichever frame is on screen.
   const laidOutSunspotLabels = useMemo(() => {
@@ -2651,15 +2656,6 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     return () => { cancelled = true; };
   }, [refreshSignal]);
 
-  // Two weeks of every change in every region, from the sunspot-history
-  // worker. Where it has a region, its record is the history; where it is
-  // unreachable, the snapshots above still are.
-  const [sunspotHistory, setSunspotHistory] = useState<Record<string, RegionRecord> | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    fetchSunspotHistory().then((h) => { if (!cancelled && h) setSunspotHistory(h); });
-    return () => { cancelled = true; };
-  }, [refreshSignal]);
 
   /** Flares from each region that DONKI links to a CME. */
   const cmesByRegion = useMemo(() => {

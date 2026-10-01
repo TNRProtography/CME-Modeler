@@ -19,7 +19,7 @@ const SOURCE: Record<RegionEvent['source'], string> = {
 
 const describe = (e: RegionEvent): { title: string; colour: string; lines: string[] } => {
   const lines = Object.entries(e.changes ?? {})
-    .filter(([f]) => f !== 'areaMh')
+    .filter(([f]) => f !== 'areaMh' && f !== 'fieldAreaMh')
     .map(([f, [a, b]]) => (a == null
       ? `${FIELD_LABELS[f] ?? f}: ${formatFieldValue(f, b)}`
       : `${FIELD_LABELS[f] ?? f}: ${formatFieldValue(f, a)} → ${formatFieldValue(f, b)}`));

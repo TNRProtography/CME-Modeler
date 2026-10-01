@@ -160,6 +160,43 @@ try {
   check(bare.regions.size === 2 && bare.regions.get('4227')?.spotCount === 6, `both regions found (${bare.regions.size})`);
   check(bare.validMs === Date.UTC(2026, 8, 30, 24, 0), 'timed to 2400Z the day before it was issued', new Date(bare.validMs).toISOString());
 
+  console.log('\nEvery event carries the whole region as it was then');
+  const full = (await api('/api/region/4538')).region;
+  check(full.events.every(e => e.state), 'every event has a state');
+  const ev18 = full.events.find(e => e.atMs === Date.UTC(2026, 8, 18));
+  check(ev18.state.areaMsh === 120 && ev18.state.spotCount === 9 && ev18.state.magClass === 'Beta-Gamma' && ev18.state.location === 'N12E27',
+        'the 18th: area, spots, class and position as reported that day', JSON.stringify(ev18.state));
+  const at17 = U.regionAt(full, Date.UTC(2026, 8, 17, 12));
+  check(at17.listed && at17.state.spotCount === 3, 'regionAt reads it back for any moment');
+  check(!U.regionAt(full, Date.UTC(2026, 8, 16)).listed, 'and not before it was listed');
+  check(!U.regionAt(full, D0 + 3 * DAY).listed, 'nor after it dropped off the list');
+
+  console.log('\nPast frames show the regions that were there then');
+  execFileSync('npx', ['esbuild', join(root, 'utils/regionsAtTime.ts'),
+    '--bundle', '--format=esm', `--outfile=${join(out, 'f.mjs')}`, '--log-level=error'],
+    { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
+  const F = await import(pathToFileURL(join(out, 'f.mjs')).href);
+  const records = Object.fromEntries((await api('/api/regions')).regions.map(x => [x.id, x]));
+  const current = [{ id: '4540', latitude: -20, longitude: 57, observedAtMs: D0 + 2 * DAY, magneticClass: 'Alpha', spotCount: 1, area: 40, color: '#0f0' }];
+  const frame = (atMs, sharp = new Map()) => F.regionsAtFrame({
+    records, current, sharp, coverageFromMs: D0 - 7 * DAY, atMs, nowMs: D0 + 2 * DAY + H,
+    colourOf: (m) => (String(m).toUpperCase().includes('DELTA') ? 'red' : 'yellow'),
+  }).inputs;
+  const ids = (atMs, sharp) => frame(atMs, sharp).map(r => r.id).sort().join(',');
+  check(ids(Date.UTC(2026, 8, 18, 6)) === '4538', `a frame on the 18th shows 4538, since gone, and not 4540, not yet formed (${ids(Date.UTC(2026, 8, 18, 6))})`);
+  check(ids(D0 + DAY + 6 * H) === '4538,4540', 'the day both were listed shows both');
+  check(ids(D0 + 2 * DAY + 6 * H) === '4540', 'and after 4538 dropped off, only 4540');
+  const old = frame(Date.UTC(2026, 8, 18, 6))[0];
+  check(old.magneticClass === 'Beta-Gamma' && old.spotCount === 9 && old.color === 'yellow', 'its label says what it was then, not what it became', JSON.stringify(old));
+  check(old.latitude === 12 && old.longitude === -27 && old.observedAtMs === Date.UTC(2026, 8, 18), 'placed where NOAA reported it that day, for the label to carry for rotation');
+  // HMI knows better than NOAA's daily list: first seen at 03:00 on the 19th.
+  const sharpMap = new Map([['4540', [
+    { atMs: D0 + DAY - 21 * H, usfluxMx: 1e21, areaMh: 50, latitude: -20, longitude: 40 },
+    { atMs: D0 + 2 * DAY, usfluxMx: 2e21, areaMh: 80, latitude: -20, longitude: 57 },
+  ]]]);
+  check(!ids(D0 + DAY - 23 * H, sharpMap).includes('4540') && ids(D0 + DAY - 20 * H, sharpMap).includes('4540'),
+        'with HMI history, a region appears within the hour HMI first saw it');
+
   console.log('\nAfter two weeks it is forgotten');
   await W.run(env, D0 + 17 * DAY);
   check(!(await api('/api/regions')).regions.some(x => x.id === '4538'), 'a region last seen over two weeks ago is dropped');

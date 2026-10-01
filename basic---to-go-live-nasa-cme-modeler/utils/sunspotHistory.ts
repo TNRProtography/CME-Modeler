@@ -47,6 +47,14 @@ export interface RegionSnapshot {
   mFlareProbability: number | null;
   xFlareProbability: number | null;
   protonProbability: number | null;
+  /** NOAA's count of each class of X-ray flare from the region in the last day. */
+  cXrayEvents: number | null;
+  mXrayEvents: number | null;
+  xXrayEvents: number | null;
+  protonEvents: number | null;
+  /** HMI: total unsigned flux (Mx) and strong-field area (MSH), latest hour. */
+  usfluxMx: number | null;
+  fieldAreaMh: number | null;
 }
 
 export type RegionField = keyof RegionSnapshot;
@@ -55,6 +63,13 @@ export type RegionField = keyof RegionSnapshot;
 export const TRACKED_FIELDS: RegionField[] = [
   'areaMsh', 'mcintosh', 'extentDeg', 'spotCount', 'magClass',
   'cFlareProbability', 'mFlareProbability', 'xFlareProbability', 'protonProbability',
+  'cXrayEvents', 'mXrayEvents', 'xXrayEvents', 'protonEvents',
+];
+
+/** What NOAA's region JSON adds to the daily summary. */
+const JSON_FIELDS: RegionField[] = [
+  'cFlareProbability', 'mFlareProbability', 'xFlareProbability', 'protonProbability',
+  'cXrayEvents', 'mXrayEvents', 'xXrayEvents', 'protonEvents',
 ];
 
 export type RegionEventKind = 'appeared' | 'changed' | 'flux' | 'flare' | 'gone' | 'returned';
@@ -70,6 +85,8 @@ export interface RegionEvent {
   changes?: Record<string, [unknown, unknown]>;
   /** Where the region was when it happened. */
   location?: string | null;
+  /** Everything known about the region just after this event. */
+  state?: RegionSnapshot;
   /** Flares: class and id. */
   flareClass?: string;
   flareId?: string;
@@ -147,6 +164,8 @@ const blank = (): RegionSnapshot => ({
   location: null, latitude: null, longitude: null, carringtonLon: null, areaMsh: null,
   mcintosh: null, extentDeg: null, spotCount: null, magClass: null,
   cFlareProbability: null, mFlareProbability: null, xFlareProbability: null, protonProbability: null,
+  cXrayEvents: null, mXrayEvents: null, xXrayEvents: null, protonEvents: null,
+  usfluxMx: null, fieldAreaMh: null,
 });
 
 /**
@@ -225,6 +244,10 @@ export function parseRegionJson(rows: unknown): Map<string, { atMs: number; snap
         mFlareProbability: pick(row, ['m_flare_probability', 'm_class_1_day', 'mflare_probability']),
         xFlareProbability: pick(row, ['x_flare_probability', 'x_class_1_day', 'xflare_probability']),
         protonProbability: pick(row, ['proton_probability', 's1_probability']),
+        cXrayEvents: pick(row, ['c_xray_events', 'c_flare_events']),
+        mXrayEvents: pick(row, ['m_xray_events', 'm_flare_events']),
+        xXrayEvents: pick(row, ['x_xray_events', 'x_flare_events']),
+        protonEvents: pick(row, ['proton_events']),
       },
     });
   }
@@ -267,14 +290,10 @@ export function applySrs(state: SunspotHistoryState, text: string, nowMs = Date.
       rec.events.push({ kind: 'changed', atMs: validMs, seenAtMs: nowMs, source: 'srs', location: snap.location, changes });
       events++;
     }
-    // NOAA's probabilities come from the JSON; keep them.
-    rec.current = {
-      ...snap,
-      cFlareProbability: rec.current.cFlareProbability,
-      mFlareProbability: rec.current.mFlareProbability,
-      xFlareProbability: rec.current.xFlareProbability,
-      protonProbability: rec.current.protonProbability,
-    };
+    // NOAA's probabilities and flare counts come from the JSON, flux from
+    // HMI; keep them.
+    const kept = Object.fromEntries([...JSON_FIELDS, 'usfluxMx', 'fieldAreaMh'].map((f) => [f, rec.current[f as RegionField]]));
+    rec.current = { ...snap, ...kept } as RegionSnapshot;
     rec.lastSeenMs = Math.max(rec.lastSeenMs, validMs);
     rec.active = true;
   }
@@ -325,6 +344,7 @@ export function backfillFromRegionJson(state: SunspotHistoryState, rows: unknown
       extentDeg: num(row?.extent),
       spotCount: num(row?.number_spots),
       magClass: magClassName(row?.mag_class),
+      ...parseRegionJson([{ ...row, region: raw }]).get(id)?.snap,
     };
     if (!byRegion.has(id)) byRegion.set(id, []);
     byRegion.get(id)!.push({ atMs, snap });
@@ -336,7 +356,7 @@ export function backfillFromRegionJson(state: SunspotHistoryState, rows: unknown
     const rec = newRecord(id, list[0].atMs, list[0].snap);
     rec.events.push({ kind: 'appeared', atMs: list[0].atMs, seenAtMs: nowMs, source: 'noaa-json', location: list[0].snap.location, changes: diff(blank(), list[0].snap) });
     for (const { atMs, snap } of list.slice(1)) {
-      const changes = diff(rec.current, snap, ['areaMsh', 'mcintosh', 'extentDeg', 'spotCount', 'magClass']);
+      const changes = diff(rec.current, snap);
       if (changes) rec.events.push({ kind: 'changed', atMs, seenAtMs: nowMs, source: 'noaa-json', location: snap.location, changes });
       rec.current = { ...rec.current, ...Object.fromEntries(Object.entries(snap).filter(([, v]) => v != null)) };
       rec.lastSeenMs = atMs;
@@ -356,7 +376,7 @@ export function applyRegionJson(state: SunspotHistoryState, rows: unknown, nowMs
     const rec = state.regions[id];
     if (!rec || atMs < rec.firstSeenMs - DAY) continue;
     const next = { ...rec.current, ...Object.fromEntries(Object.entries(snap).filter(([, v]) => v != null)) };
-    const changes = diff(rec.current, next, ['cFlareProbability', 'mFlareProbability', 'xFlareProbability', 'protonProbability']);
+    const changes = diff(rec.current, next, JSON_FIELDS);
     if (!changes) continue;
     rec.current = next;
     rec.events.push({ kind: 'changed', atMs, seenAtMs: nowMs, source: 'noaa-json', location: rec.current.location, changes });
@@ -385,12 +405,13 @@ export function applySharp(state: SunspotHistoryState, byRegion: Map<string, Sha
         atMs: p.atMs, usfluxMx: Number(p.usfluxMx.toPrecision(4)), areaMh: Math.round(p.areaMh),
         latitude: r1(p.latitude), longitude: r1(p.longitude),
       });
+      rec.current = { ...rec.current, usfluxMx: Number(p.usfluxMx.toPrecision(4)), fieldAreaMh: Math.round(p.areaMh) };
       if (rec.fluxRefMx == null || rec.fluxRefMx <= 0) { rec.fluxRefMx = p.usfluxMx; continue; }
       const ratio = p.usfluxMx / rec.fluxRefMx;
       if (Math.abs(ratio - 1) >= FLUX_CHANGE_FRACTION) {
         rec.events.push({
           kind: 'flux', atMs: p.atMs, seenAtMs: nowMs, source: 'sharp', location: rec.current.location,
-          changes: { usfluxMx: [rec.fluxRefMx, p.usfluxMx], areaMh: [null, p.areaMh] },
+          changes: { usfluxMx: [rec.fluxRefMx, p.usfluxMx], fieldAreaMh: [null, Math.round(p.areaMh)] },
         });
         rec.fluxRefMx = p.usfluxMx;
         events++;
@@ -428,10 +449,62 @@ export function prune(state: SunspotHistoryState, nowMs = Date.now()): void {
       delete state.regions[id];
       continue;
     }
-    rec.events = rec.events.filter((e) => e.atMs >= cutoff).sort((a, b) => a.atMs - b.atMs || a.seenAtMs - b.seenAtMs);
+    rec.events.sort((a, b) => a.atMs - b.atMs || a.seenAtMs - b.seenAtMs);
+    // Every event carries the region's whole state just after it, worked
+    // out from the start of the record (before anything old is dropped).
+    const states = replayStates(rec);
+    rec.events.forEach((e, i) => { e.state = states[i]; });
+    rec.events = rec.events.filter((e) => e.atMs >= cutoff);
     rec.sharp = rec.sharp.filter((p) => p.atMs >= cutoff);
   }
   state.updatedMs = nowMs;
+}
+
+/**
+ * The region's full state just after each of its events, in order: each
+ * event's changes applied over the one before, its position from where it
+ * was reported. An event that already carries a state starts from that.
+ */
+export function replayStates(rec: RegionRecord): RegionSnapshot[] {
+  let s = blank();
+  return rec.events.map((e) => {
+    if (e.state) { s = { ...blank(), ...e.state }; return s; }
+    const next: RegionSnapshot = { ...s };
+    for (const [f, [, after]] of Object.entries(e.changes ?? {})) {
+      if (f in next) (next as any)[f] = after;
+    }
+    const pos = parseLocation(e.location);
+    if (pos && e.source !== 'donki') { next.location = String(e.location).toUpperCase(); next.latitude = pos.latitude; next.longitude = pos.longitude; }
+    s = next;
+    return s;
+  });
+}
+
+/**
+ * The region at a moment: whether it was on NOAA's list then, and what it
+ * was like (its state after the newest event at or before then, and when
+ * that was).
+ */
+export function regionAt(rec: RegionRecord, atMs: number): { listed: boolean; state: RegionSnapshot | null; stateAtMs: number | null; reportedAtMs: number | null } {
+  let listed = false;
+  let state: RegionSnapshot | null = null;
+  let stateAtMs: number | null = null;
+  let reportedAtMs: number | null = null;
+  const states = rec.events.some((e) => !e.state) ? replayStates(rec) : rec.events.map((e) => e.state as RegionSnapshot);
+  for (let i = 0; i < rec.events.length; i++) {
+    const e = rec.events[i];
+    if (e.atMs > atMs) break;
+    if (e.kind === 'appeared' || e.kind === 'returned') listed = true;
+    if (e.kind === 'gone') listed = false;
+    state = states[i];
+    stateAtMs = e.atMs;
+    // When its position was last reported: NOAA's events, not flares or flux.
+    if (e.source === 'srs' || e.source === 'noaa-json') reportedAtMs = e.atMs;
+  }
+  // Older than the record: it was listed before anything here, if its very
+  // first event is a change rather than an appearance (pruned history).
+  if (!state && rec.events[0] && rec.events[0].kind !== 'appeared' && atMs >= rec.firstSeenMs) listed = true;
+  return { listed, state, stateAtMs, reportedAtMs };
 }
 
 /** A field's label and value, for showing a change to a person. */
@@ -439,12 +512,14 @@ export const FIELD_LABELS: Record<string, string> = {
   areaMsh: 'Area', mcintosh: 'McIntosh class', extentDeg: 'Extent', spotCount: 'Spots',
   magClass: 'Magnetic class', cFlareProbability: 'C-flare chance', mFlareProbability: 'M-flare chance',
   xFlareProbability: 'X-flare chance', protonProbability: 'Proton chance',
-  usfluxMx: 'Magnetic flux', areaMh: 'Field area',
+  usfluxMx: 'Magnetic flux', areaMh: 'Field area', fieldAreaMh: 'Field area',
+  cXrayEvents: 'C flares (24 h)', mXrayEvents: 'M flares (24 h)', xXrayEvents: 'X flares (24 h)',
+  protonEvents: 'Proton events (24 h)',
 };
 
 export function formatFieldValue(field: string, v: unknown): string {
   if (v == null) return '-';
-  if (field === 'areaMsh' || field === 'areaMh') return `${Math.round(Number(v))} MSH`;
+  if (field === 'areaMsh' || field === 'areaMh' || field === 'fieldAreaMh') return `${Math.round(Number(v))} MSH`;
   if (field === 'extentDeg') return `${v}°`;
   if (field.endsWith('Probability')) return `${v}%`;
   if (field === 'usfluxMx') return `${(Number(v) / 1e21).toFixed(1)}×10²¹ Mx`;
