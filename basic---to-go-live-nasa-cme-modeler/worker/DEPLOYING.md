@@ -73,8 +73,8 @@ Two weeks of every sunspot region with every change timestamped: NOAA's
 daily report and probabilities, hourly SDO/HMI flux, and DONKI flares. The
 sunspot tracker reads it. One-time setup:
 
-1. KV namespace `SUNSPOT_HISTORY` (Storage & Databases, KV, Create). Put its
-   ID in `wrangler-sunspot-history.toml` in place of the placeholder.
+1. KV namespace `SUNSPOT_HISTORY` (its ID is in
+   `wrangler-sunspot-history.toml`).
 2. Create the worker from this repo like the others: name `sunspot-history`,
    deploy command `npx wrangler deploy -c wrangler-sunspot-history.toml`,
    watch paths `worker/sunspot-history-worker.ts`, `utils/sunspotHistory.ts`,

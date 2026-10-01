@@ -13,11 +13,10 @@ enabled = true
 [triggers]
 crons = ["*/15 * * * *"]
 
-# KV namespace "SUNSPOT_HISTORY". Paste its ID from the dashboard
-# (Storage & Databases, KV) in place of the placeholder.
+# KV namespace "SUNSPOT_HISTORY".
 [[kv_namespaces]]
 binding = "SUNSPOT_HISTORY"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "f26a0d20f666456ea7e7a5c9b77fa1ab"
 
 # Flares, from the nasa-donki-api worker on this account. Addressed by
 # binding: a plain fetch to another workers.dev worker does not reach it.
