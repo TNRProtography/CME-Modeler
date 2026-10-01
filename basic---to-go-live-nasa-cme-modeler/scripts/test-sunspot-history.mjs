@@ -214,6 +214,15 @@ try {
   check(tr.label === 'Growing' && tr.areaDelta === 60 && tr.spotDelta === 6, `trend from area and spots over the last day (${JSON.stringify(tr)})`);
   check(S.valueAt(areaS, Date.UTC(2026, 8, 18, 12)) === 120, 'the value at a moment is the report in force then');
 
+  const g = S.growthRateSeries([
+    { atMs: D0, area: 100 }, { atMs: D0 + DAY, area: 160 }, { atMs: D0 + 2 * DAY, area: 140 }, { atMs: D0 + 3 * DAY, area: null },
+  ], D0 + 2.5 * DAY);
+  check(g.map(p => p.value).join() === '60,-20,-20,-20' && g[0].atMs === D0 && g[g.length - 1].atMs === D0 + 2.5 * DAY,
+        `growth rate per day between reports, held to now (${g.map(p => p.value).join(', ')})`);
+  check(['growth'].every(k => S.levelOf(250, S.SCALES[k]) === 'purple' && S.levelOf(120, S.SCALES[k]) === 'red'
+        && S.levelOf(60, S.SCALES[k]) === 'orange' && S.levelOf(20, S.SCALES[k]) === 'yellow' && S.levelOf(-30, S.SCALES[k]) === 'green'),
+        'growth: 200 purple, 100 red, 50 orange, 15 yellow, shrinking green');
+
   console.log('\nA column read from the wrong place is not recorded');
   const shifted = U.parseSrs(':Issued: 2026 Oct 01 0030 UTC\n4257 N11W57   210  0060 6  06   06 Beta-Gamma');
   check(shifted.regions.get('4257')?.mcintosh === null && shifted.regions.get('4257')?.spotCount === 6, 'an impossible McIntosh class is left empty, the rest kept');

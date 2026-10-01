@@ -23,7 +23,7 @@ const fmtNzShort = (ms: number) => new Date(ms).toLocaleString('en-NZ', {
 });
 
 /** One chart: the line in level colours, with the matching fill under it. */
-const LevelChart: React.FC<{
+export const LevelChart: React.FC<{
   points: SeriesPoint[];
   scale: Scale;
   label: string;
@@ -80,6 +80,8 @@ const LevelChart: React.FC<{
     if (last && last.colour === lvl) last.pts.push(...(step ? seg : [seg[1]]));
     else runs.push({ colour: lvl, pts: seg });
   }
+  // Filled down to zero where values go negative, otherwise to the bottom.
+  const base = lo < 0 && hi > 0 ? y(0) : H;
   const pieces: React.ReactNode[] = runs.map((run, i) => {
     const v = run.colour < 0 ? -Infinity : scale[run.colour].min;
     const stroke = colourOf(v, scale);
@@ -89,7 +91,7 @@ const LevelChart: React.FC<{
     const next = runs[i + 1];
     return (
       <g key={i}>
-        <path d={`${line} L${end[0].toFixed(2)},${H} L${first[0].toFixed(2)},${H} Z`} fill={colourOf(v, scale, 0.2)} />
+        <path d={`${line} L${end[0].toFixed(2)},${base.toFixed(2)} L${first[0].toFixed(2)},${base.toFixed(2)} Z`} fill={colourOf(v, scale, 0.2)} />
         <path d={line} fill="none" stroke={stroke} strokeWidth="1.75" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
         {step && next && (
           <line x1={end[0]} y1={end[1]} x2={next.pts[0][0]} y2={next.pts[0][1]}
@@ -125,6 +127,11 @@ const LevelChart: React.FC<{
       >
         <rect x={0} y={0} width={W} height={H} fill="rgba(255,255,255,0.02)" />
         {pieces}
+        {/* Where a value that can go negative (growth) crosses zero. */}
+        {lo < 0 && hi > 0 && (
+          <line x1={0} y1={y(0)} x2={W} y2={y(0)} stroke="rgba(163,163,163,0.45)" strokeWidth="1"
+                strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+        )}
         {markerMs != null && markerMs >= t0 && markerMs <= t1 && (
           <line x1={x(markerMs)} y1={0} x2={x(markerMs)} y2={H}
                 stroke="#fbbf24" strokeWidth="1" strokeDasharray="2 2" vectorEffect="non-scaling-stroke" />

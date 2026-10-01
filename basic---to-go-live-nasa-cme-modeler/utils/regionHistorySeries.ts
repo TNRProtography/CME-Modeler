@@ -39,6 +39,10 @@ export const SCALES = {
   // HMI strong-field area, millionths of a hemisphere (counts plage, so
   // several times NOAA's spot area).
   fieldArea: [{ min: 2000, level: 'purple' }, { min: 1000, level: 'red' }, { min: 500, level: 'orange' }, { min: 200, level: 'yellow' }],
+  // How fast the sunspot area is changing, MSH per day. Shrinking or barely
+  // moving is green; +15 a day is a region building; +100 a day is the kind
+  // of rapid growth that comes before big flares; +200 is explosive.
+  growth: [{ min: 200, level: 'purple' }, { min: 100, level: 'red' }, { min: 50, level: 'orange' }, { min: 15, level: 'yellow' }],
 } satisfies Record<string, Scale>;
 
 export function levelOf(value: number, scale: Scale): Level {
@@ -117,4 +121,27 @@ export function regionTrend(rec: RegionRecord): RegionTrend | null {
   const down = (areaDelta ?? 0) <= -15 || (spotDelta ?? 0) <= -3;
   const label = up && down ? 'Mixed' : up ? 'Growing' : down ? 'Shrinking' : 'Stable';
   return { label, areaDelta, spotDelta };
+}
+
+/**
+ * How fast the area changed between each pair of reports, MSH per day, as a
+ * step: each rate holds from one report to the next, and the latest out to
+ * `untilMs`.
+ */
+export function growthRateSeries(history: { atMs: number; area: number | null }[], untilMs: number): SeriesPoint[] {
+  const pts = history.filter((h) => h.area != null && Number.isFinite(h.atMs)).sort((a, b) => a.atMs - b.atMs);
+  const out: SeriesPoint[] = [];
+  for (let i = 1; i < pts.length; i++) {
+    const days = (pts[i].atMs - pts[i - 1].atMs) / 86400000;
+    if (days < 0.25) continue;
+    const rate = Math.round(((pts[i].area as number) - (pts[i - 1].area as number)) / days);
+    // From the earlier report: the rate is what happened between the two.
+    out.push({ atMs: pts[i - 1].atMs, value: rate });
+  }
+  const last = pts[pts.length - 1];
+  if (out.length && last) {
+    out.push({ atMs: last.atMs, value: out[out.length - 1].value });
+    if (untilMs > last.atMs) out.push({ atMs: untilMs, value: out[out.length - 1].value });
+  }
+  return out;
 }

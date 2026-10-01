@@ -38,10 +38,10 @@ import {
 } from '../utils/sharpPositions';
 import { fetchHmiFrames, SDO_IMAGERY_WORKER_BASE, type HmiFrame } from '../utils/hmiArchive';
 import FrameScrubber from './FrameScrubber';
-import RegionMagneticHistory from './RegionMagneticHistory';
+import RegionMagneticHistory, { LevelChart } from './RegionMagneticHistory';
 import { fetchSunspotHistory, growthPoints, type RegionRecord } from '../utils/sunspotHistory';
 import { regionsAtFrame } from '../utils/regionsAtTime';
-import { regionTrend } from '../utils/regionHistorySeries';
+import { regionTrend, growthRateSeries, SCALES as HISTORY_SCALES } from '../utils/regionHistorySeries';
 import { spotCountChanges, type SpotCountChange } from '../hooks/useSunspotRegions';
 import { fetchGoesProtons, fetchGoesXrays } from '../utils/goesSeries';
 import { hasDecodedImage, loadDecodedImage, prefetchImage } from '../utils/decodedImages';
@@ -966,6 +966,38 @@ const SolarActivitySummaryDisplay: React.FC<{ summary: SolarActivitySummary | nu
 };
 
 // --- COMPONENT ---
+/**
+ * How fast a region's sunspot area is changing, report to report, in the
+ * same level colours as the region history charts below it.
+ */
+const GrowthChart: React.FC<{ history: { atMs: number; area: number | null }[] }> = ({ history }) => {
+  const [hoverMs, setHoverMs] = useState<number | null>(null);
+  // Fixed per history, so the window does not creep while it is being read.
+  const nowMs = useMemo(() => Date.now(), [history]);
+  const points = useMemo(() => growthRateSeries(history, nowMs), [history, nowMs]);
+  if (points.length < 2) return null;
+  return (
+    <>
+      <LevelChart
+        points={points}
+        scale={HISTORY_SCALES.growth}
+        label="Area change per day"
+        format={(v) => `${v > 0 ? '+' : ''}${Math.round(v)} MSH/day`}
+        t0={points[0].atMs}
+        t1={nowMs}
+        step
+        hoverMs={hoverMs}
+        onHover={setHoverMs}
+      />
+      {hoverMs != null && (
+        <button type="button" onClick={() => setHoverMs(null)} className="text-[10px] text-neutral-300 hover:text-white mt-0.5">
+          {new Date(hoverMs).toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', weekday: 'short', day: 'numeric', hour: 'numeric', hour12: true })} <span className="text-neutral-500">✕</span>
+        </button>
+      )}
+    </>
+  );
+};
+
 const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setViewerMedia, setLatestXrayFlux, onViewCMEInVisualization, onViewCoronalHolesInVisualization, refreshSignal, onSuvi195ImageUrlChange, onInitialLoad, onInitialLoadProgress, modalSlug, onModalSlugChange, embed = false }) => {
   const isInitialLoad = useRef(true);
   const reportedInitialTasks = useRef<Set<'solarXray' | 'solarProton' | 'solarFlares' | 'solarRegions'>>(new Set());
@@ -4757,29 +4789,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                               </div>
                               {history.length >= 2 ? (
                                 <>
-                                  <svg viewBox="0 0 200 34" className="w-full h-9" preserveAspectRatio="none">
-                                    {(() => {
-                                      const areas = history.map((h) => h.area).filter((a): a is number => a != null);
-                                      if (areas.length < 2) return null;
-                                      const max = Math.max(...areas, 1);
-                                      const pts = history
-                                        .map((h, i) => h.area == null ? null : {
-                                          x: (i / (history.length - 1)) * 200,
-                                          y: 32 - (h.area / max) * 30,
-                                        })
-                                        .filter((pt): pt is { x: number; y: number } => pt !== null);
-                                      const d = pts.map((pt, i) => `${i ? 'L' : 'M'}${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`).join(' ');
-                                      return (
-                                        <>
-                                          <path d={`${d} L200 34 L0 34 Z`} fill="rgba(56,189,248,0.15)" />
-                                          <path d={d} fill="none" stroke="#38bdf8" strokeWidth="1.5" />
-                                          {pts.map((pt, i) => (
-                                            <circle key={i} cx={pt.x} cy={pt.y} r="1.6" fill="#38bdf8" />
-                                          ))}
-                                        </>
-                                      );
-                                    })()}
-                                  </svg>
+                                  <GrowthChart history={history} />
                                   <div className="flex justify-between text-[10px] text-neutral-500 mt-0.5">
                                     <span>{growth.days.toFixed(0)}d ago</span>
                                     <span>
