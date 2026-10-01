@@ -28,6 +28,7 @@ and survive deploys.
 | coronagraphy-processing | `coronagraph-worker.js` | `wrangler-coronagraph.toml` | every 5 min | none |
 | push-notification-worker | `push-notification-worker.js` | `wrangler-push.toml` | every minute | VAPID_PRIVATE_KEY, TRIGGER_SECRET, BANNER_AUTH_TOKEN |
 | spot-the-aurora-forecast-worker | `forecast-entry.js` | `wrangler-forecast.toml` | hourly at :07 | none |
+| sunspot-history | `sunspot-history-worker.ts` | `wrangler-sunspot-history.toml` | every 15 min | none |
 | spot-the-aurora-image-proxy | `index.ts` | `wrangler.toml` | none | none |
 
 ## Connecting a worker (one at a time)
@@ -65,3 +66,24 @@ every 30 minutes, code in `scripts/cme_orientation/`) and uploads to the
 
 Checks: `https://cme-orientation.thenamesrock.workers.dev/api/status`.
 Until it has results, the app draws CMEs exactly as before.
+
+## Sunspot history (sunspot-history worker)
+
+Two weeks of every sunspot region with every change timestamped: NOAA's
+daily report and probabilities, hourly SDO/HMI flux, and DONKI flares. The
+sunspot tracker reads it. One-time setup:
+
+1. KV namespace `SUNSPOT_HISTORY` (Storage & Databases, KV, Create). Put its
+   ID in `wrangler-sunspot-history.toml` in place of the placeholder.
+2. Create the worker from this repo like the others: name `sunspot-history`,
+   deploy command `npx wrangler deploy -c wrangler-sunspot-history.toml`,
+   watch paths `worker/sunspot-history-worker.ts`, `utils/sunspotHistory.ts`,
+   `utils/sharpPositions.ts`, `utils/srsTime.ts`, `utils/solarDisk.ts` and
+   `wrangler-sunspot-history.toml`.
+3. It binds to the `nasa-donki-api` worker for flares (in the settings file;
+   nothing to do in the dashboard).
+4. Open `https://sunspot-history.thenamesrock.workers.dev/api/run` once to
+   fill it straight away (it backfills the last two weeks from NOAA's daily
+   history), then `/api/status` to check.
+
+Until it is running, the tracker works exactly as before.

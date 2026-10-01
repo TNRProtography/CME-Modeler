@@ -1,0 +1,26 @@
+# Deployed by Cloudflare Workers Builds from this repo. A deploy replaces
+# bindings, variables and crons with exactly what this file lists. No
+# secrets. See worker/DEPLOYING.md.
+name = "sunspot-history"
+main = "worker/sunspot-history-worker.ts"
+compatibility_date = "2026-03-04"
+workers_dev = true
+
+[observability]
+enabled = true
+
+# Every 15 minutes: SHARPs update every 12, NOAA's lists a few times a day.
+[triggers]
+crons = ["*/15 * * * *"]
+
+# KV namespace "SUNSPOT_HISTORY". Paste its ID from the dashboard
+# (Storage & Databases, KV) in place of the placeholder.
+[[kv_namespaces]]
+binding = "SUNSPOT_HISTORY"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# Flares, from the nasa-donki-api worker on this account. Addressed by
+# binding: a plain fetch to another workers.dev worker does not reach it.
+[[services]]
+binding = "DONKI"
+service = "nasa-donki-api"

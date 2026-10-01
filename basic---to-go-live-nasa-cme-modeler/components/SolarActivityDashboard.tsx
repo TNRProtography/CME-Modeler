@@ -40,6 +40,8 @@ import {
 import { fetchHmiFrames, SDO_IMAGERY_WORKER_BASE, type HmiFrame } from '../utils/hmiArchive';
 import FrameScrubber from './FrameScrubber';
 import RegionMagneticHistory from './RegionMagneticHistory';
+import RegionChangeLog from './RegionChangeLog';
+import { fetchSunspotHistory, growthPoints, type RegionRecord } from '../utils/sunspotHistory';
 import { spotCountChanges, type SpotCountChange } from '../hooks/useSunspotRegions';
 import { fetchGoesProtons, fetchGoesXrays } from '../utils/goesSeries';
 import { hasDecodedImage, loadDecodedImage, prefetchImage } from '../utils/decodedImages';
@@ -1886,8 +1888,33 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       stampIfChanged('solar-regions', dedupedLatest, setLastSunspotRegionsUpdate);
     } catch (error) {
       console.error('Error fetching active sunspot regions:', error);
-      setActiveSunspotRegions([]);
-      setLoadingSunspotRegions(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      // NOAA unreachable: the sunspot-history worker keeps the same list.
+      const kept = await fetchSunspotHistory().catch(() => null);
+      const fromWorker: ActiveSunspotRegion[] = kept ? Object.values(kept)
+        .filter((r) => r.active && r.current.latitude != null && r.current.longitude != null)
+        .map((r) => ({
+          region: r.id,
+          location: r.current.location ?? 'N/A',
+          area: r.current.areaMsh,
+          magneticClass: r.current.magClass,
+          spotCount: r.current.spotCount,
+          latitude: r.current.latitude,
+          longitude: r.current.longitude,
+          observedTime: r.lastSeenMs,
+          trend: 'Stable' as const,
+          cFlareProbability: r.current.cFlareProbability,
+          mFlareProbability: r.current.mFlareProbability,
+          xFlareProbability: r.current.xFlareProbability,
+          protonProbability: r.current.protonProbability,
+          cFlareEvents24h: null, mFlareEvents24h: null, xFlareEvents24h: null,
+          previousActivity: null,
+          classification: r.current.mcintosh,
+          source: 'sunspot-history',
+        }))
+        .filter((r) => isEarthFacingCoordinate(r.latitude, longitudeAt(r.longitude as number, r.observedTime as number, Date.now())))
+        .sort((a, b) => (b.area ?? -1) - (a.area ?? -1)) : [];
+      setActiveSunspotRegions(fromWorker);
+      setLoadingSunspotRegions(fromWorker.length ? null : `Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       reportInitialTask('solarRegions');
     }
@@ -2624,6 +2651,16 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     return () => { cancelled = true; };
   }, [refreshSignal]);
 
+  // Two weeks of every change in every region, from the sunspot-history
+  // worker. Where it has a region, its record is the history; where it is
+  // unreachable, the snapshots above still are.
+  const [sunspotHistory, setSunspotHistory] = useState<Record<string, RegionRecord> | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchSunspotHistory().then((h) => { if (!cancelled && h) setSunspotHistory(h); });
+    return () => { cancelled = true; };
+  }, [refreshSignal]);
+
   /** Flares from each region that DONKI links to a CME. */
   const cmesByRegion = useMemo(() => {
     const map = new Map<string, SolarFlare[]>();
@@ -2653,7 +2690,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     const timing = regionTiming(region.longitude, observedAt, now);
     const risk = earthDirectedRisk(
       timing, region.mFlareProbability, region.xFlareProbability, region.magneticClass);
-    const growth = growthSummary(regionHistory[region.region] ?? []);
+    const record = sunspotHistory?.[region.region] ?? null;
+    const fromWorker = record ? growthPoints(record) : [];
+    const history = fromWorker.length >= 2 ? fromWorker : (regionHistory[region.region] ?? []);
+    const growth = growthSummary(history);
 
     // What it actually launched, and how much of that happened while it was
     // pointed at us - which is the only part that could ever have reached here.
@@ -2665,8 +2705,8 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       return Math.abs(lonThen) <= 45;
     });
 
-    return { timing, risk, growth, cmes, cmesInZone, history: regionHistory[region.region] ?? [] };
-  }, [selectedSunspotRegion, regionHistory, cmesByRegion]);
+    return { timing, risk, growth, cmes, cmesInZone, history, record };
+  }, [selectedSunspotRegion, regionHistory, sunspotHistory, cmesByRegion]);
 
   /**
    * The path the selected region traces across the disk.
@@ -4755,6 +4795,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                                 </p>
                               )}
                             </div>
+
+                            {/* Every change, timestamped, from the sunspot-history worker. */}
+                            <RegionChangeLog record={selectedRegionInsight.record} />
 
                             {/* Hourly, from the same instrument as the image. */}
                             <RegionMagneticHistory
