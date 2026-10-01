@@ -104,6 +104,7 @@ const UnifiedDashboardMode = retryLazyLoad(() => import('./components/UnifiedDas
 import GlobalBanner from './components/GlobalBanner';
 import { shouldShowWhatsNew } from './utils/whatsNew';
 import InitialLoadingScreen from './components/InitialLoadingScreen';
+import NasaOfflineBadge from './components/NasaOfflineBadge';
 
 // Modal Imports - also lazy to keep the initial bundle lean
 const SettingsModal = retryLazyLoad(() => import('./components/SettingsModal'));
@@ -1567,6 +1568,7 @@ const App: React.FC = () => {
                       Exit Dashboard
                     </button>
                   )}
+                  {!IS_EMBED && <NasaOfflineBadge />}
                   <button
                     onClick={handleRefreshAppData}
                     className={`p-1.5 sm:p-2 rounded-xl text-white shadow-xl transition-all active:scale-95 bg-gradient-to-r from-white/15 via-white/10 to-white/5 border border-white/15 hover:-translate-y-0.5 modern-cta ${isRefreshing ? 'opacity-80' : ''}`}

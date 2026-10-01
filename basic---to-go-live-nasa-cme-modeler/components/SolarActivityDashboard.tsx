@@ -1002,7 +1002,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const isInitialLoad = useRef(true);
   const reportedInitialTasks = useRef<Set<'solarXray' | 'solarProton' | 'solarFlares' | 'solarRegions'>>(new Set());
 
+  // Which first fetches have finished, whether or not their source answered.
+  const [settledTasks, setSettledTasks] = useState<ReadonlySet<string>>(() => new Set());
   const reportInitialTask = useCallback((task: 'solarXray' | 'solarProton' | 'solarFlares' | 'solarRegions') => {
+    setSettledTasks((prev) => (prev.has(task) ? prev : new Set([...prev, task])));
     if (!isInitialLoad.current || reportedInitialTasks.current.has(task)) return;
     reportedInitialTasks.current.add(task);
     onInitialLoadProgress?.(task);
@@ -2087,8 +2090,14 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   useEffect(() => {
     if (!onInitialLoad || initialLoadNotifiedRef.current) return;
 
-    // Core data is sufficient - imagery is supplementary and can be slow/unavailable
-    const hasInitialCoreData = !!lastXrayUpdate && !!lastProtonUpdate && !!lastFlaresUpdate;
+    // Core data is sufficient - imagery is supplementary and can be slow/unavailable.
+    // Each counts once it has loaded OR its fetch has failed: flares come from
+    // NASA DONKI, which can be down for days, and waiting for success held the
+    // app on its loading screen (reloading itself, over and over) for as long
+    // as NASA was offline. A panel whose source failed says so itself.
+    const done = (loaded: string | null, task: string) => !!loaded || settledTasks.has(task);
+    const hasInitialCoreData = done(lastXrayUpdate, 'solarXray') && done(lastProtonUpdate, 'solarProton')
+      && done(lastFlaresUpdate, 'solarFlares');
 
     if (hasInitialCoreData) {
       initialLoadNotifiedRef.current = true;
@@ -2099,6 +2108,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     lastXrayUpdate,
     lastProtonUpdate,
     lastFlaresUpdate,
+    settledTasks,
   ]);
 
   const sunspotOverviewImage = sunspotImageryMode === 'intensity'

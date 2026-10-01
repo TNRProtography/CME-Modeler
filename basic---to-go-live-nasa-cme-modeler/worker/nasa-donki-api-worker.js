@@ -1,5 +1,14 @@
 // The key used inside the KV store.
 const CACHE_KEY = 'nasa_donki_data';
+// Whether NASA is answering, written every run whatever happened.
+const STATUS_KEY = 'nasa_donki_status';
+// How long the last good data is kept if NASA stops answering. It used to be
+// a day, so an outage longer than that emptied the cache and the app had
+// nothing at all; a week rides out NASA's longer outages.
+const KEEP_SECONDS = 7 * 86400;
+// NASA counts as offline after this long without a good fetch (the cron runs
+// every minute).
+const OFFLINE_AFTER_MS = 30 * 60000;
 
 // All known categories (uppercase, matching KV keys)
 const CATEGORIES = ["CME", "GST", "FLR", "SEP", "MPC", "RBE", "HSS", "WSAENLILSIMULATIONS", "NOTIFICATIONS", "IPS"];
@@ -22,6 +31,8 @@ export default {
       // next good fetch. An empty list NASA actually returned is kept as is:
       // it means no events.
       const failed = CATEGORIES.filter(cat => fetched[cat] == null);
+      const sources = [...new Set(Object.values(fetched._sources || {}))];
+      await writeStatus(env, failed.length < CATEGORIES.length, failed, sources);
       if (failed.length === CATEGORIES.length) {
         console.warn("Skipping cache write: every category failed. Existing cache preserved.");
         return;
@@ -39,12 +50,13 @@ export default {
         last_updated: new Date().toISOString(),
         source: "NASA DONKI API",
         status: failed.length ? "partial" : "fresh",
-        kept_previous: failed
+        kept_previous: failed,
+        sources,
       };
 
-      // Write to KV (expires in 24h as a safety net if cron stops running)
+      // Kept a week, as a safety net if the cron stops running altogether.
       await env.NASA_DONKI_CACHE.put(CACHE_KEY, JSON.stringify(allData), {
-        expirationTtl: 86400
+        expirationTtl: KEEP_SECONDS
       });
 
       console.log("Success: Cache updated with fresh data.");
@@ -52,6 +64,7 @@ export default {
       // On any exception we intentionally do NOT touch the cache,
       // so the last good data remains available.
       console.error("Failure: Could not update NASA data. Cache preserved.", error);
+      try { await writeStatus(env, false, CATEGORIES, [], String(error && error.message || error)); } catch { /* ignore */ }
     }
   },
 
@@ -68,6 +81,15 @@ export default {
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders });
+    }
+
+    // Is NASA answering, and how old is what is cached? For the app's
+    // "NASA offline" badge.
+    if (new URL(request.url).pathname.toLowerCase().replace(/\/+$/, '') === '/status') {
+      const status = await readStatus(env);
+      return new Response(JSON.stringify(status), {
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60', ...corsHeaders },
+      });
     }
 
     try {
@@ -108,6 +130,10 @@ function processRequestWithData(data, request, corsHeaders) {
       headers: {
         'Content-Type': 'application/json',
         'Cache-Control': 'public, max-age=300',
+        // When this was last fetched from NASA, so the app can say how old
+        // it is when NASA is down.
+        'X-Donki-Updated': data._metadata?.last_updated || '',
+        'Access-Control-Expose-Headers': 'X-Donki-Updated',
         ...corsHeaders,
       },
     });
@@ -271,15 +297,33 @@ async function fetchAllDonkiData(env) {
     { name: "IPS",                  url: `https://api.nasa.gov/DONKI/IPS?startDate=${apiStartDate}&endDate=${apiEndDate}&location=Earth&catalog=ALL&api_key=${apiKey}` }
   ];
 
+  // NASA's public API (api.nasa.gov) is a gateway in front of CCMC's own
+  // DONKI web service. When the gateway is down - it can be for days - the
+  // service behind it usually is not, and needs no key.
+  const ccmcUrl = (url) => {
+    const u = new URL(url);
+    u.searchParams.delete('api_key');
+    return `https://kauai.ccmc.gsfc.nasa.gov/DONKI/WS/get/${u.pathname.replace(/^\/DONKI\//, '')}${u.search}`;
+  };
+
+  const getJson = async (url) => {
+    const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  };
+
   const fetchAndProcessData = async ({ name, url }) => {
     const upperName = name.toUpperCase();
     try {
-      const response = await fetch(url);
-      if (!response.ok) {
-        console.error(`Error fetching ${name}: HTTP ${response.status}`);
-        return { [upperName]: null };
+      let data, source = 'api.nasa.gov';
+      try {
+        data = await getJson(url);
+      } catch (primary) {
+        console.warn(`api.nasa.gov failed for ${name} (${primary.message}); trying CCMC`);
+        data = await getJson(ccmcUrl(url));
+        source = 'ccmc';
       }
-      let data = await response.json();
+      sources[upperName] = source;
       if (Array.isArray(data)) {
         data.forEach(processDataItem);
       } else {
@@ -296,8 +340,9 @@ async function fetchAllDonkiData(env) {
     }
   };
 
+  const sources = {};
   const results = await Promise.all(donkiEndpoints.map(fetchAndProcessData));
-  return results.reduce((acc, current) => ({ ...acc, ...current }), {});
+  return { ...results.reduce((acc, current) => ({ ...acc, ...current }), {}), _sources: sources };
 }
 
 function processDataItem(item) {
@@ -339,3 +384,39 @@ function processDataItem(item) {
   })(item);
 }
 
+
+// ---------------------------------------------------------------------------
+// NASA STATUS
+// ---------------------------------------------------------------------------
+
+async function writeStatus(env, ok, failed, sources, error = null) {
+  let prev = {};
+  try { prev = JSON.parse(await env.NASA_DONKI_CACHE.get(STATUS_KEY)) || {}; } catch { prev = {}; }
+  const now = new Date().toISOString();
+  const status = {
+    last_attempt: now,
+    last_success: ok ? now : (prev.last_success || null),
+    failed_categories: failed,
+    sources,
+    last_error: ok ? null : (error || (failed.length ? `No answer for ${failed.join(', ')}` : null)),
+  };
+  await env.NASA_DONKI_CACHE.put(STATUS_KEY, JSON.stringify(status));
+}
+
+async function readStatus(env) {
+  let status = {};
+  try { status = JSON.parse(await env.NASA_DONKI_CACHE.get(STATUS_KEY)) || {}; } catch { status = {}; }
+  let cachedAt = null;
+  try { cachedAt = JSON.parse(await env.NASA_DONKI_CACHE.get(CACHE_KEY))?._metadata?.last_updated || null; } catch { cachedAt = null; }
+  const lastSuccess = status.last_success || cachedAt;
+  const ageMs = lastSuccess ? Date.now() - Date.parse(lastSuccess) : null;
+  return {
+    online: ageMs != null && ageMs < OFFLINE_AFTER_MS,
+    last_success: lastSuccess,
+    cached_at: cachedAt,
+    age_minutes: ageMs != null ? Math.round(ageMs / 60000) : null,
+    via: (status.sources || []).includes('ccmc') ? 'ccmc' : (status.sources?.length ? 'api.nasa.gov' : null),
+    last_attempt: status.last_attempt || null,
+    last_error: status.last_error || null,
+  };
+}
