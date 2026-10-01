@@ -1,5 +1,6 @@
-// A small "NASA offline" badge for the header, shown only while NASA's DONKI
-// service (CMEs, flares, shocks) has not answered for a while.
+// A small "NASA offline" badge for the sections that show NASA DONKI data
+// (the CME list and the solar flares), shown while DONKI has not answered for
+// a while - or straight away when that section's own fetch has failed.
 //
 // The nasa-donki-api worker keeps the last good data for a week and falls back
 // to CCMC's own DONKI service when NASA's public API is down, so the app keeps
@@ -25,21 +26,39 @@ const fmtNz = (iso: string) => new Date(iso).toLocaleString('en-NZ', {
 
 const ago = (minutes: number) => (minutes < 120 ? `${minutes} min` : minutes < 48 * 60 ? `${Math.round(minutes / 60)} h` : `${Math.round(minutes / 1440)} days`);
 
-const NasaOfflineBadge: React.FC = () => {
-  const [status, setStatus] = useState<DonkiStatus | null>(null);
+// One status check for every badge on the page, refreshed every few minutes.
+let shared: { status: DonkiStatus | null; atMs: number; pending: Promise<DonkiStatus | null> | null } = { status: null, atMs: 0, pending: null };
+function donkiStatus(): Promise<DonkiStatus | null> {
+  if (shared.pending) return shared.pending;
+  if (shared.atMs && Date.now() - shared.atMs < POLL_MS - 1000) return Promise.resolve(shared.status);
+  shared.pending = (async () => {
+    try {
+      const res = await fetch(DONKI_STATUS_URL, { signal: AbortSignal.timeout(8000) });
+      const s = res.ok ? await res.json() : null;
+      if (s && typeof s.online === 'boolean') shared.status = s;
+    } catch { /* the worker itself unreachable: keep what we had */ }
+    shared.atMs = Date.now();
+    shared.pending = null;
+    return shared.status;
+  })();
+  return shared.pending;
+}
+
+const NasaOfflineBadge: React.FC<{
+  /** The section's own NASA fetch failed: show it whatever the status says. */
+  failed?: boolean;
+  /** Which way the details open. */
+  align?: 'left' | 'right' | 'center';
+}> = ({ failed = false, align = 'right' }) => {
+  const [status, setStatus] = useState<DonkiStatus | null>(shared.status);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     let timer: number | undefined;
     const check = async () => {
-      try {
-        const res = await fetch(DONKI_STATUS_URL, { signal: AbortSignal.timeout(8000) });
-        if (res.ok) {
-          const s = await res.json();
-          if (!cancelled && typeof s?.online === 'boolean') setStatus(s);
-        }
-      } catch { /* the worker itself unreachable: say nothing rather than guess */ }
+      const s = await donkiStatus();
+      if (!cancelled && s) setStatus(s);
       if (!cancelled) timer = window.setTimeout(check, POLL_MS);
     };
     // Not on the critical path: after the first page is up.
@@ -47,10 +66,11 @@ const NasaOfflineBadge: React.FC = () => {
     return () => { cancelled = true; if (timer) window.clearTimeout(timer); };
   }, []);
 
-  if (!status || status.online) return null;
+  if (!failed && (!status || status.online)) return null;
 
+  const side = align === 'left' ? 'left-0' : align === 'center' ? 'left-1/2 -translate-x-1/2' : 'right-0';
   return (
-    <div className="relative">
+    <div className="relative inline-block">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -68,14 +88,20 @@ const NasaOfflineBadge: React.FC = () => {
         <span>NASA offline</span>
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-64 z-50 rounded-lg border border-amber-500/30 bg-neutral-950/95 p-3 text-xs text-neutral-300 shadow-2xl">
+        <div className={`absolute ${side} top-full mt-2 w-64 z-50 text-left rounded-lg border border-amber-500/30 bg-neutral-950/95 p-3 text-xs text-neutral-300 shadow-2xl`}>
           <p className="font-semibold text-amber-200 mb-1">NASA's DONKI service isn't answering</p>
-          <p>
-            CMEs, flares and shocks come from NASA. Until it is back, the app shows what it last received
-            {status.cached_at
-              ? <> - <span className="text-neutral-100">{fmtNz(status.cached_at)}</span>{status.age_minutes != null && <> ({ago(status.age_minutes)} ago)</>}.</>
-              : <>, and has nothing stored yet.</>}
-          </p>
+          {status?.cached_at ? (
+            <p>
+              CMEs, flares and shocks come from NASA. Until it is back, this shows what was last received
+              - <span className="text-neutral-100">{fmtNz(status.cached_at)}</span>
+              {status.age_minutes != null && <> ({ago(status.age_minutes)} ago)</>}.
+            </p>
+          ) : (
+            <p>
+              CMEs, flares and shocks come from NASA. Nothing was stored from before it went down, so this will
+              fill in once NASA is back - the app checks every minute.
+            </p>
+          )}
           <p className="mt-1.5 text-neutral-500">Everything else - the forecast, solar wind, imagery and sunspots - comes from elsewhere and is unaffected.</p>
         </div>
       )}

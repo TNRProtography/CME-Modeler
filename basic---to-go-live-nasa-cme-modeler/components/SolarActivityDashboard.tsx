@@ -39,6 +39,7 @@ import {
 import { fetchHmiFrames, SDO_IMAGERY_WORKER_BASE, type HmiFrame } from '../utils/hmiArchive';
 import FrameScrubber from './FrameScrubber';
 import RegionMagneticHistory, { LevelChart } from './RegionMagneticHistory';
+import NasaOfflineBadge from './NasaOfflineBadge';
 import { fetchSunspotHistory, growthPoints, type RegionRecord } from '../utils/sunspotHistory';
 import { regionsAtFrame } from '../utils/regionsAtTime';
 import { regionTrend, growthRateSeries, SCALES as HISTORY_SCALES } from '../utils/regionHistorySeries';
@@ -1117,6 +1118,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   // Flares
   const [solarFlares, setSolarFlares] = useState<SolarFlare[]>([]);
   const [loadingFlares, setLoadingFlares] = useState<string | null>('Loading solar flares...');
+  const [flaresFailed, setFlaresFailed] = useState(false);
   const [selectedFlare, setSelectedFlare] = useState<SolarFlare | null>(null);
 
   const [activeSunspotRegions, setActiveSunspotRegions] = useState<ActiveSunspotRegion[]>([]);
@@ -1753,6 +1755,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       if (!data || data.length === 0) {
         setSolarFlares([]);
         setLoadingFlares(null);
+        setFlaresFailed(false);
         stampIfChanged('solar-flares', [], setLastFlaresUpdate);
         return;
       }
@@ -1763,12 +1766,16 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       })) as (SolarFlare & { hasCME: boolean })[];
       setSolarFlares(processedData);
       setLoadingFlares(null);
+      setFlaresFailed(false);
       stampIfChanged('solar-flares', processedData, setLastFlaresUpdate);
       const firstStrong = processedData.find(f => f.classType?.startsWith('M') || f.classType?.startsWith('X'));
       if (firstStrong) setLatestRelevantEvent(`${firstStrong.classType} flare at ${formatNZTimestamp(firstStrong.peakTime)}`);
     } catch (error) {
       console.error('Error fetching flares:', error);
-      setLoadingFlares(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      // NASA down: no spinner and no error text - the section shows the
+      // NASA offline badge instead (and keeps any flares it already had).
+      setLoadingFlares(null);
+      setFlaresFailed(true);
       // keep previous last-changed timestamp on failed fetch
     } finally {
       reportInitialTask('solarFlares');
@@ -4958,10 +4965,15 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
               <div className="flex justify-center items-center gap-2">
                 <h2 className="text-xl font-semibold text-white text-center mb-4">Latest Solar Flares (Last 7 Days)</h2>
                 <button onClick={() => openModal('solar-flares')} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700" title="Information about Solar Flares.">?</button>
+                {/* While NASA is down, beside the title - unless the list is
+                    empty, when it sits where the flares would be. */}
+                {!(flaresFailed && solarFlares.length === 0) && <div className="mb-4"><NasaOfflineBadge failed={flaresFailed} /></div>}
               </div>
               <div className="flex-grow overflow-y-auto max-h-96 styled-scrollbar pr-2">
                 {loadingFlares ? (
                   <LoadingSpinner message={loadingFlares} />
+                ) : flaresFailed && solarFlares.length === 0 ? (
+                  <div className="flex justify-center items-center h-full py-10"><NasaOfflineBadge failed align="center" /></div>
                 ) : solarFlares.length > 0 ? (
                   <ul className="space-y-2">
                     {solarFlares.map((flare: any) => {
