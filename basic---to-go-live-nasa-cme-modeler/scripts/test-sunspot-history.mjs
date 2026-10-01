@@ -147,12 +147,26 @@ try {
   check(pts.every((p, i) => i === 0 || p.atMs > pts[i - 1].atMs), 'in time order');
   check(pts[pts.length - 1].magneticClass === 'Beta-Gamma-Delta', 'carrying the magnetic class');
 
+  console.log('\nA list without the section heading still reads');
+  const bare = U.parseSrs([
+    ':Product: Solar Region Summary',
+    ':Issued: 2026 Oct 01 0030 UTC',
+    'Nmbr Location  Lo  Area  Z   LL   NN Mag Type',
+    '4227 S10W13   218  0080 Dao  06   06 Beta',
+    '4230 N15E40   160  0010 Axx  01   01 Alpha',
+    'IA. H-alpha Plages without Spots.  Locations Valid at 30/2400Z',
+    '4999  N05E10   100',
+  ].join('\n'));
+  check(bare.regions.size === 2 && bare.regions.get('4227')?.spotCount === 6, `both regions found (${bare.regions.size})`);
+  check(bare.validMs === Date.UTC(2026, 8, 30, 24, 0), 'timed to 2400Z the day before it was issued', new Date(bare.validMs).toISOString());
+
   console.log('\nAfter two weeks it is forgotten');
   await W.run(env, D0 + 17 * DAY);
   check(!(await api('/api/regions')).regions.some(x => x.id === '4538'), 'a region last seen over two weeks ago is dropped');
 
   console.log('\nRoutes');
   check((await api('/api/status')).ranAt != null, '/api/status says when it last ran');
+  check((await api('/API/Status/')).ranAt != null, 'paths are not fussy about capitals or a trailing slash');
   check((await api('/api/region/9')).error === 'Unknown region', 'an unknown region is a 404, not a crash');
   const again = await W.default.fetch(new Request('https://x/api/run'), env, { waitUntil() {} });
   check(again.status === 200 || again.status === 429, '/api/run runs (or says it just did)');

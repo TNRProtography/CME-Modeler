@@ -19,7 +19,7 @@
 //   GET /api/run                run now (at most once a minute)
 
 import {
-  applyFlares, applyRegionJson, applySharp, applySrs, backfillFromRegionJson, emptyState, prune,
+  applyFlares, applyRegionJson, applySharp, applySrs, backfillFromRegionJson, emptyState, parseSrs, prune,
   type SunspotHistoryState,
 } from '../utils/sunspotHistory';
 import { parseSharpHistory, sharpHistoryUrl, regionKey } from '../utils/sharpPositions';
@@ -117,6 +117,9 @@ export async function run(env: Env, nowMs = Date.now()) {
     regions: Object.keys(state.regions).length,
     active: Object.values(state.regions).filter((r) => r.active).length,
     srsValidAt: state.srsValidMs ? new Date(state.srsValidMs).toISOString() : null,
+    // How many regions today's bulletin listed; if none, what it looked like.
+    srsRegions: srs ? parseSrs(srs, nowMs).regions.size : null,
+    ...(srs && parseSrs(srs, nowMs).regions.size === 0 ? { srsSample: srs.split(/\r?\n/).slice(0, 14) } : {}),
   };
   await env.SUNSPOT_HISTORY.put(STATUS_KEY, JSON.stringify(status));
   return status;
@@ -125,7 +128,10 @@ export async function run(env: Env, nowMs = Date.now()) {
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
-    const { pathname, searchParams } = new URL(request.url);
+    const url = new URL(request.url);
+    // Paths are matched in lower case: /api/RUN is /api/run.
+    const pathname = url.pathname.toLowerCase().replace(/\/+$/, "") || "/";
+    const { searchParams } = url;
 
     if (pathname === '/api/status' || pathname === '/') {
       const status = await env.SUNSPOT_HISTORY.get(STATUS_KEY, 'json');

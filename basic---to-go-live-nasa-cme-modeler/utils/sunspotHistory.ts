@@ -155,13 +155,16 @@ const blank = (): RegionSnapshot => ({
  *   Nmbr Location  Lo  Area  Z   LL   NN Mag Type
  *   4538 N12W34   210  0250 Dkc  10   18 Beta-Gamma
  *
- * Only section I (regions with sunspots): section IA lists plage regions
- * with no spots, whose columns mean something else.
+ * Every row of region numbers and eight or more columns, except under the
+ * IA heading (plage regions with no spots) and section II (regions due to
+ * return), whose columns mean something else. NOAA's solar-regions.txt
+ * carries the rows without always carrying the "I." heading, so the rows
+ * do not wait for it.
  */
 export function parseSrs(text: string, nowMs = Date.now()): { validMs: number; regions: Map<string, RegionSnapshot> } {
   const validMs = parseSrsValidTime(text) ?? latestSrsEpoch(nowMs);
   const regions = new Map<string, RegionSnapshot>();
-  let inSpots = false;
+  let inSpots = true;
   for (const line of text.split(/\r?\n/)) {
     const l = line.trim();
     if (/^I\.\s/i.test(l)) { inSpots = true; continue; }
