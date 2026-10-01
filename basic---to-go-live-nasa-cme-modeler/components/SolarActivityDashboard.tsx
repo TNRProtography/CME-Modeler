@@ -3285,20 +3285,19 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       : null
   ), [suviDiskGeometry]);
 
+  // As the region labels do: the holes at the moment of the frame on screen,
+  // turned with the Sun to it, on that frame's disk. Drawn at "now" they sat
+  // still while the scrubber turned the Sun underneath them.
   const sunspotChHoles = useMemo(
-    () => (showChOnSunspots ? drawableHoles(chStore, chTracks, Date.now()) : []),
-    [showChOnSunspots, chStore, chTracks],
+    () => (showChOnSunspots ? drawableHoles(chStore, chTracks, spotFrameMs) : []),
+    [showChOnSunspots, chStore, chTracks, spotFrameMs],
   );
-
-  const overviewNatural = useMemo(() => (
-    overviewGeometry ? { width: overviewGeometry.width, height: overviewGeometry.height } : null
-  ), [overviewGeometry]);
-
-  const overviewDiskFraction = useMemo(() => (
-    overviewGeometry
-      ? diskAsFraction(overviewGeometry, { width: overviewGeometry.width, height: overviewGeometry.height })
-      : null
-  ), [overviewGeometry]);
+  const spotChNatural = useMemo(() => (
+    spotGeometry ? { width: spotGeometry.width, height: spotGeometry.height } : null
+  ), [spotGeometry]);
+  const spotChDiskFraction = useMemo(() => (
+    spotGeometry ? diskAsFraction(spotGeometry, { width: spotGeometry.width, height: spotGeometry.height }) : null
+  ), [spotGeometry]);
 
   const suviRegionLabels = useMemo(
     () => buildSuviRegionLabels(suviBoxSize),
@@ -4423,11 +4422,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                     {showChOnSunspots && (
                       <CoronalHoleOverlay
                         holes={sunspotChHoles}
-                        atMs={Date.now()}
-                        natural={overviewNatural}
+                        atMs={spotFrameMs}
+                        natural={spotChNatural}
                         box={overviewBoxSize}
                         numberOf={chNumberOf}
-                        diskOverride={overviewDiskFraction}
+                        diskOverride={spotChDiskFraction}
                         subdued
                       />
                     )}
