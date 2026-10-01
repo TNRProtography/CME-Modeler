@@ -53,6 +53,11 @@ const LevelChart: React.FC<{
   const x = (ms: number) => PAD + ((ms - t0) / Math.max(1, t1 - t0)) * (W - PAD * 2);
   const y = (v: number) => H - PAD - ((Math.min(hi, Math.max(lo, v)) - lo) / span) * (H - PAD * 2);
 
+  const pointerMs = (e: React.PointerEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const f = Math.min(1, Math.max(0, (e.clientX - rect.left) / Math.max(1, rect.width)));
+    return t0 + f * (t1 - t0);
+  };
   const shownMs = hoverMs ?? (hasData ? points[points.length - 1].atMs : null);
   const shown = shownMs != null ? valueAt(points, shownMs) : null;
 
@@ -102,16 +107,21 @@ const LevelChart: React.FC<{
           {shown != null ? format(shown) : 'No data'}
         </span>
       </div>
+      <div style={{ position: 'relative' }}>
       <svg
         viewBox={`0 0 ${W} ${H}`}
-        className="w-full cursor-crosshair"
-        style={{ height: H }}
+        className="w-full cursor-crosshair block"
+        // Sideways drags read the chart; up and down still scroll the page.
+        style={{ height: H, touchAction: 'pan-y' }}
         preserveAspectRatio="none"
+        onPointerDown={(e) => onHover(pointerMs(e))}
         onPointerMove={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          onHover(t0 + ((e.clientX - rect.left) / rect.width) * (t1 - t0));
+          // A mouse reads as it moves; a finger only while it is down.
+          if (e.pointerType === 'mouse' || e.buttons) onHover(pointerMs(e));
         }}
-        onPointerLeave={() => onHover(null)}
+        // A mouse leaving clears it; a finger lifting leaves the reading in
+        // place, so it can be read without a finger over it.
+        onPointerLeave={(e) => { if (e.pointerType === 'mouse') onHover(null); }}
       >
         <rect x={0} y={0} width={W} height={H} fill="rgba(255,255,255,0.02)" />
         {pieces}
@@ -124,6 +134,20 @@ const LevelChart: React.FC<{
                 stroke="#e5e5e5" strokeWidth="1" vectorEffect="non-scaling-stroke" />
         )}
       </svg>
+      {/* The reading's dot, outside the stretched SVG so it stays round. */}
+      {hoverMs != null && shown != null && (
+        <span
+          className="rounded-full"
+          style={{
+            position: 'absolute', pointerEvents: 'none', width: 8, height: 8, borderRadius: '50%',
+            border: '1px solid #0a0a0a',
+            left: `calc(${(x(hoverMs) / W) * 100}% - 4px)`,
+            top: `${y(shown) - 4}px`,
+            background: colourOf(shown, scale),
+          }}
+        />
+      )}
+      </div>
     </div>
   );
 };
@@ -160,7 +184,14 @@ const RegionMagneticHistory: React.FC<{
   }, [region]);
 
   const rec = full ?? record;
-  const now = Date.now();
+  // "Now" moves once a minute, not on every render. Read fresh each render,
+  // it shifted the whole window a little every time the pointer moved -
+  // which is what made the lines jitter under a finger or a mouse.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 60000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const series = useMemo(() => {
     const until = rec ? (rec.active ? now : rec.lastSeenMs) : now;
@@ -177,9 +208,7 @@ const RegionMagneticHistory: React.FC<{
       fieldArea: hmi.map((p) => ({ atMs: p.atMs, value: p.areaMh })),
       hmi,
     };
-    // `now` moves every render; the series only need rebuilding when the data does.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rec, history, region]);
+  }, [rec, history, region, now]);
 
   const trend = useMemo(() => fluxTrend(series.hmi.map((p) => ({ ...p, latitude: null, longitude: null }))), [series]);
 
@@ -237,7 +266,11 @@ const RegionMagneticHistory: React.FC<{
 
           <div className="flex justify-between text-[10px] text-neutral-500 mt-1">
             <span>{windowHours < 48 ? `${windowHours}h ago` : `${windowHours / 24}d ago`}</span>
-            <span>{hoverMs != null ? fmtNzShort(hoverMs) : ''}</span>
+            {hoverMs != null ? (
+              <button type="button" onClick={() => setHoverMs(null)} className="text-neutral-200 hover:text-white">
+                {fmtNzShort(hoverMs)} <span className="text-neutral-500">✕</span>
+              </button>
+            ) : <span className="text-neutral-600">Touch a chart to read it</span>}
             <span>now</span>
           </div>
           {series.hmi.length >= 2 && <p className="text-[11px] text-neutral-400 leading-relaxed mt-1.5">{trend.note}</p>}
