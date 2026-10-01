@@ -4808,6 +4808,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                               region={selectedSunspotRegion.region}
                               record={selectedRegionInsight.record}
                               markerMs={spotIsLive ? null : spotFrameMs}
+                              windowHours={spotWindowHours}
                             />
 
                             {/* What it has actually launched. */}

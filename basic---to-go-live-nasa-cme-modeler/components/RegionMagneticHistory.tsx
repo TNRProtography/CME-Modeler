@@ -17,7 +17,6 @@ import {
   SCALES, colourOf, mergeSharp, noaaSeries, valueAt, type Scale, type SeriesPoint,
 } from '../utils/regionHistorySeries';
 
-const DAY = 86400000;
 
 const fmtNzShort = (ms: number) => new Date(ms).toLocaleString('en-NZ', {
   timeZone: 'Pacific/Auckland', weekday: 'short', day: 'numeric', hour: 'numeric', hour12: true,
@@ -57,28 +56,43 @@ const LevelChart: React.FC<{
   const shownMs = hoverMs ?? (hasData ? points[points.length - 1].atMs : null);
   const shown = shownMs != null ? valueAt(points, shownMs) : null;
 
-  const pieces: React.ReactNode[] = [];
+  // The line as runs of one colour: each run one stroke and one fill, so
+  // no seams where see-through slices would overlap. Like the X-ray chart,
+  // a stretch takes the colour of where it ends (a step, of the value it holds).
+  const runs: { colour: number; pts: [number, number][] }[] = [];
+  const levelIndex = (v: number) => scale.findIndex((b) => v >= b.min);
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1], b = points[i];
     const x0 = x(a.atMs), x1 = x(b.atMs);
-    if (step) {
-      // Held at a's value until b: coloured by a. Then the step to b.
-      const ya = y(a.value), yb = y(b.value);
-      pieces.push(
-        <path key={`f${i}`} d={`M${x0},${ya} L${x1},${ya} L${x1},${H} L${x0},${H} Z`} fill={colourOf(a.value, scale, 0.2)} />,
-        <line key={`h${i}`} x1={x0} y1={ya} x2={x1} y2={ya} stroke={colourOf(a.value, scale)} strokeWidth="1.75" vectorEffect="non-scaling-stroke" />,
-        <line key={`v${i}`} x1={x1} y1={ya} x2={x1} y2={yb} stroke={colourOf(b.value, scale)} strokeWidth="1.75" vectorEffect="non-scaling-stroke" />,
-      );
-    } else {
-      // As the X-ray chart: each stretch coloured by where it ends.
-      const ya = y(a.value), yb = y(b.value);
-      pieces.push(
-        // Overlapped a touch, so neighbouring slices leave no seam.
-        <path key={`f${i}`} d={`M${x0 - 0.3},${ya} L${x1 + 0.3},${yb} L${x1 + 0.3},${H} L${x0 - 0.3},${H} Z`} fill={colourOf(b.value, scale, 0.2)} />,
-        <line key={`l${i}`} x1={x0} y1={ya} x2={x1} y2={yb} stroke={colourOf(b.value, scale)} strokeWidth="1.75" strokeLinecap="round" vectorEffect="non-scaling-stroke" />,
-      );
-    }
+    const v = step ? a.value : b.value;
+    const lvl = levelIndex(v);
+    const seg: [number, number][] = step
+      ? [[x0, y(a.value)], [x1, y(a.value)]]
+      : [[x0, y(a.value)], [x1, y(b.value)]];
+    const last = runs[runs.length - 1];
+    // Same colour: carry on the run (a step keeps its corner, so it steps
+    // rather than sloping to the new value).
+    if (last && last.colour === lvl) last.pts.push(...(step ? seg : [seg[1]]));
+    else runs.push({ colour: lvl, pts: seg });
   }
+  const pieces: React.ReactNode[] = runs.map((run, i) => {
+    const v = run.colour < 0 ? -Infinity : scale[run.colour].min;
+    const stroke = colourOf(v, scale);
+    const line = run.pts.map(([px, py], k) => `${k ? 'L' : 'M'}${px.toFixed(2)},${py.toFixed(2)}`).join(' ');
+    const first = run.pts[0], end = run.pts[run.pts.length - 1];
+    // A step joins the next run with a vertical in the next run's colour.
+    const next = runs[i + 1];
+    return (
+      <g key={i}>
+        <path d={`${line} L${end[0].toFixed(2)},${H} L${first[0].toFixed(2)},${H} Z`} fill={colourOf(v, scale, 0.2)} />
+        <path d={line} fill="none" stroke={stroke} strokeWidth="1.75" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        {step && next && (
+          <line x1={end[0]} y1={end[1]} x2={next.pts[0][0]} y2={next.pts[0][1]}
+                stroke={colourOf(next.colour < 0 ? -Infinity : scale[next.colour].min, scale)} strokeWidth="1.75" vectorEffect="non-scaling-stroke" />
+        )}
+      </g>
+    );
+  });
 
   return (
     <div>
@@ -120,7 +134,9 @@ const RegionMagneticHistory: React.FC<{
   record?: RegionRecord | null;
   /** The scrubber's moment, marked on every chart; null on the live frame. */
   markerMs?: number | null;
-}> = ({ region, record = null, markerMs = null }) => {
+  /** How far back to show: the imagery's chosen time window. */
+  windowHours?: number;
+}> = ({ region, record = null, markerMs = null, windowHours = 14 * 24 }) => {
   const [history, setHistory] = useState<Map<string, SharpHistoryPoint[]> | null>(null);
   const [full, setFull] = useState<RegionRecord | null>(null);
   const [hoverMs, setHoverMs] = useState<number | null>(null);
@@ -167,11 +183,22 @@ const RegionMagneticHistory: React.FC<{
 
   const trend = useMemo(() => fluxTrend(series.hmi.map((p) => ({ ...p, latitude: null, longitude: null }))), [series]);
 
-  const all = [series.c, series.m, series.x, series.proton, series.area, series.spots, series.flux, series.fieldArea];
-  const firstMs = Math.min(...all.filter((s) => s.length).map((s) => s[0].atMs));
+  // The same span as the imagery above, so the charts and the frames line up.
   const t1 = now;
-  const t0 = Number.isFinite(firstMs) ? Math.max(firstMs, now - 14 * DAY) : now - DAY;
-  const anything = all.some((s) => s.length >= 2);
+  const t0 = now - windowHours * 3600000;
+  // A step holds whatever value was in force when the window opens.
+  const clipStep = (pts: SeriesPoint[]) => {
+    const atStart = valueAt(pts, t0);
+    const inside = pts.filter((p) => p.atMs > t0);
+    return atStart != null ? [{ atMs: t0, value: atStart }, ...inside] : inside;
+  };
+  const clipCurve = (pts: SeriesPoint[]) => pts.filter((p) => p.atMs >= t0);
+  const shown = {
+    c: clipStep(series.c), m: clipStep(series.m), x: clipStep(series.x), proton: clipStep(series.proton),
+    area: clipStep(series.area), spots: clipStep(series.spots),
+    flux: clipCurve(series.flux), fieldArea: clipCurve(series.fieldArea),
+  };
+  const anything = Object.values(shown).some((s) => s.length >= 2);
   const common = { t0, t1, hoverMs, onHover: setHoverMs, markerMs };
   const pct = (v: number) => `${Math.round(v)}%`;
 
@@ -186,30 +213,30 @@ const RegionMagneticHistory: React.FC<{
         <>
           <p className="text-[10px] uppercase tracking-wide text-neutral-600 mb-1">Flare chances · NOAA</p>
           <div className="space-y-1.5">
-            <LevelChart points={series.c} scale={SCALES.c} label="C-class" format={pct} step range={[0, 100]} {...common} />
-            <LevelChart points={series.m} scale={SCALES.m} label="M-class" format={pct} step range={[0, 100]} {...common} />
-            <LevelChart points={series.x} scale={SCALES.x} label="X-class" format={pct} step range={[0, 100]} {...common} />
-            <LevelChart points={series.proton} scale={SCALES.proton} label="Proton" format={pct} step range={[0, 100]} {...common} />
+            <LevelChart points={shown.c} scale={SCALES.c} label="C-class" format={pct} step range={[0, 100]} {...common} />
+            <LevelChart points={shown.m} scale={SCALES.m} label="M-class" format={pct} step range={[0, 100]} {...common} />
+            <LevelChart points={shown.x} scale={SCALES.x} label="X-class" format={pct} step range={[0, 100]} {...common} />
+            <LevelChart points={shown.proton} scale={SCALES.proton} label="Proton" format={pct} step range={[0, 100]} {...common} />
           </div>
 
           <p className="text-[10px] uppercase tracking-wide text-neutral-600 mt-2.5 mb-1">Sunspots · NOAA</p>
           <div className="space-y-1.5">
-            <LevelChart points={series.area} scale={SCALES.area} label="Sunspot area" step fromZero
+            <LevelChart points={shown.area} scale={SCALES.area} label="Sunspot area" step fromZero
                         format={(v) => `${Math.round(v)} MSH`} {...common} />
-            <LevelChart points={series.spots} scale={SCALES.spots} label="Number of spots" step fromZero
+            <LevelChart points={shown.spots} scale={SCALES.spots} label="Number of spots" step fromZero
                         format={(v) => `${Math.round(v)}`} {...common} />
           </div>
 
           <p className="text-[10px] uppercase tracking-wide text-neutral-600 mt-2.5 mb-1">Magnetic field · SDO/HMI, hourly</p>
           <div className="space-y-1.5">
-            <LevelChart points={series.flux} scale={SCALES.flux} label="Magnetic flux"
+            <LevelChart points={shown.flux} scale={SCALES.flux} label="Magnetic flux"
                         format={(v) => `${(v / 1e21).toFixed(1)} ×10²¹ Mx`} {...common} />
-            <LevelChart points={series.fieldArea} scale={SCALES.fieldArea} label="Magnetised area"
+            <LevelChart points={shown.fieldArea} scale={SCALES.fieldArea} label="Magnetised area"
                         format={(v) => `${Math.round(v)} μH`} {...common} />
           </div>
 
           <div className="flex justify-between text-[10px] text-neutral-500 mt-1">
-            <span>{fmtNzShort(t0)}</span>
+            <span>{windowHours < 48 ? `${windowHours}h ago` : `${windowHours / 24}d ago`}</span>
             <span>{hoverMs != null ? fmtNzShort(hoverMs) : ''}</span>
             <span>now</span>
           </div>
