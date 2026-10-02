@@ -65,7 +65,22 @@ const DAY_MS = 86400000;
 const WINDOW_OPTIONS = [6, 12, 24, 72, 168] as const;
 
 const windowLabel = (hours: number): string => (hours < 48 ? `${hours}h` : `${hours / 24}d`);
-const SPEED_OPTIONS = [0.5, 1, 2, 5, 10] as const;
+const SPEED_OPTIONS = [0.5, 1, 2, 5, 10, 20] as const;
+
+// Playback. 1x shows a frame every 220 ms. Past about 3x a frame per tick is
+// faster than images can be fetched and drawn, so the faster speeds step over
+// frames instead: 20x shows every seventh frame, a dozen times a second.
+const BASE_FRAME_MS = 220;
+const MIN_TICK_MS = 80;
+const playbackStep = (speed: number) => {
+  const tickMs = Math.max(MIN_TICK_MS, Math.round(BASE_FRAME_MS / speed));
+  return { tickMs, step: Math.max(1, Math.round((speed * tickMs) / BASE_FRAME_MS)) };
+};
+// How many frames ahead of playback to fetch, and how many at once.
+const LOOKAHEAD = 8;
+const MAX_IN_FLIGHT = 6;
+// Decoded frames kept in memory; a week at full cadence is more than this.
+const MAX_KEPT_IMAGES = 500;
 
 interface WorkerFrame { key: string; ts: string; url: string }
 
@@ -213,9 +228,96 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
   const [showHistory, setShowHistory] = useState(false);
 
   const clampedIndex = Math.min(frameIndex, Math.max(0, windowFrames.length - 1));
-  const activeFrame = windowFrames[clampedIndex] ?? null;
+  const frameIndexRef = useRef(clampedIndex);
+  frameIndexRef.current = clampedIndex;
+  const urlAt = useCallback((i: number) => resolveUrl(windowFrames[i]?.url), [windowFrames, resolveUrl]);
+  // Playback reads this, so a refresh of the frame list mid-play is seen
+  // without restarting the timer.
+  const urlAtRef = useRef(urlAt);
+  urlAtRef.current = urlAt;
+
+  // ── frame images ──────────────────────────────────────────────────────────
+  // Every frame is fetched and decoded off screen before it is shown. The
+  // picture on screen is always the last frame that finished, never a
+  // half-loaded or missing one, and the outlines are drawn for THAT frame's
+  // time - so scrubbing faster than the images arrive holds the picture and
+  // its outlines together instead of blanking the image and sliding the
+  // outlines on ahead of it.
+  const images = useRef(new Map<string, { img: HTMLImageElement; state: 'loading' | 'ready' | 'error' }>());
+  const inFlight = useRef(0);
+  const [imageTick, setImageTick] = useState(0);
+  const imageState = useCallback((url: string | null) => (url ? images.current.get(url)?.state : undefined), []);
+  const ensureImage = useCallback((url: string | null) => {
+    if (!url) return undefined;
+    const have = images.current.get(url);
+    if (have) return have.state;
+    if (inFlight.current >= MAX_IN_FLIGHT) return undefined;
+    const img = new Image();
+    img.decoding = 'async';
+    const entry = { img, state: 'loading' as 'loading' | 'ready' | 'error' };
+    images.current.set(url, entry);
+    inFlight.current++;
+    const done = (state: 'ready' | 'error') => {
+      inFlight.current = Math.max(0, inFlight.current - 1);
+      entry.state = state;
+      // Oldest first out, so a long week of playback does not hold every frame.
+      while (images.current.size > MAX_KEPT_IMAGES) {
+        const oldest = images.current.keys().next().value as string;
+        if (images.current.get(oldest)?.state === 'loading') break;
+        images.current.delete(oldest);
+      }
+      setImageTick((n) => n + 1);
+    };
+    img.onload = () => { (img.decode ? img.decode() : Promise.resolve()).then(() => done('ready'), () => done('ready')); };
+    img.onerror = () => done('error');
+    img.src = url;
+    return 'loading';
+  }, []);
+
+  // The frame on screen: the one asked for once it has loaded, until then the
+  // last one that did.
+  const [shownIndex, setShownIndex] = useState<number | null>(null);
+  useEffect(() => {
+    const url = urlAt(clampedIndex);
+    if (!url) return;
+    const state = ensureImage(url);
+    if (state === 'ready') setShownIndex(clampedIndex);
+    if (!playing) {
+      // Either side of where the scrubber sits, for the next step.
+      for (const d of [1, -1, 2, -2]) ensureImage(urlAt((clampedIndex + d + windowFrames.length) % windowFrames.length));
+    }
+  }, [clampedIndex, urlAt, ensureImage, imageTick, playing, windowFrames.length]);
+  // A new window or frame list: what was on screen may not be in it.
+  useEffect(() => { setShownIndex(null); }, [windowHours]);
+
+  const shownValid = shownIndex != null && shownIndex < windowFrames.length && imageState(urlAt(shownIndex)) === 'ready';
+  const displayIndex = shownValid ? (shownIndex as number) : clampedIndex;
+  const activeFrame = windowFrames[displayIndex] ?? null;
   const activeFrameMs = activeFrame ? new Date(activeFrame.ts).getTime() : Date.now();
   const activeUrl = resolveUrl(activeFrame?.url);
+  const requestedFrame = windowFrames[clampedIndex] ?? null;
+  const waitingForFrame = displayIndex !== clampedIndex && imageState(urlAt(clampedIndex)) !== 'error';
+  const frameMissing = imageState(urlAt(clampedIndex)) === 'error';
+
+  // The frame is drawn from the image already fetched, not handed to an <img>
+  // as an address: an <img> fetches again, and while it does the picture is
+  // blank. Drawing what is in hand cannot be.
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const shownReady = imageState(activeUrl) === 'ready';
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const entry = activeUrl ? images.current.get(activeUrl) : undefined;
+    if (!canvas || !entry || entry.state !== 'ready') return;
+    const { img } = entry;
+    if (!img.naturalWidth || !img.naturalHeight) return;
+    if (canvas.width !== img.naturalWidth || canvas.height !== img.naturalHeight) {
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+    }
+    canvas.getContext('2d')?.drawImage(img, 0, 0);
+    setNatural((prev) => (prev && prev.width === img.naturalWidth && prev.height === img.naturalHeight
+      ? prev : { width: img.naturalWidth, height: img.naturalHeight }));
+  }, [activeUrl, imageTick]);
 
   // Land on the newest frame, so opening the panel shows now.
   const lastWindowKey = useRef<string>('');
@@ -227,15 +329,29 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
   }, [windowHours, windowFrames.length]);
 
   // ── playback ──────────────────────────────────────────────────────────────
+  // Each tick moves on only once the next frame has arrived, so a slow
+  // connection slows playback down rather than showing blanks, and frames
+  // further along are fetched while the current one is on screen.
   useEffect(() => {
-    if (!playing || windowFrames.length < 2) return;
-    const interval = Math.max(40, Math.round(220 / speed));
+    const n = windowFrames.length;
+    if (!playing || n < 2) return;
+    const { tickMs, step } = playbackStep(speed);
+    // Always from the start of the loop in the same steps, so the frames
+    // fetched on the first pass are the ones shown on every pass after it.
+    const after = (i: number) => (i + step >= n ? 0 : i + step);
     const id = setInterval(() => {
-      setFrameIndex((prev) => (prev + 1) % windowFrames.length);
-    }, interval);
+      const at = frameIndexRef.current;
+      let ahead = at;
+      for (let k = 0; k < LOOKAHEAD; k++) { ahead = after(ahead); ensureImage(urlAtRef.current(ahead)); }
+      // Past any frame that will not load, without stalling on it.
+      let next = after(at);
+      for (let k = 0; k < LOOKAHEAD && imageState(urlAtRef.current(next)) === 'error'; k++) next = after(next);
+      if (imageState(urlAtRef.current(next)) === 'ready') setFrameIndex(next);
+    }, tickMs);
     return () => clearInterval(id);
     // Keyed on the frame COUNT, not the array: a poll returning the same
     // frames must not restart playback.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, windowFrames.length, speed]);
 
   // ── tracks ────────────────────────────────────────────────────────────────
@@ -320,11 +436,6 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
   }, [selectedTrack, windowFrames, resolveUrl, store.detections]);
 
   // ── the displayed image ───────────────────────────────────────────────────
-  const handleImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
-    const img = e.currentTarget;
-    if (!img.naturalWidth || !img.naturalHeight) return;
-    setNatural({ width: img.naturalWidth, height: img.naturalHeight });
-  }, []);
 
   useEffect(() => {
     const el = boxRef.current;
@@ -521,15 +632,14 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
         {/* The imagery, with the holes drawn on it */}
         <div className="lg:w-1/2 flex flex-col">
           <div ref={boxRef} className="relative w-full aspect-square bg-black rounded overflow-hidden">
-            {activeUrl ? (
-              <img
-                src={activeUrl}
-                alt="SUVI 195 with coronal holes outlined"
-                className="w-full h-full object-contain"
-                onLoad={handleImageLoad}
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-neutral-500 text-sm">
+            <canvas
+              ref={canvasRef}
+              role="img"
+              aria-label="SUVI 195 with coronal holes outlined"
+              className="w-full h-full object-contain"
+            />
+            {!shownReady && (
+              <div className="absolute inset-0 flex items-center justify-center text-neutral-500 text-sm">
                 {framesError ?? 'Loading SUVI 195 imagery...'}
               </div>
             )}
@@ -606,6 +716,8 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
             />
             <div className="mt-1 text-xs text-neutral-500 text-right">
               {activeFrame ? `Frame: ${fmtNz(activeFrameMs)}` : 'No frame selected'}
+              {!playing && waitingForFrame && requestedFrame && <> · loading {fmtNz(new Date(requestedFrame.ts).getTime())}...</>}
+              {!playing && frameMissing && <> · that frame could not be loaded</>}
               {detectionForFrame && Math.abs(detectionForFrame.atMs - activeFrameMs) > 60000 && (
                 <> · outlines measured {fmtRelative(detectionForFrame.atMs)}, rotated to this frame</>
               )}
