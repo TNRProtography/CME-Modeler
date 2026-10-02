@@ -21,6 +21,7 @@ const DOUBLE_SEND_MS = 5000;
 const DAY_MS = 86400000;
 const ID_RE = /^[A-Za-z0-9-]{16,64}$/;
 const MAX_SEED = 100000;
+const MILLION = 1000000;
 
 const ALLOWED_ORIGINS = [
   'https://cme-modeler.pages.dev',
@@ -37,6 +38,10 @@ export class PageViews {
     this.sql = state.storage.sql;
     this.sql.exec('CREATE TABLE IF NOT EXISTS days (day TEXT PRIMARY KEY, n INTEGER NOT NULL)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS visitors (id TEXT PRIMARY KEY, n INTEGER NOT NULL, last INTEGER NOT NULL)');
+    // When the count reached a million, so the whole app can celebrate it
+    // (the app celebrates the round hundred thousands only for whoever's view
+    // made them, which `lifetime` in their own answer already says).
+    this.sql.exec('CREATE TABLE IF NOT EXISTS milestones (n INTEGER PRIMARY KEY, at INTEGER NOT NULL)');
   }
 
   one(query, ...args) { return this.sql.exec(query, ...args).toArray()[0]; }
@@ -52,6 +57,7 @@ export class PageViews {
       lifetime: BASE_LIFETIME + sum('0000-00-00'),
       visitors: this.one('SELECT COUNT(*) AS c FROM visitors').c,
       yours: mine ? mine.n : 0,
+      millionAt: this.one('SELECT at FROM milestones WHERE n = ?', MILLION)?.at ?? null,
     };
   }
 
@@ -62,6 +68,9 @@ export class PageViews {
       n += 1;
       this.sql.exec('INSERT INTO visitors (id, n, last) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET n = excluded.n, last = excluded.last', id, n, now);
       this.sql.exec('INSERT INTO days (day, n) VALUES (?, 1) ON CONFLICT(day) DO UPDATE SET n = n + 1', dayOf(now));
+      if (BASE_LIFETIME + this.one('SELECT COALESCE(SUM(n), 0) AS s FROM days').s >= MILLION) {
+        this.sql.exec('INSERT OR IGNORE INTO milestones (n, at) VALUES (?, ?)', MILLION, now);
+      }
     }
     return this.totals(id, now);
   }

@@ -112,11 +112,14 @@ const FirstVisitTutorial = retryLazyLoad(() => import('./components/FirstVisitTu
 const CmeModellerTutorial = retryLazyLoad(() => import('./components/CmeModellerTutorial'));
 const AppTutorial = retryLazyLoad(() => import('./components/AppTutorial'));
 const ForecastModelsModal = retryLazyLoad(() => import('./components/ForecastModelsModal'));
+// Seen by one person in a hundred thousand: never in the code everyone downloads.
+const MilestoneCelebration = retryLazyLoad(() => import('./components/MilestoneCelebration'));
 // Not needed for the first screen, so not in the code every visit downloads first.
 const OnboardingBanner = retryLazyLoad(() => import('./components/OnboardingBanner'));
 const WhatsNewModal = retryLazyLoad(() => import('./components/WhatsNewModal'));
 const AppDocumentation = retryLazyLoad(() => import('./components/AppDocumentation'));
 import { PageViewStats, countViews } from './utils/pageViews';
+import { celebrationFor, markCelebrated, type Celebration } from './utils/milestones';
 import { registerDatasetTicker } from './utils/pollingScheduler';
 import { startAppPreload } from './utils/appPreloader';
 import { markAppReady, useAppReady, whenAppIdle } from './utils/appReady';
@@ -606,7 +609,14 @@ const App: React.FC = () => {
   }, [activePage]);
 
   // Each open of the app is a view, and so is coming back to it after a while away.
-  useEffect(() => countViews(setPageViewStats), []);
+  const [celebration, setCelebration] = useState<Celebration | null>(null);
+  useEffect(() => countViews((stats) => {
+    setPageViewStats(stats);
+    const c = celebrationFor(stats);
+    if (c) setCelebration(c);
+  }), []);
+  // ?celebrate=100k previews it even if the counter is slow or offline.
+  useEffect(() => { const c = celebrationFor(null); if (c) setCelebration(c); }, []);
 
   useEffect(() => {
     const ua = navigator.userAgent || '';
@@ -1842,6 +1852,13 @@ const App: React.FC = () => {
             <DebugPanel isOpen={isDebugOpen} onClose={handleCloseDebug} />
           </Suspense>}
 
+          {celebration && !IS_EMBED && <Suspense fallback={null}>
+            <MilestoneCelebration
+              target={celebration.target}
+              mode={celebration.mode}
+              onClose={() => { markCelebrated(celebration); setCelebration(null); navigateToPage('forecast'); }}
+            />
+          </Suspense>}
           {firstVisitTutorialEverOpen && <Suspense fallback={null}>
             <FirstVisitTutorial
                 isOpen={isFirstVisitTutorialOpen}

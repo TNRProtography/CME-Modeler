@@ -13,6 +13,8 @@ export type PageViewStats = {
   lifetime: number;
   /** This visitor's own views. */
   yours: number;
+  /** When the all-time count reached a million, once it has. */
+  millionAt: number | null;
 };
 
 const PAGE_VIEWS_URL = `${import.meta.env.VITE_PAGE_VIEWS_ENDPOINT || 'https://page-views.thenamesrock.workers.dev'}/page-views`;
@@ -52,6 +54,7 @@ const normalize = (s: any): PageViewStats => ({
   weekly: Number(s?.weekly) || 0,
   lifetime: Number(s?.lifetime) || 0,
   yours: Number(s?.yours) || 0,
+  millionAt: Number(s?.millionAt) || null,
 });
 
 /** Count this visit and return the numbers, or null if the counter did not answer. */
