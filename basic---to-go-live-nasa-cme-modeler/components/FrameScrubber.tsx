@@ -3,15 +3,16 @@
 // between panels does not mean learning a new control.
 
 import React, { useEffect } from 'react';
+import { PLAYBACK_SPEEDS, playbackStep } from '../utils/framePlayback';
 
-export const SCRUB_SPEEDS = [0.5, 1, 2, 5, 10] as const;
+export const SCRUB_SPEEDS = PLAYBACK_SPEEDS;
 
 interface Props {
   count: number;
   index: number;
   onIndex: (i: number) => void;
-  /** One frame forward, wrapping - what playback does on each tick. */
-  onAdvance: () => void;
+  /** `step` frames forward, back to the start after the end - what playback does on each tick. */
+  onAdvance: (step: number) => void;
   playing: boolean;
   onPlaying: (p: boolean) => void;
   speed: number;
@@ -26,7 +27,8 @@ const FrameScrubber: React.FC<Props> = ({ count, index, onIndex, onAdvance, play
   // returns the same frames does not restart playback.
   useEffect(() => {
     if (!playing || count < 2) return;
-    const id = setInterval(onAdvance, Math.max(40, Math.round(220 / speed)));
+    const { tickMs, step } = playbackStep(speed);
+    const id = setInterval(() => onAdvance(step), tickMs);
     return () => clearInterval(id);
   }, [playing, count, speed, onAdvance]);
 

@@ -10,7 +10,7 @@ import { useCoronalHoleDetections } from '../hooks/useCoronalHoleDetections';
 import { drawableHoles, framesForTracking, numberTracks } from '../utils/chDetectionStore';
 import { buildChTracks } from '../utils/chTracking';
 import { buildRegionLabels, type RegionInput } from '../utils/regionLabels';
-import { nextFramePosition, frameSpanHours } from '../utils/framePlayback';
+import { nextFramePosition, frameSpanHours, PLAYBACK_SPEEDS, playbackStep, stepFrame, type PlaybackSpeed } from '../utils/framePlayback';
 import { detectSolarDiskGeometry, heliographicToPixel, diskAsFraction, diskFromFraction, type SolarDiskGeometry } from '../utils/solarDisk';
 import { solarDiskOrientation } from '../utils/solarEphemeris';
 import { createPortal } from 'react-dom';
@@ -194,7 +194,7 @@ const normalizeSolarLongitude = (value: number | null): number | null => {
 
 type SolarImageryMode = 'SUVI_131' | 'SUVI_195' | 'SUVI_284' | 'SUVI_304' | 'SDO_HMIBC_1024' | 'SDO_HMIIF_1024';
 type SunspotImageryMode = 'colorized' | 'magnetogram' | 'intensity';
-type PlaybackSpeedOption = 0.5 | 1 | 2 | 5 | 10;
+type PlaybackSpeedOption = PlaybackSpeed;
 
 // --- CONSTANTS ---
 const NOAA_XRAY_FLUX_URLS = [
@@ -333,7 +333,7 @@ const DIFF_WATERMARK_URL = '/icons/icon-default.png';
 const IMAGE_CONCURRENCY_LIMIT = 4;
 let inFlightImageLoads = 0;
 const queuedImageLoads: Array<() => void> = [];
-const PLAYBACK_SPEED_OPTIONS: PlaybackSpeedOption[] = [0.5, 1, 2, 5, 10];
+const PLAYBACK_SPEED_OPTIONS: readonly PlaybackSpeedOption[] = PLAYBACK_SPEEDS;
 const DIFF_LEGEND_GRADIENT = 'linear-gradient(90deg, #000000 0%, #22d3ee 22%, #fde047 48%, #f97316 68%, #ef4444 84%, #ffffff 100%)';
 
 const devLog = (...args: unknown[]) => {
@@ -2517,9 +2517,9 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const playbackUrlOf = useCallback((f: { live: boolean; url: string | null }) =>
     (f.live || !f.url ? null : archiveImageUrl(f.url)), [archiveImageUrl]);
 
-  const advanceSpotFrame = useCallback(() => {
+  const advanceSpotFrame = useCallback((step = 1) => {
     setSpotFrameIndex((i) => {
-      const n = (i + 1) % Math.max(1, spotFrames.length);
+      const n = stepFrame(i, step, spotFrames.length);
       const url = spotFrames[n] ? playbackUrlOf(spotFrames[n]) : null;
       if (!url) return n;
       void warmSpotImage(url);
@@ -2535,9 +2535,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   useEffect(() => { spotPlayingRef.current = spotPlaying; }, [spotPlaying]);
   useEffect(() => {
     const ahead = !spotPlaying ? 2 : spotSpeed >= 5 ? 14 : spotSpeed >= 2 ? 10 : 8;
+    // The frames playback will actually land on, which past 3x skip some.
+    const step = spotPlaying ? playbackStep(spotSpeed).step : 1;
     const urls: string[] = [];
+    let at = spotIndex;
     for (let k = 1; k <= ahead; k++) {
-      const next = spotFrames[(spotIndex + k) % spotFrames.length];
+      at = stepFrame(at, step, spotFrames.length);
+      const next = spotFrames[at];
       const url = next ? playbackUrlOf(next) : null;
       if (url) urls.push(url);
     }
@@ -2683,7 +2687,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   // settling or stepping, a short fade; while dragging, none - a finger wants
   // the picture to be where it is, now.
   const closeupFadeMs = spotDragging ? 0
-    : spotPlaying ? Math.round(Math.max(40, Math.round(220 / spotSpeed)) * 0.85)
+    : spotPlaying ? Math.round(playbackStep(spotSpeed).tickMs * 0.85)
       : 180;
 
   // ── Region history, for the growth read ──────────────────────────────────
@@ -3410,12 +3414,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   useEffect(() => {
     if (!suviPlaying || suviFrames.length < 2) return;
-    const frameIntervalMs = Math.max(40, Math.round(200 / suviPlaybackSpeed));
+    const { tickMs: frameIntervalMs, step } = playbackStep(suviPlaybackSpeed, 200);
     const timer = window.setInterval(() => {
       // Don't advance until the current frame has finished loading - keeps
       // the scrubber and the displayed frame in sync at all playback speeds.
       if (suviFrameLoadingRef.current) return;
-      setSuviFrameIndex((prev) => (prev + 1) % suviFrames.length);
+      setSuviFrameIndex((prev) => stepFrame(prev, step, suviFrames.length));
     }, frameIntervalMs);
     return () => window.clearInterval(timer);
   }, [suviPlaying, suviFrames.length, suviPlaybackSpeed]);
@@ -3468,10 +3472,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   useEffect(() => {
     if (!coronagraphPlaying || coronagraphFrames.length < 2) return;
-    const frameIntervalMs = Math.max(40, Math.round(200 / coronagraphPlaybackSpeed));
+    const { tickMs: frameIntervalMs, step } = playbackStep(coronagraphPlaybackSpeed, 200);
     const timer = window.setInterval(() => {
       if (coronagraphFrameLoadingRef.current) return;
-      setCoronagraphIndex((prev) => (prev + 1) % coronagraphFrames.length);
+      setCoronagraphIndex((prev) => stepFrame(prev, step, coronagraphFrames.length));
     }, frameIntervalMs);
     return () => window.clearInterval(timer);
   }, [coronagraphPlaying, coronagraphFrames.length, coronagraphPlaybackSpeed]);

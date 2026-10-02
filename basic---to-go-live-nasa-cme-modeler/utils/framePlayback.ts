@@ -84,3 +84,33 @@ export function frameSpanHours<T extends TimedFrame>(frames: T[]): number | null
   if (times.length < 2) return null;
   return (Math.max(...times) - Math.min(...times)) / 3600000;
 }
+
+/** The speeds every imagery timeline offers. */
+export const PLAYBACK_SPEEDS = [0.5, 1, 2, 5, 10, 20] as const;
+export type PlaybackSpeed = (typeof PLAYBACK_SPEEDS)[number];
+
+/**
+ * How a timeline plays at a speed: how often it ticks, and how many frames
+ * each tick moves on.
+ *
+ * 1x is a frame every `baseFrameMs`. A tick can only come so often before the
+ * frames cannot be fetched and drawn in time - which is why 5x, 10x and 20x
+ * all used to play at the same pace, pinned to the floor - so past that the
+ * timeline steps over frames instead: at 20x it moves seven frames a tick,
+ * about a dozen ticks a second.
+ */
+export function playbackStep(speed: number, baseFrameMs = 220, minTickMs = 80): { tickMs: number; step: number } {
+  const s = Number.isFinite(speed) && speed > 0 ? speed : 1;
+  const tickMs = Math.max(minTickMs, Math.round(baseFrameMs / s));
+  return { tickMs, step: Math.max(1, Math.round((s * tickMs) / baseFrameMs)) };
+}
+
+/**
+ * The frame `step` on from `index`, going back to the start after the end.
+ * Back to 0 rather than wrapping by the remainder, so every pass shows the
+ * same frames - the ones the first pass already fetched.
+ */
+export function stepFrame(index: number, step: number, count: number): number {
+  if (count <= 0) return 0;
+  return index + step >= count ? 0 : index + step;
+}

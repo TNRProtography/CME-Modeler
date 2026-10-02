@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { PLAYBACK_SPEEDS, playbackStep, stepFrame } from '../utils/framePlayback';
 import SunspotLabelOverlay from './SunspotLabelOverlay';
 import { buildRegionLabels } from '../utils/regionLabels';
 import type { RegionInput } from '../utils/regionLabels';
@@ -53,6 +54,7 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ media, onClose }) =
 
   const [currentFrame, setCurrentFrame] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [speed, setSpeed] = useState<number>(1);
   const intervalRef = useRef<number | null>(null);
 
   const [animationFrames, setAnimationFrames] = useState<string[]>([]);
@@ -116,9 +118,12 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ media, onClose }) =
 
   useEffect(() => {
     if (media?.type === 'animation' && !isAnimationLoading && isPlaying && effectiveAnimationFrames.length > 0) {
+      // 12 frames a second at 1x. The frames are all in memory, but a screen
+      // only draws about sixty a second, so the top speeds step over frames.
+      const { tickMs, step } = playbackStep(speed, 1000 / 12, 20);
       intervalRef.current = window.setInterval(() => {
-        setCurrentFrame((prevFrame) => (prevFrame + 1) % effectiveAnimationFrames.length);
-      }, 1000 / 12);
+        setCurrentFrame((prevFrame) => stepFrame(prevFrame, step, effectiveAnimationFrames.length));
+      }, tickMs);
     } else if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
@@ -130,7 +135,7 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ media, onClose }) =
         intervalRef.current = null;
       }
     };
-  }, [isAnimationLoading, isPlaying, media, effectiveAnimationFrames.length]);
+  }, [isAnimationLoading, isPlaying, media, effectiveAnimationFrames.length, speed]);
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
@@ -313,6 +318,15 @@ const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ media, onClose }) =
               <button onClick={() => handleStep(-1)} className="p-2 bg-neutral-800 rounded-full hover:bg-neutral-700"><PrevIcon className="w-5 h-5"/></button>
               <button onClick={handlePlayPause} className="p-3 bg-sky-600 rounded-full hover:bg-sky-500">{isPlaying ? <PauseIcon className="w-6 h-6"/> : <PlayIcon className="w-6 h-6"/>}</button>
               <button onClick={() => handleStep(1)} className="p-2 bg-neutral-800 rounded-full hover:bg-neutral-700"><NextIcon className="w-5 h-5"/></button>
+              <select
+                value={speed}
+                onChange={(e) => setSpeed(Number(e.target.value))}
+                title="Playback speed"
+                aria-label="Playback speed"
+                className="rounded bg-neutral-800 border border-neutral-700 px-2 py-1 text-xs text-neutral-200"
+              >
+                {PLAYBACK_SPEEDS.map((s) => <option key={s} value={s}>{s}x</option>)}
+              </select>
             </div>
             <button onClick={handleDownload} className="p-2 bg-neutral-800 rounded-full hover:bg-neutral-700" title="Download Current Frame"><DownloadIcon className="w-6 h-6" /></button>
           </div>

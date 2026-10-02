@@ -30,6 +30,8 @@ const RATES: { label: string; mult: number }[] = [
   { label: '1×',   mult: 1 },
   { label: '2×',   mult: 2 },
   { label: '4×',   mult: 4 },
+  { label: '10×',  mult: 10 },
+  { label: '20×',  mult: 20 },
 ];
 
 const PAD_L = 30, PAD_R = 8, PAD_T = 8;

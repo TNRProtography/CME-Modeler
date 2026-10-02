@@ -11,6 +11,7 @@
 // oval is held where that wind leaves it, and the frame says so.
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { PLAYBACK_SPEEDS, playbackStep } from '../utils/framePlayback';
 import { realWindBoundary, type L1Sample } from '../utils/auroraVisibility';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -105,6 +106,7 @@ export const OvalForecastTimeline: React.FC<OvalForecastTimelineProps> = ({
 }) => {
   const [frameIndex, setFrameIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [speed, setSpeed] = useState<number>(1);
   const playIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const frames = useMemo(
@@ -124,15 +126,18 @@ export const OvalForecastTimeline: React.FC<OvalForecastTimelineProps> = ({
   // Auto-play logic
   useEffect(() => {
     if (isPlaying) {
+      // Frames are computed, not downloaded, so every speed shows every
+      // frame - 20x just shows them faster.
+      const { tickMs, step } = playbackStep(speed, PLAYBACK_INTERVAL_MS, 50);
       playIntervalRef.current = setInterval(() => {
         setFrameIndex(prev => {
           if (prev >= TOTAL_FRAMES - 1) {
             setIsPlaying(false);
             return prev;
           }
-          return prev + 1;
+          return Math.min(TOTAL_FRAMES - 1, prev + step);
         });
-      }, PLAYBACK_INTERVAL_MS);
+      }, tickMs);
     }
     return () => {
       if (playIntervalRef.current) {
@@ -140,7 +145,7 @@ export const OvalForecastTimeline: React.FC<OvalForecastTimelineProps> = ({
         playIntervalRef.current = null;
       }
     };
-  }, [isPlaying]);
+  }, [isPlaying, speed]);
 
   const handlePlayPause = useCallback(() => {
     if (isPlaying) {
@@ -258,6 +263,16 @@ export const OvalForecastTimeline: React.FC<OvalForecastTimelineProps> = ({
               <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
             </svg>
           </button>
+
+          <select
+            value={speed}
+            onChange={(e) => setSpeed(Number(e.target.value))}
+            title="Playback speed"
+            aria-label="Playback speed"
+            className="rounded-md bg-neutral-800/50 border border-neutral-700/80 px-1 py-0.5 text-[10px] text-neutral-200"
+          >
+            {PLAYBACK_SPEEDS.map((s) => <option key={s} value={s}>{s}x</option>)}
+          </select>
         </div>
 
         {/* Right: confidence */}

@@ -31,7 +31,7 @@ import SunspotLabelOverlay from './SunspotLabelOverlay';
 import { buildRegionLabels, type RegionInput } from '../utils/regionLabels';
 import { detectSolarDiskGeometry, diskFromFraction, longitudeAt } from '../utils/solarDisk';
 import { solarDiskOrientation } from '../utils/solarEphemeris';
-import { frameSpanHours } from '../utils/framePlayback';
+import { frameSpanHours, PLAYBACK_SPEEDS, playbackStep, stepFrame } from '../utils/framePlayback';
 import { describeSpread } from '../utils/arrivalEnsemble';
 import { locationLabel, resolveViewerLocation, type ViewerLocation } from '../utils/viewerLocation';
 import { forecastHole, polarityForTrack, publishHolePolarity } from '../utils/holeForecast';
@@ -65,17 +65,8 @@ const DAY_MS = 86400000;
 const WINDOW_OPTIONS = [6, 12, 24, 72, 168] as const;
 
 const windowLabel = (hours: number): string => (hours < 48 ? `${hours}h` : `${hours / 24}d`);
-const SPEED_OPTIONS = [0.5, 1, 2, 5, 10, 20] as const;
+const SPEED_OPTIONS = PLAYBACK_SPEEDS;
 
-// Playback. 1x shows a frame every 220 ms. Past about 3x a frame per tick is
-// faster than images can be fetched and drawn, so the faster speeds step over
-// frames instead: 20x shows every seventh frame, a dozen times a second.
-const BASE_FRAME_MS = 220;
-const MIN_TICK_MS = 80;
-const playbackStep = (speed: number) => {
-  const tickMs = Math.max(MIN_TICK_MS, Math.round(BASE_FRAME_MS / speed));
-  return { tickMs, step: Math.max(1, Math.round((speed * tickMs) / BASE_FRAME_MS)) };
-};
 // How many frames ahead of playback to fetch, and how many at once.
 const LOOKAHEAD = 8;
 const MAX_IN_FLIGHT = 6;
@@ -336,9 +327,7 @@ const CoronalHoleTracker: React.FC<CoronalHoleTrackerProps> = ({
     const n = windowFrames.length;
     if (!playing || n < 2) return;
     const { tickMs, step } = playbackStep(speed);
-    // Always from the start of the loop in the same steps, so the frames
-    // fetched on the first pass are the ones shown on every pass after it.
-    const after = (i: number) => (i + step >= n ? 0 : i + step);
+    const after = (i: number) => stepFrame(i, step, n);
     const id = setInterval(() => {
       const at = frameIndexRef.current;
       let ahead = at;
