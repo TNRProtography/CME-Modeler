@@ -72,3 +72,13 @@ export const recordPageView = async (): Promise<PageViewStats | null> => {
     return null;
   }
 };
+
+/** The numbers as they stand, without counting a view. Null if the counter did not answer. */
+export const fetchPageViewStats = async (): Promise<PageViewStats | null> => {
+  try {
+    const res = await fetch(`${PAGE_VIEWS_URL}?id=${encodeURIComponent(viewerId())}`, { signal: AbortSignal.timeout(5000) });
+    return res.ok ? normalize(await res.json()) : null;
+  } catch {
+    return null;
+  }
+};

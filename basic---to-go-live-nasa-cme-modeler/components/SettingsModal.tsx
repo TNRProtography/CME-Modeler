@@ -20,7 +20,7 @@ import {
   subscribeUserToPush,
   updatePushSubscriptionPreferences // IMPORT THE NEW FUNCTION
 } from '../utils/notifications.ts';
-import { PageViewStats } from '../utils/pageViews';
+import { PageViewStats, fetchPageViewStats } from '../utils/pageViews';
 import { COMING_SOON_IDS, GROUPED_FOR_UI } from '../utils/notificationCategories';
 import { CME_SPEED_PRESETS, CME_SPEED_MIN, CME_SPEED_MAX, CME_SPEED_STEP, clampCmeSpeed,
          CME_SPEED_BANDS, cmeSpeedBand } from '../utils/cmeAnalysis';
@@ -704,6 +704,23 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     await sendServerSelfTest(categoryId);
   }, []);
 
+  // The page-view numbers tick live while this screen is open and the tab is
+  // showing; nothing polls when it is closed.
+  const [liveViews, setLiveViews] = useState<PageViewStats | null>(null);
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    const tick = async () => {
+      if (document.hidden) return;
+      const s = await fetchPageViewStats();
+      if (!cancelled && s) setLiveViews(s);
+    };
+    tick();
+    const timer = window.setInterval(tick, 2000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [isOpen]);
+  const views = liveViews ?? pageViewStats;
+
 
   if (!isOpen) return null;
 
@@ -842,7 +859,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               How often the app has been opened, counted on the server. Yours is this browser's own count.
             </p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[{ label: 'Today', value: pageViewStats?.daily }, { label: 'This week', value: pageViewStats?.weekly }, { label: 'All time', value: pageViewStats?.lifetime }, { label: 'Yours', value: pageViewStats?.yours }].map(stat => (
+              {[{ label: 'Today', value: views?.daily }, { label: 'This week', value: views?.weekly }, { label: 'All time', value: views?.lifetime }, { label: 'Yours', value: views?.yours }].map(stat => (
                 <div key={stat.label} className="bg-neutral-900/60 border border-neutral-800 rounded-lg p-3 text-center shadow-inner">
                   <p className="text-xs uppercase tracking-wide text-neutral-500">{stat.label}</p>
                   <p className="text-2xl font-bold text-white mt-1">{stat.value == null ? '-' : stat.value.toLocaleString('en-NZ')}</p>
