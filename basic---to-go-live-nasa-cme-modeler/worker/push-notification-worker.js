@@ -1053,11 +1053,13 @@ async function handleRegionsHistory(request, env) {
 // CME that produces an alert is a CME the app draws as heading our way.
 // `npm run test:cme` fails if the two definitions drift apart.
 const DONKI_CME_URL = 'https://nasa-donki-api.thenamesrock.workers.dev/CME';
-// NASA's own DONKI, for when the proxy above cannot be reached. It is the
-// proxy's source, so the records are the same shape. NASA_API_KEY is a free key
-// from api.nasa.gov; without one DEMO_KEY is used, which NASA rate limits, so
-// the answer is kept for DONKI_DIRECT_CACHE_MS and reused.
-const DONKI_DIRECT_BASE = 'https://api.nasa.gov/DONKI/CME';
+// DONKI itself, for when the proxy above cannot be reached: CCMC's own web
+// service, at the address it moved to on 30 September 2026 (it was
+// kauai.ccmc.gsfc.nasa.gov/DONKI/WS/get/, and api.nasa.gov's gateway in front of
+// it stopped answering the same day). It is the proxy's source, so the records
+// are the same shape, and it needs no key. The answer is still kept for
+// DONKI_DIRECT_CACHE_MS and reused, to go easy on it.
+const DONKI_DIRECT_BASE = 'https://ccmc.gsfc.nasa.gov/DONKI-API/get/CME';
 const DONKI_DIRECT_CACHE_KEY = 'CACHE_donki_cme_direct';
 const DONKI_DIRECT_CACHE_MS = 10 * 60 * 1000;
 // A copy this old is still better than no CME alert at all.
@@ -1233,8 +1235,7 @@ async function fetchDonkiCmes(env) {
 
   const day = (ms) => new Date(ms).toISOString().slice(0, 10);
   const now = Date.now();
-  const url = `${DONKI_DIRECT_BASE}?startDate=${day(now - 7 * 86400000)}&endDate=${day(now + 86400000)}`
-    + `&api_key=${encodeURIComponent(env.NASA_API_KEY || 'DEMO_KEY')}`;
+  const url = `${DONKI_DIRECT_BASE}?startDate=${day(now - 7 * 86400000)}&endDate=${day(now + 86400000)}`;
   const res = await fetchUpstream('donki-nasa', null, url, 2);
   const data = res ? await res.json().catch(() => null) : null;
   if (Array.isArray(data)) {
@@ -3101,10 +3102,10 @@ async function handleDiagnose(request, env) {
   {
     const day = new Date().toISOString().slice(0, 10);
     const res = await fetchUpstream('donki-nasa', null,
-      `${DONKI_DIRECT_BASE}?startDate=${day}&endDate=${day}&api_key=${encodeURIComponent(env.NASA_API_KEY || 'DEMO_KEY')}`, 1);
+      `${DONKI_DIRECT_BASE}?startDate=${day}&endDate=${day}`, 1);
     upstreams['donki-nasa'] = {
       usedWhen: 'the DONKI binding is missing or failing',
-      apiKey: env.NASA_API_KEY ? 'NASA_API_KEY' : 'DEMO_KEY (rate limited - set NASA_API_KEY)',
+      source: 'CCMC DONKI web service (no key needed)',
       ...upstreamNotes['donki-nasa'],
       ok: !!res,
     };

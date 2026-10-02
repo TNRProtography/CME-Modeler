@@ -27,7 +27,8 @@ const keyArg = process.argv.indexOf('--key');
 const API_KEY = keyArg > -1 ? process.argv[keyArg + 1] : (process.env.NASA_API_KEY || 'DEMO_KEY');
 // DONKI_BASE lets the parsing be exercised against a fixture without
 // calling NASA, which is how the script itself is tested.
-const BASE = process.env.DONKI_BASE || 'https://api.nasa.gov/DONKI';
+// CCMC's own DONKI service (its address since 30 September 2026; no key needed).
+const BASE = process.env.DONKI_BASE || 'https://ccmc.gsfc.nasa.gov/DONKI-API/get';
 
 // The windows to query, and how each maps onto a preset. Each window starts a
 // little before the first eruption and ends after the last, so nothing at the
@@ -43,7 +44,9 @@ const PRE_DONKI = ['mar-1989', 'carrington'];
 async function get(path, params) {
   const url = new URL(`${BASE}/${path}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
-  url.searchParams.set('api_key', API_KEY);
+  // Only NASA's gateway wants a key; CCMC ignores the parameter, so it is sent
+  // only when a key was actually given.
+  if (API_KEY !== 'DEMO_KEY' && BASE.includes('api.nasa.gov')) url.searchParams.set('api_key', API_KEY);
   const res = await fetch(url);
   if (!res.ok) {
     const body = await res.text().catch(() => '');

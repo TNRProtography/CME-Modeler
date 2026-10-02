@@ -3,8 +3,9 @@
 //
 //   npm run test:donki-worker
 //
-// api.nasa.gov goes down for days at a time. The worker must keep serving
-// what it last had (for a week), fall back to CCMC's own DONKI service, and
+// api.nasa.gov goes down for days at a time. The worker must ask CCMC's own
+// DONKI service first (at its new address), keep serving what it last had
+// (for a week), and
 // say whether NASA is answering so the app can show it is offline.
 
 import { pathToFileURL } from 'node:url';
@@ -27,18 +28,20 @@ const env = {
     put: async (k, v, o) => { kv.set(k, v); ttl.set(k, o?.expirationTtl ?? null); },
   },
 };
-const world = { nasa: true, ccmc: true };
+const world = { nasa: true, ccmc: true, legacy: true };
 const calls = [];
 console.log = () => {}; console.warn = () => {}; console.error = () => {};
 const say = (...a) => process.stdout.write(a.join(' ') + '\n');
 globalThis.fetch = async (url) => {
   const u = String(url);
   calls.push(u);
-  const isNasa = u.includes('api.nasa.gov'), isCcmc = u.includes('kauai.ccmc.gsfc.nasa.gov');
-  if ((isNasa && !world.nasa) || (isCcmc && !world.ccmc)) return new Response('down', { status: 503 });
-  const kind = (u.match(/WS\/get\/([A-Za-z]+)/) || u.match(/DONKI\/([A-Za-z]+)/))[1].toUpperCase();
+  const isNasa = u.includes('api.nasa.gov'), isCcmc = u.startsWith('https://ccmc.gsfc.nasa.gov/DONKI-API/get/');
+  const isLegacy = u.includes('kauai.ccmc.gsfc.nasa.gov');
+  if ((isNasa && !world.nasa) || (isCcmc && !world.ccmc) || (isLegacy && !world.legacy)) return new Response('down', { status: 503 });
+  const kind = (u.match(/(?:WS|DONKI-API)\/get\/([A-Za-z]+)/) || u.match(/DONKI\/([A-Za-z]+)/))[1].toUpperCase();
+  const from = isCcmc ? 'ccmc' : isLegacy ? 'legacy' : 'nasa';
   const item = kind === 'CME'
-    ? { activityID: `CME-${isCcmc ? 'ccmc' : 'nasa'}`, startTime: '2026-10-01T10:00Z' }
+    ? { activityID: `CME-${from}`, startTime: '2026-10-01T10:00Z' }
     : { eventTime: '2026-10-01T10:00Z' };
   return new Response(JSON.stringify([item]));
 };
@@ -47,31 +50,38 @@ const get = async (path) => {
   return { res, body: res.headers.get('Content-Type')?.includes('json') ? await res.json() : await res.text() };
 };
 
-say('\nNASA answering');
+say('\nCCMC answering (its address since 30 September 2026)');
 await W.scheduled({}, env, {});
 let { res, body } = await get('/CME');
-check(res.status === 200 && body[0].activityID === 'CME-nasa', 'CMEs come from api.nasa.gov');
+check(res.status === 200 && body[0].activityID === 'CME-ccmc', 'CMEs come from CCMC first');
+check(calls.some((u) => u.startsWith('https://ccmc.gsfc.nasa.gov/DONKI-API/get/CME?') && !u.includes('api_key')),
+      'at its new DONKI-API address, without the key', calls.find((u) => u.includes('DONKI-API')));
+check(calls.some((u) => u.includes('/DONKI-API/get/notifications?') && u.includes('type=all')), 'notifications keep their filter');
+check(calls.some((u) => u.includes('/DONKI-API/get/IPS?') && u.includes('location=Earth')), 'and shocks theirs');
 check(ttl.get('nasa_donki_data') === 7 * 86400, `kept for a week, not a day (${ttl.get('nasa_donki_data')} s)`);
 check(!!res.headers.get('X-Donki-Updated'), 'and say when they were fetched');
 let status = (await get('/status')).body;
-check(status.online === true && status.via === 'api.nasa.gov', 'status: online', JSON.stringify(status));
+check(status.online === true && status.via === 'ccmc', 'status: online, via CCMC', JSON.stringify(status));
 
-say('\napi.nasa.gov down, CCMC up');
-world.nasa = false; calls.length = 0;
+say('\nCCMC down, NASA\'s gateway up');
+world.ccmc = false; calls.length = 0;
 await W.scheduled({}, env, {});
 ({ body } = await get('/CME'));
-check(body[0].activityID === 'CME-ccmc', 'the CMEs come from CCMC instead');
-check(calls.some((u) => u.startsWith('https://kauai.ccmc.gsfc.nasa.gov/DONKI/WS/get/CME?') && !u.includes('api_key')),
-      'from its DONKI web service, without the key', calls.find((u) => u.includes('kauai')));
-check(calls.some((u) => u.includes('/WS/get/notifications?') && u.includes('type=all')), 'notifications keep their filter');
+check(body[0].activityID === 'CME-nasa', 'api.nasa.gov is used instead');
 status = (await get('/status')).body;
-check(status.online === true && status.via === 'ccmc', 'status: still online, via CCMC', JSON.stringify(status));
+check(status.online === true && status.via === 'api.nasa.gov', 'status: still online, via api.nasa.gov', JSON.stringify(status));
+
+say('\nOnly the old CCMC address answering');
+world.nasa = false;
+await W.scheduled({}, env, {});
+({ body } = await get('/CME'));
+check(body[0].activityID === 'CME-legacy', 'the old address is the last resort');
 
 say('\nEverything down');
-world.ccmc = false;
+world.legacy = false;
 await W.scheduled({}, env, {});
 ({ res, body } = await get('/CME'));
-check(res.status === 200 && body[0].activityID === 'CME-ccmc', 'the last good CMEs are still served');
+check(res.status === 200 && body[0].activityID === 'CME-legacy', 'the last good CMEs are still served');
 // Forty minutes later, nothing has come back.
 const realNow = Date.now;
 Date.now = () => realNow() + 40 * 60000;

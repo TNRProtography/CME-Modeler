@@ -460,7 +460,7 @@ console.log('\nWithout a working DONKI binding, NASA is read directly');
   globalThis.fetch = async (input, init) => {
     const url = typeof input === 'string' ? input : input.url ?? String(input);
     if (url.includes('nasa-donki-api')) { hits.proxy++; return new Response('error code: 1042', { status: 404 }); }
-    if (url.startsWith('https://api.nasa.gov/DONKI/CME')) {
+    if (url.startsWith('https://ccmc.gsfc.nasa.gov/DONKI-API/get/CME')) {
       hits.nasa++;
       return nasaUp ? new Response(JSON.stringify(feed()), { status: 200 }) : new Response('slow down', { status: 429 });
     }

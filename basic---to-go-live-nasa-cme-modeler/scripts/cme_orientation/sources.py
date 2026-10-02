@@ -16,7 +16,6 @@ from __future__ import annotations
 import io
 import json
 import math
-import os
 import re
 import time
 from datetime import datetime, timedelta, timezone
@@ -85,7 +84,8 @@ def to_gray(data: bytes) -> np.ndarray:
 
 # ── DONKI ───────────────────────────────────────────────────────────────────
 
-NASA_DONKI = "https://api.nasa.gov/DONKI"
+# CCMC's own DONKI service, at its address since 30 September 2026 (no key).
+NASA_DONKI = "https://ccmc.gsfc.nasa.gov/DONKI-API/get"
 
 
 def donki_cmes(days: int = 7) -> list[dict]:
@@ -114,7 +114,6 @@ def donki_cmes(days: int = 7) -> list[dict]:
     try:
         data = get_json(f"{NASA_DONKI}/CME", {
             "startDate": start.strftime("%Y-%m-%d"), "endDate": end.strftime("%Y-%m-%d"),
-            "api_key": os.environ.get("NASA_API_KEY") or "DEMO_KEY",
         })
         print(f"NASA DONKI directly: {len(data) if isinstance(data, list) else type(data).__name__}")
         return data if isinstance(data, list) else []

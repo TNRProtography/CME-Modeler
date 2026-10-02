@@ -297,13 +297,24 @@ async function fetchAllDonkiData(env) {
     { name: "IPS",                  url: `https://api.nasa.gov/DONKI/IPS?startDate=${apiStartDate}&endDate=${apiEndDate}&location=Earth&catalog=ALL&api_key=${apiKey}` }
   ];
 
-  // NASA's public API (api.nasa.gov) is a gateway in front of CCMC's own
-  // DONKI web service. When the gateway is down - it can be for days - the
-  // service behind it usually is not, and needs no key.
-  const ccmcUrl = (url) => {
+  // Where DONKI lives. NASA's public API (api.nasa.gov) is only a gateway in
+  // front of CCMC's own DONKI web service, which needs no key. On 30 September
+  // 2026 CCMC moved that service from kauai.ccmc.gsfc.nasa.gov/DONKI/WS/get/
+  // to ccmc.gsfc.nasa.gov/DONKI-API/get/ (same parameters, same JSON), and the
+  // gateway stopped answering the same day. So CCMC's new address is asked
+  // first, the gateway second, and the old address last in case it lingers.
+  const keyless = (url) => {
     const u = new URL(url);
     u.searchParams.delete('api_key');
-    return `https://kauai.ccmc.gsfc.nasa.gov/DONKI/WS/get/${u.pathname.replace(/^\/DONKI\//, '')}${u.search}`;
+    return { type: u.pathname.replace(/^\/DONKI\//, ''), search: u.search };
+  };
+  const sourcesFor = (url) => {
+    const { type, search } = keyless(url);
+    return [
+      { name: 'ccmc', url: `https://ccmc.gsfc.nasa.gov/DONKI-API/get/${type}${search}` },
+      { name: 'api.nasa.gov', url },
+      { name: 'ccmc-legacy', url: `https://kauai.ccmc.gsfc.nasa.gov/DONKI/WS/get/${type}${search}` },
+    ];
   };
 
   const getJson = async (url) => {
@@ -315,14 +326,18 @@ async function fetchAllDonkiData(env) {
   const fetchAndProcessData = async ({ name, url }) => {
     const upperName = name.toUpperCase();
     try {
-      let data, source = 'api.nasa.gov';
-      try {
-        data = await getJson(url);
-      } catch (primary) {
-        console.warn(`api.nasa.gov failed for ${name} (${primary.message}); trying CCMC`);
-        data = await getJson(ccmcUrl(url));
-        source = 'ccmc';
+      let data, source = null, lastError = null;
+      for (const candidate of sourcesFor(url)) {
+        try {
+          data = await getJson(candidate.url);
+          source = candidate.name;
+          break;
+        } catch (err) {
+          lastError = err;
+          console.warn(`${candidate.name} failed for ${name} (${err.message})`);
+        }
       }
+      if (source == null) throw lastError || new Error('no DONKI source answered');
       sources[upperName] = source;
       if (Array.isArray(data)) {
         data.forEach(processDataItem);
@@ -415,7 +430,8 @@ async function readStatus(env) {
     last_success: lastSuccess,
     cached_at: cachedAt,
     age_minutes: ageMs != null ? Math.round(ageMs / 60000) : null,
-    via: (status.sources || []).includes('ccmc') ? 'ccmc' : (status.sources?.length ? 'api.nasa.gov' : null),
+    // Where the data came from on the last good run (a mix if they differed).
+    via: (status.sources || []).join(', ') || null,
     last_attempt: status.last_attempt || null,
     last_error: status.last_error || null,
   };
