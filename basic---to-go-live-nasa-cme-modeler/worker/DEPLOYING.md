@@ -87,3 +87,17 @@ sunspot tracker reads it. One-time setup:
    history), then `/api/status` to check.
 
 Until it is running, the tracker works exactly as before.
+
+## Page views (page-views worker)
+
+The app's view counter: today, this week, all time (starting at 84,382) and
+each visitor's own count, shown in Settings. It shares the banner worker's KV
+namespace under the `PV:` prefix, so there is no new namespace to make:
+
+1. Create the worker from this repo like the others: name `page-views`,
+   deploy command `npx wrangler deploy -c wrangler-page-views.toml`, watch
+   paths `worker/page-views-worker.js` and `wrangler-page-views.toml`.
+2. Check: `https://page-views.thenamesrock.workers.dev/page-views` should
+   answer with `lifetime` of 84382 or more.
+
+Until it is running, Settings shows dashes where the numbers go.

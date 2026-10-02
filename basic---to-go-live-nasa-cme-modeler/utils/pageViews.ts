@@ -1,145 +1,74 @@
+// Page views, counted by the page-views worker rather than on the device.
+//
+// The numbers are the app's: views today, this week and all time, and the
+// visitor's own count. A visitor is an id made on first visit and kept in
+// localStorage, so it follows the browser, not the person; clearing site data
+// starts a new one. The worker counts a visitor at most once per half hour, so
+// switching pages or reloading does not run the number up.
+
 export type PageViewStats = {
   daily: number;
   weekly: number;
-  yearly: number;
   lifetime: number;
+  /** This visitor's own views. */
+  yours: number;
 };
 
-const PAGE_VIEW_EVENTS_KEY = 'sta_page_view_events_v1';
-const PAGE_VIEW_LIFETIME_KEY = 'sta_page_view_lifetime_v1';
-const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-const ONE_WEEK_MS = 7 * ONE_DAY_MS;
-const ONE_YEAR_MS = 365 * ONE_DAY_MS;
+const PAGE_VIEWS_URL = `${import.meta.env.VITE_PAGE_VIEWS_ENDPOINT || 'https://page-views.thenamesrock.workers.dev'}/page-views`;
+const VIEWER_ID_KEY = 'sta_viewer_id_v1';
+// What older versions counted on this device. Sent once, so a regular's own
+// number carries over instead of restarting at 1.
+const OLD_LIFETIME_KEY = 'sta_page_view_lifetime_v1';
 
-const PAGE_VIEW_API_BASE = import.meta.env.VITE_PAGE_VIEWS_ENDPOINT || '';
+const newId = (): string => {
+  const c = globalThis.crypto as Crypto | undefined;
+  if (c?.randomUUID) return c.randomUUID();
+  return Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+};
 
-const loadEvents = (): number[] => {
+function viewerId(): string {
   try {
-    const raw = localStorage.getItem(PAGE_VIEW_EVENTS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) {
-      return parsed.filter((value): value is number => typeof value === 'number');
-    }
-    return [];
-  } catch (err) {
-    console.warn('Failed to parse page view events', err);
-    return [];
+    const stored = localStorage.getItem(VIEWER_ID_KEY);
+    if (stored && /^[A-Za-z0-9-]{16,64}$/.test(stored)) return stored;
+    const id = newId();
+    localStorage.setItem(VIEWER_ID_KEY, id);
+    return id;
+  } catch {
+    // Storage blocked: an id for this visit only.
+    return newId();
   }
-};
+}
 
-const saveEvents = (events: number[]) => {
+function oldLocalCount(): number {
   try {
-    localStorage.setItem(PAGE_VIEW_EVENTS_KEY, JSON.stringify(events));
-  } catch (err) {
-    console.warn('Failed to persist page view events', err);
-  }
-};
+    const n = parseInt(localStorage.getItem(OLD_LIFETIME_KEY) || '0', 10);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch { return 0; }
+}
 
-const loadLifetimeCount = (): number => {
-  try {
-    const raw = localStorage.getItem(PAGE_VIEW_LIFETIME_KEY);
-    const parsed = raw ? parseInt(raw, 10) : 0;
-    return Number.isNaN(parsed) ? 0 : parsed;
-  } catch (err) {
-    console.warn('Failed to parse lifetime page views', err);
-    return 0;
-  }
-};
-
-const saveLifetimeCount = (count: number) => {
-  try {
-    localStorage.setItem(PAGE_VIEW_LIFETIME_KEY, `${count}`);
-  } catch (err) {
-    console.warn('Failed to persist lifetime page views', err);
-  }
-};
-
-const normalizeStats = (stats: any): PageViewStats => ({
-  daily: Number(stats?.daily) || 0,
-  weekly: Number(stats?.weekly) || 0,
-  yearly: Number(stats?.yearly) || 0,
-  lifetime: Number(stats?.lifetime) || 0,
+const normalize = (s: any): PageViewStats => ({
+  daily: Number(s?.daily) || 0,
+  weekly: Number(s?.weekly) || 0,
+  lifetime: Number(s?.lifetime) || 0,
+  yours: Number(s?.yours) || 0,
 });
 
-const recordLocalPageView = (): PageViewStats => {
-  const now = Date.now();
-  const events = loadEvents();
-  const lifetime = loadLifetimeCount() + 1;
-
-  // Keep only events from the last year to cap storage while enabling yearly stats
-  const trimmedEvents = [...events.filter((ts) => now - ts <= ONE_YEAR_MS), now];
-  saveEvents(trimmedEvents);
-  saveLifetimeCount(lifetime);
-
-  return calculateStats(trimmedEvents, lifetime, now);
-};
-
-export const calculateStats = (
-  events: number[] = loadEvents(),
-  lifetime = loadLifetimeCount(),
-  now: number = Date.now()
-): PageViewStats => {
-  const withinDay = events.filter((ts) => now - ts <= ONE_DAY_MS).length;
-  const withinWeek = events.filter((ts) => now - ts <= ONE_WEEK_MS).length;
-  const withinYear = events.filter((ts) => now - ts <= ONE_YEAR_MS).length;
-
-  return {
-    daily: withinDay,
-    weekly: withinWeek,
-    yearly: withinYear,
-    lifetime,
-  };
-};
-
-const recordServerPageView = async (): Promise<PageViewStats | null> => {
-  if (!PAGE_VIEW_API_BASE) return null;
-
+/** Count this visit and return the numbers, or null if the counter did not answer. */
+export const recordPageView = async (): Promise<PageViewStats | null> => {
   try {
-    const response = await fetch(`${PAGE_VIEW_API_BASE}/page-views`, {
+    const res = await fetch(PAGE_VIEWS_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ occurredAt: new Date().toISOString() }),
+      body: JSON.stringify({ id: viewerId(), seed: oldLocalCount() }),
+      signal: AbortSignal.timeout(8000),
     });
-
-    if (!response.ok) throw new Error(`Server responded with ${response.status}`);
-
-    const stats = await response.json();
-    return normalizeStats(stats);
+    if (!res.ok) throw new Error(`counter answered ${res.status}`);
+    const stats = normalize(await res.json());
+    // The server has the old count now; the device's copy is done with.
+    try { localStorage.removeItem(OLD_LIFETIME_KEY); localStorage.removeItem('sta_page_view_events_v1'); } catch { /* blocked */ }
+    return stats;
   } catch (err) {
-    console.warn('Falling back to local page view tracking; server request failed', err);
+    console.warn('Page view counter unavailable', err);
     return null;
   }
-};
-
-const fetchServerStats = async (): Promise<PageViewStats | null> => {
-  if (!PAGE_VIEW_API_BASE) return null;
-
-  try {
-    const response = await fetch(`${PAGE_VIEW_API_BASE}/page-views`, {
-      method: 'GET',
-    });
-
-    if (!response.ok) throw new Error(`Server responded with ${response.status}`);
-
-    const stats = await response.json();
-    return normalizeStats(stats);
-  } catch (err) {
-    console.warn('Falling back to local page view stats; server request failed', err);
-    return null;
-  }
-};
-
-export const getPageViewStorageMode = () => (PAGE_VIEW_API_BASE ? 'server' : 'local');
-
-export const recordPageView = async (): Promise<PageViewStats> => {
-  const serverStats = await recordServerPageView();
-  if (serverStats) return serverStats;
-  return recordLocalPageView();
-};
-
-export const loadPageViewStats = async (): Promise<PageViewStats> => {
-  const serverStats = await fetchServerStats();
-  if (serverStats) return serverStats;
-  return calculateStats();
 };

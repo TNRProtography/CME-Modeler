@@ -162,8 +162,7 @@ interface SettingsModalProps {
   defaultForecastView: 'simple' | 'advanced';
   onDefaultMainPageChange: (page: 'forecast' | 'solar-activity' | 'modeler') => void;
   onDefaultForecastViewChange: (view: 'simple' | 'advanced') => void;
-  pageViewStats: PageViewStats;
-  pageViewStorageMode: 'server' | 'local';
+  pageViewStats: PageViewStats | null;
 }
 
 // Categories, their grouping, labels and tooltips all come from the manifest
@@ -300,7 +299,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   onDefaultMainPageChange,
   onDefaultForecastViewChange,
   pageViewStats,
-  pageViewStorageMode,
 }) => {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission | 'unsupported'>('default');
   const [isSubscribing, setIsSubscribing] = useState(false);
@@ -839,17 +837,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
 
           <section>
-            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Your page views</h3>
+            <h3 className="text-xl font-semibold text-neutral-300 mb-3">Page views</h3>
             <p className="text-sm text-neutral-400 mb-4">
-              {pageViewStorageMode === 'server'
-                ? 'These numbers are stored on the server so they stay in sync across devices.'
-                : 'These numbers are stored only on this device so you can see how often you check in.'}
+              How often the app has been opened, counted on the server. Yours is this browser's own count.
             </p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[{ label: 'Today', value: pageViewStats.daily }, { label: 'This week', value: pageViewStats.weekly }, { label: 'This year', value: pageViewStats.yearly }, { label: 'Lifetime', value: pageViewStats.lifetime }].map(stat => (
+              {[{ label: 'Today', value: pageViewStats?.daily }, { label: 'This week', value: pageViewStats?.weekly }, { label: 'All time', value: pageViewStats?.lifetime }, { label: 'Yours', value: pageViewStats?.yours }].map(stat => (
                 <div key={stat.label} className="bg-neutral-900/60 border border-neutral-800 rounded-lg p-3 text-center shadow-inner">
                   <p className="text-xs uppercase tracking-wide text-neutral-500">{stat.label}</p>
-                  <p className="text-2xl font-bold text-white mt-1">{stat.value}</p>
+                  <p className="text-2xl font-bold text-white mt-1">{stat.value == null ? '-' : stat.value.toLocaleString('en-NZ')}</p>
                 </div>
               ))}
             </div>

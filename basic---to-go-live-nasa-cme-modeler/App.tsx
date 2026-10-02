@@ -116,7 +116,7 @@ const ForecastModelsModal = retryLazyLoad(() => import('./components/ForecastMod
 const OnboardingBanner = retryLazyLoad(() => import('./components/OnboardingBanner'));
 const WhatsNewModal = retryLazyLoad(() => import('./components/WhatsNewModal'));
 const AppDocumentation = retryLazyLoad(() => import('./components/AppDocumentation'));
-import { calculateStats, getPageViewStorageMode, loadPageViewStats, PageViewStats, recordPageView } from './utils/pageViews';
+import { PageViewStats, recordPageView } from './utils/pageViews';
 import { registerDatasetTicker } from './utils/pollingScheduler';
 import { startAppPreload } from './utils/appPreloader';
 import { markAppReady, useAppReady, whenAppIdle } from './utils/appReady';
@@ -436,8 +436,7 @@ const App: React.FC = () => {
     if (viewFromSearch) return viewFromSearch;
     return getStoredForecastView();
   });
-  const [pageViewStats, setPageViewStats] = useState<PageViewStats>(() => calculateStats());
-  const [pageViewStorageMode] = useState<'server' | 'local'>(() => getPageViewStorageMode());
+  const [pageViewStats, setPageViewStats] = useState<PageViewStats | null>(null);
   const [manualRefreshKey, setManualRefreshKey] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -606,21 +605,14 @@ const App: React.FC = () => {
     setVisitedPages((prev) => (prev[activePage] ? prev : { ...prev, [activePage]: true }));
   }, [activePage]);
 
-  useEffect(() => {
-    let isCancelled = false;
-    loadPageViewStats().then(stats => {
-      if (!isCancelled) setPageViewStats(stats);
-    });
-    return () => { isCancelled = true; };
-  }, []);
-
+  // Once per open of the app; the counter itself ignores a repeat within half an hour.
   useEffect(() => {
     let isCancelled = false;
     recordPageView().then(stats => {
-      if (!isCancelled) setPageViewStats(stats);
+      if (!isCancelled && stats) setPageViewStats(stats);
     });
     return () => { isCancelled = true; };
-  }, [activePage]);
+  }, []);
 
   useEffect(() => {
     const ua = navigator.userAgent || '';
@@ -1849,7 +1841,6 @@ const App: React.FC = () => {
               onDefaultMainPageChange={handleDefaultMainPageChange}
               onDefaultForecastViewChange={handleDefaultForecastViewChange}
               pageViewStats={pageViewStats}
-              pageViewStorageMode={pageViewStorageMode}
             />
           </Suspense>}
 
