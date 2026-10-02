@@ -11,6 +11,7 @@
 
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { rmAngles, gsmToGseqBy } from '../utils/rmEffect';
+import { ExplainerButton } from './ExplainerModal';
 import {
   loadMilkyWay, drawMilkyWay, loadEarthTexture, earthTexture,
   renderGlobe, drawEarthDisc,
@@ -227,7 +228,11 @@ const RussellMcPherron: React.FC<Props> = ({ magneticData, onOpenModal }) => {
           </span>
           <button onClick={onOpenModal} className="p-1 rounded-full text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors" title="About the Russell-McPherron effect">?</button>
         </div>
-        <span className="text-[10px] text-neutral-500 mt-1">Russell-McPherron effect</span>
+        <div className="flex items-center gap-2">
+          <span className="hidden sm:inline text-[10px] text-neutral-500">Russell-McPherron effect</span>
+          <ExplainerButton id="equinox-boost" label="How the equinox boost works"
+            title="A 3D animation of the Russell-McPherron effect, on this year's dates" />
+        </div>
       </div>
 
       {/* HERO STATUS */}

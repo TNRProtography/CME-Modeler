@@ -12,10 +12,11 @@
 //     pinch, a river of particles pouring onto the pole, aurora curtains
 //     blooming on the globe, an exposure kick, then afterglow
 //
-// A 5-step story tour ("How aurora forms") walks new users through the
-// whole causal chain, forcing a demo snap on the final step.
+// "How aurora forms" opens the full 3D explainer (components/ExplainerModal,
+// public/explainers/magnetotail.html).
 
 import React, { useMemo, useEffect, useRef, useState, useCallback } from 'react';
+import { ExplainerButton } from './ExplainerModal';
 import { computeOvalBoundary as computeOvalBoundaryPhysics, avgBy30m, loadingMinutesFromSeries } from '../utils/ovalPhysics';
 import {
   EARTH_TEX, renderGlobe, drawParticle,
@@ -134,14 +135,9 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
   const ovalBound = computeOvalBoundary(substormRiskData, proxyNewellData, latestByRM, pressure);
 
   // ── Story state ──
+  // The old 5-step tour, kept for the scene's demo overrides; the header
+  // button now opens the 3D explainer instead, so nothing starts it.
   const [story, setStory] = useState<number | null>(null);
-  const [storySeen, setStorySeen] = useState(true);
-  useEffect(() => { try { setStorySeen(localStorage.getItem('mt-story-seen') === '1'); } catch { /* ignore */ } }, []);
-  const openStory = useCallback(() => {
-    setStory(0);
-    try { localStorage.setItem('mt-story-seen', '1'); } catch { /* ignore */ }
-    setStorySeen(true);
-  }, []);
   const closeStory = useCallback(() => setStory(null), []);
 
   // ── Live scene parameters (refs so the rAF loop reads fresh values without restarting) ──
@@ -601,11 +597,9 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
             title="About Magnetotail">?</button>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={openStory}
-            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors ${storySeen ? 'text-neutral-400 border-neutral-700 hover:text-white hover:border-neutral-500' : 'text-emerald-300 border-emerald-500/50 bg-emerald-500/10 mt-hint'}`}
-            title="A 60-second guided tour of how aurora forms">
-            ▶ How aurora forms
-          </button>
+          {/* The full 3D explainer (public/explainers/magnetotail.html). */}
+          <ExplainerButton id="magnetotail" label="How aurora forms"
+            title="A 3D animation of how aurora forms: solar wind, the magnetotail and the substorm" />
           <span className="text-base sm:text-lg font-bold" style={{ color: COLOURS[magState] }}>{LABELS[magState]}</span>
         </div>
       </div>

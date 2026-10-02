@@ -15,6 +15,7 @@ import {
     type SolarWindPhaseId,
 } from '../utils/solarWindPhase';
 import SolarWindStructureDiagram from './SolarWindStructureDiagram';
+import { ExplainerButton } from './ExplainerModal';
 import { useForecast } from '../hooks/useForecast';
 import { expectedChange } from '../utils/forecastTimeline';
 
@@ -598,7 +599,11 @@ export const IMFClockChart: React.FC<{
 
                     {/* The structure itself, flowing past. The card names it and the
                         block below says what to expect; this shows the thing. */}
-                    <SolarWindStructureDiagram phase={stormPhase} className="mt-3" />
+                    <div className="mt-3 flex justify-end">
+                        <ExplainerButton id="solar-wind-structure" label="How solar wind is structured"
+                            title="A 3D animation of the solar wind: Parker spiral, fast streams, CMEs and their shocks" />
+                    </div>
+                    <SolarWindStructureDiagram phase={stormPhase} className="mt-2" />
 
                     {/* Naming the structure is only half an answer - this is the half
                         that tells someone new whether to go outside tonight. */}
