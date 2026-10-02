@@ -125,7 +125,7 @@ console.log('\nEvery icon exists');
         missing.join('\n        '));
   check(wrongSize.length === 0, 'and none of them is an empty file', wrongSize.join(', '));
 
-  const badgeFile = join(APP, 'public', 'icons', 'icon-badge.png');
+  const badgeFile = join(APP, 'public', 'icons', 'notifications', 'icon-badge.png');
   check(existsSync(badgeFile), 'the Android status-bar badge exists');
 
   // The service worker and the PWA manifest name their own assets, and those

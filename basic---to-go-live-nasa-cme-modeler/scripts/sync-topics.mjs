@@ -78,7 +78,7 @@ const DEFAULT_ICON = '/icons/icon-default.png';
 // The small status-bar icon. Android masks it to a silhouette and ignores
 // colour, so it is the app mark for every topic unless one overrides it, and
 // it has to be white-on-transparent or it renders as a solid blob.
-const DEFAULT_BADGE = '/icons/icon-badge.png';
+const DEFAULT_BADGE = '/icons/notifications/icon-badge.png';
 const TOPIC_BADGES = {
 ${badgeLines.join('\n')}
 };
