@@ -3,8 +3,9 @@
 // The numbers are the app's: views today, this week and all time, and the
 // visitor's own count. A visitor is an id made on first visit and kept in
 // localStorage, so it follows the browser, not the person; clearing site data
-// starts a new one. The worker counts a visitor at most once per half hour, so
-// switching pages or reloading does not run the number up.
+// starts a new one. Every time the app is opened is a view, and so is coming
+// back to it after it was left alone for a while; switching pages inside it
+// is not.
 
 export type PageViewStats = {
   daily: number;
@@ -82,3 +83,24 @@ export const fetchPageViewStats = async (): Promise<PageViewStats | null> => {
     return null;
   }
 };
+
+const RETURN_AFTER_MS = 30 * 60 * 1000;
+
+/**
+ * Count a view now, and again each time the app is brought back after being
+ * out of sight for half an hour (a phone app is rarely closed, only put
+ * away). Returns a function that stops it.
+ */
+export function countViews(onStats: (stats: PageViewStats) => void): () => void {
+  let stopped = false;
+  let hiddenAt: number | null = null;
+  const count = () => recordPageView().then((s) => { if (!stopped && s) onStats(s); });
+  count();
+  const onVisibility = () => {
+    if (document.hidden) { hiddenAt = Date.now(); return; }
+    if (hiddenAt != null && Date.now() - hiddenAt >= RETURN_AFTER_MS) count();
+    hiddenAt = null;
+  };
+  document.addEventListener('visibilitychange', onVisibility);
+  return () => { stopped = true; document.removeEventListener('visibilitychange', onVisibility); };
+}

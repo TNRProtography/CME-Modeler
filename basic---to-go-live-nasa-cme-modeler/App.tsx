@@ -116,7 +116,7 @@ const ForecastModelsModal = retryLazyLoad(() => import('./components/ForecastMod
 const OnboardingBanner = retryLazyLoad(() => import('./components/OnboardingBanner'));
 const WhatsNewModal = retryLazyLoad(() => import('./components/WhatsNewModal'));
 const AppDocumentation = retryLazyLoad(() => import('./components/AppDocumentation'));
-import { PageViewStats, recordPageView } from './utils/pageViews';
+import { PageViewStats, countViews } from './utils/pageViews';
 import { registerDatasetTicker } from './utils/pollingScheduler';
 import { startAppPreload } from './utils/appPreloader';
 import { markAppReady, useAppReady, whenAppIdle } from './utils/appReady';
@@ -605,14 +605,8 @@ const App: React.FC = () => {
     setVisitedPages((prev) => (prev[activePage] ? prev : { ...prev, [activePage]: true }));
   }, [activePage]);
 
-  // Once per open of the app; the counter itself ignores a repeat within half an hour.
-  useEffect(() => {
-    let isCancelled = false;
-    recordPageView().then(stats => {
-      if (!isCancelled && stats) setPageViewStats(stats);
-    });
-    return () => { isCancelled = true; };
-  }, []);
+  // Each open of the app is a view, and so is coming back to it after a while away.
+  useEffect(() => countViews(setPageViewStats), []);
 
   useEffect(() => {
     const ua = navigator.userAgent || '';

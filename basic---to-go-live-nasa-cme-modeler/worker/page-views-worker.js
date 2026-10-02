@@ -12,11 +12,12 @@
 // request at a time, start to finish, so two views arriving together are two
 // increments, never one lost - which a read-then-write on KV cannot promise.
 //
-// A visitor is counted at most once per half hour, so a reload or a change
-// of page does not run the number up.
+// Every time the app is opened and used is a view, so a visitor who closes it
+// and comes back counts again. The app sends one per open; the short gap here
+// only swallows an accidental double send.
 
 const BASE_LIFETIME = 84382;
-const SESSION_GAP_MS = 30 * 60 * 1000;
+const DOUBLE_SEND_MS = 5000;
 const DAY_MS = 86400000;
 const ID_RE = /^[A-Za-z0-9-]{16,64}$/;
 const MAX_SEED = 100000;
@@ -57,7 +58,7 @@ export class PageViews {
   count(id, seed, now) {
     const row = this.one('SELECT n, last FROM visitors WHERE id = ?', id);
     let n = row ? row.n : Math.min(Math.max(0, Math.floor(seed) || 0), MAX_SEED);
-    if (!row || now - row.last >= SESSION_GAP_MS) {
+    if (!row || now - row.last >= DOUBLE_SEND_MS) {
       n += 1;
       this.sql.exec('INSERT INTO visitors (id, n, last) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET n = excluded.n, last = excluded.last', id, n, now);
       this.sql.exec('INSERT INTO days (day, n) VALUES (?, 1) ON CONFLICT(day) DO UPDATE SET n = n + 1', dayOf(now));

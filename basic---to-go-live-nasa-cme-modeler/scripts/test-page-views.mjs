@@ -3,7 +3,7 @@
 //
 //   npm run test:page-views
 //
-// Starts at 84,382, counts a visitor once per half hour, keeps each
+// Starts at 84,382, counts every open of the app, keeps each
 // visitor's own number, and carries over what a device counted before.
 
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -52,7 +52,7 @@ console.log('Counting');
 r = await call('POST', '/page-views', { id: A });
 check(r.json.lifetime === 84383 && r.json.daily === 1 && r.json.weekly === 1 && r.json.yours === 1, 'a first view counts everywhere', JSON.stringify(r.json));
 r = await call('POST', '/page-views', { id: A });
-check(r.json.lifetime === 84383 && r.json.yours === 1, 'a reload straight after does not count again');
+check(r.json.lifetime === 84383 && r.json.yours === 1, 'a double send within seconds does not count twice');
 r = await call('POST', '/page-views', { id: B });
 check(r.json.lifetime === 84384 && r.json.yours === 1, 'another visitor adds to the total with their own number');
 r = await call('GET', `/page-views?id=${A}`);
@@ -66,11 +66,11 @@ const crowd = await Promise.all(Array.from({ length: 50 }, (_, i) =>
 r = await call('GET', '/page-views');
 check(r.json.lifetime === 84384 + 50 && r.json.visitors === 52, 'fifty at once lose none', JSON.stringify(r.json));
 
-console.log('Half an hour later');
+console.log('Coming back');
 const realNow = Date.now;
-Date.now = () => realNow() + 31 * 60000;
+Date.now = () => realNow() + 6000;
 r = await call('POST', '/page-views', { id: A });
-check(r.json.yours === 2 && r.json.lifetime === 84385 + 50, 'the same visitor counts again', JSON.stringify(r.json));
+check(r.json.yours === 2 && r.json.lifetime === 84385 + 50, 'the same visitor opening the app again counts again', JSON.stringify(r.json));
 Date.now = realNow;
 
 console.log('Carrying over a device count');
