@@ -16,11 +16,23 @@ const check = (ok, label, detail = '') => {
   else { fail++; console.log(`  FAIL  ${label} ${detail}`); }
 };
 
-const W = (await import(pathToFileURL(join(root, 'worker/page-views-worker.js')).href)).default;
-const store = new Map();
-const env = { PAGE_VIEWS_KV: {
-  get: async (k) => store.get(k) ?? null,
-  put: async (k, v) => { store.set(k, v); },
+import { DatabaseSync } from 'node:sqlite';
+process.removeAllListeners('warning');
+
+const mod = await import(pathToFileURL(join(root, 'worker/page-views-worker.js')).href);
+const W = mod.default;
+// A Durable Object's SQLite, played by node's: the same exec(query, ...args)
+// and toArray() the object uses.
+const db = new DatabaseSync(':memory:');
+const state = { storage: { sql: { exec: (q, ...a) => {
+  const st = db.prepare(q);
+  const rows = /^\s*(SELECT|WITH)/i.test(q) ? st.all(...a) : (st.run(...a), []);
+  return { toArray: () => rows };
+} } } };
+const object = new mod.PageViews(state);
+const env = { PAGE_VIEWS: {
+  idFromName: (n) => n,
+  get: () => ({ fetch: (url, init) => object.fetch(new Request(url, init)) }),
 } };
 const call = async (method, path, body, origin = 'https://spottheaurora.co.nz') => {
   const res = await W.fetch(new Request(`https://x.test${path}`, {
@@ -34,7 +46,7 @@ const A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', B = 'bbbbbbbb-bbbb-bbbb-bbbb-b
 console.log('A fresh counter');
 let r = await call('GET', '/page-views');
 check(r.json.lifetime === 84382, 'starts at 84,382', JSON.stringify(r.json));
-check(r.json.daily === 0 && r.json.yours === 0, 'with nothing today and nothing yours');
+check(r.json.daily === 0 && r.json.yours === 0 && r.json.visitors === 0, 'with nothing today, no visitors and nothing yours');
 
 console.log('Counting');
 r = await call('POST', '/page-views', { id: A });
@@ -46,11 +58,19 @@ check(r.json.lifetime === 84384 && r.json.yours === 1, 'another visitor adds to 
 r = await call('GET', `/page-views?id=${A}`);
 check(r.json.yours === 1 && r.json.lifetime === 84384, 'a GET reads without counting');
 
+check(r.json.visitors === 2 && r.json.yearly === 2, 'and counts visitors and the year');
+
+console.log('Two views at once');
+const crowd = await Promise.all(Array.from({ length: 50 }, (_, i) =>
+  call('POST', '/page-views', { id: `crowd-visitor-${String(i).padStart(4, '0')}` })));
+r = await call('GET', '/page-views');
+check(r.json.lifetime === 84384 + 50 && r.json.visitors === 52, 'fifty at once lose none', JSON.stringify(r.json));
+
 console.log('Half an hour later');
 const realNow = Date.now;
 Date.now = () => realNow() + 31 * 60000;
 r = await call('POST', '/page-views', { id: A });
-check(r.json.yours === 2 && r.json.lifetime === 84385, 'the same visitor counts again', JSON.stringify(r.json));
+check(r.json.yours === 2 && r.json.lifetime === 84385 + 50, 'the same visitor counts again', JSON.stringify(r.json));
 Date.now = realNow;
 
 console.log('Carrying over a device count');

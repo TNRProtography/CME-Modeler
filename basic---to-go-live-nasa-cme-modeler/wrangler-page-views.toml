@@ -10,8 +10,12 @@ workers_dev = true
 [observability]
 enabled = true
 
-# The banner worker's namespace, shared: every key here starts with PV: and
-# nothing else lists the namespace.
-[[kv_namespaces]]
-binding = "PAGE_VIEWS_KV"
-id = "01017cfbac334e1586232601b5d70a27"
+# The counter lives in one Durable Object with its own SQLite database. Nothing
+# to create in the dashboard: the migration below makes it on the first deploy.
+[[durable_objects.bindings]]
+name = "PAGE_VIEWS"
+class_name = "PageViews"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PageViews"]
