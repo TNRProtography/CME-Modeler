@@ -107,10 +107,13 @@ function getBadge(tag) {
 function lookup(map, tag, fallback) {
   if (!tag) return fallback;
   // Handle tags like "test-visibility-dslr-1234567" — extract the topic
+  // The longest topic that fits wins: "test-flare-X10-1" starts with
+  // "test-flare-X1" too, and was getting the X1 icon.
+  let best = null;
   for (const topic of Object.keys(map)) {
-    if (tag === topic || tag.startsWith(`test-${topic}`)) return map[topic];
+    if ((tag === topic || tag.startsWith(`test-${topic}`)) && (best === null || topic.length > best.length)) best = topic;
   }
-  return fallback;
+  return best === null ? fallback : map[best];
 }
 
 // ── lifecycle ────────────────────────────────────────────────────────────────

@@ -34,12 +34,10 @@ const DEFAULT_ICON = '/icons/icon-default.png';
 
 function getNotificationIcon(tag?: string): string {
   if (!tag) return DEFAULT_ICON;
-  for (const topic of Object.keys(TOPIC_ICONS)) {
-    if (tag === topic || tag.startsWith(`test-${topic}`)) {
-      return TOPIC_ICONS[topic];
-    }
-  }
-  return DEFAULT_ICON;
+  // Longest topic wins: "test-flare-X10-1" also starts with "test-flare-X1".
+  const topics = Object.keys(TOPIC_ICONS).filter((t) => tag === t || tag.startsWith(`test-${t}`));
+  topics.sort((a, b) => b.length - a.length);
+  return topics.length ? TOPIC_ICONS[topics[0]] : DEFAULT_ICON;
 }
 
 // Every topic the worker may send. Written out on subscribe so the worker
