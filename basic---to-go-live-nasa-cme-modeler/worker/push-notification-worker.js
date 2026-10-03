@@ -1768,6 +1768,18 @@ async function checkShockDetection(env, magPoints, plasmaPoints, tempAvailable =
     }
 
     const prevState = await kv(env).get('STATE_shock', 'json') || {};
+    // The same shock, seen again. A shock stays inside the look-back for
+    // LOOK_BACK + POST_WIN_MS (37 minutes) after it happens, longer than the
+    // cooldown, so the cooldown alone let the run just after it expired find
+    // the shock still there and announce it a second time, twenty minutes
+    // after the first. What is remembered now is when the shock itself
+    // happened, and anything within SAME_EVENT_MS of that is the same event.
+    const SAME_EVENT_MS = 2 * 60 * 60 * 1000;
+    const lastShockAt = prevState[`last_${bestEvent.shockType}_at`] || 0;
+    if (Math.abs(bestEvent.t - lastShockAt) < SAME_EVENT_MS) {
+      note('shock', 'suppressed', `shock-ff at ${new Date(bestEvent.t).toISOString()} is the one already announced`);
+      return;
+    }
     const lastShockTs = prevState[`last_${bestEvent.shockType}`] || 0;
     if (Date.now() - lastShockTs < COOLDOWN_MS) {
       note('shock', 'suppressed', `shock-ff detected but last fired ${Math.round((Date.now() - lastShockTs) / 60000)} min ago`);
@@ -1809,10 +1821,16 @@ async function checkShockDetection(env, magPoints, plasmaPoints, tempAvailable =
     );
     bodyLines.push('', 'L1 satellites sit about 45 to 60 minutes upstream of Earth. This shockwave is likely already reaching us.');
 
+    // Recorded before the send, not after: queueing to every subscriber takes
+    // a while, and a run overlapping this one should see it is taken.
+    await kv(env).put('STATE_shock', JSON.stringify({
+      ...prevState,
+      [`last_${bestEvent.shockType}`]: Date.now(),
+      [`last_${bestEvent.shockType}_at`]: bestEvent.t,
+    }));
     await notifyTopic(topic, title, bodyLines.join('\n'), env, { url: '/?page=forecast' });
     note('shock', 'fired', `${topic}${bestEvent.haveTmp ? '' : ' (without temperature)'}`);
 
-    await kv(env).put('STATE_shock', JSON.stringify({ ...prevState, [`last_${bestEvent.shockType}`]: Date.now() }));
   } catch (e) {
     note('shock', 'error', e.message);
     reportError(e, env, { handler: 'checkShockDetection' });

@@ -34,9 +34,18 @@ const W = await import(pathToFileURL(copy).href);
 
 // ── harness ────────────────────────────────────────────────────────────────
 const store = new Map();
+// Expiry, as KV does it, against whatever Date.now says: a cooldown has to be
+// able to run out for a replay to show what happens after it.
+const expires = new Map();
 const kv = {
-  get: async (k, t) => { const v = store.get(k); return v == null ? null : (t === 'json' ? JSON.parse(v) : v); },
-  put: async (k, v) => { store.set(k, v); },
+  get: async (k, t) => {
+    if (expires.has(k) && Date.now() >= expires.get(k)) { store.delete(k); expires.delete(k); }
+    const v = store.get(k); return v == null ? null : (t === 'json' ? JSON.parse(v) : v);
+  },
+  put: async (k, v, o) => {
+    store.set(k, v);
+    if (o?.expirationTtl) expires.set(k, Date.now() + o.expirationTtl * 1000); else expires.delete(k);
+  },
   delete: async (k) => { store.delete(k); },
   list: async ({ prefix = '', cursor, limit = 1000 } = {}) => {
     const all = [...store.keys()].filter(n => n.startsWith(prefix)).sort();
@@ -332,6 +341,48 @@ console.log('\nA CME hits L1');
   const [, v1, v2] = msg?.body?.match(/Speed: (\d+) → (\d+)/) ?? [];
   check(msg && Number(v1) <= 450 && Number(v2) >= 550,
         'and the message gives the speed and density either side of the shock', msg?.body?.split('\n').slice(2, 4).join(' | '));
+}
+
+// ── 3b. one shock, one alert ───────────────────────────────────────────────
+// The cron runs every minute, and a shock stays inside the detector's look-back
+// for over half an hour after it - longer than the cooldown. Replayed a minute
+// at a time for two hours, the same shock must be announced once.
+console.log('\nOne CME shock, replayed every minute for two hours');
+{
+  store.clear();
+  store.set('CONFIG_THRESHOLDS', JSON.stringify(CONFIG));
+  const realNow = Date.now;
+  const shockAt = Math.floor(realNow() / 60000) * 60000;
+  const at = (ts) => ts < shockAt
+    ? { bz: -2,  bt: 5,  speed: 420, den: 5,  temp: 90000 }
+    : { bz: -22, bt: 38, speed: 780, den: 24, temp: 620000 };
+  const fired = [];
+  for (let m = 0; m <= 120; m++) {
+    const now = shockAt + m * 60000;
+    Date.now = () => now;
+    const { mag, plasma } = wind((i) => at(now - i * 60000));
+    await W.checkShockDetection(env, mag, plasma, true, () => {});
+    for (const topic of await queuedTopics()) fired.push(`${topic} at +${m} min`);
+  }
+  Date.now = realNow;
+  console.log(`    sent: ${fired.join(', ') || 'nothing'}`);
+  check(fired.length === 1 && fired[0].startsWith('shock-ff'), 'the shock is announced exactly once', fired.join(', '));
+
+  // A second, separate shock hours later is its own event and is announced.
+  const second = shockAt + 4 * 3600000;
+  const at2 = (ts) => ts < second
+    ? { bz: -3, bt: 8, speed: 600, den: 6, temp: 200000 }
+    : { bz: -25, bt: 40, speed: 900, den: 30, temp: 900000 };
+  const fired2 = [];
+  for (let m = 0; m <= 40; m++) {
+    const now = second + m * 60000;
+    Date.now = () => now;
+    const { mag, plasma } = wind((i) => at2(now - i * 60000));
+    await W.checkShockDetection(env, mag, plasma, true, () => {});
+    fired2.push(...await queuedTopics());
+  }
+  Date.now = realNow;
+  check(fired2.length === 1, 'and a second shock four hours later still gets its own alert', fired2.join(', '));
 }
 
 // ── 4. visibility reaches real places ──────────────────────────────────────
