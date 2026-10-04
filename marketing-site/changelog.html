@@ -139,7 +139,7 @@
     <div class="release-head">
       <span class="release-ver">v2.0</span>
       <span class="release-tag">Latest</span>
-      <span class="release-date">September 2026</span>
+      <span class="release-date">October 2026</span>
     </div>
     <h2>Coronal holes properly, a look three days ahead, and a lot more of the Sun</h2>
     <p>The biggest release the app has had. Coronal holes went from one visualisation to something the whole app understands, the sunspot tracker got real magnetic data behind it, the forecast now looks days ahead as well as minutes, and a lot of the physics was rebuilt so it shows what is actually happening rather than a picture of it.</p>
@@ -161,6 +161,13 @@
       <li><strong>Night mode.</strong> A red filter to protect your dark adaptation at the site, which can turn itself on two hours after sunset.</li>
       <li><strong>Storm Builder.</strong> Replaces Solar Surfer. You get a job, aurora of a certain quality over a certain town at a certain time, and only the Sun end to work with: aim the eruption, pick its speed and set the twist of its flux rope. Real storms like May 2024 are in there too, to watch play out.</li>
       <li><strong>New alerts.</strong> Earth directed CME launched, with a minimum speed you set yourself, and solar flare peaked, confirmed by watching the flux actually fall.</li>
+      <li><strong>Sunspot history.</strong> Every sunspot region's state is recorded each time it changes, for two weeks. Scrub the sunspot tracker back and regions appear and disappear on the frames when they actually formed and faded, as they were then.</li>
+      <li><strong>Region history charts.</strong> Each region's C, M, X and proton flare chances, sunspot area, spot count, magnetic flux, magnetised area and growth rate, as charts coloured by level from green to purple. They follow the imagery's time window, and a reading stays put under your finger.</li>
+      <li><strong>CME orientation.</strong> The tilt of each CME is worked out from the coronagraph views and the region it came from, and the 3D model draws it that way.</li>
+      <li><strong>Inside a high speed stream.</strong> Streams in the 3D view show their three parts, the compression at the front, the fast wind and the rarefaction behind, and the impact graph marks when each is due.</li>
+      <li><strong>3D explainers.</strong> How aurora forms in the magnetotail, why the equinoxes boost the aurora, and how the solar wind is structured, as interactive 3D animations.</li>
+      <li><strong>A new coronagraph.</strong> SWFO-L1's CCOR-2 joins the coronagraph imagery.</li>
+      <li><strong>Page views.</strong> Settings shows how many times the app has been opened today, this week and all time, and how many times you have opened it, updating live.</li>
     </ul>
     <h3>Improved</h3>
     <ul class="list">
@@ -173,13 +180,23 @@
       <li><strong>Weak connections.</strong> Live data now updates gracefully on a patchy signal, using less data.</li>
       <li><strong>Forecasts are checked.</strong> Every arrival forecast is now scored against what actually turned up, so it can be held to account.</li>
       <li><strong>A new look behind the dashboards,</strong> with a star field, a drifting moon in its real phase, and a subtle aurora.</li>
-      <li><strong>Notifications</strong> are plainer, with no emojis, and each one carries its own icon.</li>
+      <li><strong>Notifications</strong> are plainer, with no emojis, and each alert has its own icon and status bar badge.</li>
+      <li><strong>Playback up to 20x</strong> on every timeline in the app. The faster speeds step over frames instead of stalling.</li>
+      <li><strong>The Coronal Hole Tracker</strong> scrubs and plays smoothly over a whole week: the imagery never blanks, and the outlines stay on the holes as the Sun turns.</li>
+      <li><strong>Coronal hole outlines</strong> on the sunspot tracker turn with the Sun as you scrub back through the frames.</li>
+      <li><strong>When NASA's DONKI service is down</strong>, the app still opens, CMEs and flares are kept for a week, and a NASA offline badge says so. The app also follows DONKI to its new home at CCMC.</li>
+      <li><strong>Solar magnetogram and intensity images</strong> refresh every 15 minutes.</li>
+      <li><strong>Flare and substorm alerts</strong> come once for each level you subscribe to, then once at the peak, and substorm alerts follow the visibility levels you chose.</li>
     </ul>
     <h3>Fixed</h3>
     <ul class="list">
       <li>Notifications were only reaching the first two thousand subscribers. They now reach everyone.</li>
       <li>An old version of the app could keep running after an update.</li>
       <li>Data on a page left open for a long time could quietly stop updating.</li>
+      <li>A CME shock arrival could send the same alert twice, about twenty minutes apart.</li>
+      <li>Sightings posted close together could be lost.</li>
+      <li>CMEs that NASA measured without a longitude were missing from the CME list.</li>
+      <li>Four more ways alerts could fail to arrive.</li>
     </ul>
     </article>
   </div>
