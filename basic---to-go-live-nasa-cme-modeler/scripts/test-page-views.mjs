@@ -3,7 +3,7 @@
 //
 //   npm run test:page-views
 //
-// Starts at 84,382, counts every open of the app, keeps each
+// Starts at 491,473, counts every open of the app, keeps each
 // visitor's own number, and carries over what a device counted before.
 
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -45,18 +45,18 @@ const A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', B = 'bbbbbbbb-bbbb-bbbb-bbbb-b
 
 console.log('A fresh counter');
 let r = await call('GET', '/page-views');
-check(r.json.lifetime === 84382, 'starts at 84,382', JSON.stringify(r.json));
+check(r.json.lifetime === 491473, 'starts at 491,473', JSON.stringify(r.json));
 check(r.json.daily === 0 && r.json.yours === 0 && r.json.visitors === 0, 'with nothing today, no visitors and nothing yours');
 
 console.log('Counting');
 r = await call('POST', '/page-views', { id: A });
-check(r.json.lifetime === 84383 && r.json.daily === 1 && r.json.weekly === 1 && r.json.yours === 1, 'a first view counts everywhere', JSON.stringify(r.json));
+check(r.json.lifetime === 491474 && r.json.daily === 1 && r.json.weekly === 1 && r.json.yours === 1, 'a first view counts everywhere', JSON.stringify(r.json));
 r = await call('POST', '/page-views', { id: A });
-check(r.json.lifetime === 84383 && r.json.yours === 1, 'a double send within seconds does not count twice');
+check(r.json.lifetime === 491474 && r.json.yours === 1, 'a double send within seconds does not count twice');
 r = await call('POST', '/page-views', { id: B });
-check(r.json.lifetime === 84384 && r.json.yours === 1, 'another visitor adds to the total with their own number');
+check(r.json.lifetime === 491475 && r.json.yours === 1, 'another visitor adds to the total with their own number');
 r = await call('GET', `/page-views?id=${A}`);
-check(r.json.yours === 1 && r.json.lifetime === 84384, 'a GET reads without counting');
+check(r.json.yours === 1 && r.json.lifetime === 491475, 'a GET reads without counting');
 
 check(r.json.visitors === 2 && r.json.yearly === 2, 'and counts visitors and the year');
 
@@ -64,13 +64,13 @@ console.log('Two views at once');
 const crowd = await Promise.all(Array.from({ length: 50 }, (_, i) =>
   call('POST', '/page-views', { id: `crowd-visitor-${String(i).padStart(4, '0')}` })));
 r = await call('GET', '/page-views');
-check(r.json.lifetime === 84384 + 50 && r.json.visitors === 52, 'fifty at once lose none', JSON.stringify(r.json));
+check(r.json.lifetime === 491475 + 50 && r.json.visitors === 52, 'fifty at once lose none', JSON.stringify(r.json));
 
 console.log('Coming back');
 const realNow = Date.now;
 Date.now = () => realNow() + 6000;
 r = await call('POST', '/page-views', { id: A });
-check(r.json.yours === 2 && r.json.lifetime === 84385 + 50, 'the same visitor opening the app again counts again', JSON.stringify(r.json));
+check(r.json.yours === 2 && r.json.lifetime === 491476 + 50, 'the same visitor opening the app again counts again', JSON.stringify(r.json));
 Date.now = realNow;
 
 console.log('Carrying over a device count');

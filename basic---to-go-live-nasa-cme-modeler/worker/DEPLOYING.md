@@ -90,7 +90,7 @@ Until it is running, the tracker works exactly as before.
 
 ## Page views (page-views worker)
 
-The app's view counter: today, this week, all time (starting at 84,382) and
+The app's view counter: today, this week, all time (starting at 491,473) and
 each visitor's own count, shown in Settings. It keeps everything in one
 Durable Object with its own SQLite database, so counts are exact and there is
 nothing to create in the dashboard (the migration in the settings file makes
@@ -100,7 +100,7 @@ it on the first deploy):
    deploy command `npx wrangler deploy -c wrangler-page-views.toml`, watch
    paths `worker/page-views-worker.js` and `wrangler-page-views.toml`.
 2. Check: `https://page-views.thenamesrock.workers.dev/page-views` should
-   answer with `lifetime` of 84382 or more.
+   answer with `lifetime` of 491473 or more.
 
 The app already points at that address. A worker with a different name needs
 `VITE_PAGE_VIEWS_ENDPOINT` set to its address (no trailing slash) in the

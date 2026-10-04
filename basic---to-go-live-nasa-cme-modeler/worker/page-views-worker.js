@@ -16,7 +16,7 @@
 // and comes back counts again. The app sends one per open; the short gap here
 // only swallows an accidental double send.
 
-const BASE_LIFETIME = 84382;
+const BASE_LIFETIME = 491473;
 const DOUBLE_SEND_MS = 5000;
 const DAY_MS = 86400000;
 const ID_RE = /^[A-Za-z0-9-]{16,64}$/;
