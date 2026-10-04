@@ -608,6 +608,11 @@ const App: React.FC = () => {
     setVisitedPages((prev) => (prev[activePage] ? prev : { ...prev, [activePage]: true }));
   }, [activePage]);
 
+  // Each page's own title, description and canonical address (index.html).
+  useEffect(() => {
+    (window as unknown as { __stApplyPageMeta?: (path: string) => void }).__stApplyPageMeta?.(window.location.pathname);
+  }, [activePage]);
+
   // Each open of the app is a view, and so is coming back to it after a while away.
   const [celebration, setCelebration] = useState<Celebration | null>(null);
   useEffect(() => countViews((stats) => {

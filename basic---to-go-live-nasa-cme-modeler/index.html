@@ -166,6 +166,101 @@
   }
   </script>
 
+  <!-- More SEO, added alongside the tags above (which stay the defaults). -->
+  <meta name="keywords" content="aurora forecast NZ, aurora australis, southern lights New Zealand, aurora tonight, space weather, CME tracker, solar flare alerts, substorm, Kp index, aurora app">
+  <meta name="geo.region" content="NZ">
+  <meta name="geo.placename" content="New Zealand">
+  <link rel="alternate" hreflang="en-nz" href="https://spottheaurora.co.nz/">
+  <link rel="alternate" hreflang="x-default" href="https://spottheaurora.co.nz/">
+  <link rel="author" href="https://about.spottheaurora.co.nz/about">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://about.spottheaurora.co.nz/#org",
+        "name": "Spot The Aurora",
+        "url": "https://spottheaurora.co.nz/",
+        "logo": "https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/SpotTheAuroraLogo.png",
+        "sameAs": [
+          "https://about.spottheaurora.co.nz/",
+          "https://www.facebook.com/spot.the.aurora",
+          "https://www.tnrprotography.co.nz"
+        ],
+        "founder": { "@type": "Person", "name": "Dean French" },
+        "areaServed": { "@type": "Country", "name": "New Zealand" }
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://spottheaurora.co.nz/#app",
+        "name": "Spot The Aurora",
+        "url": "https://spottheaurora.co.nz/",
+        "applicationCategory": "WeatherApplication",
+        "operatingSystem": "Web, iOS, Android (installable web app)",
+        "inLanguage": "en-NZ",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "NZD" },
+        "publisher": { "@id": "https://about.spottheaurora.co.nz/#org" },
+        "areaServed": { "@type": "Country", "name": "New Zealand" },
+        "featureList": [
+          "Live aurora australis visibility score for your location: naked eye, phone camera or long exposure",
+          "Push alerts for aurora visibility, substorms, solar flares, CMEs and solar wind shocks",
+          "Three-day hourly aurora outlook allowing for daylight, twilight and the Moon",
+          "Live solar activity: X-ray flares, sunspot regions, coronal holes and proton flux",
+          "Real-time 3D visualisation of coronal mass ejections travelling to Earth",
+          "Live sightings map and aurora cameras around New Zealand"
+        ],
+        "screenshot": "https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/Share%20Image-selection%20%282%29.png",
+        "subjectOf": { "@type": "WebPage", "url": "https://about.spottheaurora.co.nz/features" }
+      }
+    ]
+  }
+  </script>
+  <!-- Each of the app's three pages has its own address, and is now described
+       as its own page rather than as a copy of the home page: its own title,
+       description and canonical address. Run here, before the app, so a
+       crawler sees them on first render; the app calls it again when the page
+       changes. The address "/" keeps the defaults above. -->
+  <script>
+    (function () {
+      var BASE = 'https://spottheaurora.co.nz';
+      var PAGES = [
+        { prefix: '/spot-the-aurora-forecast', path: '/spot-the-aurora-forecast',
+          title: 'Aurora Forecast NZ: Live Aurora Australis Score | Spot The Aurora',
+          description: 'Can you see the aurora tonight from where you are? A live southern lights forecast for New Zealand: naked eye, phone camera or long exposure, adjusted for your location, the Moon and cloud, with substorm alerts.' },
+        { prefix: '/solar-dashboard', path: '/solar-dashboard',
+          title: 'Live Solar Activity: Flares, Sunspots, Coronal Holes | Spot The Aurora',
+          description: 'What the Sun is doing right now: live X-ray flares, sunspot regions with flare chances, coronal holes and their high-speed streams, proton flux and coronagraph imagery, explained for aurora chasers in New Zealand.' },
+        { prefix: '/cme-visualization', path: '/cme-visualization',
+          title: '3D CME Tracker: CMEs Heading for Earth | Spot The Aurora',
+          description: 'Watch coronal mass ejections and high-speed solar wind streams travel from the Sun to Earth in a live 3D model, with arrival times and the impact they could have on the aurora in New Zealand.' }
+      ];
+      var defaults = null;
+      function set(sel, attr, value) {
+        var el = document.head.querySelector(sel);
+        if (el) el.setAttribute(attr, value);
+      }
+      window.__stApplyPageMeta = function (pathname) {
+        try {
+          if (!defaults) {
+            var d = document.head.querySelector('meta[name="description"]');
+            defaults = { title: document.title, description: d ? d.getAttribute('content') : '' };
+          }
+          var page = null;
+          for (var i = 0; i < PAGES.length; i++) if (pathname.indexOf(PAGES[i].prefix) === 0) page = PAGES[i];
+          var url = BASE + (page ? page.path : '/');
+          document.title = page ? page.title : defaults.title;
+          set('meta[name="description"]', 'content', page ? page.description : defaults.description);
+          set('link[rel="canonical"]', 'href', url);
+          set('meta[property="og:url"]', 'content', url);
+          set('link[rel="alternate"][hreflang="en-nz"]', 'href', url);
+          set('link[rel="alternate"][hreflang="x-default"]', 'href', url);
+        } catch (_) { /* never in the way of the app */ }
+      };
+      window.__stApplyPageMeta(location.pathname);
+    })();
+  </script>
   <!-- Perf hints -->
   <link rel="preconnect" href="https://services.swpc.noaa.gov" crossorigin>
   <link rel="dns-prefetch" href="https://static.cloudflareinsights.com">
@@ -381,6 +476,17 @@
        replaces it. -->
   <style>.st-embed #st-splash{display:none}</style>
   <div id="root"><div id="st-splash" style="position:fixed;inset:0;z-index:4999;background:#000;display:flex;flex-direction:column;align-items:center"><img src="https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/SpotTheAuroraLogo.png" alt="Spot The Aurora" width="112" height="112" fetchpriority="high" style="margin-top:25vh;width:112px;height:112px;border-radius:24px;box-shadow:0 25px 50px -12px rgba(0,0,0,.25)"><p style="margin:32px 0 0;color:#e5e5e5;font:500 18px/1.5 Inter,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;letter-spacing:.025em;text-align:center">Loading the latest space weather&hellip;</p></div></div>
+  <noscript>
+    <h1>Spot The Aurora: the aurora forecast for New Zealand</h1>
+    <p>A free live aurora australis forecast that uses your location to tell you whether the southern lights are visible to the naked eye, a phone camera or a long exposure, with alerts for substorms, solar flares, CMEs and solar wind shocks. Spot The Aurora needs JavaScript to run.</p>
+    <ul>
+      <li><a href="/spot-the-aurora-forecast">Aurora forecast for New Zealand</a></li>
+      <li><a href="/solar-dashboard">Live solar activity: flares, sunspots and coronal holes</a></li>
+      <li><a href="/cme-visualization">3D CME tracker</a></li>
+      <li><a href="/faq">Aurora FAQ</a></li>
+      <li><a href="https://about.spottheaurora.co.nz/">About Spot The Aurora</a></li>
+    </ul>
+  </noscript>
   <div id="timeline-portal"></div>
   <script type="module" src="/index.tsx"></script>
 </body>
