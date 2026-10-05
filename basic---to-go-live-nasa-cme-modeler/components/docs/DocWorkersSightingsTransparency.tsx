@@ -250,7 +250,7 @@ export const DocTransparency: React.FC = () => (
     <div className="text-center text-xs text-neutral-600 pt-4 border-t border-neutral-800 space-y-1">
       <p>Data: NOAA SWPC · NASA DONKI · GeoNet Tilde (EY2M) · OpenWeatherMap · GOES-19 SUVI · SDO/HMI (JSOC Stanford) · IMAP / DSCOVR L1</p>
       <p>Physics: Vršnak et al. 2013 Solar Phys. 285 · Vršnak &amp; Žic 2007 A&amp;A 472 · Temmer et al. 2017 ApJ 835 · Werner et al. 2019 Space Weather 17 · Cargill 2004 · Dumbović et al. 2021</p>
-      <p>Built with React 18 · Three.js r128 · Cloudflare Pages + Workers · 600+ hours of development</p>
+      <p>Built with React 18 · Three.js r128 · Cloudflare Pages + Workers · 800+ hours of development</p>
     </div>
   </Section>
 );
