@@ -1,6 +1,7 @@
 // --- START OF FILE src/components/SettingsModal.tsx ---
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { aboutLink } from '../utils/aboutSite';
 import { createPortal } from 'react-dom';
 import CloseIcon from './icons/CloseIcon';
 import FaqModal from './FaqModal';
@@ -747,7 +748,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Support the Project</h3>
             <div className="text-sm text-neutral-400 mb-4 space-y-3">
                 <p>
-                    This application is a passion project, built and maintained by one person with <strong>800+ hours</strong> of development time invested. To provide the best user experience, this app will <strong>always be ad-free</strong>.
+                    This application is a passion project, built and maintained by one person with <strong>800+ hours</strong> of development time invested. To provide the best user experience, this app will <strong>always be ad-free</strong>. <a href={aboutLink('about')} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline hover:text-sky-300">Read the story behind it</a>.
                 </p>
                 <p>
                     However, there are real costs for server hosting, domain registration, and API services. If you find this tool useful and appreciate the ad-free experience, please consider supporting its continued development and operational costs.
@@ -1238,7 +1239,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           <section>
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Help & Support</h3>
             <p className="text-sm text-neutral-400 mb-4">
-              Have feedback, a feature request, or need support? Send us an email.
+              Have feedback, a feature request, or need support? Send us an email. To find out more about what the app does and how it works, visit <a href={aboutLink()} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline hover:text-sky-300">about.spottheaurora.co.nz</a>.
             </p>
             <div className="flex flex-wrap items-center gap-4">
               <button
@@ -1254,6 +1255,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               >
                 <MailIcon className="w-5 h-5" />
                 <span>Email for Support</span>
+              </a>
+              <a
+                href={aboutLink()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`${subtleActionClass} no-underline`}
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>Learn More About the App</span>
               </a>
               <button
                 onClick={() => { if (onOpenDocumentation) { onOpenDocumentation(); } }}
@@ -1279,14 +1291,24 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         
         <div className="flex justify-between items-center p-4 border-t border-neutral-700/80 text-xs text-neutral-500">
           <span>Version: {appVersion}</span>
+          <span className="flex items-center gap-4">
+          <a
+            href={aboutLink()}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sky-400 hover:underline hover:text-sky-300 transition-colors whitespace-nowrap"
+          >
+            About the App
+          </a>
           <a 
             href="https://about.spottheaurora.co.nz/changelog" 
             target="_blank" 
             rel="noopener noreferrer"
-            className="text-sky-400 hover:underline hover:text-sky-300 transition-colors"
+            className="text-sky-400 hover:underline hover:text-sky-300 transition-colors whitespace-nowrap"
           >
             View Changelog
           </a>
+          </span>
         </div>
       </div>
     </div>

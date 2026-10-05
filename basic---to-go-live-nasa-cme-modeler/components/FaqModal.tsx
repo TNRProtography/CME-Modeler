@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import CloseIcon from './icons/CloseIcon';
+import { aboutLink } from '../utils/aboutSite';
 
 interface FaqItem {
   question: string;
@@ -143,6 +144,12 @@ const FaqModal: React.FC<FaqModalProps> = ({ isOpen, onClose }) => {
               )}
             </div>
           ))}
+          <p className="px-5 py-4 text-xs text-neutral-500 leading-relaxed">
+            More answers, including where and when to look and what camera settings to use, are in the{' '}
+            <a href={aboutLink('faq')} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline hover:text-sky-300">full FAQ</a>
+            , and the forecast is explained step by step in{' '}
+            <a href={aboutLink('how-it-works')} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline hover:text-sky-300">how it works</a>.
+          </p>
         </div>
       </div>
     </div>,

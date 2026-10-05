@@ -1,5 +1,6 @@
 // --- START OF FILE src/components/AppDocumentation.tsx ---
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { aboutLink } from '../utils/aboutSite';
 import DocExecutiveSummary from './docs/DocExecutiveSummary';
 import DocOverview from './docs/DocOverview';
 import DocDataSources from './docs/DocDataSources';
@@ -106,6 +107,17 @@ const AppDocumentation: React.FC<AppDocumentationProps> = ({ onClose }) => {
               </span>
             </div>
           </div>
+
+          <a
+            href={aboutLink('how-it-works')}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex-shrink-0 px-3 py-1.5 rounded-lg border border-sky-500/30 text-sky-300 hover:bg-sky-500/10 text-xs font-semibold transition-colors"
+            title="The plain-English guide on about.spottheaurora.co.nz"
+          >
+            <span className="hidden sm:inline">Plain-English guide</span>
+            <span className="sm:hidden">Guide</span>
+          </a>
 
           {/* Quick stats */}
           <div className="hidden md:flex items-center gap-4 text-xs text-neutral-500 flex-shrink-0">
