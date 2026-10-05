@@ -612,3 +612,15 @@ body > *:not(.sky) { position: relative; z-index: 1; }
   display: block; width: 100%; aspect-ratio: 16 / 9; background: #000;
   box-shadow: 0 16px 50px rgba(0,0,0,0.5);
 }
+
+/* The notification icons in the change log. */
+.notif-icons {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 18px 12px; margin: 14px 0 28px;
+}
+.notif-icons figure { margin: 0; text-align: center; }
+.notif-icons img {
+  display: block; width: 64px; height: 64px; margin: 0 auto 8px; border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+}
+.notif-icons figcaption { font-size: .78rem; line-height: 1.35; color: var(--gray); }
