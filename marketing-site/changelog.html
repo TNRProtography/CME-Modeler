@@ -155,14 +155,10 @@
       <li><strong>Russell-McPherron effect.</strong> A plain answer to whether the time of year and time of day are helping or working against the aurora, and which hours a stream is most likely to do something.</li>
       <li><strong>Oval forecast timeline.</strong> A slider under the sightings map that runs the auroral oval and view line forward in five minute steps, up to two hours ahead.</li>
       <li><strong>Solar wind structure.</strong> Works out what kind of solar wind we are sitting in, shock, sheath, CME or fast stream, draws it as an animated cross section, and says what that means for tonight.</li>
-      <li><strong>Sunspot magnetic history.</strong> Each region's magnetic flux and area over the last three days, hourly, from SDO/HMI. New field coming up shows in the flux hours before it shows in the spot count.</li>
-      <li><strong>Sunspot scrubber.</strong> Step the sunspot tracker back through a week, with the close up following the region you are looking at.</li>
       <li><strong>Region labels everywhere.</strong> Sunspot regions and coronal holes are labelled on every solar image, the raw SUVI frames, the difference imagery and the fullscreen views, and they sit on the spots rather than beside them.</li>
       <li><strong>Night mode.</strong> A red filter to protect your dark adaptation at the site, which can turn itself on two hours after sunset.</li>
       <li><strong>Storm Builder.</strong> Replaces Solar Surfer. You get a job, aurora of a certain quality over a certain town at a certain time, and only the Sun end to work with: aim the eruption, pick its speed and set the twist of its flux rope. Real storms like May 2024 are in there too, to watch play out.</li>
       <li><strong>New alerts.</strong> Earth directed CME launched, with a minimum speed you set yourself, and solar flare peaked, confirmed by watching the flux actually fall.</li>
-      <li><strong>Sunspot history.</strong> Every sunspot region's state is recorded each time it changes, for two weeks. Scrub the sunspot tracker back and regions appear and disappear on the frames when they actually formed and faded, as they were then.</li>
-      <li><strong>Region history charts.</strong> Each region's C, M, X and proton flare chances, sunspot area, spot count, magnetic flux, magnetised area and growth rate, as charts coloured by level from green to purple. They follow the imagery's time window, and a reading stays put under your finger.</li>
       <li><strong>CME orientation.</strong> The tilt of each CME is worked out from the coronagraph views and the region it came from, and the 3D model draws it that way.</li>
       <li><strong>Inside a high speed stream.</strong> Streams in the 3D view show their three parts, the compression at the front, the fast wind and the rarefaction behind, and the impact graph marks when each is due.</li>
       <li><strong>3D explainers.</strong> How aurora forms in the magnetotail, why the equinoxes boost the aurora, and how the solar wind is structured, as interactive 3D animations.</li>
@@ -171,7 +167,6 @@
     </ul>
     <h3>Improved</h3>
     <ul class="list">
-      <li><strong>Sunspot positions</strong> now come from HMI and update every twelve minutes, instead of a once a day bulletin carried forward.</li>
       <li><strong>The flux rope</strong> is drawn to scale with a cross section, and its core shows which way Bz is about to turn.</li>
       <li><strong>SUVI imagery</strong> is kept for a week and played back smoothly, without the 24 hour playback being cut off by the next data refresh.</li>
       <li><strong>Faster to open.</strong> The data the first page needs starts downloading with the page itself, a week of charts is kept between visits so only what is new is fetched, and the solar imagery loads quietly in the background once the app is up.</li>
@@ -188,15 +183,39 @@
       <li><strong>Solar magnetogram and intensity images</strong> refresh every 15 minutes.</li>
       <li><strong>Flare and substorm alerts</strong> come once for each level you subscribe to, then once at the peak, and substorm alerts follow the visibility levels you chose.</li>
     </ul>
+    <h3>Notifications, fixed and working</h3>
+    <p>Notifications were quietly broken in more ways than one. Some alerts could never fire, and others fired but only reached some of the people who asked for them. Every one of these is fixed, and the alert checks are now tested against replays of real storms, minute by minute, so a check that stops firing is caught before a storm is missed.</p>
+    <ul class="list">
+      <li><strong>They reach everyone.</strong> Notifications were only going to the first two thousand subscribers. They now go to every subscriber, and a large send no longer repeats to the same people or stalls part way.</li>
+      <li><strong>CME shock alerts work.</strong> The check that spots a CME hitting the L1 satellites never actually ran, and a missing temperature reading, which is common in the live feed, blocked every shock. Both are fixed, the message now quotes the speed, density and field either side of the shock, and each shock is announced once rather than twice.</li>
+      <li><strong>Nothing stops the checks.</strong> One missing setting used to stop every scheduled check, flares, CMEs, shocks and visibility, from running at all, while the worker reported a quiet Sun through a real storm.</li>
+      <li><strong>Visibility alerts at your level.</strong> If you only ticked phone camera and the aurora went straight to naked eye, you heard nothing all night. You now get the highest level you ticked that the aurora reaches. The camera level, which could never be reached, now can.</li>
+      <li><strong>Flare alerts</strong> come once for each level you subscribe to as the flare climbs, then once when it peaks.</li>
+      <li><strong>Substorm alerts</strong> have a switch for each stage, every stage gets through, and they follow the visibility levels you chose.</li>
+      <li><strong>CME alerts</strong> keep coming when NASA's DONKI service or the app's own proxy is down, and the nightly outlook is sent once a night rather than sometimes twice.</li>
+      <li><strong>Each alert has its own icon</strong> and status bar badge, and the messages are plain, with no emojis.</li>
+    </ul>
+
+    <h3>The sunspot tracker, in depth</h3>
+    <p>The sunspot tracker used to show NOAA's once a day list of regions on today's picture of the Sun. It now keeps track of every region over time, from the moment it forms to the day it turns off the edge of the Sun.</p>
+    <ul class="list">
+      <li><strong>Where each region is, every twelve minutes.</strong> Positions come from SDO's HMI instrument, which tracks each region's magnetic patch as it moves, instead of a daily bulletin carried forward. The labels sit on the spots.</li>
+      <li><strong>Two weeks of every change.</strong> Every fifteen minutes, the app's own sunspot history service records each region's state whenever anything about it changes: its magnetic class, its McIntosh class, how many spots and how much area it has, NOAA's chances of a C, M or X flare and a proton event, its magnetic flux and magnetised area from HMI, and the flares it has produced. Each change is timestamped and kept for two weeks.</li>
+      <li><strong>Scrub back through a week.</strong> Step the imagery back through up to seven days in three views: the colourised magnetogram, the black and white magnetogram and the intensitygram. Every frame shows the regions that were on the Sun at that moment, as they were then. A region appears on the frame where it first formed and is gone after it faded or turned away, with its class, spots and label colour from that time.</li>
+      <li><strong>Watch a region form.</strong> The close up follows the region you pick through the frames, held steady in the middle and fading between frames. Before the region formed, the close up stays on the patch of surface it came out of, so you can watch it emerge.</li>
+      <li><strong>History charts for each region.</strong> Tap a region for charts of its C, M, X and proton flare chances, sunspot area, number of spots, magnetic flux, magnetised area and growth rate. Each line is coloured by level, green through yellow, orange and red to purple, the same way the X-ray flux chart is. The charts cover the same stretch of time as the imagery you have chosen, and a reading stays put under your finger.</li>
+      <li><strong>Growing or shrinking.</strong> Each region's area and spot count are compared with a day earlier, so it is marked growing, shrinking, stable or mixed. New magnetic field coming up shows in the flux hours before it shows in the spot count.</li>
+      <li><strong>Is it aimed at us.</strong> Each region is placed on its trip across the disk: still too far east, in the zone where a CME from it could reach Earth, or past it. The app counts down to when it enters that zone, and adds up NOAA's flare chances over the time it stays pointed at us.</li>
+      <li><strong>Flares on the regions that made them.</strong> NASA's flare records are matched to their regions, so each region shows the flares it has produced.</li>
+      <li><strong>Coronal holes alongside.</strong> Coronal hole outlines can be shown on the same imagery, and they turn with the Sun as you scrub back through the frames.</li>
+    </ul>
     <h3>Fixed</h3>
     <ul class="list">
-      <li>Notifications were only reaching the first two thousand subscribers. They now reach everyone.</li>
       <li>An old version of the app could keep running after an update.</li>
       <li>Data on a page left open for a long time could quietly stop updating.</li>
-      <li>A CME shock arrival could send the same alert twice, about twenty minutes apart.</li>
       <li>Sightings posted close together could be lost.</li>
       <li>CMEs that NASA measured without a longitude were missing from the CME list.</li>
-      <li>Four more ways alerts could fail to arrive.</li>
+      <li>The sightings map no longer shows the "API key required" watermark across it. CARTO started requiring a key for its map tiles, and the app now has one.</li>
     </ul>
     </article>
   </div>
