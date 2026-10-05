@@ -624,3 +624,6 @@ body > *:not(.sky) { position: relative; z-index: 1; }
   box-shadow: 0 8px 24px rgba(0,0,0,0.45);
 }
 .notif-icons figcaption { font-size: .78rem; line-height: 1.35; color: var(--gray); }
+.notif-stages { grid-template-columns: repeat(4, minmax(0, 1fr)); max-width: 520px; margin: 18px 0 4px; }
+.notif-stages img { width: 88px; height: 88px; }
+@media (max-width: 420px) { .notif-stages img { width: 64px; height: 64px; border-radius: 8px; } }
