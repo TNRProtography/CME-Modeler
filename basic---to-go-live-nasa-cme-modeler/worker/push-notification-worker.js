@@ -1374,7 +1374,8 @@ async function checkEarthDirectedCMEs(env, cmeData = null, note = /** @type {(na
           ...arrivalLines,
         ].join('\n'),
         tag: 'cme-earth-directed',
-        data: { url: '/?page=modeler', category: 'cme-earth-directed' },
+        // Straight to this CME in the 3D view: the app's share link for one CME.
+        data: { url: `/cme-visualization?cme=${encodeURIComponent(c.id)}`, category: 'cme-earth-directed' },
         ts: Date.now(),
       };
       await kv(env).put('LATEST_ALERT_cme-earth-directed', JSON.stringify(payload),
@@ -3697,9 +3698,58 @@ async function jobProgress(env, id) {
  * is set too, so a future service worker can report the click directly without
  * the round trip through the URL.
  */
+// Where tapping each notification opens the app: the page, and the part of it,
+// that shows what the alert is about. A path plus a #section the app scrolls to
+// and highlights once it has loaded. Alerts used to send /?page=...&section=...,
+// which nothing in the app read, so every notification opened wherever the app
+// had last been. The CME alert carries its own address, to that one CME.
+const FORECAST_SIMPLE = '/spot-the-aurora-forecast-simple-view';
+const FORECAST_ADVANCED = '/spot-the-aurora-forecast-advanced-view';
+const TOPIC_CLICK_TARGETS = {
+  'visibility-dslr':    `${FORECAST_SIMPLE}#visibility-forecast-panel`,
+  'visibility-phone':   `${FORECAST_SIMPLE}#visibility-forecast-panel`,
+  'visibility-naked':   `${FORECAST_SIMPLE}#visibility-forecast-panel`,
+  'overnight-watch':    `${FORECAST_SIMPLE}#kp-forecast-section`,
+  'substorm-watch':     `${FORECAST_ADVANCED}#substorm-index-section`,
+  'substorm-likely':    `${FORECAST_ADVANCED}#substorm-index-section`,
+  'substorm-imminent':  `${FORECAST_ADVANCED}#substorm-index-section`,
+  'substorm-onset':     `${FORECAST_ADVANCED}#substorm-index-section`,
+  'substorm-forecast':  `${FORECAST_ADVANCED}#substorm-index-section`,
+  'flare-M1':           '/solar-dashboard#goes-xray-flux-section',
+  'flare-M5':           '/solar-dashboard#goes-xray-flux-section',
+  'flare-X1':           '/solar-dashboard#goes-xray-flux-section',
+  'flare-X5':           '/solar-dashboard#goes-xray-flux-section',
+  'flare-X10':          '/solar-dashboard#goes-xray-flux-section',
+  'flare-peak':         '/solar-dashboard#goes-xray-flux-section',
+  'flare-event':        '/solar-dashboard#goes-xray-flux-section',
+  'cme-earth-directed': '/cme-visualization',
+  'shock-ff':           `${FORECAST_ADVANCED}#solar-wind-quick-view-section`,
+  'shock-sf':           `${FORECAST_ADVANCED}#solar-wind-quick-view-section`,
+  'shock-fr':           `${FORECAST_ADVANCED}#solar-wind-quick-view-section`,
+  'shock-sr':           `${FORECAST_ADVANCED}#solar-wind-quick-view-section`,
+  'shock-imf':          `${FORECAST_ADVANCED}#solar-wind-quick-view-section`,
+};
+
+/**
+ * The address a notification opens. One the alert set for itself on a real
+ * page (the CME alert's own CME, a broadcast's chosen link) is kept; an old
+ * style '/?page=...' or a bare '/' is replaced by the topic's own target.
+ */
+function clickTargetFor(topic, url) {
+  const target = topic ? TOPIC_CLICK_TARGETS[topic] : undefined;
+  if (!target) return url ?? '/';
+  try {
+    const u = new URL(url ?? '/', 'https://app.invalid');
+    return u.pathname === '/' ? target : url;
+  } catch {
+    return target;
+  }
+}
+
 function stampSendId(payload, jobId) {
   if (!payload || !jobId) return payload;
   const data = { ...(payload.data ?? {}), sendId: jobId };
+  data.url = clickTargetFor(data.category ?? payload.tag, data.url);
   try {
     // data.url is app-relative ('/?page=forecast'), so give URL a base to
     // parse against and hand back only the path it produces.

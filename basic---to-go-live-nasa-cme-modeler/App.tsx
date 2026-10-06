@@ -119,6 +119,7 @@ const OnboardingBanner = retryLazyLoad(() => import('./components/OnboardingBann
 const WhatsNewModal = retryLazyLoad(() => import('./components/WhatsNewModal'));
 const AppDocumentation = retryLazyLoad(() => import('./components/AppDocumentation'));
 import { PageViewStats, countViews } from './utils/pageViews';
+import { initialSectionId, focusSection } from './utils/deepLink';
 import { celebrationFor, markCelebrated, type Celebration } from './utils/milestones';
 import { registerDatasetTicker } from './utils/pollingScheduler';
 import { startAppPreload } from './utils/appPreloader';
@@ -512,7 +513,8 @@ const App: React.FC = () => {
           const canonicalPath = getForecastPath(targetView, getForecastModalSlugFromSlug(pageSlug));
           const method: 'replaceState' | 'pushState' = replaceHistory ? 'replaceState' : 'pushState';
           if (url.pathname !== canonicalPath || url.search) {
-            window.history[method]({}, '', canonicalPath);
+            // Keep a #section: it is the part of the page a link was sent to.
+            window.history[method]({}, '', canonicalPath + url.hash);
           }
         } else {
           const overlaySlug = pageSlug ?? null;
@@ -1148,6 +1150,14 @@ const App: React.FC = () => {
   const impactGraphEverOpen = useOpenedOnce(isImpactGraphOpen);
   const whatsNewEverOpen = useOpenedOnce(isWhatsNewOpen);
   const appReady = useAppReady();
+  // A link to part of a page (a notification, mostly): scroll to it and mark
+  // it once the first page is up. Not on isLoading, which is the CME list.
+  const sectionFocusedRef = useRef(false);
+  useEffect(() => {
+    if (!appReady || sectionFocusedRef.current || !initialSectionId) return;
+    sectionFocusedRef.current = true;
+    focusSection(initialSectionId);
+  }, [appReady]);
 
   useEffect(() => {
     if (!currentlyModeledCMEId) return;

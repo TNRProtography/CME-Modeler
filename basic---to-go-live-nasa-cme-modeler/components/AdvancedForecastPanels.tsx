@@ -163,6 +163,7 @@ export const SubstormIndexPanel: React.FC<PanelProps> = ({ fc, openModal }) => {
     const { substormRiskData } = fc;
     return (
         <ForecastChartPanel
+            id="substorm-index-section"
             title="Substorm Index"
             currentValue={substormRiskData ? `${substormRiskData.current.score} <span class='text-base'>${substormRiskData.current.level}</span><span class='text-xs block text-neutral-400'>${substormRiskData.current.risk_trend}${substormRiskData.current.confidence != null ? ` · ${substormRiskData.current.confidence}% confidence` : ''}</span>` : ' - '}
             emoji={substormRiskData?.current?.bay_onset_flag ? '⚡' : substormRiskData?.current && substormRiskData.current.score >= 50 ? '🌌' : '📊'}

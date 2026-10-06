@@ -41,6 +41,8 @@ interface ForecastChartPanelProps {
   isImap?: boolean;
   satellite?: string;
   lastDataReceived?: string;
+  /** For links to this panel. */
+  id?: string;
 }
 
 const ForecastChartPanel: React.FC<ForecastChartPanelProps> = ({
@@ -52,6 +54,7 @@ const ForecastChartPanel: React.FC<ForecastChartPanelProps> = ({
   isImap = false,
   satellite,
   lastDataReceived,
+  id,
 }) => {
   // Determine the active satellite key. Prefer the explicit prop; fall back to legacy isImap.
   const satKey = satellite && satellite !== ' - ' ? satellite : (isImap ? 'IMAP' : null);
@@ -60,6 +63,7 @@ const ForecastChartPanel: React.FC<ForecastChartPanelProps> = ({
 
   return (
     <div
+      id={id}
       className={`col-span-12 card bg-neutral-950/80 p-4 flex flex-col ${
         hasSatHighlight ? `border ${satConfig!.glowBorder} bg-gradient-to-br ${satConfig!.glowBg} via-transparent to-transparent` : ''
       }`}
