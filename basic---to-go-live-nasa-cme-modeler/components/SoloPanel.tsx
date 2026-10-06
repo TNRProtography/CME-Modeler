@@ -360,14 +360,13 @@ const HeliocentricMap: React.FC<{ data: PositionData }> = ({ data }) => {
             </g>
           )}
 
-          {/* ── L1 Fleet: ACE, DSCOVR, IMAP, SWFO-L1 ─────────────────────── */}
+          {/* ── L1 Fleet: ACE, IMAP, SWFO-L1 (DSCOVR is no longer live) ─────── */}
           {/* All orbit ~0.01 AU sunward of Earth. At default zoom they overlap  */}
           {/* L1 - when zoomed in (zoom > 3) they fan out for legibility.        */}
           {l1p && (() => {
             const fleet = [
               { key: 'ace',    label: 'ACE',    color: '#34d399', angleDeg: -30 },
-              { key: 'dscovr', label: 'DSCOVR', color: '#67e8f9', angleDeg:  0  },
-              { key: 'imap',   label: 'IMAP',   color: '#f0abfc', angleDeg:  30 },
+              { key: 'imap',   label: 'IMAP',   color: '#f0abfc', angleDeg:  15 },
               { key: 'swfoL1', label: 'SWFO-L1',color: '#fbbf24', angleDeg:  60 },
             ];
             // Spread radius: at zoom 1 = 0, scales up so they separate when zoomed
@@ -597,15 +596,14 @@ const SoloPanel: React.FC = () => {
                 <span className="text-[10px] text-neutral-600">~{position?.positions?.l1?.r_au?.toFixed(3) ?? '0.990'} AU</span>
               </div>
               <p className="text-[11px] text-neutral-600 mb-2 leading-relaxed">
-                All four orbit ~0.01 AU sunward of Earth. Zoom in to separate them on the map.
+                All three orbit ~0.01 AU sunward of Earth. Zoom in to separate them on the map.
               </p>
               <div className="space-y-1.5">
                 {(position?.positions?.l1Fleet ?? [
                   { key:'ace',    name:'ACE',     color:'#34d399', desc:'Advanced Composition Explorer (1997, NASA)',                positionSource:' - ' },
-                  { key:'dscovr', name:'DSCOVR',  color:'#67e8f9', desc:'Deep Space Climate Observatory (2015, NOAA/NASA)',         positionSource:' - ' },
                   { key:'imap',   name:'IMAP',    color:'#f0abfc', desc:'Interstellar Mapping & Acceleration Probe (2025, NASA)',   positionSource:' - ' },
                   { key:'swfoL1', name:'SWFO-L1', color:'#fbbf24', desc:'Space Weather Follow-On L1 (2025, NOAA)',                  positionSource:' - ' },
-                ]).map(sc => (
+                ]).filter(sc => sc.key !== 'dscovr').map(sc => (
                   <div key={sc.key} className="flex items-start gap-2">
                     <div className="w-2 h-2 rounded-full flex-shrink-0 mt-0.5" style={{ backgroundColor: sc.color }} />
                     <div className="min-w-0">
@@ -655,7 +653,6 @@ const SoloPanel: React.FC = () => {
                 { color: '#fbbf24', label: 'Sun' },
                 { color: '#3b82f6', label: 'Earth' },
                 { color: '#34d399', label: 'L1 / ACE' },
-                { color: '#67e8f9', label: 'DSCOVR' },
                 { color: '#f0abfc', label: 'IMAP' },
                 { color: '#fbbf24', label: 'SWFO-L1' },
                 { color: '#fde047', label: 'GOES (GEO*)' },

@@ -121,7 +121,6 @@ const MilestoneCelebration = retryLazyLoad(() => import('./components/MilestoneC
 // Not needed for the first screen, so not in the code every visit downloads first.
 const OnboardingBanner = retryLazyLoad(() => import('./components/OnboardingBanner'));
 const WhatsNewModal = retryLazyLoad(() => import('./components/WhatsNewModal'));
-const AppDocumentation = retryLazyLoad(() => import('./components/AppDocumentation'));
 import { PageViewStats, countViews } from './utils/pageViews';
 import { initialSectionId, focusSection } from './utils/deepLink';
 import { celebrationFor, markCelebrated, type Celebration } from './utils/milestones';
@@ -406,7 +405,6 @@ const App: React.FC = () => {
   const [isIOSIab, setIsIOSIab] = useState(false);
   const [isAndroidIab, setIsAndroidIab] = useState(false);
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<Event | null>(null);
-  const [showDocumentation, setShowDocumentation] = useState(false);
   const CANONICAL_ORIGIN = 'https://www.spottheaurora.co.nz';
 
   const CME_TIMELINE_FUTURE_DAYS = 7;
@@ -1545,11 +1543,6 @@ const App: React.FC = () => {
               onSubstormAlertClick={handleSubstormAlertClick}
               onIpsAlertClick={handleIpsAlertClick}
           />
-          {showDocumentation && (
-            <Suspense fallback={null}>
-              <AppDocumentation onClose={() => setShowDocumentation(false)} />
-            </Suspense>
-          )}
           {whatsNewEverOpen && <Suspense fallback={null}>
             <WhatsNewModal
               isOpen={isWhatsNewOpen}
@@ -1895,7 +1888,6 @@ const App: React.FC = () => {
               onClose={handleCloseSettings}
               appVersion={APP_VERSION}
               onShowTutorial={handleShowTutorial}
-              onOpenDocumentation={() => { setShowDocumentation(true); handleCloseSettings(); }}
               defaultMainPage={defaultMainPage}
               defaultForecastView={defaultForecastView}
               onDefaultMainPageChange={handleDefaultMainPageChange}

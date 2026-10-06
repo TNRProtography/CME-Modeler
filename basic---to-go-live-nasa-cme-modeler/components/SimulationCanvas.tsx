@@ -569,7 +569,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const starsNearRef = useRef<any>(null);
   const starsFarRef  = useRef<any>(null);
 
-  // ── Spacecraft markers (SolO, STEREO-A, ACE, DSCOVR, IMAP, SWFO-L1) ──────
+  // ── Spacecraft markers (SolO, STEREO-A, ACE, IMAP, SWFO-L1) ──────
   const spacecraftGroupRef = useRef<any>(null);
   const spacecraftPositionsRef = useRef<Record<string, {x:number;y:number;z:number;name:string;color:string}>>({});
   // For each spacecraft we also store (a) its offset from Earth in the scene frame
@@ -1384,7 +1384,6 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
           { key:'stereoA', name:'STEREO-A', color:0xa78bfa, size:0.014 * SCENE_SCALE },
           // L1 cluster - spread them slightly so labels are readable.
           { key:'ace',     name:'ACE',      color:0x34d399, size:0.012 * SCENE_SCALE, isL1:true, l1Lateral: -0.018 * SCENE_SCALE, l1Vertical:  0.010 * SCENE_SCALE },
-          { key:'dscovr',  name:'DSCOVR',   color:0x67e8f9, size:0.012 * SCENE_SCALE, isL1:true, l1Lateral:  0.018 * SCENE_SCALE, l1Vertical:  0.010 * SCENE_SCALE },
           { key:'imap',    name:'IMAP',     color:0xf0abfc, size:0.012 * SCENE_SCALE, isL1:true, l1Lateral: -0.018 * SCENE_SCALE, l1Vertical: -0.010 * SCENE_SCALE },
           { key:'swfoL1',  name:'SWFO-L1',  color:0xfbbf24, size:0.012 * SCENE_SCALE, isL1:true, l1Lateral:  0.018 * SCENE_SCALE, l1Vertical: -0.010 * SCENE_SCALE },
         ];

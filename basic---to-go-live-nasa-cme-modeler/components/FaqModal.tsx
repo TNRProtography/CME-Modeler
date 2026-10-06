@@ -17,7 +17,7 @@ const FAQ_ITEMS: FaqItem[] = [
   },
   {
     question: 'What does the Spot The Aurora score mean?',
-    answer: 'The score is based on real time solar wind data from ACE, DSCOVR and/or IMAP to work out how well the solar wind is connecting with Earth. This is compared with real time magnetometer data from Eyrewell in Canterbury to find out exactly what the aurora is doing right now. We combine this with solar wind trends to forecast what the aurora should be doing in the next 15 and 30 minutes. The 1 hour and 2 hour forecasts are based on current IMF and hemispheric power. These are less accurate and should be used as a guide, not a guarantee. The further out from now we get, the less certainty there is. This is shown by the colour of the confidence dots next to each score.',
+    answer: 'The score is based on real time solar wind data from SOLAR-1, IMAP and ACE, through NOAA\'s real-time solar wind service, to work out how well the solar wind is connecting with Earth. This is compared with real time magnetometer data from Eyrewell in Canterbury to find out exactly what the aurora is doing right now. We combine this with solar wind trends to forecast what the aurora should be doing in the next 15 and 30 minutes. The 1 hour and 2 hour forecasts are based on current IMF and hemispheric power. These are less accurate and should be used as a guide, not a guarantee. The further out from now we get, the less certainty there is. This is shown by the colour of the confidence dots next to each score.',
   },
   {
     question: 'When is the best time of year to see aurora in New Zealand?',

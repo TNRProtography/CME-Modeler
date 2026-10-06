@@ -7,5 +7,8 @@
 /fonts/*        /fonts/:splat   200
 /explainers/*   /explainers/:splat  200
 /faq            /faq.html       200
+# The in-app documentation was retired; the marketing site explains it better.
+/app-documentation       https://about.spottheaurora.co.nz/how-it-works  301
+/app-documentation.html  https://about.spottheaurora.co.nz/how-it-works  301
 /tutorial-*.png  /tutorial-:splat.png  200
 /*              /index.html     200
