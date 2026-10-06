@@ -11,6 +11,7 @@
 import type { OvernightMode } from './notifications';
 import { trackPresetSelected, type PromptLocation } from './analytics';
 import { COMING_SOON_IDS } from './notificationCategories';
+import { CME_SPEED_MIN, CME_SLOW_MAX, CME_MEDIUM_MAX } from './cmeAnalysis';
 
 export type PresetId = 'naked' | 'phone' | 'dslr' | 'everything' | 'custom';
 
@@ -25,6 +26,8 @@ export interface NotificationPreset {
   prefs: string[];
   /** Overnight-watch mode paired with this preset. */
   overnightMode: OvernightMode;
+  /** The slowest Earth-directed CME worth an alert, km/s. Unset leaves the user's own. */
+  cmeSpeedMin?: number;
 }
 
 /** Shock types that are still "coming soon" - excluded from presets and
@@ -39,9 +42,10 @@ export const NOTIFICATION_PRESETS: NotificationPreset[] = [
     title: 'Naked-eye only',
     tagline: 'The big ones',
     description:
-      'Minimal alerts - only when aurora should be visible to the naked eye from your location, plus very strong flares and announcements.',
-    prefs: ['visibility-naked', 'overnight-watch', 'flare-X1', 'flare-X5', 'flare-X10', 'flare-peak', 'cme-earth-directed', 'substorm-imminent', 'substorm-onset', 'admin-broadcast'],
+      'The fewest alerts: when aurora should be visible to the naked eye from where you are, substorms from the point an eruption is likely, CME arrivals, fast Earth-directed CMEs (800 km/s and up), X-class flares and announcements.',
+    prefs: ['visibility-naked', 'overnight-watch', 'flare-X1', 'flare-X5', 'flare-X10', 'flare-peak', 'cme-earth-directed', 'shock-ff', 'substorm-likely', 'substorm-imminent', 'substorm-onset', 'admin-broadcast'],
     overnightMode: 'eye',
+    cmeSpeedMin: CME_MEDIUM_MAX,
   },
   {
     id: 'phone',
@@ -49,9 +53,10 @@ export const NOTIFICATION_PRESETS: NotificationPreset[] = [
     title: 'Phone camera',
     tagline: 'A practical middle ground',
     description:
-      'Alerts when aurora is bright enough for a phone camera or better, plus meaningful flare activity (M5+) and nightly watch.',
-    prefs: ['visibility-phone', 'visibility-naked', 'overnight-watch', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'flare-peak', 'cme-earth-directed', 'substorm-likely', 'substorm-imminent', 'substorm-onset', 'admin-broadcast'],
+      'When aurora is bright enough for a phone camera or better, substorms from the point an eruption is likely, CME arrivals, Earth-directed CMEs from 500 km/s, M5+ flares and the nightly outlook.',
+    prefs: ['visibility-phone', 'visibility-naked', 'overnight-watch', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'flare-peak', 'cme-earth-directed', 'shock-ff', 'substorm-likely', 'substorm-imminent', 'substorm-onset', 'admin-broadcast'],
     overnightMode: 'phone',
+    cmeSpeedMin: CME_SLOW_MAX,
   },
   {
     id: 'dslr',
@@ -59,9 +64,10 @@ export const NOTIFICATION_PRESETS: NotificationPreset[] = [
     title: 'DSLR / early warning',
     tagline: 'Maximum lead time',
     description:
-      'Catch aurora as soon as it becomes camera-detectable, with broader flare coverage (M1+). Best if you want time to drive somewhere dark.',
-    prefs: ['visibility-dslr', 'visibility-phone', 'visibility-naked', 'overnight-watch', 'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'shock-ff', 'flare-peak', 'cme-earth-directed', 'substorm-watch', 'substorm-likely', 'substorm-imminent', 'substorm-onset', 'admin-broadcast'],
+      'Lots of notifications, and the best early warning: aurora from the moment a camera can catch it, every substorm stage from energy building, CME arrivals, every Earth-directed CME, and M5+ flares. Best if you want time to drive somewhere dark.',
+    prefs: ['visibility-dslr', 'visibility-phone', 'visibility-naked', 'overnight-watch', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'shock-ff', 'flare-peak', 'cme-earth-directed', 'substorm-watch', 'substorm-likely', 'substorm-imminent', 'substorm-onset', 'admin-broadcast'],
     overnightMode: 'camera',
+    cmeSpeedMin: CME_SPEED_MIN,
   },
   {
     id: 'everything',
@@ -69,9 +75,10 @@ export const NOTIFICATION_PRESETS: NotificationPreset[] = [
     title: 'Everything',
     tagline: 'Full firehose',
     description:
-      'Every alert we currently send - all visibility thresholds, all flare classes, CME arrival alerts, and announcements. Best for enthusiasts who want nothing missed.',
+      'The most notifications of all: every alert the app sends, every visibility level, every substorm stage, every flare from M1, every CME. For enthusiasts who want nothing missed.',
     prefs: ['visibility-dslr', 'visibility-phone', 'visibility-naked', 'overnight-watch', 'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'shock-ff', 'flare-peak', 'cme-earth-directed', 'substorm-watch', 'substorm-likely', 'substorm-imminent', 'substorm-onset', 'admin-broadcast'],
     overnightMode: 'camera',
+    cmeSpeedMin: CME_SPEED_MIN,
   },
   {
     id: 'custom',

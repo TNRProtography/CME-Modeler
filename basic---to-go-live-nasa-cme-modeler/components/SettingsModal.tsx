@@ -692,9 +692,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     Object.entries(nextPrefs).forEach(([notifId, enabled]) => setNotificationPreference(notifId, enabled));
     setNotificationSettings(nextPrefs);
 
-    // Apply the preset's overnight mode
+    // Apply the preset's overnight mode, and its CME speed floor
     setOvernightModeState(preset.overnightMode);
     setOvernightMode(preset.overnightMode);
+    if (preset.cmeSpeedMin != null) {
+      setCmeSpeedState(preset.cmeSpeedMin);
+      setCmeSpeedMin(preset.cmeSpeedMin);
+    }
 
     // Push the full set of changes to the server in a single sync. Not strictly
     // required but avoids N tiny requests when a preset touches many toggles.

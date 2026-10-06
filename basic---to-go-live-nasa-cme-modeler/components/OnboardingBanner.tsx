@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { subscribeUserToPush, getNotificationPreference, setNotificationPreference, updatePushSubscriptionPreferences, getOvernightMode, setOvernightMode } from '../utils/notifications';
+import { subscribeUserToPush, getNotificationPreference, setNotificationPreference, updatePushSubscriptionPreferences, getOvernightMode, setOvernightMode, setCmeSpeedMin } from '../utils/notifications';
+import { NOTIFICATION_CATEGORIES, CATEGORY_GROUPS, type CategoryGroup } from '../utils/notificationCategories';
 import type { OvernightMode } from '../utils/notifications';
 import {
   NOTIFICATION_PRESETS as PRESETS,
@@ -202,11 +203,39 @@ const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }
   );
 };
 
+// Every alert a person can switch, grouped and ordered as in Settings, from the
+// category manifest, so a template picked here sets every alert, not only the
+// ones this file happened to list. The plain-English wording above is used
+// where there is some; anything newer takes the manifest's.
+const EXTRA_EMOJI: Record<string, string> = {
+  'substorm-watch': '⚡', 'substorm-likely': '⚡', 'substorm-imminent': '⚡', 'substorm-onset': '⚡',
+  'cme-earth-directed': '🌞', 'flare-peak': '📈',
+};
+const BANNER_GROUPS = (() => {
+  const handWritten = new Map(NOTIFICATION_GROUPS.flatMap((g) => g.items).map((i) => [i.id, i]));
+  return (Object.keys(CATEGORY_GROUPS) as CategoryGroup[])
+    .map((g) => ({
+      group: CATEGORY_GROUPS[g].title,
+      description: CATEGORY_GROUPS[g].description,
+      items: NOTIFICATION_CATEGORIES
+        .filter((c) => c.group === g && (c.ui === 'toggle' || c.ui === 'coming-soon'))
+        .map((c) => handWritten.get(c.id) ?? {
+          id: c.id,
+          emoji: EXTRA_EMOJI[c.id] ?? '🔔',
+          label: c.label ?? c.id,
+          plain: c.description ?? '',
+          auroraEffect: c.tooltip ?? c.description ?? '',
+          advanced: '',
+        }),
+    }))
+    .filter((g) => g.items.length > 0);
+})();
+
 // --- Notifications Modal ---
 const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> = ({ onClose, onDone }) => {
   const [prefs, setPrefs] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
-    NOTIFICATION_GROUPS.forEach(g => g.items.forEach(item => {
+    BANNER_GROUPS.forEach(g => g.items.forEach(item => {
       // Shocks are "coming soon" - always initialized off, ignoring any
       // legacy stored value so the user never sees them pre-enabled.
       initial[item.id] = SHOCK_IDS.has(item.id) ? false : getNotificationPreference(item.id);
@@ -263,9 +292,10 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
       });
       return next;
     });
-    // Also update overnight-watch mode to match the preset.
+    // Also update overnight-watch mode and the CME speed floor to match the preset.
     setOvernightModeState(preset.overnightMode);
     setOvernightMode(preset.overnightMode);
+    if (preset.cmeSpeedMin != null) setCmeSpeedMin(preset.cmeSpeedMin);
   }, []);
 
   const handleEnable = useCallback(async () => {
@@ -409,7 +439,7 @@ const NotificationsModal: React.FC<{ onClose: () => void; onDone: () => void }> 
                 </p>
               </div>
 
-              {NOTIFICATION_GROUPS.map(group => (
+              {BANNER_GROUPS.map(group => (
                 <div key={group.group}>
                   <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mb-1">{group.group}</p>
                   <p className="text-xs text-neutral-500 mb-2">{group.description}</p>
