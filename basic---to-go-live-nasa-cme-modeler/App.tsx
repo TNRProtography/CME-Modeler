@@ -1560,7 +1560,7 @@ const App: React.FC = () => {
           {!IS_EMBED && appReady && <Suspense fallback={null}><OnboardingBanner
               deferredInstallPrompt={deferredInstallPrompt}
               onInstallClick={handleInstallClick}
-              hideForTutorial={isAppTutorialOpen || (!showBannerAfterTutorial && !localStorage.getItem(NAVIGATION_TUTORIAL_KEY))}
+              hideForTutorial={isAppTutorialOpen || isReleaseNotesOpen || !!releaseTourSteps || (!showBannerAfterTutorial && !localStorage.getItem(NAVIGATION_TUTORIAL_KEY))}
           /></Suspense>}
 
           <header className="flex-shrink-0 p-1.5 md:p-3 bg-gradient-to-r from-black/80 via-neutral-900/80 to-black/70 backdrop-blur-xl border-b border-white/10 flex items-center gap-2 sm:gap-3 relative z-[2001] shadow-2xl soft-appear">

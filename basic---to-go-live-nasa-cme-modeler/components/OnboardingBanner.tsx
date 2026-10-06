@@ -18,7 +18,52 @@ import type {
 import CloseIcon from './icons/CloseIcon';
 
 // --- Storage keys ---
+// v1 was a single "dismissed forever" flag. Now a dismissal snoozes the banner
+// for a while, longer each time, and it comes back for as long as something is
+// still missing.
 const BANNER_DISMISSED_KEY = 'onboarding_banner_dismissed_v1';
+const BANNER_SNOOZE_KEY = 'onboarding_banner_snooze_v2';
+const SNOOZE_DAYS = [3, 7, 14, 30];
+
+interface Snooze { until: number; count: number }
+
+function readSnooze(): Snooze {
+  try {
+    const raw = localStorage.getItem(BANNER_SNOOZE_KEY);
+    if (raw) {
+      const s = JSON.parse(raw);
+      if (Number.isFinite(s?.until) && Number.isFinite(s?.count)) return s;
+    }
+    // Dismissed under v1: counts as one dismissal, long enough ago to show again.
+    if (localStorage.getItem(BANNER_DISMISSED_KEY) === 'true') return { until: 0, count: 1 };
+  } catch { /* storage blocked */ }
+  return { until: 0, count: 0 };
+}
+
+function snoozeAgain(prev: Snooze): Snooze {
+  const days = SNOOZE_DAYS[Math.min(prev.count, SNOOZE_DAYS.length - 1)];
+  const next = { until: Date.now() + days * 86400000, count: prev.count + 1 };
+  try { localStorage.setItem(BANNER_SNOOZE_KEY, JSON.stringify(next)); } catch { /* blocked */ }
+  return next;
+}
+
+const UA = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+const IS_IOS = /iPad|iPhone|iPod/i.test(UA) || (/Macintosh/i.test(UA) && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1);
+// Facebook and Instagram's own browsers cannot install or subscribe; the app
+// shows its own banner there about opening in a real browser.
+const IN_APP_BROWSER = /(FBAN|FBAV|FB_IAB|FBIOS|Instagram)/i.test(UA);
+const PUSH_SUPPORTED = typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+
+/** Notifications set up: permission given AND a live push subscription. */
+async function hasPushSubscription(): Promise<boolean> {
+  if (!PUSH_SUPPORTED || Notification.permission !== 'granted') return false;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    return !!(await reg.pushManager.getSubscription());
+  } catch {
+    return false;
+  }
+}
 
 // --- Notification groups (mirrors SettingsModal, but with plain-English tooltips for newcomers) ---
 const NOTIFICATION_GROUPS = [
@@ -495,9 +540,10 @@ interface OnboardingBannerProps {
 }
 
 const OnboardingBanner: React.FC<OnboardingBannerProps> = ({ deferredInstallPrompt, onInstallClick, hideForTutorial }) => {
-  const [dismissed, setDismissed] = useState(() =>
-    localStorage.getItem(BANNER_DISMISSED_KEY) === 'true'
-  );
+  const [snooze, setSnooze] = useState<Snooze>(() => readSnooze());
+  const dismissed = Date.now() < snooze.until;
+  const [subscribed, setSubscribed] = useState<boolean | null>(null);
+  const [showIosHelp, setShowIosHelp] = useState(false);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>(() =>
     'Notification' in window ? Notification.permission : 'unsupported'
   );
@@ -516,34 +562,46 @@ const OnboardingBanner: React.FC<OnboardingBannerProps> = ({ deferredInstallProm
   }, []);
 
   useEffect(() => {
-    // Poll permission in case user grants it in browser settings
-    const interval = setInterval(() => {
+    // Poll permission and the subscription, in case either changes in the
+    // browser's settings or in the app's own Settings.
+    let alive = true;
+    const check = () => {
       if ('Notification' in window) setNotifPermission(Notification.permission);
-    }, 2000);
-    return () => clearInterval(interval);
+      void hasPushSubscription().then((s) => { if (alive) setSubscribed(s); });
+    };
+    check();
+    const interval = setInterval(check, 5000);
+    return () => { alive = false; clearInterval(interval); };
   }, []);
 
   const handleDismiss = useCallback(() => {
-    localStorage.setItem(BANNER_DISMISSED_KEY, 'true');
-    setDismissed(true);
+    setSnooze((prev) => snoozeAgain(prev));
     trackOnboardingBannerDismissed();
   }, []);
 
   const handleNotifDone = useCallback(() => {
     setShowNotifModal(false);
     setNotifPermission('Notification' in window ? Notification.permission : 'unsupported');
+    void hasPushSubscription().then(setSubscribed);
   }, []);
 
-  const notifGranted = notifPermission === 'granted';
-  const canInstall = !!deferredInstallPrompt && !isInstalled;
-
-  // Determine what to show.
-  // Notifications button is only shown once the app is installed - no point
-  // prompting for push notifications in a browser tab where they won't persist.
+  // Only what this person does not have yet.
+  //  Install: not installed, and this browser can install - by its own prompt,
+  //  or on iPhone and iPad through Share, Add to Home Screen.
+  //  Notifications: no live subscription, and this browser can have one. On
+  //  iPhone and iPad that means installed first: Safari only allows push for
+  //  an app on the home screen, so there it is offered after the install.
+  const canInstall = !isInstalled && !IN_APP_BROWSER && (!!deferredInstallPrompt || IS_IOS);
+  const canNotify = PUSH_SUPPORTED && !IN_APP_BROWSER && notifPermission !== 'denied' && (!IS_IOS || isInstalled);
   const showInstall = canInstall;
-  const showNotif = isInstalled && !notifGranted;
+  const showNotif = canNotify && subscribed === false;
 
-  // Hide entirely if: dismissed, nothing to show, or tutorial is active
+  const handleInstall = useCallback(() => {
+    if (deferredInstallPrompt) onInstallClick();
+    else setShowIosHelp((v) => !v);
+  }, [deferredInstallPrompt, onInstallClick]);
+
+  // Hide entirely if: snoozed, nothing to show, or a tutorial is up
   const isVisible = !dismissed && !hideForTutorial && (showInstall || showNotif);
 
   // Fire analytics exactly once per mount when the banner becomes visible.
@@ -569,7 +627,7 @@ const OnboardingBanner: React.FC<OnboardingBannerProps> = ({ deferredInstallProm
       )}
 
       <div className="fixed bottom-0 left-0 right-0 z-[2000] p-3 sm:p-4">
-        <div className="max-w-2xl mx-auto bg-neutral-900/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl px-4 py-3 flex items-center gap-3">
+        <div className="relative max-w-2xl mx-auto bg-neutral-900/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl px-4 py-3 flex items-center gap-3">
 
           {/* Icon */}
           <div className="flex-shrink-0 w-8 h-8 rounded-full bg-sky-500/20 border border-sky-400/30 flex items-center justify-center text-base">
@@ -598,7 +656,7 @@ const OnboardingBanner: React.FC<OnboardingBannerProps> = ({ deferredInstallProm
           <div className="flex items-center gap-2 flex-shrink-0">
             {showInstall && (
               <button
-                onClick={onInstallClick}
+                onClick={handleInstall}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 text-white text-xs font-semibold transition-colors"
               >
                 <span>📲</span>
@@ -624,6 +682,13 @@ const OnboardingBanner: React.FC<OnboardingBannerProps> = ({ deferredInstallProm
               <span className="hidden sm:inline">Like us</span>
             </a>
           </div>
+
+          {showIosHelp && (
+            <div className="absolute bottom-full left-3 right-3 sm:left-auto sm:right-4 sm:w-80 mb-2 rounded-xl border border-white/10 bg-neutral-900/95 p-3 text-xs text-neutral-300 shadow-2xl">
+              <p className="font-semibold text-white mb-1">Add to your Home Screen</p>
+              <p>In Safari, tap the <strong>Share</strong> button, then <strong>Add to Home Screen</strong>. Open the app from there and you can turn on aurora alerts.</p>
+            </div>
+          )}
 
           {/* Dismiss */}
           <button
