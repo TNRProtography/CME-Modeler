@@ -75,9 +75,11 @@ export const NOTIFICATION_PRESETS: NotificationPreset[] = [
     title: 'Everything',
     tagline: 'Full firehose',
     description:
-      'The most notifications of all: every alert the app sends, every visibility level, every substorm stage, every flare from M1, every CME. For enthusiasts who want nothing missed.',
+      'The most notifications of all: every alert the app sends at its lowest threshold, every visibility level, every substorm stage, every flare from M1, every CME, and the outlook every night. For enthusiasts who want nothing missed.',
     prefs: ['visibility-dslr', 'visibility-phone', 'visibility-naked', 'overnight-watch', 'flare-M1', 'flare-M5', 'flare-X1', 'flare-X5', 'flare-X10', 'shock-ff', 'flare-peak', 'cme-earth-directed', 'substorm-watch', 'substorm-likely', 'substorm-imminent', 'substorm-onset', 'admin-broadcast'],
-    overnightMode: 'camera',
+    // The lowest setting of everything, the nightly outlook included: every
+    // night, quiet or not.
+    overnightMode: 'every-night',
     cmeSpeedMin: CME_SPEED_MIN,
   },
   {
