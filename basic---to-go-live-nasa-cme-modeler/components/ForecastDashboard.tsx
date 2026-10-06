@@ -59,9 +59,6 @@ const CAMERAS: Camera[] = [
   { name: 'Akaroa Heads SE', url: 'https://webcam.ecan.govt.nz/public/camera/lucas_peak/image', type: 'image', sourceUrl: 'ecan.govt.nz/webcams' },
   { name: 'Akaroa Heads SW', url: 'https://webcam.ecan.govt.nz/public/camera/akaroa_lighthouse/image', type: 'image', sourceUrl: 'ecan.govt.nz/webcams' },
   { name: 'Kaikōura South Bay', url: 'https://webcam.ecan.govt.nz/public/camera/kaikoura/image', type: 'image', sourceUrl: 'ecan.govt.nz/webcams' },
-  { name: 'Opiki', url: 'https://www.horizons.govt.nz/HRC/media/Data/WebCam/Opiki_latest_photo.jpg', type: 'image', sourceUrl: 'horizons.govt.nz' },
-  { name: 'Rangitikei', url: 'https://www.horizons.govt.nz/HRC/media/Data/WebCam/Rangitikeicarpark_latest_photo.jpg', type: 'image', sourceUrl: 'horizons.govt.nz' },
-  { name: 'New Plymouth', url: 'https://www.primo.nz/webcameras/snapshot_twlbuilding_sth.jpg', type: 'image', sourceUrl: 'primo.nz' },
 ];
 
 // --- TYPES ---
