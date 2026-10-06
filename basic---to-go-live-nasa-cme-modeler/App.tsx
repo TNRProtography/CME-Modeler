@@ -1703,6 +1703,7 @@ const App: React.FC = () => {
                     })()}
                     <SimulationCanvas
                         ref={canvasRef}
+                        paused={isForecastModelsModalOpen || isCmeTableOpen || isImpactGraphOpen || isSettingsOpen || isReleaseNotesOpen || isGameOpen || !!viewerMedia}
                         cmeData={cmesToRender}
                         activeView={activeView}
                         focusTarget={activeFocus}

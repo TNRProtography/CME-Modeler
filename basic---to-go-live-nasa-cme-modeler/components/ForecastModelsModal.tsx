@@ -133,7 +133,7 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
 
   return (
     <div 
-      className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[3000] flex justify-center items-center p-4"
+      className="fixed inset-0 bg-black/80 z-[3000] flex justify-center items-center p-4"
       onClick={onClose}
     >
       <div 

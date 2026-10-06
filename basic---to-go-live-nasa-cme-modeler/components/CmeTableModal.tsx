@@ -229,7 +229,7 @@ const CmeTableModal: React.FC<Props> = ({ isOpen, onClose, cmes, onViewCME }) =>
   const toggle = (id: string) => setOpen((o) => (o === id ? null : id));
 
   return createPortal(
-    <div className="fixed inset-0 z-[3000] bg-black/75 backdrop-blur-sm flex items-stretch sm:items-center justify-center sm:p-4" onClick={onClose}
+    <div className="fixed inset-0 z-[3000] bg-black/80 flex items-stretch sm:items-center justify-center sm:p-4" onClick={onClose}
          role="dialog" aria-modal="true" aria-labelledby="cme-table-title">
       <div className="w-full max-w-7xl max-h-[100dvh] sm:max-h-[92dvh] flex flex-col bg-neutral-950 border border-neutral-800 sm:rounded-xl shadow-2xl"
            onClick={(e) => e.stopPropagation()}>

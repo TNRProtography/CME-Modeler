@@ -487,7 +487,20 @@ interface SimulationCanvasProps {
   showSunspots?: boolean;
   /** Anchors for the labels of things ON the Sun, reported as they change. */
   setSurfaceLabels?: (labels: SurfaceLabelInfo[]) => void;
+  /**
+   * A window covers the scene (forecast models, the CME table, settings...).
+   * Nothing is drawn while it does: the scene behind a window was still
+   * rendered every frame, and blurred again behind it, for nobody.
+   */
+  paused?: boolean;
 }
+
+// The scene is drawn at most this often. A 120 Hz MacBook or a 144 Hz monitor
+// asks for a frame every 7-8 ms, and the scene - thousands of glowing
+// sprites at Retina density - was drawn that often, pinning the GPU and the
+// fans for motion no smoother to the eye than 60 frames a second. Just under
+// 60 Hz's 16.7 ms, so a 60 Hz screen's slightly early frames are not dropped.
+const MIN_FRAME_MS = 1000 / 60 - 2;
 
 const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, SimulationCanvasProps> = (props, ref) => {
   const {
@@ -497,7 +510,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     setRendererDomElement, onCameraReady, getClockElapsedTime, resetClock,
     onScrubberChangeByAnim, onTimelineEnd, showExtraPlanets, showMoonL1,
     showFluxRope, bzSouth = false, showHss, coronalHoles, chDetectedAtMs = null, chEvolutions = [], dataVersion, interactionMode, onSunClick,
-    sunspotRegions = [], showSunspots = false, setSurfaceLabels,
+    sunspotRegions = [], showSunspots = false, setSurfaceLabels, paused = false,
     measuredWindSpeedKms, rerunToken = 0, rerunHssInteraction = false,
     experimentalInteractions = false,
     timelineStartMs,
@@ -606,6 +619,9 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
   const mouseRef            = useRef<any>(null);
   const pointerDownTime     = useRef(0);
   const pointerDownPosition = useRef({ x: 0, y: 0 });
+
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
 
   const animPropsRef = useRef({
     onScrubberChangeByAnim, onTimelineEnd, currentlyModeledCMEId,
@@ -1499,6 +1515,14 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     let lastFrameAt = -1;
     const animate = (frameAt?: number) => {
       animationFrameId = requestAnimationFrame(animate);
+      if (pausedRef.current) {
+        // Hold the clocks still, so the scene and the timeline carry on from
+        // where they were rather than jumping by the time it was covered.
+        lastTimeRef.current = getClockElapsedTime();
+        lastFrameAt = -1;
+        return;
+      }
+      if (typeof frameAt === 'number' && lastFrameAt >= 0 && frameAt - lastFrameAt < MIN_FRAME_MS) return;
       // Sharpness follows what the device keeps up with (utils/renderQuality).
       if (typeof frameAt === 'number') {
         if (lastFrameAt >= 0 && !document.hidden) {
