@@ -4373,8 +4373,12 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                 <div className="ml-auto text-[11px] text-neutral-500">{displayedSunspotRegions.length} Earth-facing regions</div>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-grow">
-                <div className="lg:col-span-7 rounded-lg border border-neutral-800 bg-black/80 p-3 min-h-0 flex flex-col justify-center">
+              {/* With a region open, three panels: the disk (top left), the region
+                  itself - close-up, figures and outlook - down the right, and the
+                  region's history in the space under the disk, which used to sit
+                  empty beside a long column. On a phone they stack in that order. */}
+              <div className={`grid grid-cols-1 lg:grid-cols-12 gap-4 flex-grow ${selectedSunspotRegion ? 'lg:grid-rows-[auto_1fr]' : ''}`}>
+                <div className="lg:col-span-7 lg:col-start-1 lg:row-start-1 rounded-lg border border-neutral-800 bg-black/80 p-3 min-h-0 flex flex-col justify-center">
                   <div
                     ref={overviewBoxRef}
                     className="relative aspect-square w-full max-w-[700px] max-h-[70vh] md:max-h-[680px] mx-auto cursor-zoom-in"
@@ -4579,7 +4583,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                   </div>
                 </div>
 
-                <div className="lg:col-span-5 rounded-lg border border-neutral-800 bg-neutral-900/70 p-3 flex flex-col min-h-0 lg:min-h-[480px]">
+                <div className={`lg:col-span-5 lg:col-start-8 lg:row-start-1 ${selectedSunspotRegion ? 'lg:row-span-2' : ''} rounded-lg border border-neutral-800 bg-neutral-900/70 p-3 flex flex-col min-h-0 lg:min-h-[480px]`}>
                   {selectedSunspotRegion ? (
                     <>
                       <div className="flex items-start justify-between mb-3 gap-2">
@@ -4741,7 +4745,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
                       {/* ── Where it is in its trip, and what that means ── */}
                       {selectedRegionInsight && (() => {
-                        const { timing, risk, growth, cmes, cmesInZone, history } = selectedRegionInsight;
+                        const { timing, risk } = selectedRegionInsight;
                         const levelColour = {
                           none: '#9aa2b1', low: '#44dd88', moderate: '#facc15',
                           high: '#fb923c', severe: '#ef4444',
@@ -4818,118 +4822,10 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                               <p className="text-[11px] text-neutral-400 leading-relaxed">{risk.note}</p>
                             </div>
 
-                            {/* Growth, from the worker's daily snapshots. */}
-                            <div className="mt-3 pt-2.5 border-t border-neutral-800">
-                              <div className="flex justify-between items-baseline mb-1.5">
-                                <span className="text-xs text-neutral-500">Growth</span>
-                                <span className="text-xs font-semibold text-neutral-100">{growth.label}</span>
-                              </div>
-                              {history.length >= 2 ? (
-                                <>
-                                  <GrowthChart history={history} />
-                                  <div className="flex justify-between text-[10px] text-neutral-500 mt-0.5">
-                                    <span>{growth.days.toFixed(0)}d ago</span>
-                                    <span>
-                                      {growth.areaChange != null && (growth.areaChange > 0 ? '+' : '')}
-                                      {growth.areaChange ?? ' - '} MSH
-                                      {growth.spotChange != null && growth.spotChange !== 0
-                                        && `, ${growth.spotChange > 0 ? '+' : ''}${growth.spotChange} spots`}
-                                    </span>
-                                    <span>now</span>
-                                  </div>
-                                  {growth.classChanged && (
-                                    <p className="text-[10px] text-amber-300/80 mt-1">
-                                      Magnetic class has changed over this window.
-                                    </p>
-                                  )}
-                                </>
-                              ) : (
-                                <p className="text-[11px] text-neutral-500">
-                                  Day-to-day history builds up from daily snapshots. Not enough days yet for this region.
-                                </p>
-                              )}
-                            </div>
-
-                            {/* Hourly, from the same instrument as the image. */}
-                            <RegionMagneticHistory
-                              region={selectedSunspotRegion.region}
-                              record={selectedRegionInsight.record}
-                              markerMs={spotIsLive ? null : spotFrameMs}
-                              windowHours={spotWindowHours}
-                            />
-
-                            {/* What it has actually launched. */}
-                            <div className="mt-3 pt-2.5 border-t border-neutral-800">
-                              <div className="flex justify-between items-baseline">
-                                <span className="text-xs text-neutral-500">CMEs launched</span>
-                                <span className="text-xs font-semibold text-neutral-100">
-                                  {cmes.length === 0 ? 'None in 7 days' : `${cmes.length} in 7 days`}
-                                </span>
-                              </div>
-                              {cmes.length > 0 && (
-                                <p className="text-[11px] text-neutral-400 leading-relaxed mt-1">
-                                  {cmesInZone.length > 0
-                                    ? `${cmesInZone.length} of them left while the region was aimed at Earth.`
-                                    : 'None of them left while the region was aimed at Earth, so none were headed our way.'}
-                                </p>
-                              )}
-                              {timing.strikeZonePassed && (
-                                <p className="text-[11px] text-neutral-500 leading-relaxed mt-1">
-                                  It has rotated past the Earth-facing window. Anything it launches now goes wide.
-                                </p>
-                              )}
-                            </div>
                           </div>
                         );
                       })()}
 
-                      {/* ── Flares from NASA DONKI matched to this region ── */}
-                      {(() => {
-                        const regionKey = String(selectedSunspotRegion.region).slice(-4);
-                        const matched = flaresByRegion.get(regionKey) ?? [];
-                        return (
-                          <div className="mt-3">
-                            <div className="text-[11px] uppercase tracking-widest text-neutral-500 mb-1.5">
-                              Flares from this region
-                              <span className="ml-2 text-neutral-400 normal-case tracking-normal">
-                                ({matched.length} in last 7 days)
-                              </span>
-                            </div>
-                            {matched.length === 0 ? (
-                              <div className="text-xs text-neutral-600 italic">No flares recorded for AR {selectedSunspotRegion.region} in the last 7 days.</div>
-                            ) : (
-                              <div className="space-y-1 max-h-[160px] overflow-y-auto styled-scrollbar pr-1">
-                                {matched.map((flare, i) => {
-                                  const colors = getColorForFlareClass(flare.classType);
-                                  const peakDate = flare.peakTime ? new Date(flare.peakTime) : null;
-                                  const peakStr = peakDate
-                                    ? `${peakDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${peakDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })} UTC`
-                                    : ' - ';
-                                  return (
-                                    <div
-                                      key={flare.flrID ?? i}
-                                      className="flex items-center justify-between rounded px-2 py-1 bg-neutral-900/60 border border-neutral-800"
-                                    >
-                                      <div className="flex items-center gap-2">
-                                        <span
-                                          className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${colors.text}`}
-                                          style={{ backgroundColor: colors.background }}
-                                        >
-                                          {flare.classType}
-                                        </span>
-                                        {(flare as any).hasCME && (
-                                          <span className="text-[10px] text-sky-400 border border-sky-700 rounded px-1">CME</span>
-                                        )}
-                                      </div>
-                                      <span className="text-[11px] text-neutral-400">{peakStr}</span>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
                     </>
                   ) : (
                     <div className="flex-1 overflow-y-auto styled-scrollbar pr-1">
@@ -4967,6 +4863,137 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
                     </div>
                   )}
                 </div>
+
+                {/* ── The selected region's history, under the disk ── */}
+                {selectedSunspotRegion && (
+                  <div className="lg:col-span-7 lg:col-start-1 lg:row-start-2 self-start rounded-lg border border-neutral-800 bg-neutral-900/70 p-3">
+                    <div className="text-[11px] uppercase tracking-widest text-neutral-500 mb-1">
+                      AR {selectedSunspotRegion.region} over time
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5">
+                      <div>
+                        {selectedRegionInsight && (() => {
+                          const { timing, growth, cmes, cmesInZone, history } = selectedRegionInsight;
+                          return (
+                            <>
+                            {/* Growth, from the worker's daily snapshots. */}
+                            <div className="mt-3 pt-2.5 border-t border-neutral-800">
+                              <div className="flex justify-between items-baseline mb-1.5">
+                                <span className="text-xs text-neutral-500">Growth</span>
+                                <span className="text-xs font-semibold text-neutral-100">{growth.label}</span>
+                              </div>
+                              {history.length >= 2 ? (
+                                <>
+                                  <GrowthChart history={history} />
+                                  <div className="flex justify-between text-[10px] text-neutral-500 mt-0.5">
+                                    <span>{growth.days.toFixed(0)}d ago</span>
+                                    <span>
+                                      {growth.areaChange != null && (growth.areaChange > 0 ? '+' : '')}
+                                      {growth.areaChange ?? ' - '} MSH
+                                      {growth.spotChange != null && growth.spotChange !== 0
+                                        && `, ${growth.spotChange > 0 ? '+' : ''}${growth.spotChange} spots`}
+                                    </span>
+                                    <span>now</span>
+                                  </div>
+                                  {growth.classChanged && (
+                                    <p className="text-[10px] text-amber-300/80 mt-1">
+                                      Magnetic class has changed over this window.
+                                    </p>
+                                  )}
+                                </>
+                              ) : (
+                                <p className="text-[11px] text-neutral-500">
+                                  Day-to-day history builds up from daily snapshots. Not enough days yet for this region.
+                                </p>
+                              )}
+                            </div>
+
+                            {/* What it has actually launched. */}
+                            <div className="mt-3 pt-2.5 border-t border-neutral-800">
+                              <div className="flex justify-between items-baseline">
+                                <span className="text-xs text-neutral-500">CMEs launched</span>
+                                <span className="text-xs font-semibold text-neutral-100">
+                                  {cmes.length === 0 ? 'None in 7 days' : `${cmes.length} in 7 days`}
+                                </span>
+                              </div>
+                              {cmes.length > 0 && (
+                                <p className="text-[11px] text-neutral-400 leading-relaxed mt-1">
+                                  {cmesInZone.length > 0
+                                    ? `${cmesInZone.length} of them left while the region was aimed at Earth.`
+                                    : 'None of them left while the region was aimed at Earth, so none were headed our way.'}
+                                </p>
+                              )}
+                              {timing.strikeZonePassed && (
+                                <p className="text-[11px] text-neutral-500 leading-relaxed mt-1">
+                                  It has rotated past the Earth-facing window. Anything it launches now goes wide.
+                                </p>
+                              )}
+                            </div>
+                            </>
+                          );
+                        })()}
+                        {/* ── Flares from NASA DONKI matched to this region ── */}
+                        {(() => {
+                          const regionKey = String(selectedSunspotRegion.region).slice(-4);
+                          const matched = flaresByRegion.get(regionKey) ?? [];
+                          return (
+                            <div className="mt-3 pt-2.5 border-t border-neutral-800">
+                              <div className="text-[11px] uppercase tracking-widest text-neutral-500 mb-1.5">
+                                Flares from this region
+                                <span className="ml-2 text-neutral-400 normal-case tracking-normal">
+                                  ({matched.length} in last 7 days)
+                                </span>
+                              </div>
+                              {matched.length === 0 ? (
+                                <div className="text-xs text-neutral-600 italic">No flares recorded for AR {selectedSunspotRegion.region} in the last 7 days.</div>
+                              ) : (
+                                <div className="space-y-1 max-h-[160px] overflow-y-auto styled-scrollbar pr-1">
+                                  {matched.map((flare, i) => {
+                                    const colors = getColorForFlareClass(flare.classType);
+                                    const peakDate = flare.peakTime ? new Date(flare.peakTime) : null;
+                                    const peakStr = peakDate
+                                      ? `${peakDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${peakDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })} UTC`
+                                      : ' - ';
+                                    return (
+                                      <div
+                                        key={flare.flrID ?? i}
+                                        className="flex items-center justify-between rounded px-2 py-1 bg-neutral-900/60 border border-neutral-800"
+                                      >
+                                        <div className="flex items-center gap-2">
+                                          <span
+                                            className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${colors.text}`}
+                                            style={{ backgroundColor: colors.background }}
+                                          >
+                                            {flare.classType}
+                                          </span>
+                                          {(flare as any).hasCME && (
+                                            <span className="text-[10px] text-sky-400 border border-sky-700 rounded px-1">CME</span>
+                                          )}
+                                        </div>
+                                        <span className="text-[11px] text-neutral-400">{peakStr}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                      <div>
+                        {/* Hourly, from the same instrument as the image. */}
+                        {selectedRegionInsight && (
+                          <RegionMagneticHistory
+                            region={selectedSunspotRegion.region}
+                            record={selectedRegionInsight.record}
+                            markerMs={spotIsLive ? null : spotFrameMs}
+                            windowHours={spotWindowHours}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="text-right text-xs text-neutral-500 mt-2">Last updated: {lastSunspotRegionsUpdate || 'N/A'}</div>
