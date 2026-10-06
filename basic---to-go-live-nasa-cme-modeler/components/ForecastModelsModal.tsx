@@ -191,7 +191,7 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
           <ModelCard 
             title="WSA-ENLIL (NASA)" 
             source="NASA CCMC" 
-            sourceUrl="https://ccmc.gsfc.nasa.gov/tools/DONKI/"
+            sourceUrl="https://ccmc.gsfc.nasa.gov/DONKI/"
             description={<p>A list of recent, detailed simulations run by NASA, with analysis of potential Earth impacts.</p>}
           >
             <div className="bg-neutral-800/50 p-2 rounded-lg min-h-[250px] flex flex-col h-full">
