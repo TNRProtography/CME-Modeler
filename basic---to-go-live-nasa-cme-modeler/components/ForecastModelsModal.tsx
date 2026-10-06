@@ -221,7 +221,10 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
                 {nasaEnlilError && <p className="text-red-400 text-center text-sm p-4 flex-grow flex items-center justify-center">{nasaEnlilError}</p>}
                 {!isLoadingNasaEnlil && nasaEnlilSimulations.length > 0 && (
                    <div className="space-y-2 overflow-y-auto max-h-[500px] styled-scrollbar pr-2">
-                       {nasaEnlilSimulations.slice(0, 15).map(sim => (
+                       <p className="text-[11px] text-neutral-500 px-1">
+                         {nasaEnlilSimulations.length} run{nasaEnlilSimulations.length === 1 ? '' : 's'} in the last 7 days
+                       </p>
+                       {nasaEnlilSimulations.map(sim => (
                            <div
                              key={sim.simulationID}
                              className="text-left bg-neutral-900/60 p-3 rounded-md text-xs"
