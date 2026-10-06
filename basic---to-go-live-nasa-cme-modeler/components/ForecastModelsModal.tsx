@@ -18,14 +18,26 @@ interface ForecastModelsModalProps {
 }
 
 // --- CONSTANTS for the models ---
-// CCMC keeps each WSA-ENLIL run's animations on iSWA, a folder per month.
-// DONKI's data gives a run its DONKI page but not its animation's file name,
-// so the model link opens that month's folder, newest first.
-const ENLIL_ANIMATIONS_BASE = 'https://iswa.ccmc.gsfc.nasa.gov/iswa_data_tree/model/heliosphere/wsa-enlil-cone/animation-cme-density-earth';
+// CCMC keeps each WSA-ENLIL run's animation on iSWA, a folder per month,
+// named for the run's completion time and how far out it ran, e.g.
+//   .../animation-cme-velocity/2026/10/20261006_121900_2.0_anim.tim-vel.gif
+// for a run DONKI lists as completed 2026-10-06T12:19Z at 2.0 AU.
+const ENLIL_ANIMATIONS_BASE = 'https://iswa.ccmc.gsfc.nasa.gov/iswa_data_tree/model/heliosphere/wsa-enlil-cone/animation-cme-velocity';
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const enlilMonthFolder = (at: Date): string =>
+  `${ENLIL_ANIMATIONS_BASE}/${at.getUTCFullYear()}/${pad2(at.getUTCMonth() + 1)}/`;
+/** The run's own animation, or null when its time or reach is missing. */
+const enlilAnimationUrl = (modelCompletionTime: string, au: number | null | undefined): string | null => {
+  const at = new Date(modelCompletionTime);
+  if (Number.isNaN(at.getTime()) || !Number.isFinite(au)) return null;
+  const stamp = `${at.getUTCFullYear()}${pad2(at.getUTCMonth() + 1)}${pad2(at.getUTCDate())}`
+    + `_${pad2(at.getUTCHours())}${pad2(at.getUTCMinutes())}${pad2(at.getUTCSeconds())}`;
+  return `${enlilMonthFolder(at)}${stamp}_${(au as number).toFixed(1)}_anim.tim-vel.gif`;
+};
+/** The month's animations, newest first: the way in when a run's own file is not there. */
 const enlilAnimationFolder = (modelCompletionTime: string): string => {
   const d = new Date(modelCompletionTime);
-  const at = Number.isNaN(d.getTime()) ? new Date() : d;
-  return `${ENLIL_ANIMATIONS_BASE}/${at.getUTCFullYear()}/${String(at.getUTCMonth() + 1).padStart(2, '0')}/?C=M;O=D`;
+  return `${enlilMonthFolder(Number.isNaN(d.getTime()) ? new Date() : d)}?C=M;O=D`;
 };
 
 const ENLIL_BASE_URL = 'https://noaa-enlil-proxy.thenamesrock.workers.dev/';
@@ -248,14 +260,25 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
                                    DONKI entry
                                  </a>
                                )}
+                               {enlilAnimationUrl(sim.modelCompletionTime, sim.au) && (
+                                 <a
+                                   href={enlilAnimationUrl(sim.modelCompletionTime, sim.au)!}
+                                   target="_blank"
+                                   rel="noopener noreferrer"
+                                   className="px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-sky-300 border border-neutral-700 transition-colors"
+                                   title="This run's WSA-ENLIL solar wind speed animation, from NASA iSWA"
+                                 >
+                                   ENLIL model
+                                 </a>
+                               )}
                                <a
                                  href={enlilAnimationFolder(sim.modelCompletionTime)}
                                  target="_blank"
                                  rel="noopener noreferrer"
-                                 className="px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-sky-300 border border-neutral-700 transition-colors"
-                                 title="NASA's WSA-ENLIL animations for this month, newest first"
+                                 className="px-2.5 py-1 rounded text-neutral-400 hover:text-neutral-200 transition-colors"
+                                 title="All of NASA's WSA-ENLIL animations for this month, newest first"
                                >
-                                 ENLIL model animations
+                                 All this month
                                </a>
                              </div>
                            </div>
