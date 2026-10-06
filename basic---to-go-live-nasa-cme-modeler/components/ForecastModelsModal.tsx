@@ -18,6 +18,16 @@ interface ForecastModelsModalProps {
 }
 
 // --- CONSTANTS for the models ---
+// CCMC keeps each WSA-ENLIL run's animations on iSWA, a folder per month.
+// DONKI's data gives a run its DONKI page but not its animation's file name,
+// so the model link opens that month's folder, newest first.
+const ENLIL_ANIMATIONS_BASE = 'https://iswa.ccmc.gsfc.nasa.gov/iswa_data_tree/model/heliosphere/wsa-enlil-cone/animation-cme-density-earth';
+const enlilAnimationFolder = (modelCompletionTime: string): string => {
+  const d = new Date(modelCompletionTime);
+  const at = Number.isNaN(d.getTime()) ? new Date() : d;
+  return `${ENLIL_ANIMATIONS_BASE}/${at.getUTCFullYear()}/${String(at.getUTCMonth() + 1).padStart(2, '0')}/?C=M;O=D`;
+};
+
 const ENLIL_BASE_URL = 'https://noaa-enlil-proxy.thenamesrock.workers.dev/';
 const MAX_FRAMES_TO_CHECK = 400;
 const HUXT_ANIMATION_URL = 'https://swxforecastlab.s3.eu-west-2.amazonaws.com/WSA_DONKI_huxt_animation_latest.mp4';
@@ -200,12 +210,9 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
                 {!isLoadingNasaEnlil && nasaEnlilSimulations.length > 0 && (
                    <div className="space-y-2 overflow-y-auto max-h-[500px] styled-scrollbar pr-2">
                        {nasaEnlilSimulations.slice(0, 15).map(sim => (
-                           <a
+                           <div
                              key={sim.simulationID}
-                             href={sim.link}
-                             target="_blank"
-                             rel="noopener noreferrer"
-                             className="block text-left bg-neutral-900/60 p-3 rounded-md text-xs transition-colors hover:bg-neutral-700/80"
+                             className="text-left bg-neutral-900/60 p-3 rounded-md text-xs"
                            >
                              <div className="flex justify-between items-start mb-2">
                                <div>
@@ -230,7 +237,28 @@ const ForecastModelsModal: React.FC<ForecastModelsModalProps> = ({ isOpen, onClo
                                  <strong>Estimated Shock Arrival:</strong> <span className="text-amber-300 font-semibold">{formatNZTimestamp(sim.estimatedShockArrivalTime)}</span>
                                </p>
                              )}
-                           </a>
+                             <div className="flex flex-wrap gap-2 mt-2.5">
+                               {sim.link && (
+                                 <a
+                                   href={sim.link}
+                                   target="_blank"
+                                   rel="noopener noreferrer"
+                                   className="px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-sky-300 border border-neutral-700 transition-colors"
+                                 >
+                                   DONKI entry
+                                 </a>
+                               )}
+                               <a
+                                 href={enlilAnimationFolder(sim.modelCompletionTime)}
+                                 target="_blank"
+                                 rel="noopener noreferrer"
+                                 className="px-2.5 py-1 rounded bg-neutral-800 hover:bg-neutral-700 text-sky-300 border border-neutral-700 transition-colors"
+                                 title="NASA's WSA-ENLIL animations for this month, newest first"
+                               >
+                                 ENLIL model animations
+                               </a>
+                             </div>
+                           </div>
                        ))}
                    </div>
                 )}
