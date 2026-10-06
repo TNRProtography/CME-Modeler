@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Aurora Forecast Data: NASA, NOAA and GeoNet | Spot The Aurora</title>
-<meta name="description" content="Every number in the app traces to a real sensor. NASA IMAP, NOAA DSCOVR, GOES-18 and 19, GeoNet Eyrewell, NASA DONKI, SDO and more, with refresh rates and what each one is used for.">
+<meta name="description" content="Every number in the app traces to a real sensor. SOLAR-1, IMAP and ACE through NOAA real-time solar wind, GOES-18 and 19, GeoNet Eyrewell, NASA DONKI, SDO and more, with refresh rates and what each one is used for.">
 <link rel="canonical" href="https://about.spottheaurora.co.nz/data">
 <link rel="alternate" hreflang="en-nz" href="https://about.spottheaurora.co.nz/data">
 <link rel="alternate" hreflang="x-default" href="https://about.spottheaurora.co.nz/data">
@@ -16,14 +16,14 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Spot The Aurora">
 <meta property="og:title" content="Aurora Forecast Data: NASA, NOAA and GeoNet | Spot The Aurora">
-<meta property="og:description" content="Every number in the app traces to a real sensor. NASA IMAP, NOAA DSCOVR, GOES-18 and 19, GeoNet Eyrewell, NASA DONKI, SDO and more, with refresh rates and what each one is used for.">
+<meta property="og:description" content="Every number in the app traces to a real sensor. SOLAR-1, IMAP and ACE through NOAA real-time solar wind, GOES-18 and 19, GeoNet Eyrewell, NASA DONKI, SDO and more, with refresh rates and what each one is used for.">
 <meta property="og:url" content="https://about.spottheaurora.co.nz/data">
 <meta property="og:image" content="https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/Share%20Image-selection%20%282%29.png">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:alt" content="Spot The Aurora: see it coming before it hits. A CME and a high-speed stream heading for Earth in the live 3D view.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Aurora Forecast Data: NASA, NOAA and GeoNet | Spot The Aurora">
-<meta name="twitter:description" content="Every number in the app traces to a real sensor. NASA IMAP, NOAA DSCOVR, GOES-18 and 19, GeoNet Eyrewell, NASA DONKI, SDO and more, with refresh rates and what each one is used for.">
+<meta name="twitter:description" content="Every number in the app traces to a real sensor. SOLAR-1, IMAP and ACE through NOAA real-time solar wind, GOES-18 and 19, GeoNet Eyrewell, NASA DONKI, SDO and more, with refresh rates and what each one is used for.">
 <meta name="twitter:image" content="https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/Share%20Image-selection%20%282%29.png">
 <meta name="twitter:image:alt" content="Spot The Aurora: see it coming before it hits. A CME and a high-speed stream heading for Earth in the live 3D view.">
 
@@ -74,7 +74,7 @@
    "@id": "https://about.spottheaurora.co.nz/data#page",
    "url": "https://about.spottheaurora.co.nz/data",
    "name": "Aurora Forecast Data: NASA, NOAA and GeoNet | Spot The Aurora",
-   "description": "Every number in the app traces to a real sensor. NASA IMAP, NOAA DSCOVR, GOES-18 and 19, GeoNet Eyrewell, NASA DONKI, SDO and more, with refresh rates and what each one is used for.",
+   "description": "Every number in the app traces to a real sensor. SOLAR-1, IMAP and ACE through NOAA real-time solar wind, GOES-18 and 19, GeoNet Eyrewell, NASA DONKI, SDO and more, with refresh rates and what each one is used for.",
    "isPartOf": {
     "@id": "https://about.spottheaurora.co.nz/#site"
    },
@@ -140,8 +140,7 @@
       <table>
         <thead><tr><th>Source</th><th>What it provides</th><th>Refresh</th></tr></thead>
         <tbody>
-          <tr><td><strong>NASA IMAP</strong><br><span class="muted">L1, 1.5M km upsun</span></td><td>Primary real-time solar wind: speed, density, temperature, and the magnetic field components Bx, By, Bt and Bz.</td><td>60 s</td></tr>
-          <tr><td><strong>NOAA DSCOVR</strong><br><span class="muted">L1 real-time solar wind</span></td><td>Backup solar wind and magnetic field feed. Every data point in the app is labelled with which spacecraft it came from.</td><td>60 s</td></tr>
+          <tr><td><strong>NOAA Real-Time Solar Wind</strong><br><span class="muted">SOLAR-1, IMAP and ACE, at L1, 1.5M km upsun</span></td><td>The live solar wind: speed, density, temperature, and the magnetic field components Bx, By, Bt and Bz, from whichever of NOAA's three spacecraft at L1 is giving the best data. Every data point in the app is labelled with which spacecraft it came from.</td><td>60 s</td></tr>
           <tr><td><strong>NOAA GOES-18 &amp; GOES-19</strong></td><td>Hemispheric power , the auroral energy in gigawatts being deposited into the ionosphere. The two satellites are averaged.</td><td>60 s</td></tr>
           <tr><td><strong>GeoNet Tilde , Eyrewell (EY2M)</strong><br><span class="muted">Canterbury, New Zealand</span></td><td>One-minute rate of change of the horizontal magnetic field. Local NZ ground truth, and the source of magnetic bay onset detection.</td><td>60 s</td></tr>
           <tr><td><strong>NASA DONKI</strong></td><td>Interplanetary shock and geomagnetic storm events, shown in the solar wind summary.</td><td>60 s</td></tr>
@@ -183,7 +182,7 @@
         <thead><tr><th>Source</th><th>What it provides</th><th>Used for</th></tr></thead>
         <tbody>
           <tr><td><strong>NASA DONKI CME catalogue</strong></td><td>Every catalogued CME with its start time, speed, half angle and direction, using the most accurate available analysis for each event.</td><td>The 3D CME objects, the CME list, and the impact forecast</td></tr>
-          <tr><td><strong>NASA IMAP / NOAA DSCOVR</strong></td><td>The current ambient solar wind speed at L1.</td><td>Calibrating the drag model so CME deceleration matches real conditions</td></tr>
+          <tr><td><strong>NOAA Real-Time Solar Wind</strong><br><span class="muted">SOLAR-1, IMAP and ACE</span></td><td>The current ambient solar wind speed at L1.</td><td>Calibrating the drag model so CME deceleration matches real conditions</td></tr>
           <tr><td><strong>NOAA GOES-19 SUVI 195&#8491;</strong></td><td>The latest extreme-ultraviolet image of the solar disk.</td><td>Input to the in-browser coronal hole detection pipeline</td></tr>
           <tr><td><strong>Drag-based model</strong><br><span class="muted">Vr&scaron;nak et&nbsp;al. (2013)</span></td><td>The published physics for how a CME decelerates or accelerates toward the ambient wind speed as it crosses the heliosphere.</td><td>CME trajectories and arrival time estimates</td></tr>
           <tr><td><strong>AACGM-v2</strong></td><td>Altitude-adjusted corrected geomagnetic coordinates, built on IGRF, the standard model of Earth's magnetic field. The coordinates the auroral oval is measured in.</td><td>Your magnetic latitude, and drawing the auroral oval on the map</td></tr>
