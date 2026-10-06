@@ -5,22 +5,36 @@
 // would stutter. So frames are decoded ahead and the most recent few are held
 // on to, which also keeps the browser from throwing their bitmaps away.
 //
-// Only a few are held: a decoded 1024px frame is about 4 MB of memory, a
-// 2048px one 16 MB. A frame that has dropped out is still in the HTTP cache,
-// so asking for it again costs a decode, not a download.
+// Only a few are held, by the memory they take rather than by count: a
+// decoded 1024px frame is about 4 MB, a 2048px one 16 MB and a 4096px one 64
+// MB. A frame that has dropped out is still in the HTTP cache, so asking for
+// it again costs a decode, not a download.
 
-const KEEP = 16;
+const KEEP = 24;
+// About what a phone browser gives a page's images before it starts throwing
+// them away itself: 6 close-up frames at 2048px and 16 disk frames at 1024px.
+const KEEP_BYTES = 176 * 1024 * 1024;
+// The newest few always stay, however large, so the frame on screen and the
+// next one are never what gets dropped.
+const KEEP_AT_LEAST = 3;
 
 const loading = new Map<string, Promise<HTMLImageElement | null>>();
 const held = new Map<string, HTMLImageElement>();
 
+const bytesOf = (img: HTMLImageElement) => (img.naturalWidth || 0) * (img.naturalHeight || 0) * 4;
+let heldBytes = 0;
+
 function hold(url: string, img: HTMLImageElement) {
-  held.delete(url);
+  const before = held.get(url);
+  if (before) { held.delete(url); heldBytes -= bytesOf(before); }
   held.set(url, img);
-  while (held.size > KEEP) {
+  heldBytes += bytesOf(img);
+  while (held.size > KEEP_AT_LEAST && (held.size > KEEP || heldBytes > KEEP_BYTES)) {
     const oldest = held.keys().next().value as string;
+    const gone = held.get(oldest);
     held.delete(oldest);
     loading.delete(oldest);
+    if (gone) heldBytes -= bytesOf(gone);
   }
 }
 

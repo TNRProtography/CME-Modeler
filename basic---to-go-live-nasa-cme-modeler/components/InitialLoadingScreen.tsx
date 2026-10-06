@@ -44,6 +44,10 @@ const getParticleColor = (progress: number): string => {
   return hslTriple(25, 100, 55 + (1 - progress) * 50);                 // Orange/Red shock front
 };
 
+// The canvas's pixel density. Capped at 2: a phone at 3 has more than twice
+// the pixels to fill every frame, for glows and stars that look the same.
+const canvasDpr = () => Math.min(2, window.devicePixelRatio || 1);
+
 const InitialLoadingScreen: React.FC<InitialLoadingScreenProps> = ({ isFadingOut, progress, statusText, reloadNotice, reloadCountdown }) => {
   const [sloganIndex, setSloganIndex] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -109,21 +113,40 @@ const InitialLoadingScreen: React.FC<InitialLoadingScreenProps> = ({ isFadingOut
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // The stars never move, so they are drawn once, here, onto a canvas of
+    // their own, and each frame copies that in one go. Drawing each of them
+    // every frame was well over a thousand separate fills, most of the
+    // loading screen's time per frame on a phone.
+    const starLayer = document.createElement('canvas');
     const resizeCanvas = () => {
-      canvas.width = window.innerWidth * window.devicePixelRatio;
-      canvas.height = window.innerHeight * window.devicePixelRatio;
+      const dpr = canvasDpr();
+      canvas.width = window.innerWidth * dpr;
+      canvas.height = window.innerHeight * dpr;
       canvas.style.width = `${window.innerWidth}px`;
       canvas.style.height = `${window.innerHeight}px`;
       
       starsRef.current = [];
-      const starCount = Math.floor((canvas.width * canvas.height) / 2000);
+      // As many stars as at the full density, so the sky is as full.
+      const fullDpr = window.devicePixelRatio || 1;
+      const starCount = Math.floor((canvas.width * canvas.height) / 2000 * (fullDpr / dpr) ** 2);
       for (let i = 0; i < starCount; i++) {
         starsRef.current.push({
           x: Math.random() * canvas.width,
           y: Math.random() * canvas.height,
-          r: Math.random() * 1.5 * window.devicePixelRatio,
+          r: Math.random() * 1.5 * dpr,
           o: Math.random() * 0.5 + 0.5,
         });
+      }
+      starLayer.width = canvas.width;
+      starLayer.height = canvas.height;
+      const sctx = starLayer.getContext('2d');
+      if (sctx) {
+        for (const star of starsRef.current) {
+          sctx.fillStyle = `rgba(255, 255, 255, ${star.o})`;
+          sctx.beginPath();
+          sctx.arc(star.x, star.y, star.r, 0, Math.PI * 2);
+          sctx.fill();
+        }
       }
     };
 
@@ -134,16 +157,11 @@ const InitialLoadingScreen: React.FC<InitialLoadingScreenProps> = ({ isFadingOut
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
       const sunX = canvas.width / 2;
-      const sunY = canvas.height / 2 + 150 * window.devicePixelRatio;
+      const sunY = canvas.height / 2 + 150 * canvasDpr();
       const sunRadius = Math.min(canvas.width, canvas.height) * 0.08;
 
       // Draw stars
-      for (const star of starsRef.current) {
-        ctx.fillStyle = `rgba(255, 255, 255, ${star.o})`;
-        ctx.beginPath();
-        ctx.arc(star.x, star.y, star.r, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      ctx.drawImage(starLayer, 0, 0);
 
       // Draw Sun, using the same shader the CME visualisation uses, so the
       // first thing anyone sees matches the scene they are about to open.
@@ -173,7 +191,7 @@ const InitialLoadingScreen: React.FC<InitialLoadingScreenProps> = ({ isFadingOut
 
           // Same additive sprite as the CME visualisation's particles.
           drawGlow(ctx, p.color, px, py,
-                   p.size * window.devicePixelRatio * 1.6, alpha * 0.8);
+                   p.size * canvasDpr() * 1.6, alpha * 0.8);
         });
         ctx.globalAlpha = 1;
       });

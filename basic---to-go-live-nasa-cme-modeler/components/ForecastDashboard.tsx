@@ -515,8 +515,10 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
     return (
         // The panorama behind the page is a large photo, and until the loading
         // screen goes it is behind that too - so it waits, and leaves the
-        // network to the forecast.
-        <div className="w-full h-full bg-neutral-900 text-neutral-300 relative" style={{ backgroundImage: appReady ? `url('https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/Rapahoe%20Blue%20Aurora%20-%20Full%20Pano.jpg')` : undefined, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed' }}>
+        // network to the forecast. Not background-attachment: fixed: this box
+        // never scrolls (the panel inside it does), so fixed looked the same
+        // and only made Chrome repaint the page on every scroll frame.
+        <div className="w-full h-full bg-neutral-900 text-neutral-300 relative" style={{ backgroundImage: appReady ? `url('https://photos.spottheaurora.co.nz/Spot%20The%20Aurora/Rapahoe%20Blue%20Aurora%20-%20Full%20Pano.jpg')` : undefined, backgroundSize: 'cover', backgroundPosition: 'center' }}>
 
             {/* Outside NZ warning modal */}
             {isOutsideNZ && !outsideNZDismissed && (

@@ -116,9 +116,15 @@ const DriftingMoon: React.FC<Props> = ({
           75%  { transform: translate3d(80vw, 6vh, 0); }
           100% { transform: translate3d(110vw, 10vh, 0); }
         }
+        /* The glow breathes by fading a soft halo in and out. It used to
+           tween a drop-shadow filter, which repaints the moon on every
+           frame; an opacity is composited and costs nothing. */
         @keyframes moon-drift-glow {
-          0%,100% { filter: drop-shadow(0 0 10px rgba(255,240,210,0.30)); }
-          50%     { filter: drop-shadow(0 0 18px rgba(255,240,210,0.55)); }
+          0%,100% { opacity: 0.55; }
+          50%     { opacity: 1; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .moon-drift, .moon-drift-glow { animation: none !important; }
         }
       `}</style>
 
@@ -126,6 +132,7 @@ const DriftingMoon: React.FC<Props> = ({
           the viewport on a very long period so the movement is subtle. */}
       <div
         aria-hidden="true"
+        className="moon-drift"
         style={{
           position: 'fixed',
           top: 0,
@@ -141,11 +148,22 @@ const DriftingMoon: React.FC<Props> = ({
       >
         {/* Inner wrapper handles the subtle glow pulse independently. */}
         <div
+          className="moon-drift-glow"
           style={{
+            position: 'absolute',
+            inset: '-18%',
+            borderRadius: '50%',
+            background: 'radial-gradient(circle closest-side, rgba(255,240,210,0) 66%, rgba(255,240,210,0.3) 73%, rgba(255,240,210,0.08) 84%, rgba(255,240,210,0) 100%)',
+            animation: 'moon-drift-glow 8s ease-in-out infinite',
+            willChange: 'opacity',
+          }}
+        />
+        <div
+          style={{
+            position: 'relative',
             width: '100%',
             height: '100%',
-            animation: 'moon-drift-glow 8s ease-in-out infinite',
-            willChange: 'filter',
+            filter: 'drop-shadow(0 0 10px rgba(255,240,210,0.30))',
           }}
         >
           <svg

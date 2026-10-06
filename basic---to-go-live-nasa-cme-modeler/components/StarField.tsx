@@ -15,8 +15,13 @@ import React, { useMemo } from 'react';
  * Design notes:
  *  - Positions/sizes/delays are generated once from a fixed seed so
  *    they don't jump around between renders.
- *  - Pure CSS animation on `opacity` and `transform: scale()` for
- *    twinkle - all GPU, no rAF.
+ *  - The stars are split into a few groups and each GROUP twinkles,
+ *    on its own period and offset, by animating only its opacity.
+ *    Animating each star was 140 separate compositor layers, every
+ *    one of them redrawn forever; a handful of groups looks the same
+ *    from arm's length - the groups are interleaved across the sky -
+ *    and costs a handful of layers, so the page keeps its frame
+ *    budget on a phone.
  *  - `pointer-events: none` so nothing beneath is blocked.
  *  - Concentrates stars slightly toward the upper 65% of the viewport
  *    (where sky is in the pano) but keeps some further down so the
@@ -76,15 +81,28 @@ const generateStars = (): Star[] => {
   return out;
 };
 
+// How many groups twinkle independently. Each is one composited layer.
+const GROUPS = 6;
+
 const StarField: React.FC = () => {
   const stars = useMemo(generateStars, []);
+  // Dealt round-robin, so every group is spread over the whole sky and no
+  // patch of it pulses together.
+  const groups = useMemo(() => {
+    const out: Star[][] = Array.from({ length: GROUPS }, () => []);
+    stars.forEach((s, i) => out[i % GROUPS].push(s));
+    return out;
+  }, [stars]);
 
   return (
     <>
       <style>{`
         @keyframes star-twinkle {
-          0%, 100% { opacity: var(--star-op-min);  transform: scale(0.85); }
-          50%      { opacity: var(--star-op-max);  transform: scale(1.15); }
+          0%, 100% { opacity: 0.55; }
+          50%      { opacity: 1; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .star-group { animation: none !important; }
         }
       `}</style>
 
@@ -98,31 +116,36 @@ const StarField: React.FC = () => {
           overflow: 'hidden',
         }}
       >
-        {stars.map((s, i) => {
-          const opMin = Math.max(0.15, s.opacity - 0.3);
-          const opMax = Math.min(1, s.opacity + 0.15);
-          return (
-            <span
-              key={i}
-              style={{
-                position: 'absolute',
-                left: `${s.cx}%`,
-                top: `${s.cy}%`,
-                width: `${s.r * 2}px`,
-                height: `${s.r * 2}px`,
-                borderRadius: '50%',
-                background:
-                  'radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(220,235,255,0.9) 45%, rgba(180,210,255,0) 100%)',
-                boxShadow: `0 0 ${s.r * 3}px rgba(200,225,255,0.35)`,
-                animation: `star-twinkle ${s.duration}s ease-in-out ${s.delay}s infinite`,
-                // CSS vars consumed by the keyframes so each star has its own range
-                ['--star-op-min' as any]: opMin,
-                ['--star-op-max' as any]: opMax,
-                willChange: 'opacity, transform',
-              }}
-            />
-          );
-        })}
+        {groups.map((group, g) => (
+          <div
+            key={g}
+            className="star-group"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              // Periods that never line up, so the sky never pulses as one.
+              animation: `star-twinkle ${(2.7 + g * 0.83).toFixed(2)}s ease-in-out ${(-g * 0.9).toFixed(2)}s infinite`,
+            }}
+          >
+            {group.map((s, i) => (
+              <span
+                key={i}
+                style={{
+                  position: 'absolute',
+                  left: `${s.cx}%`,
+                  top: `${s.cy}%`,
+                  width: `${s.r * 2}px`,
+                  height: `${s.r * 2}px`,
+                  borderRadius: '50%',
+                  background:
+                    'radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(220,235,255,0.9) 45%, rgba(180,210,255,0) 100%)',
+                  boxShadow: `0 0 ${s.r * 3}px rgba(200,225,255,0.35)`,
+                  opacity: s.opacity,
+                }}
+              />
+            ))}
+          </div>
+        ))}
       </div>
     </>
   );

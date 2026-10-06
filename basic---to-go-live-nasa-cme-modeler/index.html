@@ -384,13 +384,14 @@
       overflow: hidden;
       isolation: isolate;
     }
+    /* A still glow. It used to drift forever under a 12px blur, which
+       re-ran the blur on every frame for every nav button; the gradient is
+       already soft, and the sheen below is the movement. */
     .modern-cta::before {
       content: "";
       position: absolute;
       inset: -40%;
-      background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.24), rgba(255,255,255,0));
-      animation: auroraFlow 14s ease-in-out infinite;
-      filter: blur(12px);
+      background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.12), rgba(255,255,255,0) 60%);
       z-index: 0;
       pointer-events: none;
     }
@@ -404,6 +405,31 @@
       pointer-events: none;
     }
     .modern-cta > * { position: relative; z-index: 1; }
+
+    /* The nav badges' movement (components/icons/NavBadgeIcons.tsx). Only
+       transform and opacity, on whole layers, so it runs on the GPU. The
+       origins are where each part sits in the 64-unit icon. */
+    .nav-badge-anim { will-change: transform, opacity; }
+    .nav-badge-glow { animation: navBadgeGlow 4s ease-in-out infinite; }
+    .nav-badge-aurora { transform-origin: 50% 75%; animation: navBadgeSway 6s ease-in-out infinite; }
+    .nav-badge-moon { transform-origin: 31.25% 37.5%; animation: navBadgeMoon 3s ease-in-out infinite; }
+    .nav-badge-star { animation: navBadgeStar 5s ease-in-out infinite; }
+    .nav-badge-sun { animation: navBadgeSun 3s ease-in-out infinite; }
+    .nav-badge-rays { animation: navBadgeRays 2.4s ease-in-out infinite; }
+    .nav-badge-flare { transform-origin: 50% 66%; animation: navBadgeFlare 4s ease-in-out infinite; }
+    .nav-badge-orbit { animation: navBadgeOrbit 9s linear infinite; }
+    .nav-badge-planet { transform-origin: 78.125% 43.75%; animation: navBadgePlanet 5s ease-in-out infinite; }
+    .nav-badge-moonlet { animation: navBadgeMoonlet 6s ease-in-out infinite; }
+    @keyframes navBadgeGlow { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.8; } }
+    @keyframes navBadgeSway { 0%, 100% { transform: none; } 50% { transform: translateY(-2%) scaleY(1.06); } }
+    @keyframes navBadgeMoon { 0%, 100% { transform: scale(0.84); } 50% { transform: scale(1.08); } }
+    @keyframes navBadgeStar { 0%, 100% { transform: none; } 50% { transform: translate(3.1%, -1.6%); } }
+    @keyframes navBadgeSun { 0%, 100% { transform: none; } 50% { transform: scale(1.06); } }
+    @keyframes navBadgeRays { 0%, 100% { opacity: 0.7; } 50% { opacity: 1; } }
+    @keyframes navBadgeFlare { 0%, 100% { transform: none; } 50% { transform: translateY(-2.5%) scaleX(1.02); } }
+    @keyframes navBadgeOrbit { to { transform: rotate(-360deg); } }
+    @keyframes navBadgePlanet { 0%, 100% { transform: scale(0.9); } 50% { transform: scale(1.2); } }
+    @keyframes navBadgeMoonlet { 0%, 100% { transform: none; } 50% { transform: translate(1.6%, -3.1%); } }
 
     .floating-panel {
       position: relative;
@@ -445,13 +471,19 @@
       transform-origin: center;
       transition: transform 160ms ease, box-shadow 160ms ease;
     }
+    /* A still glow, as it looks halfway through the drift it used to have.
+       That drift made every card on the page carry a moving layer half as
+       big again as the card, forever - a lot of GPU memory and work on a
+       phone, for a glow that peaked at a few percent opacity and moved too
+       slowly to see. */
     .card::before {
       content: "";
       position: absolute;
       inset: -45% -20%;
       background: radial-gradient(circle at 30% 50%, rgba(255,255,255,0.08), transparent 55%),
                   radial-gradient(circle at 80% 40%, rgba(56,189,248,0.12), transparent 55%);
-      animation: auroraFlow 20s ease-in-out infinite;
+      opacity: 0.25;
+      transform: translateX(5%) translateY(-4%);
       pointer-events: none;
       z-index: 0;
     }
@@ -464,7 +496,8 @@
       .modern-cta::after,
       .floating-panel,
       .aurora-banner::before,
-      .card::before { animation: none !important; }
+      .card::before,
+      .nav-badge-anim { animation: none !important; }
       .floating-panel:hover { transform: none; }
       .soft-appear { animation: none; }
       .card { transition: none; box-shadow: 0 10px 24px rgba(0,0,0,0.22); }
