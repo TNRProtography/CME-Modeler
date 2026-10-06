@@ -197,6 +197,7 @@ export const processCMEData = (data: CMEData[]): ProcessedCME[] => {
           sourceLocation: cme.sourceLocation || 'N/A',
           halfAngle: analysis.halfAngle || 30,
           longitudeMeasured: true,
+          raw: cme,
         });
       } else if (analysis && analysis.speed != null && analysis.latitude != null && analysis.longitude == null) {
         // A plane-of-sky measurement from one coronagraph: speed and
@@ -217,6 +218,7 @@ export const processCMEData = (data: CMEData[]): ProcessedCME[] => {
           sourceLocation: cme.sourceLocation || 'N/A',
           halfAngle: analysis.halfAngle || 30,
           longitudeMeasured: false,
+          raw: cme,
         });
       }
     }

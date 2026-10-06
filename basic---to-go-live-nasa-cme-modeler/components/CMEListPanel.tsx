@@ -71,9 +71,11 @@ interface CMEListPanelProps {
   isLoading: boolean;
   fetchError: string | null;
   onClose?: () => void;
+  /** Open every CME as a table (components/CmeTableModal). */
+  onOpenTable?: () => void;
 }
 
-const CMEListPanel: React.FC<CMEListPanelProps> = ({ cmes, onSelectCME, selectedCMEId, selectedCMEForInfo, isLoading, fetchError, onClose }) => {
+const CMEListPanel: React.FC<CMEListPanelProps> = ({ cmes, onSelectCME, selectedCMEId, selectedCMEForInfo, isLoading, fetchError, onClose, onOpenTable }) => {
   return (
     <div className="panel lg:bg-neutral-950/80 backdrop-blur-md lg:border lg:border-neutral-800/90 lg:rounded-lg p-4 lg:shadow-xl flex flex-col w-full h-full">
       {selectedCMEForInfo && (
@@ -123,6 +125,16 @@ const CMEListPanel: React.FC<CMEListPanelProps> = ({ cmes, onSelectCME, selected
       >
         Show All (Live Simulation)
       </button>
+      {onOpenTable && (
+        <button
+          type="button"
+          onClick={onOpenTable}
+          className="w-full mb-3 text-sm px-3 py-2 rounded-md border border-sky-700/60 bg-sky-900/30 text-sky-200 hover:bg-sky-800/40 transition-colors"
+          title="Every CME with its 21.5 Rs time, source, ENLIL arrival, flare, inputs and outputs"
+        >
+          CME table: times, sources, ENLIL and flares
+        </button>
+      )}
 
       <div className="flex-grow overflow-y-auto styled-scrollbar pr-2">
         {isLoading && !fetchError && <p className={`italic text-neutral-400`}>Loading CMEs...</p>}

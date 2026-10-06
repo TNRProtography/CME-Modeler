@@ -77,6 +77,8 @@ export interface ProcessedCME {
   instruments: string;
   sourceLocation: string;
   halfAngle: number;
+  /** DONKI's record as it came, for the CME table (components/CmeTableModal). */
+  raw?: CMEData;
   /**
    * False when NASA's analysis gave no longitude (a plane-of-sky measurement
    * from one coronagraph): `longitude` is then only where it is drawn (its

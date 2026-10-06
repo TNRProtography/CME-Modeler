@@ -1,6 +1,7 @@
 // --- START OF FILE src/components/ForecastModelsModal.tsx ---
 
 import React, { useState, useEffect, useRef } from 'react';
+import { enlilAnimationUrl, enlilAnimationFolder } from '../utils/enlilLinks';
 import CloseIcon from './icons/CloseIcon';
 import LoadingSpinner from './icons/LoadingSpinner'; 
 import { fetchWSAEnlilSimulations, WSAEnlilSimulation } from '../services/nasaService';
@@ -18,28 +19,6 @@ interface ForecastModelsModalProps {
 }
 
 // --- CONSTANTS for the models ---
-// CCMC keeps each WSA-ENLIL run's animation on iSWA, a folder per month,
-// named for the run's completion time and how far out it ran, e.g.
-//   .../animation-cme-velocity/2026/10/20261006_121900_2.0_anim.tim-vel.gif
-// for a run DONKI lists as completed 2026-10-06T12:19Z at 2.0 AU.
-const ENLIL_ANIMATIONS_BASE = 'https://iswa.ccmc.gsfc.nasa.gov/iswa_data_tree/model/heliosphere/wsa-enlil-cone/animation-cme-velocity';
-const pad2 = (n: number) => String(n).padStart(2, '0');
-const enlilMonthFolder = (at: Date): string =>
-  `${ENLIL_ANIMATIONS_BASE}/${at.getUTCFullYear()}/${pad2(at.getUTCMonth() + 1)}/`;
-/** The run's own animation, or null when its time or reach is missing. */
-const enlilAnimationUrl = (modelCompletionTime: string, au: number | null | undefined): string | null => {
-  const at = new Date(modelCompletionTime);
-  if (Number.isNaN(at.getTime()) || !Number.isFinite(au)) return null;
-  const stamp = `${at.getUTCFullYear()}${pad2(at.getUTCMonth() + 1)}${pad2(at.getUTCDate())}`
-    + `_${pad2(at.getUTCHours())}${pad2(at.getUTCMinutes())}${pad2(at.getUTCSeconds())}`;
-  return `${enlilMonthFolder(at)}${stamp}_${(au as number).toFixed(1)}_anim.tim-vel.gif`;
-};
-/** The month's animations, newest first: the way in when a run's own file is not there. */
-const enlilAnimationFolder = (modelCompletionTime: string): string => {
-  const d = new Date(modelCompletionTime);
-  return `${enlilMonthFolder(Number.isNaN(d.getTime()) ? new Date() : d)}?C=M;O=D`;
-};
-
 const ENLIL_BASE_URL = 'https://noaa-enlil-proxy.thenamesrock.workers.dev/';
 const MAX_FRAMES_TO_CHECK = 400;
 const HUXT_ANIMATION_URL = 'https://swxforecastlab.s3.eu-west-2.amazonaws.com/WSA_DONKI_huxt_animation_latest.mp4';

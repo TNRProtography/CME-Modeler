@@ -116,6 +116,7 @@ const CmeModellerTutorial = retryLazyLoad(() => import('./components/CmeModeller
 const AppTutorial = retryLazyLoad(() => import('./components/AppTutorial'));
 const ReleaseNotesModal = retryLazyLoad(() => import('./components/ReleaseNotesModal'));
 const ForecastModelsModal = retryLazyLoad(() => import('./components/ForecastModelsModal'));
+const CmeTableModal = retryLazyLoad(() => import('./components/CmeTableModal'));
 // Seen by one person in a hundred thousand: never in the code everyone downloads.
 const MilestoneCelebration = retryLazyLoad(() => import('./components/MilestoneCelebration'));
 // Not needed for the first screen, so not in the code every visit downloads first.
@@ -333,6 +334,7 @@ const App: React.FC = () => {
   const [isAppTutorialOpen, setIsAppTutorialOpen] = useState(false);
   const [showBannerAfterTutorial, setShowBannerAfterTutorial] = useState(false);
   const [isForecastModelsModalOpen, setIsForecastModelsModalOpen] = useState(false);
+  const [isCmeTableOpen, setIsCmeTableOpen] = useState(false);
   const [forecastModalSlug, setForecastModalSlug] = useState<string | null>(null);
   const [solarModalSlug, setSolarModalSlug] = useState<string | null>(null);
   const [highlightedElementId, setHighlightedElementId] = useState<string | null>(null);
@@ -1156,6 +1158,7 @@ const App: React.FC = () => {
   const cmeTutorialEverOpen = useOpenedOnce(isCmeTutorialOpen);
   const appTutorialEverOpen = useOpenedOnce(isAppTutorialOpen);
   const forecastModelsEverOpen = useOpenedOnce(isForecastModelsModalOpen);
+  const cmeTableEverOpen = useOpenedOnce(isCmeTableOpen);
   const impactGraphEverOpen = useOpenedOnce(isImpactGraphOpen);
   const whatsNewEverOpen = useOpenedOnce(isWhatsNewOpen);
   const appReady = useAppReady();
@@ -1805,7 +1808,7 @@ const App: React.FC = () => {
                 </main>
 
                 <div id="cme-list-panel-container" className={`flex-shrink-0 lg:p-5 lg:w-auto lg:max-w-md fixed top-[4.25rem] right-0 h-[calc(100vh-4.25rem)] w-4/5 max-w-[320px] z-[2005] transition-transform duration-300 ease-in-out ${isCmeListOpen ? 'translate-x-0' : 'translate-x-full'} lg:relative lg:top-auto lg:right-auto lg:h-auto lg:transform-none`}>
-                    <CMEListPanel cmes={filteredCmes} onSelectCME={handleSelectCMEForModeling} selectedCMEId={currentlyModeledCMEId} selectedCMEForInfo={selectedCMEForInfo} isLoading={isLoading} fetchError={fetchError} onClose={() => navigateToModelerOverlay(null)} />
+                    <CMEListPanel cmes={filteredCmes} onSelectCME={handleSelectCMEForModeling} selectedCMEId={currentlyModeledCMEId} selectedCMEForInfo={selectedCMEForInfo} isLoading={isLoading} fetchError={fetchError} onClose={() => navigateToModelerOverlay(null)} onOpenTable={() => setIsCmeTableOpen(true)} />
                 </div>
                   
                   {(isControlsOpen || isCmeListOpen) && (<div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[2004]" onClick={() => navigateToModelerOverlay(null)} />)}
@@ -1952,6 +1955,19 @@ const App: React.FC = () => {
                 onOpenControlsPanel={() => navigateToModelerOverlay('controls-panel')}
                 onCloseControlsPanel={() => navigateToModelerOverlay(null)}
                 onToggleHss={(show: boolean) => handleShowHssChange(show)}
+            />
+          </Suspense>}
+
+          {cmeTableEverOpen && <Suspense fallback={null}>
+            <CmeTableModal
+                isOpen={isCmeTableOpen}
+                onClose={() => setIsCmeTableOpen(false)}
+                cmes={cmeData}
+                onViewCME={(cme) => {
+                  setIsCmeTableOpen(false);
+                  navigateToModelerOverlay(null);
+                  handleSelectCMEForModeling(cme);
+                }}
             />
           </Suspense>}
 
