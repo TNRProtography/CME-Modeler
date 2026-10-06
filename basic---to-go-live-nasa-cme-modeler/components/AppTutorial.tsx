@@ -15,9 +15,11 @@ export interface TutorialAction {
   toggleHss?: boolean;
   scrollTo?: string;
   highlightId?: string;
+  /** Anything else the step needs once its page is up, e.g. selecting a CME. */
+  run?: () => void;
 }
 
-interface TutorialStep {
+export interface TutorialStep {
   id: string;
   section: string;
   title: string;
@@ -29,7 +31,7 @@ interface TutorialStep {
 
 // ── Steps ────────────────────────────────────────────────────────────────────
 
-const STEPS: TutorialStep[] = [
+const DEFAULT_STEPS: TutorialStep[] = [
   {
     id: 'welcome', section: 'Welcome', emoji: '🌌',
     title: 'Welcome to Spot The Aurora',
@@ -199,13 +201,19 @@ export interface AppTutorialProps {
   onOpenControlsPanel: () => void;
   onCloseControlsPanel: () => void;
   onToggleHss: (show: boolean) => void;
+  /** A different tour: the what's-new tour passes its own steps. */
+  steps?: TutorialStep[];
+  skipLabel?: string;
 }
 
-const SECTIONS = ['Welcome', 'Forecast: Simple View', 'Forecast: Advanced View', 'Solar Dashboard', 'CME Visualization', 'Settings', 'All Done'];
+const DEFAULT_SECTIONS = ['Welcome', 'Forecast: Simple View', 'Forecast: Advanced View', 'Solar Dashboard', 'CME Visualization', 'Settings', 'All Done'];
 
 const AppTutorial: React.FC<AppTutorialProps> = ({
   isOpen, onClose, onNavigateToPage, onForecastViewChange, onOpenSettings, onCloseSettings, onOpenControlsPanel, onCloseControlsPanel, onToggleHss,
+  steps, skipLabel = 'Skip tutorial',
 }) => {
+  const STEPS = steps ?? DEFAULT_STEPS;
+  const SECTIONS = steps ? [...new Set(steps.map((s) => s.section))] : DEFAULT_SECTIONS;
   const [stepIndex, setStepIndex] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [activeHighlightId, setActiveHighlightId] = useState<string | null>(null);
@@ -263,6 +271,7 @@ const AppTutorial: React.FC<AppTutorialProps> = ({
       if (action.toggleHss !== undefined) {
         onToggleHss(action.toggleHss);
       }
+      if (action.run) { try { action.run(); } catch { /* a step's extra is never worth stopping the tour */ } }
 
       // Scroll after everything has settled
       const scrollDelay = action.toggleHss ? 600 : 0;
@@ -285,6 +294,7 @@ const AppTutorial: React.FC<AppTutorialProps> = ({
     return () => {
       if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stepIndex, isOpen, executeAction]);
 
   // Clean up on close
@@ -295,7 +305,8 @@ const AppTutorial: React.FC<AppTutorialProps> = ({
   const handleNext = useCallback(() => {
     if (stepIndex < STEPS.length - 1) setStepIndex(p => p + 1);
     else { setActiveHighlightId(null); onClose(); }
-  }, [stepIndex, onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stepIndex, onClose, STEPS.length]);
 
   const handlePrev = useCallback(() => { setStepIndex(p => Math.max(0, p - 1)); }, []);
 
@@ -336,7 +347,7 @@ const AppTutorial: React.FC<AppTutorialProps> = ({
               <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">{step.section}</span>
             </div>
             <button onClick={handleSkip} className="text-[10px] text-neutral-600 hover:text-neutral-300 transition-colors">
-              Skip tutorial
+              {skipLabel}
             </button>
           </div>
 

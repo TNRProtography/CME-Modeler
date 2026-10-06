@@ -575,7 +575,7 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
   };
 
   return (
-    <div className="col-span-12 card bg-neutral-950/80 p-3 sm:p-4 flex flex-col overflow-hidden">
+    <div id="magnetotail-section" className="col-span-12 card bg-neutral-950/80 p-3 sm:p-4 flex flex-col overflow-hidden">
       <style>{`
         @keyframes mtHintPulse { 0%,100% { opacity: 0.4; } 50% { opacity: 0.85; } }
         .mt-hint { animation: mtHintPulse 2.5s ease-in-out infinite; }

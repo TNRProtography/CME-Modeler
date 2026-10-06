@@ -102,7 +102,10 @@ const ForecastDashboard = retryLazyLoad(() => import('./components/ForecastDashb
 const SolarActivityDashboard = retryLazyLoad(() => import('./components/SolarActivityDashboard'));
 const UnifiedDashboardMode = retryLazyLoad(() => import('./components/UnifiedDashboardMode'));
 import GlobalBanner from './components/GlobalBanner';
-import { shouldShowWhatsNew } from './utils/whatsNew';
+import { shouldShowWhatsNew, shouldShowReleaseNotes, markReleaseSeen } from './utils/whatsNew';
+import { buildReleaseTourSteps } from './utils/releaseTour';
+import { gatherReleaseTourLive } from './utils/releaseTourLive';
+import type { TutorialStep } from './components/AppTutorial';
 import InitialLoadingScreen from './components/InitialLoadingScreen';
 import NasaOfflineBadge from './components/NasaOfflineBadge';
 
@@ -111,6 +114,7 @@ const SettingsModal = retryLazyLoad(() => import('./components/SettingsModal'));
 const FirstVisitTutorial = retryLazyLoad(() => import('./components/FirstVisitTutorial'));
 const CmeModellerTutorial = retryLazyLoad(() => import('./components/CmeModellerTutorial'));
 const AppTutorial = retryLazyLoad(() => import('./components/AppTutorial'));
+const ReleaseNotesModal = retryLazyLoad(() => import('./components/ReleaseNotesModal'));
 const ForecastModelsModal = retryLazyLoad(() => import('./components/ForecastModelsModal'));
 // Seen by one person in a hundred thousand: never in the code everyone downloads.
 const MilestoneCelebration = retryLazyLoad(() => import('./components/MilestoneCelebration'));
@@ -322,6 +326,10 @@ const App: React.FC = () => {
   const [isDebugOpen, setIsDebugOpen] = useState(false);
   const [isFirstVisitTutorialOpen, setIsFirstVisitTutorialOpen] = useState(false);
   const [isWhatsNewOpen, setIsWhatsNewOpen] = useState(false);
+  // This version's release notes, and the tour they offer.
+  const [isReleaseNotesOpen, setIsReleaseNotesOpen] = useState(false);
+  const [releaseTourSteps, setReleaseTourSteps] = useState<TutorialStep[] | null>(null);
+  const releaseNotesShownRef = useRef(false);
   const [isCmeTutorialOpen, setIsCmeTutorialOpen] = useState(false);
   const [isAppTutorialOpen, setIsAppTutorialOpen] = useState(false);
   const [showBannerAfterTutorial, setShowBannerAfterTutorial] = useState(false);
@@ -739,8 +747,11 @@ const App: React.FC = () => {
   // devices that already have a push subscription.
   useEffect(() => {
     if (IS_EMBED || isLoading || isAppTutorialOpen || isFirstVisitTutorialOpen || isTutorialOpen) return;
+    // The release notes have this visit; this can wait for the next one.
+    if (releaseNotesShownRef.current) return;
     let cancelled = false;
     const t = setTimeout(() => {
+      if (releaseNotesShownRef.current) return;
       void shouldShowWhatsNew().then((show) => {
         if (show && !cancelled) setIsWhatsNewOpen(true);
       });
@@ -1150,6 +1161,36 @@ const App: React.FC = () => {
   const impactGraphEverOpen = useOpenedOnce(isImpactGraphOpen);
   const whatsNewEverOpen = useOpenedOnce(isWhatsNewOpen);
   const appReady = useAppReady();
+
+  // What's new in this version, once, for people who used the last one. After
+  // the first page is up and any tutorial has had its turn.
+  useEffect(() => {
+    if (IS_EMBED || !appReady || isAppTutorialOpen || isFirstVisitTutorialOpen || isTutorialOpen) return;
+    if (releaseNotesShownRef.current || !shouldShowReleaseNotes()) return;
+    const t = setTimeout(() => {
+      releaseNotesShownRef.current = true;
+      setIsReleaseNotesOpen(true);
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [appReady, isAppTutorialOpen, isFirstVisitTutorialOpen, isTutorialOpen]);
+
+  const closeReleaseNotes = useCallback(() => {
+    markReleaseSeen();
+    setIsReleaseNotesOpen(false);
+  }, []);
+
+  const startReleaseTour = useCallback(async () => {
+    markReleaseSeen();
+    setIsReleaseNotesOpen(false);
+    const live = await gatherReleaseTourLive(cmeData);
+    setReleaseTourSteps(buildReleaseTourSteps(live, {
+      onShowCme: (id) => {
+        const cme = cmeData.find((c) => c.id === id);
+        if (cme) handleSelectCMEForModeling(cme);
+      },
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cmeData]);
   // A link to part of a page (a notification, mostly): scroll to it and mark
   // it once the first page is up. Not on isLoading, which is the CME list.
   const sectionFocusedRef = useRef(false);
@@ -1890,6 +1931,24 @@ const App: React.FC = () => {
             />
           </Suspense>}
 
+          {isReleaseNotesOpen && <Suspense fallback={null}>
+            <ReleaseNotesModal isOpen={isReleaseNotesOpen} onTakeTour={() => { void startReleaseTour(); }} onClose={closeReleaseNotes} />
+          </Suspense>}
+          {releaseTourSteps && <Suspense fallback={null}>
+            <AppTutorial
+                isOpen={!!releaseTourSteps}
+                steps={releaseTourSteps}
+                skipLabel="End tour"
+                onClose={() => { setReleaseTourSteps(null); navigateToPage('forecast'); }}
+                onNavigateToPage={navigateToPage}
+                onForecastViewChange={handleForecastViewChange}
+                onOpenSettings={handleOpenSettings}
+                onCloseSettings={handleCloseSettings}
+                onOpenControlsPanel={() => navigateToModelerOverlay('controls-panel')}
+                onCloseControlsPanel={() => navigateToModelerOverlay(null)}
+                onToggleHss={(show: boolean) => handleShowHssChange(show)}
+            />
+          </Suspense>}
           {appTutorialEverOpen && <Suspense fallback={null}>
             <AppTutorial
                 isOpen={isAppTutorialOpen}

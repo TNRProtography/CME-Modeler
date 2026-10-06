@@ -869,7 +869,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </section>
 
-          <section>
+          <section id="settings-notifications-section">
             <h3 className="text-xl font-semibold text-neutral-300 mb-3">Push Notifications</h3>
             {notificationStatus === 'unsupported' && <p className="text-red-400 text-sm mb-4">Your browser or device does not support push notifications.</p>}
             
