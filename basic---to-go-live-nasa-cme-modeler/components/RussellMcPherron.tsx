@@ -175,11 +175,24 @@ const RussellMcPherron: React.FC<Props> = ({ magneticData, onOpenModal }) => {
 
     let raf = 0;
     const t0 = performance.now();
+    // Measured when it changes, not read every frame (that forced a layout).
+    let boxW = cv.clientWidth;
+    const ro = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(([e]) => { boxW = e.contentRect.width; if (!running) frame(performance.now()); })
+      : null;
+    ro?.observe(cv);
+    // The only movement here is the Milky Way drifting about a pixel a
+    // second, so 20 frames a second shows it exactly as smoothly as 120 did.
+    const MIN_MS = 50;
+    let drawnAt = -Infinity;
+    let running = false;
 
     const frame = (t: number) => {
-      const box = cv.getBoundingClientRect();
+      if (running) raf = requestAnimationFrame(frame);
+      if (running && t - drawnAt < MIN_MS) return;
+      drawnAt = t;
       const dpr = Math.min(2, window.devicePixelRatio || 1);
-      const px = Math.max(1, Math.round(box.width * dpr));
+      const px = Math.max(1, Math.round(boxW * dpr));
       if (cv.width !== px || cv.height !== px) { cv.width = px; cv.height = px; }
       // The canvas and the SVG share a square box, so one scale converts the
       // diagram's viewBox units into device pixels and the two stay registered.
@@ -202,11 +215,30 @@ const RussellMcPherron: React.FC<Props> = ({ magneticData, onOpenModal }) => {
       ctx.fillRect(0, 0, cv.width, cv.height);
 
       drawEarthDisc(ctx, cx * S, cy * S, EARTH_R * S, globeRef.current, 0);
-
-      if (!reduced) raf = requestAnimationFrame(frame);
     };
+
+    const start = () => {
+      if (running || reduced || document.hidden) return;
+      running = true;
+      raf = requestAnimationFrame(frame);
+    };
+    const stop = () => { running = false; cancelAnimationFrame(raf); };
+
+    // Paint once, then move only while it is on screen and the tab is in
+    // front: it sits on the forecast page, which stays mounted all session.
     frame(t0);
-    return () => { if (raf) cancelAnimationFrame(raf); };
+    const io = typeof IntersectionObserver !== 'undefined'
+      ? new IntersectionObserver((entries) => { if (entries[0]?.isIntersecting) start(); else stop(); }, { threshold: 0.05 })
+      : null;
+    if (io) io.observe(cv); else start();
+    const onVis = () => { if (document.hidden) stop(); else if (!io) start(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      stop();
+      io?.disconnect();
+      ro?.disconnect();
+      document.removeEventListener('visibilitychange', onVis);
+    };
   }, [showScience, sceneTick, cx, cy]);
 
   return (

@@ -35,11 +35,30 @@ export const DEFAULT_QUALITY: QualityOptions = {
   windowsBeforeUp: 4,
 };
 
-/** Where to start: the screen's own density, capped, and a little lower on small screens. */
-export function initialPixelRatio(devicePixelRatio: number, widthCss: number, o: QualityOptions = DEFAULT_QUALITY): number {
+/**
+ * The most pixels the scene draws per frame at the start: about a 1080p
+ * screen at 1.6x. A big Retina window at full density is far more - a 16"
+ * MacBook Pro full screen is 7.7 million, a 5K iMac 14.7 million - every one
+ * of them filled each frame for glows nobody can tell apart from slightly
+ * softer ones, and a strong GPU never runs slow enough for the adaptive step
+ * down below to notice. It just runs flat out.
+ */
+export const MAX_START_PIXELS = 5_000_000;
+
+/**
+ * Where to start: the screen's own density, capped, a little lower on small
+ * screens, and - when the height is given - lowered until the whole canvas
+ * fits within MAX_START_PIXELS.
+ */
+export function initialPixelRatio(devicePixelRatio: number, widthCss: number, o: QualityOptions = DEFAULT_QUALITY, heightCss?: number): number {
   const dpr = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
   // Phones have the densest screens and the weakest GPUs.
-  const cap = widthCss < 768 ? Math.min(o.maxRatio, 1.5) : o.maxRatio;
+  let cap = widthCss < 768 ? Math.min(o.maxRatio, 1.5) : o.maxRatio;
+  if (heightCss && heightCss > 0 && widthCss > 0) {
+    const fit = Math.sqrt(MAX_START_PIXELS / (widthCss * heightCss));
+    // To the nearest step, so it lands on the same ratios the adaptive steps use.
+    cap = Math.min(cap, Math.round(fit / o.step) * o.step);
+  }
   return Math.max(o.minRatio, Math.min(dpr, cap));
 }
 

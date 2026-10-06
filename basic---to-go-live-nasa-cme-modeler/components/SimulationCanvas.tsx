@@ -1,6 +1,8 @@
 // --- START OF FILE SimulationCanvas.tsx ---
 
 import { modelDirection, modelTilt, tiltRotationAngle } from '../utils/cmeOrientation';
+import { MIN_FRAME_MS } from '../utils/frameCap';
+import { emitSceneFrame } from '../utils/sceneFrame';
 import { cmeDistanceAU } from '../utils/cmePropagation';
 import React, { useRef, useEffect, useCallback, useImperativeHandle, useState, useMemo } from 'react';
 import {
@@ -495,12 +497,10 @@ interface SimulationCanvasProps {
   paused?: boolean;
 }
 
-// The scene is drawn at most this often. A 120 Hz MacBook or a 144 Hz monitor
-// asks for a frame every 7-8 ms, and the scene - thousands of glowing
-// sprites at Retina density - was drawn that often, pinning the GPU and the
-// fans for motion no smoother to the eye than 60 frames a second. Just under
-// 60 Hz's 16.7 ms, so a 60 Hz screen's slightly early frames are not dropped.
-const MIN_FRAME_MS = 1000 / 60 - 2;
+// The scene is drawn at most 60 times a second (utils/frameCap). A 120 Hz
+// MacBook or a 144 Hz monitor asked for a frame every 7-8 ms, and the scene -
+// thousands of glowing sprites at Retina density - was drawn that often,
+// pinning the GPU and the fans for motion no smoother to the eye.
 
 const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, SimulationCanvasProps> = (props, ref) => {
   const {
@@ -1155,7 +1155,7 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
     // copy per frame on phone GPUs, and the capture renders a fresh frame
     // right before it reads the canvas anyway.
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(initialPixelRatio(window.devicePixelRatio, mountRef.current.clientWidth));
+    renderer.setPixelRatio(initialPixelRatio(window.devicePixelRatio, mountRef.current.clientWidth, undefined, mountRef.current.clientHeight));
     renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
     const quality = new AdaptivePixelRatio(renderer.getPixelRatio());
     mountRef.current.appendChild(renderer.domElement);
@@ -1824,6 +1824,8 @@ const SimulationCanvas: React.ForwardRefRenderFunction<SimulationCanvasHandle, S
       updateImpactEffects(maxImpactSpeed, elapsedTime);
       controlsRef.current.update();
       rendererRef.current.render(sceneRef.current, cameraRef.current);
+      // The labels on the page move with this frame (utils/sceneFrame).
+      emitSceneFrame();
     };
     animate();
 

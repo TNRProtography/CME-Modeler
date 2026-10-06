@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { SCENE_SCALE } from '../constants';
+import { onSceneFrame } from '../utils/sceneFrame';
 
 interface PlanetLabelProps {
   planetMesh: any; // THREE.Object3D
@@ -19,7 +20,6 @@ const PlanetLabel: React.FC<PlanetLabelProps> = ({ planetMesh, camera, rendererD
     if (!THREE) return;
     
     const labelEl = labelRef.current;
-    let rafId = 0;
 
     // The canvas size, measured when it changes rather than read every frame:
     // reading it after the last label's write forced a layout per label per
@@ -40,10 +40,12 @@ const PlanetLabel: React.FC<PlanetLabelProps> = ({ planetMesh, camera, rendererD
     let lastOpacity = '';
     let lastFontSize = '';
 
-    // Every frame, in step with the scene, so a label does not trail its
-    // planet while the timeline plays.
+    const vecToPlanet = new THREE.Vector3();
+    const vecToSun = new THREE.Vector3();
+
+    // After each frame the scene draws, so a label does not trail its planet
+    // while the timeline plays, and rests when the scene does.
     const updatePosition = () => {
-      rafId = requestAnimationFrame(updatePosition);
       planetMesh.updateWorldMatrix(true, false);
       sunMesh?.updateWorldMatrix(true, false);
       planetMesh.getWorldPosition(planetWorldPos);
@@ -56,8 +58,8 @@ const PlanetLabel: React.FC<PlanetLabelProps> = ({ planetMesh, camera, rendererD
         const distToPlanetSq = planetWorldPos.distanceToSquared(cameraPosition);
         const distToSunSq = sunWorldPos.distanceToSquared(cameraPosition);
         if (distToPlanetSq > distToSunSq) {
-          const vecToPlanet = planetWorldPos.clone().sub(cameraPosition);
-          const vecToSun = sunWorldPos.clone().sub(cameraPosition);
+          vecToPlanet.copy(planetWorldPos).sub(cameraPosition);
+          vecToSun.copy(sunWorldPos).sub(cameraPosition);
           const angle = vecToPlanet.angleTo(vecToSun);
           const sunRadius = sunMesh.geometry.parameters.radius || (0.1 * SCENE_SCALE);
           const sunAngularRadius = Math.atan(sunRadius / Math.sqrt(distToSunSq));
@@ -90,10 +92,13 @@ const PlanetLabel: React.FC<PlanetLabelProps> = ({ planetMesh, camera, rendererD
       if (fontSize !== lastFontSize) { labelEl.style.fontSize = fontSize; lastFontSize = fontSize; }
     };
 
-    rafId = requestAnimationFrame(updatePosition);
+    const off = onSceneFrame(updatePosition);
+    // Placed straight away too, in case the scene is paused when it mounts.
+    const first = requestAnimationFrame(updatePosition);
 
     return () => {
-      cancelAnimationFrame(rafId);
+      off();
+      cancelAnimationFrame(first);
       ro?.disconnect();
     };
 

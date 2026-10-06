@@ -11,6 +11,7 @@
 // the scene - no angular-radius arithmetic needed.
 
 import React, { useEffect, useRef } from 'react';
+import { onSceneFrame } from '../utils/sceneFrame';
 
 export interface SurfaceLabelInfo {
   id: string;
@@ -47,15 +48,37 @@ const SolarSurfaceLabels: React.FC<Props> = ({ labels, camera, rendererDomElemen
     const THREE = (window as any).THREE;
     if (!THREE || !camera || !rendererDomElement || !sunMesh || !containerRef.current) return;
 
-    let rafId = 0;
+    // The canvas size, measured when it changes rather than every frame:
+    // reading it each frame forced a layout before every label was placed.
+    let boxW = rendererDomElement.clientWidth;
+    let boxH = rendererDomElement.clientHeight;
+    const ro = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(([entry]) => { boxW = entry.contentRect.width; boxH = entry.contentRect.height; })
+      : null;
+    ro?.observe(rendererDomElement);
 
+    // Reused every frame rather than made anew for every label.
+    const sunPos = new THREE.Vector3();
+    const cameraPos = new THREE.Vector3();
+    const world = new THREE.Vector3();
+    const outward = new THREE.Vector3();
+    const toCamera = new THREE.Vector3();
+    const projected = new THREE.Vector3();
+    // What each label last showed, so the page is only touched on a change.
+    const shown = new Map<string, string>();
+    const show = (id: string, el: HTMLDivElement, value: string) => {
+      if (shown.get(id) === value) return;
+      shown.set(id, value);
+      if (value === 'none') { el.style.display = 'none'; return; }
+      el.style.display = 'block';
+      el.style.transform = value;
+    };
+
+    // After each frame the scene draws (utils/sceneFrame), so the labels rest
+    // when it does. Placed by transform, which moves them without a layout.
     const tick = () => {
-      const rect = rendererDomElement.getBoundingClientRect();
-      const sunPos = new THREE.Vector3();
       sunMesh.updateWorldMatrix(true, false);
       sunMesh.getWorldPosition(sunPos);
-
-      const cameraPos = new THREE.Vector3();
       camera.getWorldPosition(cameraPos);
 
       for (const info of labels) {
@@ -63,28 +86,26 @@ const SolarSurfaceLabels: React.FC<Props> = ({ labels, camera, rendererDomElemen
         if (!el || !info.mesh) continue;
 
         info.mesh.updateWorldMatrix(true, false);
-        const world = new THREE.Vector3();
         info.mesh.getWorldPosition(world);
 
         // Which way the surface faces at this point, and whether that is
         // towards us. This is the whole visibility test.
-        const outward = world.clone().sub(sunPos).normalize();
-        const toCamera = cameraPos.clone().sub(world).normalize();
-        if (outward.dot(toCamera) < FACING_MARGIN) { el.style.display = 'none'; continue; }
+        outward.copy(world).sub(sunPos).normalize();
+        toCamera.copy(cameraPos).sub(world).normalize();
+        if (outward.dot(toCamera) < FACING_MARGIN) { show(info.id, el, 'none'); continue; }
 
-        const projected = world.clone().project(camera);
-        if (projected.z > 1) { el.style.display = 'none'; continue; }
+        projected.copy(world).project(camera);
+        if (projected.z > 1) { show(info.id, el, 'none'); continue; }
 
-        el.style.display = 'block';
-        el.style.left = `${(projected.x * 0.5 + 0.5) * rect.width}px`;
-        el.style.top = `${(-projected.y * 0.5 + 0.5) * rect.height}px`;
+        const x = Math.round((projected.x * 0.5 + 0.5) * boxW);
+        const y = Math.round((-projected.y * 0.5 + 0.5) * boxH);
+        show(info.id, el, `translate(${x}px, ${y}px) translate(-50%, -140%)`);
       }
-
-      rafId = requestAnimationFrame(tick);
     };
 
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
+    const off = onSceneFrame(tick);
+    const first = requestAnimationFrame(tick);
+    return () => { off(); cancelAnimationFrame(first); ro?.disconnect(); };
   }, [labels, camera, rendererDomElement, sunMesh]);
 
   return (
@@ -100,6 +121,8 @@ const SolarSurfaceLabels: React.FC<Props> = ({ labels, camera, rendererDomElemen
             info.minor ? 'text-[9px]' : 'text-[10px]'}`}
           style={{
             display: 'none',
+            left: 0,
+            top: 0,
             transform: 'translate(-50%, -140%)',
             color: info.color,
             // Enough background to stay legible over the photosphere, which

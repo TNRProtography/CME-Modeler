@@ -31,6 +31,11 @@ try {
   check(Q.initialPixelRatio(2, 1440) === 2, 'a Retina laptop keeps 2');
   check(Q.initialPixelRatio(1, 1920) === 1, 'an ordinary screen stays at 1');
   check(Q.initialPixelRatio(NaN, 800) === 1, 'no reading is taken as 1');
+  check(Q.initialPixelRatio(2, 1512, undefined, 982) === 1.75, 'a 14" MacBook window keeps most of its sharpness within the pixel budget');
+  check(Q.initialPixelRatio(2, 2560, undefined, 1400) === 1.25, 'a full screen 5K iMac is held to the pixel budget');
+  check(Q.initialPixelRatio(1, 1920, undefined, 1000) === 1, 'an ordinary 1080p screen is untouched by the budget');
+  check(Q.initialPixelRatio(3, 390, undefined, 750) === 1.5, 'a phone is untouched by the budget');
+  check(Q.initialPixelRatio(2, 1440, undefined, 700) === 2, 'a smaller Retina window keeps full density');
 
   console.log('\nSharpness follows the frame rate');
   {

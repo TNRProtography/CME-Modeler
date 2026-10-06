@@ -16,6 +16,7 @@
 // public/explainers/magnetotail.html).
 
 import React, { useMemo, useEffect, useRef, useState, useCallback } from 'react';
+import { MIN_FRAME_MS } from '../utils/frameCap';
 import { ExplainerButton } from './ExplainerModal';
 import { computeOvalBoundary as computeOvalBoundaryPhysics, avgBy30m, loadingMinutesFromSeries } from '../utils/ovalPhysics';
 import {
@@ -270,8 +271,12 @@ const MagnetotailStatus: React.FC<Props> = ({ substormRiskData, substormForecast
     }, { threshold: 0.05 });
     io.observe(wrap);
 
+    let drawnAt = -Infinity;
     function frame(now: number) {
       if (!running) return;
+      // At most 60 a second, however fast the screen (utils/frameCap).
+      if (now - drawnAt < MIN_FRAME_MS) { raf = requestAnimationFrame(frame); return; }
+      drawnAt = now;
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       elapsed += dt;

@@ -22,6 +22,7 @@
 // adding or retuning a structure is a data change, not new drawing code.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { MIN_FRAME_MS } from '../utils/frameCap';
 import {
   drawParticle, loadMilkyWay, drawMilkyWay,
   loadEarthTexture, earthTexture, renderGlobe,
@@ -443,12 +444,16 @@ const SolarWindStructureDiagram: React.FC<Props> = ({ phase, className }) => {
       drawEarth(bz);
     };
 
+    let drawnAt = -Infinity;
     const frame = (now: number) => {
       if (!running) return;
+      raf = requestAnimationFrame(frame);
+      // At most 60 a second, however fast the screen (utils/frameCap).
+      if (now - drawnAt < MIN_FRAME_MS) return;
+      drawnAt = now;
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       draw(dt);
-      raf = requestAnimationFrame(frame);
     };
 
     // Reduced motion: draw one static frame and stop.
