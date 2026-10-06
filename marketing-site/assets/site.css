@@ -355,6 +355,10 @@ details.faq .body p:last-child { margin-bottom: 0; }
 /* ================= Live sky backdrop ================= */
 .sky { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
 body > *:not(.sky) { position: relative; z-index: 1; }
+/* The header too, but kept sticky and above the page: the rule above outranks
+   .site-header, which flattened it to the same layer as the sections after it,
+   so on phones the open menu was drawn underneath the hero. */
+body > .site-header { position: sticky; z-index: 100; }
 .sky-stars { position: absolute; inset: 0; width: 100%; height: 100%; }
 
 .sky-curtain {
