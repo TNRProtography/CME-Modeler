@@ -92,11 +92,13 @@ try {
   {
     const names = [
       '20260922_001038_512_HMII.jpg', '20260922_001038_1024_HMII.jpg', '20260922_001038_2048_HMII.jpg',
-      '20260922_002538_1024_HMII.jpg',
+      '20260922_001038_4096_HMII.jpg', '20260922_002538_1024_HMII.jpg',
     ].map((n) => `<a href="${n}">${n}</a>`).join('\n');
     const [a, b] = A.parseBrowseListing(names, 'HMII', dir);
     check(a.preview === `${dir}20260922_001038_512_HMII.jpg`, 'the 512px copy is used for dragging');
     check(a.detail === `${dir}20260922_001038_2048_HMII.jpg`, 'the 2048px copy for the close-up');
+    check(a.hd === `${dir}20260922_001038_4096_HMII.jpg`, 'and the full-resolution 4096px copy, when the listing has it');
+    check(b.hd === undefined, 'but not one it does not list');
     check(b.preview === undefined && b.detail === undefined,
           'and a frame the listing has no copies of gets none - not a guessed URL that 404s');
   }

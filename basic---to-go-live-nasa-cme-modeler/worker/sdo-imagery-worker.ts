@@ -31,6 +31,9 @@
  * close-up plays back at full HMI resolution instead of a 1024 px frame blown
  * up six times. Only JSOC's: it is the same quick-look series as the 1024 px
  * live frames, framed identically, so the close-up lands on the same spot.
+ * Archive frames get SDO's own 4096 px copy (HmiFrame.hd), read through the
+ * app's image proxy rather than stored, so the close-up is full resolution
+ * at SDO's quarter-hour cadence wherever the archive reaches.
  *
  * The live images only change when JSOC posts, which in September 2026 was
  * about every hour and a half, and they cannot fill the days before the store
@@ -731,7 +734,14 @@ export async function framesFor(
     .map((e) => {
       const f: HmiFrame = { atMs: e.t, url: `${origin}/img/${product}/${e.stem}_1024.jpg`, product: product! };
       if (e.sizes.includes(512)) f.preview = `${origin}/img/${product}/${e.stem}_512.jpg`;
-      if (e.sizes.includes(2048)) f.detail = `${origin}/img/${product}/${e.stem}_2048.jpg`;
+      if (e.sizes.includes(2048)) {
+        f.detail = `${origin}/img/${product}/${e.stem}_2048.jpg`;
+        // SDO keeps a 4096px copy beside every 2048px one. Not stored here -
+        // a week of them would fill the bucket - but read through the app's
+        // image proxy, which caches archive frames for a week. The app falls
+        // back to the 2048px copy if one is ever missing.
+        f.hd = `${browseDirUrl(e.t)}${e.stem}_4096_${product}.jpg`;
+      }
       return f;
     });
 
@@ -771,7 +781,7 @@ export async function framesFor(
       const f: HmiFrame = { atMs: e.t, url: `${origin}/img/${liveProduct}/${e.stem}_1024.${e.ext ?? 'jpg'}`, product: liveProduct };
       // Its 4K copy, for the region close-up (see HD_PRODUCTS).
       const hd = hdUrlFor(manifest, origin, mode, e.t);
-      if (hd) f.detail = hd;
+      if (hd) f.hd = hd;
       return f;
     });
 

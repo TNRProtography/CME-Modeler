@@ -47,6 +47,7 @@ import { spotCountChanges, type SpotCountChange } from '../hooks/useSunspotRegio
 import { fetchGoesProtons, fetchGoesXrays } from '../utils/goesSeries';
 import { hasDecodedImage, loadDecodedImage, prefetchImage } from '../utils/decodedImages';
 import { isHdUrl, loadCrop, cropFor, cropFailed } from '../utils/regionCrop';
+import { hvCropUrl, HV_FRAME_PRODUCTS } from '../utils/hvCrop';
 import SunspotCloseupCanvas from './SunspotCloseupCanvas';
 // Cache lifetime asked of the proxy for SDO archive frames, which never change;
 // shared with the background preload so both ask for the same address.
@@ -2431,11 +2432,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
 
   const spotFrames = useMemo(() => [
     ...spotArchive.map((f) => ({
-      atMs: f.atMs, url: f.url as string | null, preview: f.preview, detail: f.detail, live: false,
+      atMs: f.atMs, url: f.url as string | null, preview: f.preview, detail: f.detail, hd: f.hd, live: false,
       product: f.product ?? 'archive',
     })),
     { atMs: Date.now(), url: null as string | null, preview: undefined as string | undefined,
-      detail: undefined as string | undefined, live: true, product: 'live' },
+      detail: undefined as string | undefined, hd: undefined as string | undefined, live: true, product: 'live' },
   ], [spotArchive]);
 
   // Archive frames never change, so they are asked for with a week's cache
@@ -2518,21 +2519,44 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const playbackUrlOf = useCallback((f: { live: boolean; url: string | null }) =>
     (f.live || !f.url ? null : archiveImageUrl(f.url)), [archiveImageUrl]);
 
-  // With a region open, its close-up plays the frame's sharp copy: the
-  // close-up zooms six times, and the 1024px frame blown up that far was what
-  // made playback soft. That is the 4096px image for the hours the store saved
-  // from JSOC's live feed, and SDO's 2048px copy for the archive's. Only with
-  // a close-up open - otherwise it is never fetched.
-  const closeupOpenRef = useRef(false);
-  closeupOpenRef.current = !!selectedSunspotRegion;
-  const detailUrlOf = useCallback((f: { live: boolean; detail?: string }) =>
-    (closeupOpenRef.current && !f.live && f.detail ? archiveImageUrl(f.detail) : null), [archiveImageUrl]);
-
   // Where the close-up looks, as fractions of the image. A 4096px frame is
   // not held whole - 64 MB decoded - but as a crop around this spot
   // (utils/regionCrop), and the region moves so little from frame to frame
   // that a crop cut around where it is now serves the frames ahead too.
   const closeupPosRef = useRef<{ x: number; y: number } | null>(null);
+
+  /**
+   * The close-up's sharp copy of a frame, full resolution wherever there is
+   * one, at whatever cadence its source posts:
+   *  - its 4096px copy: SDO's own for the archive's quarter-hours, the
+   *    imagery worker's for the hours it saved from JSOC's live feed;
+   *  - for a Helioviewer frame (recent magnetogram and intensity), the patch
+   *    around the region at HMI's own resolution (utils/hvCrop);
+   *  - else SDO's 2048px copy. A sharp copy that failed is passed over.
+   * The close-up zooms six times; the 1024px frame blown up that far was what
+   * made playback soft.
+   */
+  const sharpUrlOf = useCallback((
+    f: { live: boolean; atMs: number; product?: string; detail?: string; hd?: string },
+    pos: { x: number; y: number } | null,
+  ): string | null => {
+    if (f.live) return null;
+    if (f.hd) {
+      const u = archiveImageUrl(f.hd);
+      if (!cropFailed(u)) return u;
+    }
+    if (pos && f.product && HV_FRAME_PRODUCTS.has(f.product)) {
+      const u = hvCropUrl(sunspotImageryMode, f.atMs, pos.x, pos.y);
+      if (u && !cropFailed(u)) return u;
+    }
+    return f.detail ? archiveImageUrl(f.detail) : null;
+  }, [archiveImageUrl, sunspotImageryMode]);
+
+  // Only with a close-up open - otherwise the sharp copies are never fetched.
+  const closeupOpenRef = useRef(false);
+  closeupOpenRef.current = !!selectedSunspotRegion;
+  const detailUrlOf = useCallback((f: { live: boolean; atMs: number; product?: string; detail?: string; hd?: string }) =>
+    (closeupOpenRef.current ? sharpUrlOf(f, closeupPosRef.current) : null), [sharpUrlOf]);
   const warmDetail = useCallback((url: string): Promise<void> => {
     if (!isHdUrl(url)) return warmSpotImage(url);
     const pos = closeupPosRef.current;
@@ -2695,20 +2719,21 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     // it sharper.
     const xPercent = (label.label.anchorX / overviewBoxSize.width) * 100;
     const yPercent = (label.label.anchorY / overviewBoxSize.height) * 100;
-    const detailUrl = spotFrame.detail ? archiveImageUrl(spotFrame.detail) : null;
+    const detailUrl = sharpUrlOf(spotFrame, { x: xPercent / 100, y: yPercent / 100 });
     const detailReady = !!detailUrl && detailTick >= 0 && (isHdUrl(detailUrl)
       ? !!cropFor(detailUrl, xPercent / 100, yPercent / 100)
       : hasDecodedImage(detailUrl));
-    const src = (spotDragging && spotFrame.preview)
-      || (detailReady ? spotFrame.detail : spotFrame.url);
+    const url = spotDragging && spotFrame.preview ? archiveImageUrl(spotFrame.preview)
+      : detailReady ? detailUrl
+        : spotFrame.url ? archiveImageUrl(spotFrame.url) : null;
     return {
-      url: src ? archiveImageUrl(src) : null,
+      url,
       xPercent,
       yPercent,
       absent: false,
     };
   }, [selectedSunspotRegion, spotIsLive, selectedSunspotCloseupUrl, selectedSunspotPreview,
-      laidOutSunspotLabels, overviewBoxSize, spotDragging, spotFrame, archiveImageUrl, detailTick]);
+      laidOutSunspotLabels, overviewBoxSize, spotDragging, spotFrame, archiveImageUrl, sharpUrlOf, detailTick]);
 
   closeupPosRef.current = closeupView && !closeupView.absent && !spotIsLive
     ? { x: closeupView.xPercent / 100, y: closeupView.yPercent / 100 }
@@ -2717,13 +2742,13 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   // Fetch the sharp copy for a region close-up once dragging stops on a
   // frame, and redraw when it is in.
   useEffect(() => {
-    if (!selectedSunspotRegion || spotIsLive || spotDragging || !spotFrame.detail) return;
+    if (!selectedSunspotRegion || spotIsLive || spotDragging) return;
+    const url = sharpUrlOf(spotFrame, closeupPosRef.current);
+    if (!url || isDetailReady(url)) return;
     let cancelled = false;
-    const url = archiveImageUrl(spotFrame.detail);
-    if (isDetailReady(url)) return;
     warmDetail(url).then(() => { if (!cancelled) setDetailTick((t) => t + 1); });
     return () => { cancelled = true; };
-  }, [selectedSunspotRegion, spotIsLive, spotDragging, spotFrame, archiveImageUrl, warmDetail, isDetailReady, closeupView?.xPercent, closeupView?.yPercent]);
+  }, [selectedSunspotRegion, spotIsLive, spotDragging, spotFrame, sharpUrlOf, warmDetail, isDetailReady, closeupView?.xPercent, closeupView?.yPercent]);
 
   // How long each new close-up frame fades in over the last. While playing,
   // the whole of a frame's time on screen, so one blend runs straight into

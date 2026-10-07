@@ -26,6 +26,35 @@ try {
   const Q = await bundle('utils/renderQuality.ts', 'q.mjs');
   const C = await bundle('utils/timelineClock.ts', 'c.mjs');
 
+  const HV = await bundle('utils/hvCrop.ts', 'hv.mjs');
+  const RC = await bundle('utils/regionCrop.ts', 'rc.mjs');
+
+  console.log('\nThe sunspot close-up\'s full-resolution copies');
+  {
+    // A region a quarter of the way across and three-fifths down a frame.
+    const u = HV.hvCropUrl('magnetogram', Date.UTC(2026, 9, 6, 2, 30), 0.25, 0.6);
+    const p = HV.parseHvCrop(u);
+    const prox = new URL(p.url, 'https://app.example');
+    const real = new URL(prox.searchParams.get('url'));
+    const q = real.searchParams;
+    check(p.full === 4096 && p.sx === 1024 - 512 && p.sy === 2432 - 512, `placed as a 1024px patch of a 4096px image (${p.sx}, ${p.sy})`);
+    check(q.get('imageScale') === '0.504' && q.get('width') === '1024' && q.get('height') === '1024', 'at HMI\'s own 0.504"/px');
+    check(Math.abs(+q.get('x0') - (1024 - 2048) * 0.504) < 0.01, `left of centre is negative x (${q.get('x0')})`);
+    check(Math.abs(+q.get('y0') - (2432 - 2048) * 0.504) < 0.01, `below centre is positive y, as Helioviewer counts down from the top (${q.get('y0')})`);
+    check(q.get('date') === '2026-10-06T02:30:00Z' && q.get('layers') === '[SDO,HMI,HMI,magnetogram,1,100]', 'at the frame\'s moment, of its view');
+    check(prox.pathname.endsWith('/image') && real.hostname === 'api.helioviewer.org', 'fetched from Helioviewer through the image proxy');
+    check(HV.hvCropUrl('magnetogram', 0, 0.2501, 0.6) === HV.hvCropUrl('magnetogram', 0, 0.2507, 0.6), 'a region moving a pixel asks for the same patch');
+    check(HV.hvCropUrl('colorized', 0, 0.5, 0.5) === null, 'and colorized, which Helioviewer does not carry, gets none');
+    const edge = HV.parseHvCrop(HV.hvCropUrl('intensity', 0, 0.02, 0.99));
+    check(edge.sx === 0 && edge.sy === 4096 - 1024, 'a region at the edge keeps the patch inside the image');
+
+    check(RC.isHdUrl('https://sdo-imagery.example/img/HMIXBC/20261006_023200_4096.jpg'), 'the worker\'s 4K copy is cropped');
+    check(RC.isHdUrl('https://spottheaurora.co.nz/api/proxy/image?url=' + encodeURIComponent('https://sdo.gsfc.nasa.gov/assets/img/browse/2026/10/06/20261006_001038_4096_HMIBC.jpg') + '&ttl=604800'),
+      'so is SDO\'s, through the proxy');
+    check(RC.isHdUrl(u), 'and a Helioviewer patch');
+    check(!RC.isHdUrl('https://sdo.gsfc.nasa.gov/assets/img/browse/2026/10/06/20261006_001038_2048_HMIBC.jpg'), 'but not a 2048px copy, decoded whole as before');
+  }
+
   console.log('\nWhere sharpness starts');
   check(Q.initialPixelRatio(3, 390) === 1.5, 'a phone at 3x starts at 1.5, not 3');
   check(Q.initialPixelRatio(2, 1440) === 2, 'a Retina laptop keeps 2');

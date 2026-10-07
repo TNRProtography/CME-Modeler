@@ -63,6 +63,13 @@ export interface HmiFrame {
   /** The 2048px copy, for the region close-up, which zooms hard. */
   detail?: string;
   /**
+   * The full-resolution 4096px copy, for the region close-up: SDO's own from
+   * its archive, or the imagery worker's from JSOC's live feed. The app never
+   * holds it whole - it keeps a crop around the region (utils/regionCrop) -
+   * and falls back to `detail` when it cannot be had.
+   */
+  hd?: string;
+  /**
    * Which product the frame is, when a list mixes them. The sdo-imagery
    * worker fills the hours SDO's archive has not reached with saved live
    * images, which are framed differently, so the disk is measured per product.
@@ -129,8 +136,10 @@ export function parseBrowseListing(html: string, product: string, dirUrl: string
     const frame: HmiFrame = { atMs, url: `${dirUrl}${name}` };
     const small = `${stem}_512_${product}.jpg`;
     const large = `${stem}_2048_${product}.jpg`;
+    const full = `${stem}_4096_${product}.jpg`;
     if (text.includes(small)) frame.preview = `${dirUrl}${small}`;
     if (text.includes(large)) frame.detail = `${dirUrl}${large}`;
+    if (text.includes(full)) frame.hd = `${dirUrl}${full}`;
     out.push(frame);
   }
   return out.sort((a, b) => a.atMs - b.atMs);

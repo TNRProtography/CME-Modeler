@@ -30,6 +30,10 @@ export const ALLOWED_HOSTS = new Set([
   // itself only to somebody already reading the log.
   'suvi-difference-imagery.thenamesrock.workers.dev',
   'ch-history-worker.thenamesrock.workers.dev',
+  // Helioviewer: full-resolution HMI around a sunspot region, for the
+  // tracker's close-up (utils/hvCrop). It sends no CORS headers, and the
+  // close-up has to read the pixels.
+  'api.helioviewer.org',
 ]);
 
 // Hosts permitted for the generic text/data proxy. NMDB provides ground
@@ -82,8 +86,20 @@ const clampTtl = (raw: string | null, fallback: number, min: number, max: number
 const IMMUTABLE_ARCHIVE_RE = /^\/assets\/img\/browse\/\d{4}\/\d{2}\/\d{2}\/\d{8}_\d{6}_[^/]+\.(jpg|png)$/i;
 const ARCHIVE_MAX_TTL = 7 * 24 * 3600;
 
+/**
+ * A Helioviewer render of a moment more than a few hours past: it has the
+ * images for that moment by then, so the render will not change either.
+ */
+const HV_SETTLED_MS = 3 * 3600 * 1000;
+const isSettledHelioviewerRender = (target: URL): boolean => {
+  if (target.hostname !== 'api.helioviewer.org' || !/\/takeScreenshot\/?$/.test(target.pathname)) return false;
+  const at = Date.parse(target.searchParams.get('date') ?? '');
+  return Number.isFinite(at) && Date.now() - at > HV_SETTLED_MS;
+};
+
 export const isImmutableArchive = (target: URL): boolean =>
-  target.hostname === 'sdo.gsfc.nasa.gov' && IMMUTABLE_ARCHIVE_RE.test(target.pathname);
+  (target.hostname === 'sdo.gsfc.nasa.gov' && IMMUTABLE_ARCHIVE_RE.test(target.pathname))
+  || isSettledHelioviewerRender(target);
 
 const proxyImage = async (request: Request): Promise<Response> => {
   const url = new URL(request.url);

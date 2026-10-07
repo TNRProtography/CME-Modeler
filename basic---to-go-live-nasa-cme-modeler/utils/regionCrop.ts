@@ -12,6 +12,11 @@
 // serves for many frames of playback; a new one is cut only when the region
 // has moved out of the part kept. Decodes run one at a time, so there is
 // never more than one whole 4K image in memory.
+//
+// A Helioviewer patch (utils/hvCrop) is already just the part around the
+// region, so it is kept whole, placed where it sits in the 4096px image.
+
+import { parseHvCrop } from './hvCrop';
 
 export interface RegionCrop {
   /** The kept part, in the full image's own pixels from (sx, sy). */
@@ -35,7 +40,8 @@ const failed = new Set<string>();
 let queue: Promise<unknown> = Promise.resolve();
 
 /** A frame the close-up should draw from a crop rather than whole. */
-export const isHdUrl = (url: string | null | undefined): boolean => !!url && /_4096\.(?:jpe?g|gif|png)(?:[?#]|$)/i.test(url);
+export const isHdUrl = (url: string | null | undefined): boolean =>
+  !!url && (url.startsWith('hvcrop:') || /_4096(?:_HMI[A-Z]+)?\.(?:jpe?g|gif|png)(?:[?#&]|%26|$)/i.test(url));
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
@@ -68,6 +74,13 @@ export function cropFor(url: string, x: number, y: number): RegionCrop | undefin
 export const cropFailed = (url: string): boolean => failed.has(url);
 
 async function cut(url: string, x: number, y: number): Promise<RegionCrop | null> {
+  const patch = parseHvCrop(url);
+  if (patch) {
+    const res = await fetch(patch.url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const bitmap = await createImageBitmap(await res.blob());
+    return { bitmap, fullW: patch.full, fullH: patch.full, sx: patch.sx, sy: patch.sy };
+  }
   const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const full = await createImageBitmap(await res.blob());
