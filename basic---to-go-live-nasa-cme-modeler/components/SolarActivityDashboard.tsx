@@ -46,6 +46,7 @@ import { regionTrend, growthRateSeries, SCALES as HISTORY_SCALES } from '../util
 import { spotCountChanges, type SpotCountChange } from '../hooks/useSunspotRegions';
 import { fetchGoesProtons, fetchGoesXrays } from '../utils/goesSeries';
 import { hasDecodedImage, loadDecodedImage, prefetchImage } from '../utils/decodedImages';
+import { isHdUrl, loadCrop, cropFor, cropFailed } from '../utils/regionCrop';
 import SunspotCloseupCanvas from './SunspotCloseupCanvas';
 // Cache lifetime asked of the proxy for SDO archive frames, which never change;
 // shared with the background preload so both ask for the same address.
@@ -2517,13 +2518,31 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
   const playbackUrlOf = useCallback((f: { live: boolean; url: string | null }) =>
     (f.live || !f.url ? null : archiveImageUrl(f.url)), [archiveImageUrl]);
 
-  // With a region open, its close-up plays the 2048px copy: the close-up
-  // zooms six times, and the 1024px frame blown up that far was what made
-  // playback soft. Only then - with no close-up open it is never fetched.
+  // With a region open, its close-up plays the frame's sharp copy: the
+  // close-up zooms six times, and the 1024px frame blown up that far was what
+  // made playback soft. That is the 4096px image for the hours the store saved
+  // from JSOC's live feed, and SDO's 2048px copy for the archive's. Only with
+  // a close-up open - otherwise it is never fetched.
   const closeupOpenRef = useRef(false);
   closeupOpenRef.current = !!selectedSunspotRegion;
   const detailUrlOf = useCallback((f: { live: boolean; detail?: string }) =>
     (closeupOpenRef.current && !f.live && f.detail ? archiveImageUrl(f.detail) : null), [archiveImageUrl]);
+
+  // Where the close-up looks, as fractions of the image. A 4096px frame is
+  // not held whole - 64 MB decoded - but as a crop around this spot
+  // (utils/regionCrop), and the region moves so little from frame to frame
+  // that a crop cut around where it is now serves the frames ahead too.
+  const closeupPosRef = useRef<{ x: number; y: number } | null>(null);
+  const warmDetail = useCallback((url: string): Promise<void> => {
+    if (!isHdUrl(url)) return warmSpotImage(url);
+    const pos = closeupPosRef.current;
+    return pos ? loadCrop(url, pos.x, pos.y).then(() => undefined) : Promise.resolve();
+  }, [warmSpotImage]);
+  const isDetailReady = useCallback((url: string): boolean => {
+    if (!isHdUrl(url)) return isSpotImageReady(url);
+    const pos = closeupPosRef.current;
+    return !pos || cropFailed(url) || !!cropFor(url, pos.x, pos.y);
+  }, [isSpotImageReady]);
 
   const advanceSpotFrame = useCallback((step = 1) => {
     setSpotFrameIndex((i) => {
@@ -2533,11 +2552,11 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       if (!url) return n;
       void warmSpotImage(url);
       const detail = detailUrlOf(next);
-      if (detail) void warmSpotImage(detail);
+      if (detail) void warmDetail(detail);
       // Not loaded yet: hold this frame and try again on the next tick.
-      return isSpotImageReady(url) && (!detail || isSpotImageReady(detail)) ? n : i;
+      return isSpotImageReady(url) && (!detail || isDetailReady(detail)) ? n : i;
     });
-  }, [spotFrames, playbackUrlOf, detailUrlOf, warmSpotImage, isSpotImageReady]);
+  }, [spotFrames, playbackUrlOf, detailUrlOf, warmSpotImage, warmDetail, isSpotImageReady, isDetailReady]);
 
   // Frames ahead, nearest first, three at a time so playback rarely has to
   // wait. Further ahead while playing, and further the faster it plays;
@@ -2548,7 +2567,7 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
     const ahead = !spotPlaying ? 2 : spotSpeed >= 5 ? 14 : spotSpeed >= 2 ? 10 : 8;
     // The frames playback will actually land on, which past 3x skip some.
     const step = spotPlaying ? playbackStep(spotSpeed).step : 1;
-    const urls: string[] = [];
+    const jobs: (() => Promise<void>)[] = [];
     let at = spotIndex;
     // The close-up's 2048px frames are four times the memory, so only the
     // next few of those are decoded ahead (utils/decodedImages keeps them
@@ -2559,17 +2578,17 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       const next = spotFrames[at];
       const url = next ? playbackUrlOf(next) : null;
       const detail = next && k <= detailAhead ? detailUrlOf(next) : null;
-      if (url) urls.push(url);
-      if (detail) urls.push(detail);
+      if (url) jobs.push(() => warmSpotImage(url));
+      if (detail) jobs.push(() => warmDetail(detail));
     }
     let cancelled = false;
     const work = () => {
-      const url = cancelled ? undefined : urls.shift();
-      if (url) warmSpotImage(url).then(work);
+      const job = cancelled ? undefined : jobs.shift();
+      if (job) job().then(work);
     };
     for (let k = 0; k < 3; k++) work();
     return () => { cancelled = true; };
-  }, [spotIndex, spotFrames, spotPlaying, spotSpeed, playbackUrlOf, detailUrlOf, warmSpotImage, selectedSunspotRegion]);
+  }, [spotIndex, spotFrames, spotPlaying, spotSpeed, playbackUrlOf, detailUrlOf, warmSpotImage, warmDetail, selectedSunspotRegion]);
 
   const spotProduct = spotFrame.product;
   const archiveGeometry = archiveGeometries[spotProduct] ?? null;
@@ -2669,33 +2688,42 @@ const SolarActivityDashboard: React.FC<SolarActivityDashboardProps> = ({ setView
       return { url: null, xPercent: 50, yPercent: 50, absent: true };
     }
     // While dragging, the small preview; otherwise, playing or not, the
-    // 2048px copy that holds up to the zoom. Playback fetches it ahead and
-    // waits for it (advanceSpotFrame), so it is decoded by the time its frame
-    // is due; the 1024px frame stands in only until it is, so stepping still
-    // shows the frame at once and then fades it sharper.
+    // sharp copy that holds up to the zoom (4096px, or SDO's 2048px).
+    // Playback fetches it ahead and waits for it (advanceSpotFrame), so it is
+    // ready by the time its frame is due; the 1024px frame stands in only
+    // until it is, so stepping still shows the frame at once and then fades
+    // it sharper.
+    const xPercent = (label.label.anchorX / overviewBoxSize.width) * 100;
+    const yPercent = (label.label.anchorY / overviewBoxSize.height) * 100;
     const detailUrl = spotFrame.detail ? archiveImageUrl(spotFrame.detail) : null;
-    const detailReady = !!detailUrl && hasDecodedImage(detailUrl) && detailTick >= 0;
+    const detailReady = !!detailUrl && detailTick >= 0 && (isHdUrl(detailUrl)
+      ? !!cropFor(detailUrl, xPercent / 100, yPercent / 100)
+      : hasDecodedImage(detailUrl));
     const src = (spotDragging && spotFrame.preview)
       || (detailReady ? spotFrame.detail : spotFrame.url);
     return {
       url: src ? archiveImageUrl(src) : null,
-      xPercent: (label.label.anchorX / overviewBoxSize.width) * 100,
-      yPercent: (label.label.anchorY / overviewBoxSize.height) * 100,
+      xPercent,
+      yPercent,
       absent: false,
     };
   }, [selectedSunspotRegion, spotIsLive, selectedSunspotCloseupUrl, selectedSunspotPreview,
       laidOutSunspotLabels, overviewBoxSize, spotDragging, spotFrame, archiveImageUrl, detailTick]);
 
-  // Fetch the sharp copy for a region close-up once playback and dragging
-  // stop on a frame, and redraw when it is in.
+  closeupPosRef.current = closeupView && !closeupView.absent && !spotIsLive
+    ? { x: closeupView.xPercent / 100, y: closeupView.yPercent / 100 }
+    : null;
+
+  // Fetch the sharp copy for a region close-up once dragging stops on a
+  // frame, and redraw when it is in.
   useEffect(() => {
     if (!selectedSunspotRegion || spotIsLive || spotDragging || !spotFrame.detail) return;
     let cancelled = false;
     const url = archiveImageUrl(spotFrame.detail);
-    if (hasDecodedImage(url)) return;
-    loadDecodedImage(url).then(() => { if (!cancelled) setDetailTick((t) => t + 1); });
+    if (isDetailReady(url)) return;
+    warmDetail(url).then(() => { if (!cancelled) setDetailTick((t) => t + 1); });
     return () => { cancelled = true; };
-  }, [selectedSunspotRegion, spotIsLive, spotDragging, spotFrame, archiveImageUrl]);
+  }, [selectedSunspotRegion, spotIsLive, spotDragging, spotFrame, archiveImageUrl, warmDetail, isDetailReady, closeupView?.xPercent, closeupView?.yPercent]);
 
   // How long each new close-up frame fades in over the last. While playing,
   // the whole of a frame's time on screen, so one blend runs straight into

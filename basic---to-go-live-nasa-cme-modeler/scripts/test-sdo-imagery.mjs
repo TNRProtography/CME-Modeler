@@ -94,7 +94,8 @@ const env = {
   },
 };
 const imageKeys = () => [...store.keys()].filter((k) => k.startsWith('hmi/'));
-const live = new Set(['HMILBC', 'HMILB', 'HMILIF']);
+// Live frames and their 4K copies: not archive products.
+const live = new Set(['HMILBC', 'HMILB', 'HMILIF', 'HMIXBC', 'HMIXB', 'HMIXIF']);
 const manifest = () => JSON.parse(store.get('manifest.json'));
 
 try {
@@ -133,7 +134,7 @@ try {
     const newest = Math.max(...Object.values(m.products).flat().map((e) => e.t));
     check(now - newest < 15 * MIN, 'the newest frame is stored first');
     check(Object.keys(m.products).filter((p) => !live.has(p)).sort().join() === 'HMIB,HMIBC,HMII', 'one archive product per view');
-    check(Object.keys(m.products).filter((p) => live.has(p)).length === 3, 'and the live image of each view is saved');
+    check(['HMILBC', 'HMILB', 'HMILIF'].every((p) => m.products[p]?.length), 'and the live image of each view is saved');
   }
 
   console.log('\nKeep running until the week is full');
@@ -191,6 +192,27 @@ try {
     check(img.status === 200 && img.headers.get('content-type') === manifest().latest.magnetogram.contentType
       && img.headers.get('access-control-allow-origin') === '*', 'served with its own type and CORS');
     check((await w.default.fetch(new Request('https://s.dev/latest/dopplergram_4096'), env)).status === 404, 'only the three views');
+  }
+
+  console.log('\nThe 4K images kept as history, for the close-up');
+  {
+    const t0 = Date.UTC(2026, 9, 6, 2, 30);
+    const m = { version: 1, products: {}, completeDays: [] };
+    const puts = [];
+    const fakeEnv = { SDO_BUCKET: { put: async (k) => { puts.push(k); }, get: async () => null, delete: async () => {} } };
+    const lm = new Date(t0 + 2 * MIN).toUTCString();
+    check(await w.keepHd(fakeEnv, m, 'magnetogram', new ArrayBuffer(10), 'image/gif', lm, t0 + 5 * MIN) === true, 'a new 4K image is kept');
+    check(puts[0] === 'hmi/HMIXB/20261006_023200_4096.gif', `under its view's 4K product, as the GIF it is (${puts[0]})`);
+    check(await w.keepHd(fakeEnv, m, 'magnetogram', new ArrayBuffer(10), 'image/gif', lm, t0 + 15 * MIN) === false, 'the same image is not kept twice');
+    check(w.hdUrlFor(m, 'https://s.dev', 'magnetogram', t0) === 'https://s.dev/img/HMIXB/20261006_023200_4096.gif',
+      'a live frame two minutes away takes it as its sharp copy');
+    check(w.hdUrlFor(m, 'https://s.dev', 'magnetogram', t0 + 40 * MIN) === undefined, 'one forty minutes away does not');
+    check(w.hdUrlFor(m, 'https://s.dev', 'colorized', t0) === undefined, 'nor does another view');
+    const served = await w.default.fetch(new Request('https://s.dev/img/HMIXB/20261006_023200_4096.gif'), env);
+    check(served.status === 404 || served.status === 200, 'a 4K path is a valid image route');
+    const keys = w.pruneManifest(m, t0 + 9 * DAY);
+    check(keys.includes('hmi/HMIXB/20261006_023200_4096.gif') && !m.products.HMIXB, 'and pruned with everything else after eight days');
+    check(Object.keys(manifest().products).some((p) => /^HMIX/.test(p)), 'the scheduled run keeps JSOC\'s 4K images');
   }
 
   console.log('\nThe app\'s frame list');

@@ -25,6 +25,13 @@
  * (HMILBC, HMILB, HMILIF). Recent hours come from those; the archive fills in
  * everything before them.
  *
+ * Each new 4096 px image from JSOC is kept too, for the same eight days, as
+ * the 4K product of its view (HMIXBC, HMIXB, HMIXIF). The live frame nearest
+ * in time gets it as its sharp copy (HmiFrame.detail), so the tracker's region
+ * close-up plays back at full HMI resolution instead of a 1024 px frame blown
+ * up six times. Only JSOC's: it is the same quick-look series as the 1024 px
+ * live frames, framed identically, so the close-up lands on the same spot.
+ *
  * The live images only change when JSOC posts, which in September 2026 was
  * about every hour and a half, and they cannot fill the days before the store
  * began. So for the two views Helioviewer carries (magnetogram, intensity),
@@ -103,6 +110,11 @@ export const LIVE_SOURCES: Record<HmiMode, { product: string; url: string }> = {
   intensity: { product: 'HMILIF', url: `${JSOC_LATEST}/HMI_latest_colInt_1024x1024.jpg` },
 };
 const LIVE_PRODUCTS = new Set(Object.values(LIVE_SOURCES).map((s) => s.product));
+
+/** Where each view's 4K history is kept: JSOC's 4096 px image, as it changes. */
+export const HD_PRODUCTS: Record<HmiMode, string> = { colorized: 'HMIXBC', magnetogram: 'HMIXB', intensity: 'HMIXIF' };
+/** A live frame takes the 4K image nearest it in time, if one is this close. */
+export const HD_MATCH_MS = 20 * MINUTE;
 
 /**
  * Helioviewer's HMI images, for the quarter-hours SDO's browse archive does
@@ -371,6 +383,14 @@ export async function refreshLatest(env: Env, manifest: Manifest, nowMs: number,
         if (bytes.byteLength < 100_000) throw new Error(`only ${bytes.byteLength} bytes`);
         downloaded++;
         await env.SDO_BUCKET.put(latestKey(mode), bytes, { httpMetadata: { contentType } });
+        // Kept as history as well, when it is JSOC's (see HD_PRODUCTS).
+        if (source === LATEST_SOURCES[mode][0]) {
+          try {
+            await keepHd(env, manifest, mode, bytes, contentType, res.headers.get('last-modified'), nowMs);
+          } catch (e) {
+            errors.push(`4K history ${mode}: ${(e as Error).message}`);
+          }
+        }
         latest[mode] = {
           source,
           checkedAtMs: nowMs,
@@ -387,6 +407,36 @@ export async function refreshLatest(env: Env, manifest: Manifest, nowMs: number,
     }
   }
   return downloaded;
+}
+
+/**
+ * Keeps one 4096 px image as its view's 4K history, stamped like the live
+ * 1024 px frames: by the file's Last-Modified time, falling back to now.
+ */
+export async function keepHd(
+  env: Env, manifest: Manifest, mode: HmiMode, bytes: ArrayBuffer, contentType: string,
+  lastModified: string | null, nowMs: number,
+): Promise<boolean> {
+  const product = HD_PRODUCTS[mode];
+  const stamped = lastModified ? Date.parse(lastModified) : NaN;
+  const t = Number.isFinite(stamped) && stamped <= nowMs + MINUTE ? stamped : nowMs;
+  const stem = stemOf(t);
+  if (manifest.products[product]?.some((e) => e.stem === stem)) return false;
+  const ext = contentType.includes('gif') ? 'gif' : contentType.includes('png') ? 'png' : undefined;
+  await env.SDO_BUCKET.put(objectKey(product, stem, 4096, ext), bytes, { httpMetadata: { contentType } });
+  addEntry(manifest, product, { t, stem, sizes: [4096], ...(ext ? { ext } : {}) });
+  return true;
+}
+
+/** The 4K image nearest `t`, within HD_MATCH_MS, as a URL, else undefined. */
+export function hdUrlFor(m: Manifest, origin: string, mode: HmiMode, t: number): string | undefined {
+  const product = HD_PRODUCTS[mode];
+  let best: Entry | null = null;
+  for (const e of m.products[product] ?? []) {
+    if (Math.abs(e.t - t) > HD_MATCH_MS) continue;
+    if (!best || Math.abs(e.t - t) < Math.abs(best.t - t)) best = e;
+  }
+  return best ? `${origin}/img/${product}/${best.stem}_4096.${best.ext ?? 'jpg'}` : undefined;
 }
 
 // ── The live 1024 px images, saved as history ───────────────────────────────
@@ -717,7 +767,13 @@ export async function framesFor(
   const liveProduct = LIVE_SOURCES[mode].product;
   const live: HmiFrame[] = (manifest.products[liveProduct] ?? [])
     .filter((e) => e.t >= from && e.t <= to && e.t > archiveEnd + STEP_MS / 2 && !taken.has(Math.floor(e.t / STEP_MS)))
-    .map((e) => ({ atMs: e.t, url: `${origin}/img/${liveProduct}/${e.stem}_1024.${e.ext ?? 'jpg'}`, product: liveProduct }));
+    .map((e) => {
+      const f: HmiFrame = { atMs: e.t, url: `${origin}/img/${liveProduct}/${e.stem}_1024.${e.ext ?? 'jpg'}`, product: liveProduct };
+      // Its 4K copy, for the region close-up (see HD_PRODUCTS).
+      const hd = hdUrlFor(manifest, origin, mode, e.t);
+      if (hd) f.detail = hd;
+      return f;
+    });
 
   const frames = thinFrames([...archive, ...hvFrames, ...live].sort((a, b) => a.atMs - b.atMs), intervalForWindow(to - from));
   return { product: product ?? olderProduct ?? (hvFrames.length ? hv!.product : live.length ? liveProduct : null), frames, storedFromMs: storedFrom };
@@ -725,7 +781,7 @@ export async function framesFor(
 
 async function serveImage(env: Env, path: string): Promise<Response> {
   // /img/<product>/<stem>_<size>.jpg, nothing else.
-  const m = path.match(/^\/img\/(HMI[A-Z]+)\/(\d{8}_\d{6}_(?:512|1024|2048)\.(?:jpg|gif|png))$/);
+  const m = path.match(/^\/img\/(HMI[A-Z]+)\/(\d{8}_\d{6}_(?:512|1024|2048|4096)\.(?:jpg|gif|png))$/);
   if (!m) return new Response('Not found', { status: 404, headers: CORS });
   const obj = await env.SDO_BUCKET.get(`hmi/${m[1]}/${m[2]}`);
   if (!obj) return new Response('Not found', { status: 404, headers: { ...CORS, 'Cache-Control': 'no-store' } });
