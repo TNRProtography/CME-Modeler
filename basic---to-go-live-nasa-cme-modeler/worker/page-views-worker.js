@@ -15,8 +15,16 @@
 // Every time the app is opened and used is a view, so a visitor who closes it
 // and comes back counts again. The app sends one per open; the short gap here
 // only swallows an accidental double send.
+//
+// The all-time count is the views counted here plus a base. SET_LIFETIME sets
+// it by hand: the first time this code runs, the base is chosen so the count
+// reads exactly that number at that moment, whatever has been counted by then,
+// and it carries on from there. Applied once (meta 'set:<id>'), so a restart
+// never sets it back. To set it again, give SET_LIFETIME a new id.
 
+/** Where the count stood before any setting: 491,473 when this began. */
 const BASE_LIFETIME = 491473;
+const SET_LIFETIME = { id: '2026-10-08', value: 513514 };
 const DOUBLE_SEND_MS = 5000;
 const DAY_MS = 86400000;
 const ID_RE = /^[A-Za-z0-9-]{16,64}$/;
@@ -42,9 +50,22 @@ export class PageViews {
     // (the app celebrates the round hundred thousands only for whoever's view
     // made them, which `lifetime` in their own answer already says).
     this.sql.exec('CREATE TABLE IF NOT EXISTS milestones (n INTEGER PRIMARY KEY, at INTEGER NOT NULL)');
+    this.sql.exec('CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v INTEGER NOT NULL)');
+    const setKey = `set:${SET_LIFETIME.id}`;
+    if (!this.one('SELECT v FROM meta WHERE k = ?', setKey)) {
+      this.sql.exec('INSERT INTO meta (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v',
+        'base', SET_LIFETIME.value - this.counted());
+      this.sql.exec('INSERT INTO meta (k, v) VALUES (?, 1)', setKey);
+    }
   }
 
   one(query, ...args) { return this.sql.exec(query, ...args).toArray()[0]; }
+
+  /** Views counted here, all time. */
+  counted() { return this.one('SELECT COALESCE(SUM(n), 0) AS s FROM days').s; }
+
+  /** The all-time count. */
+  lifetime() { return (this.one('SELECT v FROM meta WHERE k = ?', 'base')?.v ?? BASE_LIFETIME) + this.counted(); }
 
   totals(id, now) {
     const today = dayOf(now);
@@ -54,7 +75,7 @@ export class PageViews {
       daily: sum(today),
       weekly: sum(dayOf(now - 6 * DAY_MS)),
       yearly: sum(dayOf(now - 364 * DAY_MS)),
-      lifetime: BASE_LIFETIME + sum('0000-00-00'),
+      lifetime: this.lifetime(),
       visitors: this.one('SELECT COUNT(*) AS c FROM visitors').c,
       yours: mine ? mine.n : 0,
       millionAt: this.one('SELECT at FROM milestones WHERE n = ?', MILLION)?.at ?? null,
@@ -68,7 +89,7 @@ export class PageViews {
       n += 1;
       this.sql.exec('INSERT INTO visitors (id, n, last) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET n = excluded.n, last = excluded.last', id, n, now);
       this.sql.exec('INSERT INTO days (day, n) VALUES (?, 1) ON CONFLICT(day) DO UPDATE SET n = n + 1', dayOf(now));
-      if (BASE_LIFETIME + this.one('SELECT COALESCE(SUM(n), 0) AS s FROM days').s >= MILLION) {
+      if (this.lifetime() >= MILLION) {
         this.sql.exec('INSERT OR IGNORE INTO milestones (n, at) VALUES (?, ?)', MILLION, now);
       }
     }

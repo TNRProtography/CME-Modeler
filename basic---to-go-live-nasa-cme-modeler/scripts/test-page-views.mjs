@@ -45,18 +45,18 @@ const A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', B = 'bbbbbbbb-bbbb-bbbb-bbbb-b
 
 console.log('A fresh counter');
 let r = await call('GET', '/page-views');
-check(r.json.lifetime === 491473, 'starts at 491,473', JSON.stringify(r.json));
+check(r.json.lifetime === 513514, 'starts at 513,514', JSON.stringify(r.json));
 check(r.json.daily === 0 && r.json.yours === 0 && r.json.visitors === 0, 'with nothing today, no visitors and nothing yours');
 
 console.log('Counting');
 r = await call('POST', '/page-views', { id: A });
-check(r.json.lifetime === 491474 && r.json.daily === 1 && r.json.weekly === 1 && r.json.yours === 1, 'a first view counts everywhere', JSON.stringify(r.json));
+check(r.json.lifetime === 513515 && r.json.daily === 1 && r.json.weekly === 1 && r.json.yours === 1, 'a first view counts everywhere', JSON.stringify(r.json));
 r = await call('POST', '/page-views', { id: A });
-check(r.json.lifetime === 491474 && r.json.yours === 1, 'a double send within seconds does not count twice');
+check(r.json.lifetime === 513515 && r.json.yours === 1, 'a double send within seconds does not count twice');
 r = await call('POST', '/page-views', { id: B });
-check(r.json.lifetime === 491475 && r.json.yours === 1, 'another visitor adds to the total with their own number');
+check(r.json.lifetime === 513516 && r.json.yours === 1, 'another visitor adds to the total with their own number');
 r = await call('GET', `/page-views?id=${A}`);
-check(r.json.yours === 1 && r.json.lifetime === 491475, 'a GET reads without counting');
+check(r.json.yours === 1 && r.json.lifetime === 513516, 'a GET reads without counting');
 
 check(r.json.visitors === 2 && r.json.yearly === 2, 'and counts visitors and the year');
 
@@ -64,13 +64,13 @@ console.log('Two views at once');
 const crowd = await Promise.all(Array.from({ length: 50 }, (_, i) =>
   call('POST', '/page-views', { id: `crowd-visitor-${String(i).padStart(4, '0')}` })));
 r = await call('GET', '/page-views');
-check(r.json.lifetime === 491475 + 50 && r.json.visitors === 52, 'fifty at once lose none', JSON.stringify(r.json));
+check(r.json.lifetime === 513516 + 50 && r.json.visitors === 52, 'fifty at once lose none', JSON.stringify(r.json));
 
 console.log('Coming back');
 const realNow = Date.now;
 Date.now = () => realNow() + 6000;
 r = await call('POST', '/page-views', { id: A });
-check(r.json.yours === 2 && r.json.lifetime === 491476 + 50, 'the same visitor opening the app again counts again', JSON.stringify(r.json));
+check(r.json.yours === 2 && r.json.lifetime === 513517 + 50, 'the same visitor opening the app again counts again', JSON.stringify(r.json));
 Date.now = realNow;
 
 console.log('Carrying over a device count');
@@ -89,6 +89,30 @@ check(r.json.lifetime === 1000000 && r.json.millionAt != null, 'the view that ma
 const millionAt = r.json.millionAt;
 r = await call('POST', '/page-views', { id: 'gggggggg-gggg-gggg-gggg-gggggggggggg' });
 check(r.json.lifetime === 1000001 && r.json.millionAt === millionAt, 'everyone after hears when it was, and it does not move');
+
+console.log('Setting the count by hand, on a counter with history');
+{
+  // A counter as the old code left it: views counted, no base recorded.
+  const old = new DatabaseSync(':memory:');
+  const st = { storage: { sql: { exec: (q, ...a) => {
+    const p = old.prepare(q);
+    const rows = /^\s*(SELECT|WITH)/i.test(q) ? p.all(...a) : (p.run(...a), []);
+    return { toArray: () => rows };
+  } } } };
+  old.exec('CREATE TABLE days (day TEXT PRIMARY KEY, n INTEGER NOT NULL)');
+  old.prepare('INSERT INTO days (day, n) VALUES (?, ?)').run('2026-10-01', 4000);
+  old.prepare('INSERT INTO days (day, n) VALUES (?, ?)').run('2026-10-07', 2345);
+  const ask = async (o, op, id) => (await (await o.fetch(new Request('https://x', { method: 'POST', body: JSON.stringify({ op, id, seed: 0 }) }))).json());
+  let o = new mod.PageViews(st);
+  let j = await ask(o, 'read', '');
+  check(j.lifetime === 513514, `whatever it had counted, it reads exactly 513,514 (${j.lifetime})`);
+  j = await ask(o, 'count', 'hhhhhhhh-hhhh-hhhh-hhhh-hhhhhhhhhhhh');
+  check(j.lifetime === 513515 && j.daily >= 1, 'and counts on from there');
+  o = new mod.PageViews(st);
+  j = await ask(o, 'read', '');
+  check(j.lifetime === 513515, 'a restart does not set it back');
+  check(j.weekly >= 2346, 'the daily and weekly counts are untouched');
+}
 
 console.log('Who sees which celebration');
 const { execFileSync } = await import('node:child_process');
