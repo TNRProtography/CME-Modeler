@@ -79,6 +79,8 @@ interface ForecastDashboardProps {
   modalSlug?: string | null;
   onModalSlugChange?: (slug: string | null) => void;
   refreshSignal: number;
+  /** Opens a CME in the CME Visualization. */
+  onViewCMEInVisualization?: (cmeId: string) => void;
 }
 
 interface Camera {
@@ -141,7 +143,7 @@ const getSuggestedCameraSettings = (score: number | null, isDaylight: boolean) =
 
 
 
-const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, onBetaShocksDetected, setMeasuredWindSpeedKms, navigationTarget, onInitialLoad, onInitialLoadProgress, viewMode, onViewModeChange, modalSlug, onModalSlugChange, refreshSignal }) => {
+const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, setCurrentAuroraScore, setSubstormActivityStatus, setIpsAlertData, onBetaShocksDetected, setMeasuredWindSpeedKms, navigationTarget, onInitialLoad, onInitialLoadProgress, viewMode, onViewModeChange, modalSlug, onModalSlugChange, refreshSignal, onViewCMEInVisualization }) => {
   // Shared shock list: SolarWindQuickView detects (single shared detector),
   // we keep a copy here so the same events drive the EPAM chart markers, and
   // forward to App for the global banner.
@@ -816,7 +818,7 @@ const ForecastDashboard: React.FC<ForecastDashboardProps> = ({ setViewerMedia, s
                                 <EPAMPanel shockEvents={betaShocks} />
                             </div>
 
-                            <StereoJPlotsPanel />
+                            <StereoJPlotsPanel onViewCMEInVisualization={onViewCMEInVisualization} />
 
                             
                         </main>

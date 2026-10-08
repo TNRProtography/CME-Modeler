@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import CloseIcon from './icons/CloseIcon';
+import { useCmeEarthArrivals } from '../hooks/useCmeEarthArrivals';
+import { jplotCmes, type JplotCme } from '../utils/jplotCmes';
 
 const STEREO_BEACON_BASE = 'https://stereo-ssc.nascom.nasa.gov/beacon';
 const SUN_TEXTURE_URL = 'https://upload.wikimedia.org/wikipedia/commons/c/cb/Solarsystemscope_texture_2k_sun.jpg';
@@ -10,6 +12,25 @@ const GUIDE_LEFT = 92;
 const GUIDE_RIGHT = 936;
 const GUIDE_WIDTH = GUIDE_RIGHT - GUIDE_LEFT;
 const SUN_GUIDE_Y = 154;
+const AXIS_Y = 174;
+/** CME colours: apart from the imagers' blue and violet and from Earth's blue. */
+const CME_COLORS = ['#fb923c', '#f87171', '#facc15', '#f472b6'];
+const cmeColor = (index: number) => CME_COLORS[index % CME_COLORS.length];
+const NZ_TIME_ZONE = 'Pacific/Auckland';
+const formatWhen = (ms: number) => new Date(ms).toLocaleString('en-NZ', {
+  timeZone: NZ_TIME_ZONE, weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
+});
+const formatShortWhen = (ms: number) => new Date(ms).toLocaleString('en-NZ', {
+  timeZone: NZ_TIME_ZONE, weekday: 'short', hour: 'numeric', minute: '2-digit',
+});
+/** "2 days 17 h", "15 h 25 min": never broken between a number and its unit. */
+const formatSpan = (ms: number) => {
+  const mins = Math.max(0, Math.round(ms / 60000));
+  const days = Math.floor(mins / 1440), hours = Math.floor((mins % 1440) / 60), rest = mins % 60;
+  if (days > 0) return `${days}\u00a0day${days === 1 ? '' : 's'} ${hours}\u00a0h`;
+  if (hours > 0) return `${hours}\u00a0h ${rest}\u00a0min`;
+  return `${rest}\u00a0min`;
+};
 
 interface InfoModalProps { isOpen: boolean; onClose: () => void; title: string; content: string | React.ReactNode; }
 const InfoModal: React.FC<InfoModalProps> = ({ isOpen, onClose, title, content }) => {
@@ -78,7 +99,7 @@ const proxiedImageUrl = (plot: StereoJPlotInfo, refreshKey: number) =>
 const formatAu = (value: number) => `${value.toFixed(3)} AU`;
 const xForAu = (value: number) => GUIDE_LEFT + (Math.min(value, MAX_GUIDE_AU) / MAX_GUIDE_AU) * GUIDE_WIDTH;
 
-const SelectedRangeBar: React.FC<{ selected: StereoJPlotInfo }> = ({ selected }) => {
+const SelectedRangeBar: React.FC<{ selected: StereoJPlotInfo; cmes: JplotCme[] }> = ({ selected, cmes }) => {
   const startPct = (selected.startAu / MAX_GUIDE_AU) * 100;
   const widthPct = ((Math.min(selected.endAu, MAX_GUIDE_AU) - selected.startAu) / MAX_GUIDE_AU) * 100;
   const earthPct = (1 / MAX_GUIDE_AU) * 100;
@@ -92,6 +113,14 @@ const SelectedRangeBar: React.FC<{ selected: StereoJPlotInfo }> = ({ selected })
       <div className="relative h-5 rounded-full bg-neutral-800/90 overflow-hidden border border-neutral-700/70">
         <div className="absolute inset-y-0 w-px bg-sky-300/80" style={{ left: `${earthPct}%` }} />
         <div className="absolute inset-y-0 rounded-full" style={{ left: `${startPct}%`, width: `${widthPct}%`, backgroundColor: selected.color, boxShadow: `0 0 16px ${selected.color}` }} />
+        {cmes.map((cme, index) => (
+          <div
+            key={cme.id}
+            className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-neutral-950"
+            style={{ left: `${(Math.min(cme.distanceAu, MAX_GUIDE_AU) / MAX_GUIDE_AU) * 100}%`, backgroundColor: cmeColor(index) }}
+            title={`CME ${index + 1}: ${cme.distanceAu.toFixed(2)} AU from the Sun`}
+          />
+        ))}
       </div>
       <div className="relative mt-1 h-4 text-[10px] text-neutral-500">
         <span className="absolute left-0">Sun</span>
@@ -102,7 +131,59 @@ const SelectedRangeBar: React.FC<{ selected: StereoJPlotInfo }> = ({ selected })
   );
 };
 
-const StereoFovGuide: React.FC<{ selected: StereoJPlotInfo }> = ({ selected }) => {
+/**
+ * The CMEs on the guide's own Sun-Earth line: the way each has come from the
+ * Sun, its front where the CME Visualization has it now, and the rest of the
+ * way to Earth.
+ */
+const GuideCmes: React.FC<{ cmes: JplotCme[] }> = ({ cmes }) => {
+  const sunEdge = xForAu(0) + 28;
+  const earthX = xForAu(1);
+  const next = cmes.findIndex(cme => !cme.arrived);
+  const placed = cmes.map((cme, index) => ({ cme, index, color: cmeColor(index), frontX: xForAu(cme.distanceAu) }));
+  // The rest of the way to Earth: one line on from the leading front.
+  const onTheWay = placed.filter(p => !p.cme.arrived);
+  const toGoFrom = onTheWay.length ? Math.max(sunEdge, ...onTheWay.map(p => p.frontX)) : null;
+  // Labels share a row unless they would overlap; a second row sits just above.
+  const rows: number[][] = [[], []];
+  const labelY = placed.map(p => {
+    const x = Math.max(200, Math.min(880, p.frontX)); // clear of the Sun
+    const row = rows.findIndex(r => r.every(other => Math.abs(other - x) > 150));
+    const use = row < 0 ? rows.length - 1 : row;
+    rows[use].push(x);
+    return { x, y: 142 - use * 18 };
+  });
+  return (
+    <g>
+      {toGoFrom != null && toGoFrom < earthX - 18 && (
+        <line x1={toGoFrom} y1={AXIS_Y} x2={earthX - 18} y2={AXIS_Y} stroke="#d4d4d4" strokeWidth="3" strokeDasharray="2 7" strokeLinecap="round" opacity="0.45" />
+      )}
+      {/* The way each has come, furthest first, so a nearer CME's path sits on top. */}
+      {[...placed].sort((a, b) => b.frontX - a.frontX).map(p => (
+        p.frontX > sunEdge
+          ? <line key={p.cme.id} x1={sunEdge} y1={AXIS_Y} x2={p.frontX} y2={AXIS_Y} stroke={p.color} strokeWidth="6" strokeLinecap="round" />
+          : null
+      ))}
+      {placed.map((p, i) => (
+        <g key={p.cme.id}>
+          <line x1={p.frontX} y1={labelY[i].y + 5} x2={p.frontX} y2={AXIS_Y - 26} stroke={p.color} strokeWidth="1" opacity="0.7" />
+          <path d={`M ${p.frontX - 7} ${AXIS_Y - 24} Q ${p.frontX + 13} ${AXIS_Y} ${p.frontX - 7} ${AXIS_Y + 24}`} fill="none" stroke={p.color} strokeWidth="5" strokeLinecap="round" />
+          <circle cx={p.frontX} cy={AXIS_Y} r="6" fill={p.color} stroke="#030303" strokeWidth="2" />
+          <text x={labelY[i].x} y={labelY[i].y} textAnchor="middle" fill={p.color} fontSize="15" fontWeight="800">
+            CME {p.index + 1} · {p.cme.arrived ? 'arrived' : `${p.cme.distanceAu.toFixed(2)} AU`}
+          </text>
+        </g>
+      ))}
+      {next >= 0 && (
+        <text x={earthX} y="262" textAnchor="middle" fill={cmeColor(next)} fontSize="13" fontWeight="700">
+          CME {next + 1} due {formatShortWhen(cmes[next].arrivalMs)}
+        </text>
+      )}
+    </g>
+  );
+};
+
+const StereoFovGuide: React.FC<{ selected: StereoJPlotInfo; cmes: JplotCme[] }> = ({ selected, cmes }) => {
   const sunX = xForAu(0);
   const earthX = xForAu(1);
   const stereoX = xForAu(0.96);
@@ -115,7 +196,7 @@ const StereoFovGuide: React.FC<{ selected: StereoJPlotInfo }> = ({ selected }) =
         <p className="font-semibold text-neutral-200">Sun-Earth field of view</p>
         <span className="text-[11px] text-neutral-500">AU positions are linear; planet icon sizes are illustrative.</span>
       </div>
-      <svg viewBox="0 0 1000 320" role="img" aria-label="Sun, Earth, STEREO-A and instrument field of view ranges on a linear AU scale" className="w-full h-auto overflow-visible">
+      <svg viewBox="0 0 1000 320" role="img" aria-label={`Sun, Earth, STEREO-A and instrument field of view ranges on a linear AU scale${cmes.length ? `, with ${cmes.length} CME${cmes.length === 1 ? '' : 's'} on the way to Earth` : ''}`} className="w-full h-auto overflow-visible">
         <defs>
           <clipPath id="stereoGuideSunClip">
             <circle cx={sunX} cy={SUN_GUIDE_Y} r="26" />
@@ -166,6 +247,8 @@ const StereoFovGuide: React.FC<{ selected: StereoJPlotInfo }> = ({ selected }) =
           );
         })}
 
+        <GuideCmes cmes={cmes} />
+
         <path d={`M ${selectedStart} 284 L ${selectedEnd} 284`} stroke={selected.color} strokeWidth="8" strokeLinecap="round" />
         <text x={(selectedStart + selectedEnd) / 2} y="306" textAnchor="middle" fill="#d4d4d8" fontSize="12">
           {selected.label}: {formatAu(selected.startAu)}-{formatAu(selected.endAu)} from Sun
@@ -175,7 +258,91 @@ const StereoFovGuide: React.FC<{ selected: StereoJPlotInfo }> = ({ selected }) =
   );
 };
 
-const StereoJPlotsPanel: React.FC = () => {
+/** Where in each imager's range a CME's front is, the selected imager first. */
+const viewStatus = (cme: JplotCme, selected: StereoJPlotInfo, nowMs: number) =>
+  [...cme.views]
+    .sort((a, b) => (a.key === selected.key ? -1 : b.key === selected.key ? 1 : 0))
+    .map(view => {
+      const label = STEREO_JPLOTS.find(plot => plot.key === view.key)?.label ?? view.key;
+      const text = view.inViewNow ? `In the ${label} view now`
+        : view.enterMs != null && view.enterMs > nowMs ? `Reaches the ${label} view ${formatShortWhen(view.enterMs)}`
+        : `Past the ${label} view`;
+      return { key: view.key, text, selected: view.key === selected.key };
+    });
+
+interface EarthBoundCmesProps {
+  cmes: JplotCme[];
+  selected: StereoJPlotInfo;
+  nowMs: number;
+  onViewCME?: (cmeId: string) => void;
+}
+
+/** Each CME on its way: a timeline from the Sun to Earth, where it is now, and when it arrives. */
+const EarthBoundCmes: React.FC<EarthBoundCmesProps> = ({ cmes, selected, nowMs, onViewCME }) => (
+  <div className="mt-3 rounded-lg border border-neutral-800 bg-neutral-900/60 p-3 text-xs text-neutral-400">
+    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-2">
+      <p className="font-semibold text-neutral-200">CMEs heading for Earth</p>
+      <span className="text-[11px] text-neutral-500">From the CME Visualization · NZ time</span>
+    </div>
+    {cmes.length === 0 ? (
+      <p className="text-neutral-500">
+        None right now. When the CME Visualization has a CME reaching Earth, it shows here and on the guide, from launch until a day after it arrives.
+      </p>
+    ) : (
+      <ul className="space-y-4">
+        {cmes.map((cme, index) => {
+          const color = cmeColor(index);
+          const pct = cme.progress * 100;
+          return (
+            <li key={cme.id}>
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-sm font-semibold" style={{ color }}>
+                  CME {index + 1}
+                  <span className="ml-2 text-xs font-normal text-neutral-400">left the Sun {formatWhen(cme.launchMs)}</span>
+                </p>
+                {onViewCME && (
+                  <button type="button" onClick={() => onViewCME(cme.id)} className="shrink-0 text-[11px] text-sky-300 hover:text-sky-200 hover:underline">
+                    See it in 3D
+                  </button>
+                )}
+              </div>
+              <div className="relative mt-3 h-2 rounded-full bg-neutral-800" role="img" aria-label={`CME ${index + 1} is ${Math.round(pct)}% of the way to Earth`}>
+                <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${pct}%`, backgroundColor: color, opacity: 0.85 }} />
+                <div className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-neutral-950" style={{ left: `${pct}%`, backgroundColor: color }} />
+              </div>
+              <div className="mt-1 flex justify-between text-[10px] text-neutral-500">
+                <span>Sun · {formatShortWhen(cme.launchMs)}</span>
+                <span className="text-sky-300">Earth · {formatShortWhen(cme.arrivalMs)}</span>
+              </div>
+              <p className="mt-1.5 text-neutral-200">
+                {cme.arrived
+                  ? <>Arrived {formatWhen(cme.arrivalMs)}, {formatSpan(nowMs - cme.arrivalMs)} ago</>
+                  : <>Expected at Earth <strong>{formatWhen(cme.arrivalMs)}</strong>, in {formatSpan(cme.arrivalMs - nowMs)}</>}
+              </p>
+              <p className="mt-0.5 text-[11px] text-neutral-500">
+                {cme.distanceAu.toFixed(2)} AU from the Sun · {Math.round(cme.speedNowKms)} km/s now (left at {Math.round(cme.launchSpeedKms)} km/s)
+              </p>
+              <p className="mt-0.5 text-[11px]">
+                {viewStatus(cme, selected, nowMs).map((v, i) => (
+                  <span key={v.key} className={v.selected ? 'text-neutral-200' : 'text-neutral-500'}>
+                    {i > 0 && ' · '}{v.text}
+                  </span>
+                ))}
+              </p>
+            </li>
+          );
+        })}
+      </ul>
+    )}
+  </div>
+);
+
+interface StereoJPlotsPanelProps {
+  /** Opens a CME in the CME Visualization. */
+  onViewCMEInVisualization?: (cmeId: string) => void;
+}
+
+const StereoJPlotsPanel: React.FC<StereoJPlotsPanelProps> = ({ onViewCMEInVisualization }) => {
   const [selectedKey, setSelectedKey] = useState(STEREO_JPLOTS[0].key);
   const [refreshKey, setRefreshKey] = useState(() => Date.now());
   const [useProxy, setUseProxy] = useState(true);
@@ -188,6 +355,17 @@ const StereoJPlotsPanel: React.FC = () => {
     [selectedKey],
   );
   const selectedSrc = useProxy ? proxiedImageUrl(selected, refreshKey) : `${directImageUrl(selected)}?v=${refreshKey}`;
+
+  // The CMEs the CME Visualization has reaching Earth, moved on with the clock.
+  const arrivals = useCmeEarthArrivals();
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!arrivals.length) return;
+    setNowMs(Date.now());
+    const id = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, [arrivals]);
+  const cmes = useMemo(() => jplotCmes(arrivals, nowMs, STEREO_JPLOTS), [arrivals, nowMs]);
 
   const scrollImageToNewest = useCallback(() => {
     const scroller = imageScrollRef.current;
@@ -217,6 +395,7 @@ const StereoJPlotsPanel: React.FC = () => {
           <p><strong>What this is:</strong> These are NASA STEREO-A heliospheric imager J-plots. A J-plot stacks narrow image slices over time so outward-moving CME structure appears as bright or dark diagonal tracks.</p>
           <p><strong>How to view it:</strong> Choose <strong>HI1</strong> for the inner heliosphere closer to the Sun, or <strong>HI2</strong> for the wider view that reaches Earth-orbit distances. On mobile, the image opens scrolled to the newest/right-hand side. You can still drag sideways to inspect earlier times.</p>
           <p><strong>Field-of-view guide:</strong> The bar and diagram show where the selected imager sits between the Sun, STEREO-A, and Earth. AU positions are shown to scale; the Sun, Earth, and spacecraft icons are not size-to-scale.</p>
+          <p><strong>CMEs heading for Earth:</strong> The coloured fronts on the bar and the guide are the CMEs the CME Visualization has reaching Earth, drawn where its model puts them now, with the arrival time from the same model. Each shows from launch until a day after it arrives. While a front is inside an imager's range, that is the J-plot to look for its track on.</p>
           <p><strong>What to look for:</strong> A real CME front usually appears as a coherent diagonal feature moving upward/right through time. The slope gives a quick visual sense of speed: steeper tracks generally mean faster outward motion.</p>
           <p class='text-xs text-neutral-400'><strong>Advanced:</strong> These beacon products are context imagery, not a direct impact forecast. Use them alongside EPAM, solar-wind shock markers, and CME model timing. STEREO-A views the Sun from a different longitude than Earth, so alignment and projection can shift where a feature appears.</p>
         </div>
@@ -272,7 +451,7 @@ const StereoJPlotsPanel: React.FC = () => {
         ))}
       </div>
 
-      <SelectedRangeBar selected={selected} />
+      <SelectedRangeBar selected={selected} cmes={cmes} />
 
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
@@ -325,13 +504,14 @@ const StereoJPlotsPanel: React.FC = () => {
 
       <div id="stereo-fov-guide" className="mt-4 text-xs text-neutral-400">
         {showGuide ? (
-          <StereoFovGuide selected={selected} />
+          <StereoFovGuide selected={selected} cmes={cmes} />
         ) : (
           <div className="rounded-lg border border-neutral-800 bg-neutral-900/60 p-3">
             <p className="font-semibold text-neutral-200">Field-of-view guide hidden</p>
             <p className="text-neutral-500 mt-1">Open it to see where HI1 and HI2 sit between the Sun, STEREO-A, and Earth.</p>
           </div>
         )}
+        <EarthBoundCmes cmes={cmes} selected={selected} nowMs={nowMs} onViewCME={onViewCMEInVisualization} />
       </div>
     </div>
   );

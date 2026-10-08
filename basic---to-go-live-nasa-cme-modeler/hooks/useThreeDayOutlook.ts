@@ -12,9 +12,8 @@ import {
 import { buildForecastTimeline, type StreamSource } from '../utils/forecastTimeline';
 import { buildOutlook } from '../utils/auroraOutlook';
 import type { KpBlock } from '../utils/kpVisibility';
-import { cmeEarthArrival, cmeOutlook, type CmeEarthArrival } from '../utils/cmeEarthArrivals';
-import { fetchCMEData } from '../services/nasaService';
-import { registerDatasetTicker } from '../utils/pollingScheduler';
+import { cmeOutlook } from '../utils/cmeEarthArrivals';
+import { useCmeEarthArrivals } from './useCmeEarthArrivals';
 import { buildThreeDayGrid, type GridInputs } from '../utils/threeDayGrid';
 
 export function useThreeDayOutlook(horizonDays = 3) {
@@ -49,20 +48,8 @@ export function useThreeDayOutlook(horizonDays = 3) {
   const kpBlocks: KpBlock[] = [];
 
   // CMEs: the ones the CME Visualization has touching Earth (utils/cmeEarthArrivals).
-  const [cmeArrivals, setCmeArrivals] = useState<CmeEarthArrival[]>([]);
-  useEffect(() => {
-    let live = true;
-    const load = async () => {
-      try {
-        const cmes = await fetchCMEData(7, '');
-        if (!live) return;
-        setCmeArrivals(cmes.map(cmeEarthArrival).filter((a): a is CmeEarthArrival => a != null));
-      } catch { /* no CME list: the forecast runs on the coronal hole streams */ }
-    };
-    void load();
-    const unregister = registerDatasetTicker('three-day-cmes', load, 15 * 60 * 1000);
-    return () => { live = false; unregister(); };
-  }, []);
+  // No CME list: the forecast runs on the coronal hole streams.
+  const cmeArrivals = useCmeEarthArrivals();
 
   // The grid: every stream the tracker has reaching Earth, run hour by hour
   // through the chain, alongside the CME model.

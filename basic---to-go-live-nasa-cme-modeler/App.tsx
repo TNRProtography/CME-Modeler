@@ -1836,6 +1836,7 @@ const App: React.FC = () => {
                         modalSlug={forecastModalSlug}
                         onModalSlugChange={handleForecastModalSlugChange}
                         refreshSignal={manualRefreshKey}
+                        onViewCMEInVisualization={handleViewCMEInVisualization}
                     />
                   </Suspense>
                 </div>
